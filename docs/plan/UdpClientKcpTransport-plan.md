@@ -1,40 +1,85 @@
-# UdpClient KCP 化改造计划：支持有序与无序可靠包
+# UdpClient 与 KcpClient 传输拆分计划
 
 > 仓库：`rockylomo/rxlib`  
 > 分支：`master`  
-> 目标路径建议：`docs/plan/UdpClientKcpTransport-plan.md`  
-> 生成日期：2026-05-25
+> 文件：`docs/plan/UdpClientKcpTransport-plan.md`  
+> 更新日期：2026-05-25
 
 ## 0. 结论先行
 
-建议把当前 `org.rx.net.transport.UdpClient` 从“自研 RXUP ACK / 重传 / 分片重组”逐步切换为“Netty DatagramChannel + KCP session + rxlib codec / RPC facade”的结构。
+本计划调整为：**不把当前 `UdpClient` 改造成 KCP，也不在 KCP 上强行同时支持有序和无序。**
 
-关键设计点：
+最终建议拆成两个清晰组件：
 
-1. **KCP 负责可靠传输、重传、窗口、RTT/RTO、MTU 分片。**
-2. **`UdpClientCodec` 继续负责对象与 `ByteBuf` payload 的编解码。**
-3. **`UdpClient` 继续作为对外 facade，保留 `send` / `request` / `reply` / `onReceive` 等使用方式。**
-4. **包有序 / 无序不要在单条 KCP conv 内强行混用。**  
-   KCP 单 conv 天然按序交付；第一期建议用“多 lane / 多 conv”实现无序：
-   - `ORDERED`：固定 ordered lane，严格按 KCP 顺序交付。
-   - `UNORDERED`：按消息 id、hash 或 round-robin 分散到多个 unordered lanes，每个 lane 内有序，lane 间到达即投递，从而实现业务视角的无序可靠。
-5. **保留旧 RXUP 协议一个兼容周期。**  
-   新增配置开关 `UdpReliabilityMode.LEGACY_RXUP / KCP`，默认值先保持兼容，待测试稳定后再考虑切换默认。
+```text
+UdpClient
+  = 继续保留现有 RXUP 简易可靠 UDP
+  = 无序可靠
+  = message-level ACK / resend / fragment / assembly
+  = 适合控制面、低 QPS RPC、打洞、轻量可靠消息
+
+KcpClient
+  = 新增 KCP 客户端
+  = 有序可靠
+  = session / window / rtt / rto / update timer
+  = 适合顺序敏感消息、连续状态同步、流式可靠 UDP
+```
+
+这样做的原因：
+
+```text
+1. 当前 UdpClient 本质就是“按 messageId 独立可靠”，天然是无序可靠。
+2. KCP 单 conv 天然有序交付；为了在 KCP 上做无序，需要多 conv / 多 lane，反而增加资源和复杂度。
+3. 如果无序可靠的目标是更省资源、更简单，那么继续使用当前 UdpClient 语义更合适。
+4. KCP 的 ACK 是传输层 ACK，不等价于当前 FULL ACK 的“业务 handler 成功后 ACK”。
+5. 两个类拆开后，API 语义清晰，不需要在一个 `UdpClientConfig` 里塞两套可靠协议。
+```
+
+核心命名：
+
+```java
+UdpClient   // 无序可靠 UDP，保留当前实现方向
+KcpClient   // 有序可靠 UDP，新增实现
+```
+
+同时确认：**`UdpClient` 和 `KcpClient` 都可以兼容现有 UDP FEC、压缩、多倍发包 pipeline。**
+
+这些 pipeline 应该位于二者下层：
+
+```text
+业务 / UdpClient / KcpClient
+  -> 自有协议 header：RXUP 或 RXKC/KCP
+  -> UDP 压缩 / FEC / 多倍发包 pipeline
+  -> UdpFinalEgressGuardHandler
+  -> socket
+```
+
+只要二者继续使用：
+
+```java
+Sockets.udpBootstrap(config, initChannel)
+Sockets.writeUdp(channel, packet, ...)
+```
+
+就可以复用 rxlib 现有 UDP 出入口保护、MTU guard、pending bytes 背压、压缩、FEC、多倍发包能力。
 
 ---
 
-## 1. 当前代码与约束
+## 1. 当前代码与项目约束
 
 ### 1.1 项目约束
 
 项目级规范要求：
 
-- Java 版本严格 Java 8。
-- 网络路径属于高性能 Netty 底层网络编程。
-- 热点路径避免频繁对象分配，优先 direct buffer / pooled buffer。
-- `ByteBuf` 必须严格遵守引用计数。
-- I/O 线程不得阻塞。
-- 网络改动必须覆盖内存泄漏、背压、生命周期、线程模型、协议兼容和监控指标。
+```text
+1. Java 版本严格 Java 8。
+2. 网络路径属于高性能 Netty 底层网络编程。
+3. 热点路径避免频繁 new 对象。
+4. 优先 PooledByteBufAllocator / Direct Buffer / 零拷贝。
+5. ByteBuf 必须严格遵守引用计数。
+6. I/O 线程不得执行阻塞逻辑。
+7. 网络改动必须显式评估内存泄漏、背压、生命周期、线程模型、协议兼容和监控指标。
+```
 
 ### 1.2 当前 UdpClient 职责
 
@@ -44,7 +89,7 @@
 rxlib/src/main/java/org/rx/net/transport/UdpClient.java
 ```
 
-它目前同时承担：
+当前职责：
 
 ```text
 1. 绑定 DatagramChannel / 多 channel。
@@ -57,44 +102,15 @@ rxlib/src/main/java/org/rx/net/transport/UdpClient.java
 8. close 时清理 pendingSends / pendingReceives / pendingRequests。
 ```
 
-当前 wire header 常量：
+当前 RXUP wire header：
 
 ```java
-static final int MAGIC = 0x52585550;
+static final int MAGIC = 0x52585550; // RXUP
 static final byte TYPE_DATA = 1;
 static final byte TYPE_ACK = 2;
 static final int ACK_HEADER_SIZE = 9;
 static final int DATA_HEADER_SIZE = 18;
 ```
-
-当前出站大致流程：
-
-```text
-Object
-  -> UdpClientCodec.encode(...)
-  -> ByteBuf payload
-  -> fragmentCount(payload.readableBytes())
-  -> retainedSlice per fragment
-  -> RXUP DATA header + fragment payload
-  -> Sockets.writeUdp(...)
-  -> ACK timeout / resend timer
-```
-
-当前入站大致流程：
-
-```text
-DatagramPacket
-  -> RXUP magic/type/header 校验
-  -> fragment payload readRetainedSlice(...)
-  -> ReceiveAssembly(sender, messageId) 聚合
-  -> CompositeByteBuf buildPayload(...)
-  -> UdpClientCodec.decode(...)
-  -> UdpMessage
-  -> RPC response 或 onReceive
-  -> SEMI/FULL ACK
-```
-
-### 1.3 当前配置
 
 当前 `UdpClientConfig`：
 
@@ -109,9 +125,34 @@ public class UdpClientConfig extends SocketConfig {
 }
 ```
 
+### 1.3 当前 UdpClient 的实际语义
+
+当前 `UdpClient` 不是连接流模型，而是 message-level 可靠模型：
+
+```text
+1. 每条逻辑消息有独立 messageId。
+2. 每条消息独立等待 ACK、timeout、resend。
+3. 接收端按 sender + messageId 做 fragment assembly。
+4. 哪条消息先完整，哪条消息就可以先投递。
+5. 不存在 per-peer 全局接收序号。
+6. 不存在“必须先投递 messageId=N，才能投递 messageId=N+1”的约束。
+```
+
+因此它非常适合作为：
+
+```text
+无序可靠 UDP
+```
+
+也就是：
+
+```text
+reliable unordered datagram message transport
+```
+
 ### 1.4 当前测试基线
 
-当前已有 `UdpTransportTest` 覆盖：
+当前 `UdpTransportTest` 已覆盖：
 
 ```text
 1. FULL ACK 首次业务处理失败后重发成功。
@@ -124,7 +165,7 @@ public class UdpClientConfig extends SocketConfig {
 8. EventLoop 内 close 不阻塞。
 ```
 
-KCP 化时这些测试需要迁移或替换为 KCP 语义下的等价测试。
+这些测试应继续保留，作为 `UdpClient = 无序可靠` 的回归基线。
 
 ---
 
@@ -132,324 +173,447 @@ KCP 化时这些测试需要迁移或替换为 KCP 语义下的等价测试。
 
 ### 2.1 目标
 
-本次目标：
+本计划目标：
 
-1. 用 KCP 替代当前 `UdpClient` 自研 ACK / resend / fragment / receive assembly。
-2. 在 KCP 基础上支持可靠有序包与可靠无序包。
-3. 尽量保持 `UdpClient` 对外 API 兼容。
-4. 继续复用 `UdpClientCodec` / `FuryUdpClientCodec`。
-5. 所有 UDP 写出继续走 `Sockets.writeUdp(...)`，继承 rxlib 的 UDP 背压、MTU、pending bytes 保护。
-6. 兼容 Java 8 和当前 Netty 版本。
-7. 新增足够测试，覆盖丢包、乱序、重复、超时、关闭、内存释放。
+```text
+1. 保留 UdpClient 作为无序可靠 UDP。
+2. 新增 KcpClient 作为有序可靠 UDP。
+3. 不在 KCP 上实现无序可靠。
+4. 不用 KCP 替换 UdpClient 的 RXUP 语义。
+5. 两者都复用 UdpClientCodec / FuryUdpClientCodec。
+6. 两者都继续走 Sockets.udpBootstrap / Sockets.writeUdp。
+7. 两者都兼容 UDP 压缩、FEC、多倍发包、FinalEgressGuard pipeline。
+8. 补充 KcpClient 的有序可靠测试、弱网测试、关闭释放测试。
+```
 
 ### 2.2 非目标
 
 本期不做：
 
-1. 不把 `UdpClient` 直接改造成 QUIC。
-2. 不在第一期删除旧 RXUP 实现。
-3. 不给普通第三方 UDP server 发送 KCP 包；KCP 仅用于 rxlib 自有双端。
-4. 不把 KCP 用作 SOCKS/SS UDP relay 的默认数据面。
-5. 不在 I/O 线程做阻塞等待。
-6. 不把无序语义伪装成“单 conv 内跳过 KCP 顺序阻塞”。
+```text
+1. 不删除 UdpClient。
+2. 不把 UdpClient 默认切到 KCP。
+3. 不引入 UdpReliabilityMode.LEGACY_RXUP / KCP 这种双模式大开关。
+4. 不在 KCP 上通过多 lane / 多 conv 实现无序可靠。
+5. 不把 KcpClient 用于普通第三方 UDP server。
+6. 不把 FEC / 压缩 / 多倍发包揉进 UdpClient 或 KcpClient 内部。
+7. 不在 I/O 线程执行阻塞等待。
+```
 
 ---
 
-## 3. 推荐总体架构
+## 3. 最终组件定位
 
-### 3.1 分层结构
+### 3.1 UdpClient：无序可靠
 
-建议把 KCP 相关实现拆到独立包：
-
-```text
-org.rx.net.transport.kcp
-  KcpClientTransport
-  KcpSession
-  KcpSessionKey
-  KcpSessionConfig
-  KcpLane
-  KcpLaneMode
-  KcpPacketHeader
-  KcpOutput
-  KcpScheduler
-  KcpStats
-```
-
-`UdpClient` 保持 facade：
-
-```text
-UdpClient
-  -> UdpTransportEngine interface
-       -> LegacyRxupTransportEngine
-       -> KcpTransportEngine
-```
-
-推荐接口：
+保留：
 
 ```java
-interface UdpTransportEngine extends AutoCloseable {
-    ChannelFuture send(InetSocketAddress remoteAddress, Object packet, UdpSendOptions options);
-
-    UdpSendResult sendWithResult(InetSocketAddress remoteAddress, Object packet, UdpSendOptions options);
-
-    void handlePacket(DatagramPacket packet);
-
-    boolean isActive();
-}
+org.rx.net.transport.UdpClient
 ```
 
-第一期也可以不抽象 `UdpTransportEngine`，直接在 `UdpClient` 内通过 `mode` 分支委托。但为了降低迁移风险，建议抽象。
-
-### 3.2 新配置
-
-新增枚举：
-
-```java
-public enum UdpReliabilityMode {
-    LEGACY_RXUP,
-    KCP
-}
-
-public enum UdpPacketOrder {
-    ORDERED,
-    UNORDERED
-}
-```
-
-扩展 `UdpClientConfig`：
-
-```java
-public class UdpClientConfig extends SocketConfig {
-    private UdpClientCodec codec = FuryUdpClientCodec.createDefault();
-
-    // legacy RXUP
-    private int waitAckTimeoutMillis = 15 * 1000;
-    private boolean fullSync;
-    private int maxResend = 2;
-    private int maxFragmentPayloadBytes = 1024;
-    private int maxFragmentCount = 128;
-
-    // new transport selector
-    private UdpReliabilityMode reliabilityMode = UdpReliabilityMode.LEGACY_RXUP;
-
-    // default packet order for send(...)
-    private UdpPacketOrder defaultPacketOrder = UdpPacketOrder.ORDERED;
-
-    // KCP settings
-    private int kcpMtu = 1200;
-    private int kcpOrderedLaneCount = 1;
-    private int kcpUnorderedLaneCount = 4;
-    private int kcpNoDelay = 1;
-    private int kcpIntervalMillis = 10;
-    private int kcpFastResend = 2;
-    private int kcpNoCongestionControl = 1;
-    private int kcpSendWindow = 128;
-    private int kcpReceiveWindow = 128;
-    private int kcpSessionIdleTimeoutMillis = 60 * 1000;
-    private int kcpRequestTimeoutMillis = 15 * 1000;
-    private int kcpMaxPayloadBytes = 1024 * 128;
-}
-```
-
-默认值建议：
+定位：
 
 ```text
-reliabilityMode = LEGACY_RXUP
+Simple reliable UDP client
+Reliable unordered UDP message client
 ```
 
-原因：
+特点：
 
 ```text
-1. 避免 master 直接破坏已有双端 wire compatibility。
-2. 旧 UDP 打洞、Nameserver、Hybrid 可能仍依赖 RXUP header。
-3. KCP 需要双端同时开启。
+1. messageId 独立可靠。
+2. 消息之间没有全局顺序。
+3. 重传粒度是完整逻辑消息的 fragments。
+4. 资源占用轻，不需要 per-peer KCP session/window。
+5. 适合低 QPS、控制面、RPC、打洞、Nameserver 同步。
 ```
 
-待 KCP 测试稳定后，再单独做默认值切换计划。
+继续保留 API：
 
-### 3.3 发送选项
+```java
+send(...)
+sendAsync(...)
+sendWithResult(...)
+request(...)
+requestAsync(...)
+reply(...)
+replyError(...)
+onReceive
+onError
+```
+
+文档需要明确：
+
+```text
+UdpClient 提供可靠性，但不提供消息全局有序性。
+```
+
+### 3.2 KcpClient：有序可靠
 
 新增：
 
 ```java
-@Getter
-@Setter
-public final class UdpSendOptions implements Serializable {
-    private int timeoutMillis;
-    private UdpPacketOrder order = UdpPacketOrder.ORDERED;
-    private boolean flush = true;
-    private int lane = -1;
+org.rx.net.transport.KcpClient
+```
+
+定位：
+
+```text
+KCP based reliable ordered UDP client
+```
+
+特点：
+
+```text
+1. 每个 remote 建立 KCP 会话。
+2. KCP 负责 ACK、重传、窗口、RTO、fast resend、MTU segment。
+3. 同一 remote / conv 内严格有序交付。
+4. 存在队头阻塞，这是有序可靠的自然代价。
+5. 适合顺序敏感消息、连续状态同步、可靠流式 UDP。
+```
+
+建议 API 与 `UdpClient` 保持相似：
+
+```java
+public class KcpClient implements EventPublisher<KcpClient>, AutoCloseable {
+    public final Delegate<KcpClient, NEventArgs<UdpMessage>> onReceive = Delegate.create();
+    public final Delegate<KcpClient, NEventArgs<Throwable>> onError = Delegate.create();
+
+    public KcpClient(int bindPort);
+    public KcpClient(int bindPort, KcpClientConfig config);
+    public KcpClient(int bindPort, UdpClientCodec codec);
+
+    public ChannelFuture send(InetSocketAddress remoteAddress, Object packet);
+    public KcpSendResult sendWithResult(InetSocketAddress remoteAddress, Object packet);
+
+    public <T extends Serializable> T request(InetSocketAddress remoteAddress, Object packet, Class<T> responseType) throws TimeoutException;
+    public <T extends Serializable> T request(InetSocketAddress remoteAddress, Object packet, Class<T> responseType, int timeoutMillis) throws TimeoutException;
+    public <T extends Serializable> CompletableFuture<T> requestAsync(InetSocketAddress remoteAddress, Object packet, Class<T> responseType);
+    public <T extends Serializable> CompletableFuture<T> requestAsync(InetSocketAddress remoteAddress, Object packet, Class<T> responseType, int timeoutMillis);
+
+    public void reply(UdpMessage request, Serializable packet);
+    public void replyError(UdpMessage request, Throwable error);
 }
 ```
 
-`UdpClient` 增加重载：
-
-```java
-public ChannelFuture send(InetSocketAddress remoteAddress, Object packet, UdpPacketOrder order);
-
-public ChannelFuture send(InetSocketAddress remoteAddress, Object packet, UdpSendOptions options);
-
-public UdpSendResult sendWithResult(InetSocketAddress remoteAddress, Object packet, UdpSendOptions options);
-```
-
-原有 API 行为：
+注意：
 
 ```text
-send(remote, packet)
-  -> 使用 config.defaultPacketOrder
-
-request(remote, packet, responseType, timeout)
-  -> 强制 ORDERED，除非后续显式支持 request unordered
+KcpClient 不提供 sendUnordered。
 ```
 
-建议 request/reply 默认有序，理由：
+如果业务需要无序可靠，使用 `UdpClient`。
+
+---
+
+## 4. 为什么不在 KCP 上做无序可靠
+
+KCP 单 conv 的核心价值是可靠有序传输。它维护发送窗口、接收窗口、segment 序号、ACK、重传和按序 recv。若在同一 KCP conv 上做无序投递，会遇到：
 
 ```text
-1. RPC response 与 requestId 强关联，有序不是必须，但有序更利于调试。
-2. request 通常是控制面，不应为了无序牺牲可观测性。
-3. 后续可补 requestAsync(..., UdpSendOptions)。
+1. 前序 segment 丢失时，后续 segment 即使到达也不能按标准 recv 投递。
+2. 修改 KCP 内部接收队列会偏离标准实现，维护成本高。
+3. 多 conv / 多 lane 可以绕过队头阻塞，但会增加：
+   - 多个 KCP 控制块；
+   - 多套窗口；
+   - 多套 update timer；
+   - 更多内存；
+   - 更复杂的 session 管理。
+```
+
+这与“无序可靠更简单、更省资源”的初衷相反。
+
+因此最终原则：
+
+```text
+KcpClient = 有序可靠
+UdpClient = 无序可靠
 ```
 
 ---
 
-## 4. 有序与无序设计
+## 5. Pipeline 兼容性：FEC / 压缩 / 多倍发包
 
-### 4.1 不建议的方案：单 KCP conv 内实现无序
+### 5.1 总体结论
 
-不要在单个 KCP conv 上尝试“有些消息有序，有些消息无序”。原因：
-
-```text
-1. KCP recv 面向按序 byte/message 流。
-2. 如果前序 segment 丢失，后续 segment 即使到达也无法被同一 recv 正常投递。
-3. 强行改 KCP 内部接收队列会偏离标准实现，后续维护成本高。
-```
-
-### 4.2 推荐方案：多 lane / 多 conv
-
-对每个 remote endpoint 建立一个 `KcpSession`，内部有多个 lane：
+`UdpClient` 和 `KcpClient` 都可以兼容现有 UDP pipeline：
 
 ```text
-KcpSession(remote)
-  orderedLane[0]      conv = baseConv + 0
-  unorderedLane[0]    conv = baseConv + 1
-  unorderedLane[1]    conv = baseConv + 2
-  unorderedLane[2]    conv = baseConv + 3
-  unorderedLane[3]    conv = baseConv + 4
+1. UDP 压缩：UdpCompressEncoder / UdpCompressDecoder
+2. UDP 多倍发包：UdpRedundantEncoder / UdpRedundantDecoder
+3. UDP FEC / resilience：UdpResilienceEncoder / UdpResilienceDecoder
+4. UDP 最终出口保护：UdpFinalEgressGuardHandler
+5. UDP 背压：Sockets.writeUdp / UdpBackpressure*
 ```
 
-发送策略：
+前提：
 
 ```text
-ORDERED:
-  固定 orderedLane[0]
-
-UNORDERED:
-  如果 options.lane >= 0，使用指定 unordered lane
-  否则使用 messageId hash 或 round-robin 选择 unordered lane
+1. 两者都用 Sockets.udpBootstrap(config, initChannel) 创建 DatagramChannel。
+2. 两者所有 UDP 写出都走 Sockets.writeUdp(...)。
+3. 自有协议 header 必须在 final egress guard 之前完成。
+4. FEC / 压缩 / 多倍发包只在自有双端开启，不能直接发给普通 UDP 目标。
 ```
 
-接收策略：
+### 5.2 推荐 pipeline 位置
+
+#### UdpClient 出站
 
 ```text
-每个 lane 自己调用 kcp.input(datagramPayload)
-每个 lane 自己循环 kcp.recv(...)
-ORDERED lane 输出保持该 lane 内顺序
-UNORDERED lanes 的输出跨 lane 不排序，哪个 lane recv 到完整消息就立即 publish
+Object
+  -> UdpClientCodec.encode(...)
+  -> RXUP DATA / ACK header
+  -> RXUP fragment datagram
+  -> UdpCompressEncoder          optional
+  -> UdpRedundantEncoder         optional
+  -> UdpResilienceEncoder        optional，建议不要和 Redundant 同时默认开启
+  -> UdpFinalEgressGuardHandler
+  -> socket
 ```
 
-业务语义：
+#### UdpClient 入站
 
 ```text
-ORDERED = 对同一 remote 的 ordered lane 全局有序。
-UNORDERED = 可靠，但只保证单 lane 内有序；跨 unordered lanes 无全局顺序。
+socket
+  -> UdpResilienceDecoder        optional
+  -> UdpRedundantDecoder         optional
+  -> UdpCompressDecoder          optional
+  -> RXUP header parse
+  -> RXUP fragment assembly
+  -> UdpClientCodec.decode(...)
+  -> onReceive / completeRequest
 ```
 
-如果业务想“同一 entity 有序，不同 entity 无序”，可以让调用方指定 lane：
-
-```java
-options.setOrder(UdpPacketOrder.UNORDERED);
-options.setLane(entityId & (unorderedLaneCount - 1));
-```
-
-### 4.3 lane 数量建议
-
-默认：
+#### KcpClient 出站
 
 ```text
-orderedLaneCount = 1
-unorderedLaneCount = 4
+Object
+  -> UdpClientCodec.encode(...)
+  -> KcpClient logical message frame
+  -> KCP send / flush
+  -> RXKC datagram header + KCP segment
+  -> UdpCompressEncoder          optional
+  -> UdpRedundantEncoder         optional
+  -> UdpResilienceEncoder        optional
+  -> UdpFinalEgressGuardHandler
+  -> socket
 ```
+
+#### KcpClient 入站
+
+```text
+socket
+  -> UdpResilienceDecoder        optional
+  -> UdpRedundantDecoder         optional
+  -> UdpCompressDecoder          optional
+  -> RXKC datagram header parse
+  -> KCP input
+  -> KCP recv ordered message
+  -> KcpClient logical frame parse
+  -> UdpClientCodec.decode(...)
+  -> onReceive / completeRequest
+```
+
+### 5.3 压缩兼容性
+
+压缩可以放在 `UdpClient` / `KcpClient` 下层。效果如下：
+
+```text
+UdpClient:
+  压缩的是每个 RXUP fragment datagram。
+  如果想对完整业务对象做压缩，应放到 codec 层。
+
+KcpClient:
+  压缩的是每个 RXKC + KCP segment datagram。
+  KCP 看到的是压缩前的 logical payload / segment size；UDP 线上看到的是压缩后的 datagram。
+```
+
+注意：
+
+```text
+1. 压缩后可能变小，也可能极端情况下变大。
+2. final egress guard 必须在压缩之后检查最终真实 datagram 大小。
+3. 双端必须同时开启压缩。
+4. 不建议对已经加密或高度随机的数据默认开启压缩。
+```
+
+### 5.4 多倍发包兼容性
+
+多倍发包可用于 `UdpClient` 和 `KcpClient` 下层。
+
+对 `UdpClient`：
+
+```text
+1. 多倍发包可减少 RXUP DATA / ACK 单包丢失概率。
+2. duplicate fragment 当前已有释放逻辑，需要继续回归测试。
+3. duplicate ACK 对 pendingSends 应保持幂等。
+```
+
+对 `KcpClient`：
+
+```text
+1. 多倍发包可减少 KCP segment 丢失概率，降低重传延迟。
+2. KCP input 必须能自然处理 duplicate segment。
+3. 额外副本会增加 UDP 出口流量，必须计入 backpressure。
+```
+
+建议默认：
+
+```text
+UdpClient: 可按现有配置使用。
+KcpClient: 默认关闭多倍发包，弱网低延迟场景再开启。
+```
+
+### 5.5 FEC / UdpResilience 兼容性
+
+FEC 可以放在两者下层。
+
+对 `UdpClient`：
+
+```text
+1. FEC 保护 RXUP fragment datagram。
+2. 如果 FEC 恢复出丢失 fragment，RXUP assembly 可正常完成。
+3. FEC 与 RXUP resend 同时存在时，可能减少 resend 次数。
+```
+
+对 `KcpClient`：
+
+```text
+1. FEC 保护 KCP segment datagram。
+2. 如果 FEC 在 KCP RTO 前恢复 segment，可降低 KCP 重传和 tail latency。
+3. KCP 自身已经可靠，FEC 只是降低恢复延迟，不是可靠性的必要条件。
+```
+
+建议默认：
+
+```text
+UdpClient: 默认不开 FEC，按业务弱网需要开启。
+KcpClient: 默认不开 FEC，先保证 KCP 基础稳定；低延迟弱网场景再做 KCP + FEC 调参。
+```
+
+### 5.6 Redundant 与 FEC 不建议默认同时开启
 
 原因：
 
 ```text
-1. lane 越多，KCP 控制块、窗口和 timer 成本越高。
-2. 4 条 unordered lane 可以明显降低单 lane 队头阻塞。
-3. 对控制面足够轻量。
+1. 两者都会增加额外 datagram。
+2. 与 KCP 重传叠加后，出口流量可能明显放大。
+3. 背压、MTU、统计、限速都更复杂。
 ```
 
-高吞吐场景再调大到 8 或 16。
+建议策略：
+
+```text
+轻微随机丢包：优先 FEC。
+短时突发丢包：可考虑 Redundant。
+KCP 有序可靠：优先调 KCP noDelay / interval / fastResend，再考虑 FEC/Redundant。
+```
+
+### 5.7 Pipeline 安装原则
+
+继续沿用现有原则：
+
+```text
+1. 自定义 UDP header 必须在 final egress guard 之前完成。
+2. MTU 检查必须看最终真实包大小。
+3. 多倍发包 / FEC 增加的额外流量必须计入限速和统计。
+4. UdpResilience / RDNT / UCMP 包只能用于自有两端。
+5. 不要把这些自定义包发给普通游戏服务器或普通 UDP 服务。
+```
 
 ---
 
-## 5. Wire 协议设计
+## 6. KcpClient 配置设计
 
-### 5.1 外层 UDP packet header
+新增：
 
-KCP 本身需要 conv，但为了区分 rxlib transport 协议、版本和 lane，建议 UDP datagram 外面增加一个轻量 header：
+```java
+package org.rx.net.transport;
+
+@Getter
+@Setter
+public class KcpClientConfig extends SocketConfig {
+    private static final long serialVersionUID = 1L;
+
+    private UdpClientCodec codec = FuryUdpClientCodec.createDefault();
+
+    private int mtu = 1200;
+    private int noDelay = 1;
+    private int intervalMillis = 10;
+    private int fastResend = 2;
+    private int noCongestionControl = 1;
+    private int sendWindow = 128;
+    private int receiveWindow = 128;
+
+    private int sessionIdleTimeoutMillis = 60 * 1000;
+    private int requestTimeoutMillis = 15 * 1000;
+    private int maxPayloadBytes = 128 * 1024;
+    private int maxPendingBytesPerSession = 4 * 1024 * 1024;
+    private int maxPendingMessagesPerSession = 1024;
+
+    private boolean flushOnSend = true;
+}
+```
+
+说明：
 
 ```text
-KCP UDP datagram:
+1. KcpClientConfig 独立于 UdpClientConfig。
+2. 两者都继承 SocketConfig，因此都能使用 UDP compression / redundant / resilience / mtu / backpressure 配置。
+3. KCP 参数不要塞进 UdpClientConfig，避免语义污染。
+```
+
+---
+
+## 7. KcpClient Wire 协议
+
+### 7.1 UDP datagram header
+
+建议 KCP 外层 datagram 使用独立 magic：
+
+```text
+RXKC UDP datagram:
 +----------------------+----------------------+
-| MAGIC 4B = 'RXKP'    | VERSION 1B = 1       |
+| MAGIC 4B = 'RXKC'    | VERSION 1B = 1       |
 +----------------------+----------------------+
 | TYPE 1B              | FLAGS 1B             |
 +----------------------+----------------------+
-| LANE_MODE 1B         | SESSION_ID 8B        |
+| RESERVED 1B          | CONV 4B              |
 +----------------------+----------------------+
-| CONV 4B              | KCP_SEGMENT...       |
-+----------------------+----------------------+
+| KCP_SEGMENT...                              |
++---------------------------------------------+
 ```
 
 建议常量：
 
 ```java
-static final int KCP_MAGIC = 0x52584B50; // RXKP
-static final byte KCP_VERSION = 1;
+static final int MAGIC = 0x52584B43; // RXKC
+static final byte VERSION = 1;
 static final byte TYPE_KCP_DATA = 1;
-static final byte TYPE_KCP_CLOSE = 2;
-static final byte LANE_ORDERED = 1;
-static final byte LANE_UNORDERED = 2;
-static final int KCP_HEADER_SIZE = 20;
+static final byte TYPE_CLOSE = 2;
+static final int HEADER_SIZE = 12;
 ```
 
-`SESSION_ID`：
+说明：
 
 ```text
-1. 本端为每个 remote 生成 64-bit random/session id。
-2. 双端第一次收到 unknown sessionId 时创建 inbound session。
-3. 可选后续做 handshake，把 client/server session id 协商得更严格。
+1. RXKC 与 RXUP magic 不同，避免误解码。
+2. CONV 用于 KCP 会话识别。
+3. 第一版不做复杂 handshake，可先用 remoteAddress + conv 建 session。
+4. 后续如需 NAT rebinding，再扩展 sessionId。
 ```
 
-第一期简化方案：
+### 7.2 KCP 内层 logical message frame
 
-```text
-使用 remote endpoint + conv 作为 session key，不加复杂 handshake。
-SESSION_ID 保留字段，用于后续 NAT rebinding / reconnect。
-```
-
-### 5.2 KCP 内层消息帧
-
-KCP 交付出来的是可靠 payload。为了支持 RPC、send result、trace、order 标记，建议 KCP 内部 payload 再包一层 rxlib message frame：
+KCP recv 后得到有序 message payload。建议内层增加轻量 frame：
 
 ```text
 KCP logical message:
 +----------------------+----------------------+
 | MSG_MAGIC 2B         | VERSION 1B           |
 +----------------------+----------------------+
-| MESSAGE_TYPE 1B      | FLAGS 1B             |
-+----------------------+----------------------+
-| ORDER 1B             | MESSAGE_ID 4B        |
+| MESSAGE_TYPE 1B      | MESSAGE_ID 4B        |
 +----------------------+----------------------+
 | REQUEST_ID 4B        | PAYLOAD_LENGTH 4B    |
 +----------------------+----------------------+
@@ -467,83 +631,68 @@ PONG = 4
 CLOSE = 5
 ```
 
-`REQUEST_ID`：
+第一期可简化：
 
 ```text
-普通 DATA = 0
-request 发出时 = requestId
-reply/replyError 响应时 = 原 requestId
-```
-
-这样可以替代当前 `UdpRpcResponse` 作为外层对象发送的方式，也可以保持兼容：第一期仍允许 codec payload 是 `UdpRpcResponse`，第二期再收敛内层 frame。
-
-### 5.3 第一阶段最小协议
-
-为降低改造量，第一阶段可采用最小内层帧：
-
-```text
-+----------------------+----------------------+
-| MESSAGE_ID 4B        | MESSAGE_TYPE 1B      |
-+----------------------+----------------------+
-| REQUEST_ID 4B        | ORDER 1B             |
-+----------------------+----------------------+
-| PAYLOAD_LENGTH 4B    | codec payload        |
-+----------------------+----------------------+
-```
-
-并继续复用：
-
-```java
-UdpMessage
-UdpRpcResponse
-UdpClientCodec
+1. DATA 直接携带 codec payload。
+2. RPC_RESPONSE 可以继续复用 UdpRpcResponse，降低改造量。
+3. 第二期再把 RPC response 收敛到 MESSAGE_TYPE。
 ```
 
 ---
 
-## 6. KCP 库选择
+## 8. KcpClient 内部结构
 
-### 6.1 候选方案
-
-候选：
+推荐新增包：
 
 ```text
-1. 引入纯 Java KCP 实现。
-2. 在 rxlib 内实现最小 KCP Java port。
-3. 使用 JNI / native KCP。
+org.rx.net.transport.kcp
+  KcpSession
+  KcpSessionKey
+  KcpPacketHeader
+  KcpMessageFrame
+  KcpOutput
+  KcpScheduler
+  KcpStats
 ```
 
-建议优先级：
+### 8.1 KcpSession
+
+```java
+final class KcpSession {
+    final InetSocketAddress remoteAddress;
+    final int conv;
+    final RxKcp kcp;
+    volatile long lastActiveMillis;
+    volatile long nextUpdateMillis;
+    volatile boolean closed;
+
+    void send(ByteBuf payload);
+    void input(ByteBuf kcpSegment);
+    void update(long nowMillis);
+    void drainRecv();
+    void close();
+}
+```
+
+约束：
 
 ```text
-第一选择：成熟纯 Java KCP 实现，源码可审计、支持 Java 8、没有重量级框架绑定。
-第二选择：将 ikcp.c 语义 port 成 rxlib 内部 Java 版。
-不建议：JNI/native，发布和跨平台成本高。
+1. 每个 remote 默认一个 conv。
+2. 同一 session 内严格有序。
+3. 所有 kcp 操作必须在 Channel EventLoop 上执行。
+4. 不支持 unordered lane。
 ```
 
-### 6.2 选型检查项
+### 8.2 RxKcp adapter
 
-引入前必须确认：
-
-```text
-1. Java 8 兼容。
-2. 无阻塞线程模型假设。
-3. output 回调可直接写 Netty DatagramPacket。
-4. input/update/check/recv 暴露完整。
-5. 支持设置 mtu / nodelay / wndsize。
-6. license 与 Apache 2.0 项目兼容。
-7. ByteBuf 接入是否会产生不可接受的 byte[] copy。
-```
-
-### 6.3 包装层原则
-
-无论底层库怎么选，对 rxlib 暴露统一包装：
+无论引入外部 Java KCP，还是内部 port，统一包装为：
 
 ```java
 interface RxKcp {
     int send(ByteBuf payload);
 
-    int input(ByteBuf datagramPayload);
+    int input(ByteBuf segment);
 
     int recv(ByteBufAllocator allocator, ByteBuf out);
 
@@ -555,340 +704,143 @@ interface RxKcp {
 }
 ```
 
-如果底层 KCP 只能使用 `byte[]`，则 copy 集中在 `RxKcpAdapter`，不要污染 `UdpClient`。
-
----
-
-## 7. 核心类设计
-
-### 7.1 KcpSessionKey
-
-```java
-@RequiredArgsConstructor
-final class KcpSessionKey {
-    final InetSocketAddress remoteAddress;
-    final long sessionId;
-}
-```
-
-第一期可简化为 remote endpoint：
-
-```java
-final InetSocketAddress remoteAddress;
-```
-
-### 7.2 KcpLane
-
-```java
-final class KcpLane {
-    final int conv;
-    final UdpPacketOrder order;
-    final RxKcp kcp;
-    final Queue<ByteBuf> recvQueue;
-    volatile long nextUpdateMillis;
-    volatile long lastActiveMillis;
-    volatile boolean closed;
-
-    int send(ByteBuf messagePayload);
-
-    void input(ByteBuf kcpDatagramPayload);
-
-    void update(long nowMillis);
-
-    void drainRecv(KcpSession session);
-
-    void close();
-}
-```
-
-注意：
+如果底层 KCP 只能使用 byte[]：
 
 ```text
-1. lane 的所有 kcp 操作必须在所属 Channel 的 EventLoop 执行。
-2. send 入参所有权由 lane 接管，失败时 lane 负责 release。
-3. recv 出来的 ByteBuf 解码后由 transport 统一 release。
-```
-
-### 7.3 KcpSession
-
-```java
-final class KcpSession {
-    final InetSocketAddress remoteAddress;
-    final long sessionId;
-    final KcpLane orderedLane;
-    final KcpLane[] unorderedLanes;
-    final AtomicInteger unorderedSequence;
-    volatile TimeoutFuture<?> idleTimeout;
-
-    KcpLane selectLane(UdpPacketOrder order, int laneHint) {
-        if (order == UdpPacketOrder.ORDERED) {
-            return orderedLane;
-        }
-        if (laneHint >= 0) {
-            return unorderedLanes[laneHint % unorderedLanes.length];
-        }
-        return unorderedLanes[unorderedSequence.getAndIncrement() & (unorderedLanes.length - 1)];
-    }
-}
-```
-
-如果 `unorderedLaneCount` 不是 2 的幂，不能使用 `&`，需要 `%`。
-
-### 7.4 KcpTransportEngine
-
-职责：
-
-```text
-1. 管理 remote -> KcpSession。
-2. 创建 / 查找 lane。
-3. 将 Object 经 UdpClientCodec 编码为 payload。
-4. 构造 KCP logical message frame。
-5. 调用 lane.send。
-6. 驱动 lane.update / check。
-7. 解析入站 RXKP header 并分发给 lane.input。
-8. lane.recv 后 decode 并投递 onReceive / completeRequest。
-9. close 清理 KCP 控制块、pendingRequests、pendingSendResults、ByteBuf。
+1. copy 集中在 RxKcpAdapter。
+2. KcpClient 其他代码仍以 ByteBuf ownership 为准。
+3. copy 后立即释放输入 ByteBuf。
 ```
 
 ---
 
-## 8. Timer 与 EventLoop 模型
+## 9. Timer 与线程模型
 
-### 8.1 update 驱动
-
-KCP 需要周期性 update。建议不要为每个 lane 创建独立全局 timer，而是绑定 Netty EventLoop：
-
-```java
-eventLoop.schedule(this::onKcpTick, interval, TimeUnit.MILLISECONDS)
-```
-
-每个 `KcpTransportEngine` 按 EventLoop 维护一个 tick：
+KCP 需要 update 驱动。建议绑定 Netty EventLoop：
 
 ```text
-onKcpTick:
-  now = System.currentTimeMillis()
-  for each session:
-    for each lane:
-      if lane.nextUpdateMillis <= now:
-        lane.update(now)
-        lane.drainRecv(session)
-        lane.nextUpdateMillis = lane.kcp.check(now)
-  schedule next tick = min(nextUpdateMillis, now + maxInterval)
+channel.eventLoop().schedule(this::onKcpTick, interval, TimeUnit.MILLISECONDS)
 ```
 
-简化第一期：
+原则：
 
 ```text
-固定每 kcpIntervalMillis tick 一次。
+1. handlePacket 已在 EventLoop 上执行。
+2. send 可能来自业务线程；如果不在 EventLoop，切回 EventLoop 执行 kcp.send。
+3. KCP update / input / recv / flush 不跨线程并发执行。
+4. 不在 EventLoop 内阻塞等待 request future。
+5. close 从 EventLoop 调用时不能 sync 阻塞。
+```
+
+简化第一版：
+
+```text
+固定每 intervalMillis tick 一次。
 ```
 
 后续优化：
 
 ```text
-使用 kcp.check(now) 动态计算下次 tick。
-```
-
-### 8.2 线程亲和
-
-约束：
-
-```text
-1. `handlePacket` 已在 Channel pipeline 的 EventLoop 中执行。
-2. `send(...)` 可能来自任意业务线程。
-3. 如果 send 不在 EventLoop，必须 `eventLoop.execute(...)` 切回 I/O 线程操作 KCP。
-4. 不得在 sendAsync 内 `future.get(...)` 阻塞 EventLoop。
-```
-
-`sendAsync` 兼容方案：
-
-```text
-旧 sendAsync 当前会等待 ACK；KCP 无应用层 ACK 后，应改为等待“payload 已成功写入 KCP send queue / 首次 flush 写出”，而不是等对端处理。
-```
-
-建议重新定义：
-
-```text
-KCP mode 下：
-  send(...) 返回 writeFuture，表示入队或写出失败。
-  sendWithResult.ackFuture 可以表示 KCP flush accepted，不能表示 remote received。
-```
-
-如必须保留“对端处理成功”语义，需要新增应用层 ACK frame，这不建议第一期做。
-
----
-
-## 9. API 兼容策略
-
-### 9.1 保留 API
-
-保持：
-
-```java
-public ChannelFuture send(InetSocketAddress remoteAddress, Object packet)
-public ChannelFuture send(InetSocketAddress remoteAddress, Object packet, int waitAckTimeoutMillis, boolean fullSync)
-public UdpSendResult sendWithResult(...)
-public ChannelFuture sendAsync(...) throws TimeoutException
-public <T extends Serializable> T request(...)
-public <T extends Serializable> CompletableFuture<T> requestAsync(...)
-public void reply(...)
-public void replyError(...)
-```
-
-### 9.2 KCP mode 下旧参数映射
-
-```text
-waitAckTimeoutMillis:
-  legacy RXUP = ACK timeout
-  KCP = request timeout / send queue timeout
-
-fullSync:
-  legacy RXUP = 业务 handler 成功后 ACK
-  KCP = 不再建议复用。为兼容可映射：true -> ORDERED，false -> config.defaultPacketOrder
-
-maxResend:
-  legacy RXUP = 应用层最大重发次数
-  KCP = 不直接使用，由 KCP RTO/fastResend 控制
-
-maxFragmentPayloadBytes / maxFragmentCount:
-  legacy RXUP = 应用层分片限制
-  KCP = 用 kcpMtu / kcpMaxPayloadBytes 替代，旧字段仅作为兼容上限参考
-```
-
-### 9.3 建议新增更清晰 API
-
-```java
-public ChannelFuture sendOrdered(InetSocketAddress remoteAddress, Object packet);
-
-public ChannelFuture sendUnordered(InetSocketAddress remoteAddress, Object packet);
-
-public ChannelFuture sendUnordered(InetSocketAddress remoteAddress, Object packet, int lane);
+使用 kcp.check(now) 动态安排下一次 update。
 ```
 
 ---
 
-## 10. request / reply 设计
+## 10. send / request 语义
 
-### 10.1 保持 requestId 机制
+### 10.1 send
 
-继续使用当前 `pendingRequests` 思路：
+`KcpClient.send(...)` 表示：
+
+```text
+1. 业务对象成功 codec.encode。
+2. logical message 成功写入 KCP send queue。
+3. KCP output 写 UDP datagram 时通过 Sockets.writeUdp。
+```
+
+注意：
+
+```text
+KCP mode 的 send future 不表示对端业务 handler 已处理成功。
+```
+
+### 10.2 request / reply
+
+继续保留 requestId：
 
 ```text
 requestAsync:
   requestId = nextMessageId()
   pendingRequests.put(requestId, ctx)
-  encode logical DATA frame with requestId
-  send ORDERED
+  send DATA with requestId
+  timeout 后 remove + completeExceptionally
 
 reply:
-  encode logical RPC_RESPONSE frame with requestId
-  send ORDERED
+  send RPC_RESPONSE with requestId
 
-on receive RPC_RESPONSE:
+receive RPC_RESPONSE:
   pendingRequests.remove(requestId)
   complete future
 ```
 
-### 10.2 不再依赖 UdpRpcResponse 作为业务对象
-
-当前 `reply` 会发送：
-
-```java
-UdpRpcResponse.success(request.id, packet)
-```
-
-KCP mode 建议内层 frame 直接表达 RPC response，避免业务 codec 看到 `UdpRpcResponse`。但为了降低改动，第一期可以继续使用 `UdpRpcResponse`：
-
-```text
-第一期：复用 UdpRpcResponse，逻辑简单。
-第二期：迁移到 KcpMessageType.RPC_RESPONSE 内层 frame。
-```
-
-推荐第一期选择：
-
-```text
-KCP mode 第一版仍复用 UdpRpcResponse。
-```
-
-这样 `completeRequest(...)` 几乎不变。
+这样 `KcpClient` 可以提供和 `UdpClient` 类似的 RPC 使用体验。
 
 ---
 
-## 11. ByteBuf 生命周期
+## 11. ByteBuf 生命周期规则
 
-### 11.1 发送侧
+### 11.1 UdpClient
 
-规则：
+继续保持现有规则：
 
 ```text
-1. codec.encode 返回 refCnt=1 的 ByteBuf，所有权交给 KcpTransportEngine。
-2. logical frame encode 成功后，codec payload 应被 logical frame 持有或释放。
-3. lane.send 成功后，KCP adapter 接管 logical frame。
-4. lane.send 失败必须 release logical frame。
-5. 如果底层 KCP 复制到 byte[]，复制完成后立即释放 logical frame。
-6. 不允许 SendContext 长时间持有原始业务 payload，重传由 KCP 内部负责。
+1. codec.encode 返回 refCnt=1 的 ByteBuf，UdpClient 接管。
+2. ACK != NONE 时 SendContext 持有 payload，直到 ACK / timeout / failure / close。
+3. ACK == NONE 时 writeFragments 后释放 payload。
+4. ReceiveAssembly 持有 retained fragment。
+5. duplicate / timeout / replace / decode failure / close 都必须释放 fragment。
 ```
 
-### 11.2 接收侧
+### 11.2 KcpClient
 
-规则：
-
-```text
-1. handlePacket 不 retain 整个 DatagramPacket，只 retain KCP segment payload 或在 EventLoop 内立即 input。
-2. input 后如果底层 KCP 复制 payload，立刻 release retained slice。
-3. lane.recv 产出的 ByteBuf 传给 logical frame decoder。
-4. codec.decode 后 finally release logical message ByteBuf。
-5. decode 失败不触发 RPC complete，不发送业务成功事件。
-```
-
-### 11.3 关闭
-
-`close()` 必须释放：
+新增规则：
 
 ```text
-1. 所有 KcpSession / KcpLane。
-2. KCP 内部 send/recv queue 里仍持有的 ByteBuf。
-3. pendingRequests timeout。
-4. pending send result future。
-5. EventLoop scheduled tick。
-6. channel / channels。
+1. codec.encode 返回 refCnt=1 的 ByteBuf，KcpClient 接管。
+2. logical frame encode 成功后，应明确 payload ownership。
+3. kcp.send 成功后，如果底层已复制，立即释放 logical frame；如果底层持有 ByteBuf，则由 RxKcp.release 释放。
+4. kcp.input 如果底层已复制 datagram，立即释放 segment slice。
+5. kcp.recv 产出的 ByteBuf 在 decode finally 中释放。
+6. close 必须释放 KCP 内部 send/recv queue、pendingRequests、timer。
 ```
 
 ---
 
-## 12. 背压与流控
+## 12. 背压与 MTU
 
-### 12.1 继续使用 Sockets.writeUdp
+### 12.1 UDP 出口背压
 
-KCP output 回调必须统一走：
-
-```java
-Sockets.writeUdp(channel, packet, "transport.udp.kcp", "component=rpc")
-```
-
-原因：
-
-```text
-1. 复用已有 UDP inactive / notWritable / unresolved recipient 检查。
-2. 复用 pending bytes / packets 限制。
-3. 复用 UDP MTU guard。
-4. 写失败时统一释放 DatagramPacket content。
-```
-
-### 12.2 KCP send queue 上限
-
-新增配置：
+两者都必须使用：
 
 ```java
-private int kcpMaxPendingMessages = 1024;
-private int kcpMaxPendingBytes = 4 * 1024 * 1024;
+Sockets.writeUdp(channel, packet, "transport.udp", "component=...")
 ```
 
-发送前检查：
+推荐 component：
 
 ```text
-1. 单 session pending bytes。
-2. 单 lane pending bytes。
-3. 全 client pending bytes。
+UdpClient: component=rxup
+KcpClient: component=kcp
+```
+
+### 12.2 KcpClient 额外背压
+
+KCP 有自己的 send queue，因此需要额外限制：
+
+```text
+1. maxPendingBytesPerSession
+2. maxPendingMessagesPerSession
+3. 全 client pending bytes，可后续增加
 ```
 
 超过限制：
@@ -896,223 +848,196 @@ private int kcpMaxPendingBytes = 4 * 1024 * 1024;
 ```text
 1. send future failed。
 2. payload release。
-3. 计数 udp.kcp.send.drop.backpressure。
+3. 计数 udp.kcp.backpressure.drop.count。
 ```
 
 ### 12.3 MTU
 
-建议：
+KcpClient 建议：
 
 ```text
-kcpMtu = min(config.kcpMtu, config.udpMtu > 0 ? config.udpMtu - KCP_HEADER_SIZE : config.kcpMtu)
+effectiveKcpMtu = min(config.mtu, config.udpMtu > 0 ? config.udpMtu - RXKC_HEADER_SIZE : config.mtu)
 ```
 
-避免：
+说明：
 
 ```text
-RXKP header + KCP segment > UDP final MTU
-```
-
----
-
-## 13. 与 UDP resilience / FEC / redundancy 的关系
-
-当前文档里已有 `UdpResilience*`、FEC、多倍发包、压缩和 final egress guard。
-
-KCP 和这些能力的关系：
-
-```text
-KCP 负责可靠重传。
-UdpResilience/FEC 负责抗随机丢包和低延迟恢复。
-UdpRedundant 负责简单多倍发包。
-UdpCompress 负责单包压缩。
-```
-
-推荐第一期：
-
-```text
-KCP mode 不默认叠加 UdpResilience/FEC。
-```
-
-原因：
-
-```text
-1. KCP 自身有重传和 fast resend。
-2. FEC 会增加额外 datagram，和 KCP 拥塞/窗口统计叠加后不容易调参。
-3. 先保证 KCP 基础正确，再单独设计 KCP + FEC。
-```
-
-如果后续叠加，顺序应是：
-
-```text
-KCP logical payload
-  -> KCP segment
-  -> RXKP UDP header
-  -> optional UdpResilienceEncoder
-  -> UdpFinalEgressGuardHandler
-  -> socket
+1. KCP segment + RXKC header 后仍需满足 final UDP MTU。
+2. 如果启用压缩，压缩后可能变大，最终仍由 UdpFinalEgressGuardHandler 兜底。
+3. 如果启用 FEC / Redundant，额外包也必须走 final guard。
 ```
 
 ---
 
-## 14. 实施阶段
+## 13. 实施阶段
 
-### 阶段 1：配置与模式选择
+### 阶段 1：文档与定位修正
 
 改动：
 
 ```text
-1. 新增 UdpReliabilityMode。
-2. 新增 UdpPacketOrder。
-3. 扩展 UdpClientConfig KCP 字段。
-4. 新增 UdpSendOptions。
-5. UdpClient 构造时根据 reliabilityMode 初始化 legacy 或 kcp engine。
+1. 更新本计划文档。
+2. docs/reference/net/udp.md 明确：
+   - UdpClient = 无序可靠。
+   - KcpClient = 有序可靠。
+   - 二者都可接入 UDP pipeline。
 ```
 
 验收：
 
 ```text
-1. LEGACY_RXUP 默认行为不变。
-2. 现有 UdpTransportTest 全部通过。
-3. 新增 config getter/setter 测试。
+文档无歧义，不再描述“UdpClient KCP 化替换”。
 ```
 
-### 阶段 2：KCP adapter 与 lane/session
+### 阶段 2：保留并强化 UdpClient
 
 改动：
 
 ```text
-1. 引入或实现 RxKcp adapter。
-2. 新增 KcpLane。
+1. 不改变 UdpClient wire format。
+2. 补充类注释：reliable unordered UDP message transport。
+3. 补充 docs 中的使用场景。
+4. 保留现有 UdpTransportTest。
+```
+
+验收：
+
+```text
+现有 UdpTransportTest 全通过。
+```
+
+### 阶段 3：新增 KcpClientConfig / KcpClient skeleton
+
+改动：
+
+```text
+1. 新增 KcpClientConfig。
+2. 新增 KcpClient 构造器。
+3. 使用 Sockets.udpBootstrap 创建 channel。
+4. pipeline 仍由 SocketConfig 控制。
+5. 暂不接 KCP 逻辑，先完成生命周期。
+```
+
+验收：
+
+```text
+1. bind / close 正常。
+2. EventLoop 内 close 不阻塞。
+3. pipeline 可正常安装 compress/redundant/resilience/final guard。
+```
+
+### 阶段 4：接入 KCP adapter
+
+改动：
+
+```text
+1. 引入或实现 Java 8 compatible KCP。
+2. 新增 RxKcp adapter。
 3. 新增 KcpSession。
-4. 新增 KcpTransportEngine skeleton。
-5. 实现 output -> Sockets.writeUdp。
-6. 实现 EventLoop tick update。
+4. 实现 KCP output -> RXKC DatagramPacket -> Sockets.writeUdp。
+5. 实现 RXKC parse -> kcp.input。
+6. 实现 EventLoop tick update / recv drain。
 ```
 
 验收：
 
 ```text
-1. 单 lane 本地 loopback 可发送并接收 payload。
-2. KCP datagram 经 Netty UDP 实际发送。
-3. close 释放全部资源。
+1. 本地两个 KcpClient 可收发 ByteBuf payload。
+2. 有序投递。
+3. UDP 写出都经过 Sockets.writeUdp。
 ```
 
-### 阶段 3：接入 UdpClientCodec 与 onReceive
+### 阶段 5：接入 codec 与 onReceive
 
 改动：
 
 ```text
-1. KCP send 前 codec.encode。
-2. KCP recv 后 codec.decode。
+1. send 前 UdpClientCodec.encode。
+2. recv 后 UdpClientCodec.decode。
 3. 复用 UdpMessage 投递 onReceive。
-4. 实现 sendOrdered / sendUnordered。
+4. decode failure 触发 onError。
 ```
 
 验收：
 
 ```text
-1. StringUtf8Codec 收发成功。
-2. Fury 默认 codec 收发成功。
-3. 自定义对象收发成功。
-4. decode failure 触发 onError 且无泄漏。
+1. Fury 默认 codec 收发成功。
+2. 自定义 codec 收发成功。
+3. decode failure 无泄漏。
 ```
 
-### 阶段 4：request / reply
+### 阶段 6：request / reply
 
 改动：
 
 ```text
-1. requestAsync 使用 KCP ORDERED lane。
-2. pendingRequests timeout 保持。
-3. reply/replyError 使用 UdpRpcResponse 或 KCP RPC_RESPONSE frame。
-4. completeRequest 复用现有逻辑。
+1. KcpClient 实现 requestAsync。
+2. KcpClient 实现 reply/replyError。
+3. pendingRequests timeout 清理。
+4. response type mismatch 失败。
 ```
 
 验收：
 
 ```text
 1. request/response 成功。
-2. response 类型不匹配失败。
-3. request timeout 清理 pendingRequests。
-4. replyError 传递异常。
+2. request timeout 正常。
+3. replyError 正常。
 ```
 
-### 阶段 5：无序可靠包
+### 阶段 7：Pipeline 组合测试
 
-改动：
+分别测试：
 
 ```text
-1. unordered lane pool。
-2. lane 选择策略。
-3. 接收端跨 lane 到达即投递。
-4. 可选 lane hint API。
+UdpClient + compress
+UdpClient + redundant
+UdpClient + resilience/FEC
+KcpClient + compress
+KcpClient + redundant
+KcpClient + resilience/FEC
 ```
 
-验收：
-
-```text
-1. ORDERED 发送 1..N，接收严格 1..N。
-2. UNORDERED 在人工丢包/延迟前序 lane 时，其他 lane 消息可先投递。
-3. UNORDERED 消息不丢，最终全部到达。
-4. 同一 unordered lane 内仍保持 lane 内顺序。
-```
-
-### 阶段 6：压测、文档与灰度
-
-改动：
-
-```text
-1. 更新 docs/reference/net/udp.md。
-2. 新增 KCP mode 使用示例。
-3. 加监控指标。
-4. 增加弱网测试。
-5. 评估是否把默认 mode 改为 KCP。
-```
+组合测试不建议默认全开，优先单项验证。
 
 ---
 
-## 15. 测试计划
+## 14. 测试计划
 
-### 15.1 单元测试
+### 14.1 UdpClient 回归
+
+继续执行：
+
+```text
+UdpTransportTest
+```
+
+重点确保：
+
+```text
+1. duplicate fragment 释放。
+2. assembly timeout 释放。
+3. FULL ACK 重发语义不变。
+4. request 跨 fragment 不变。
+```
+
+### 14.2 KcpClient 新测试
 
 新增：
 
 ```text
-KcpLaneTest
-  - send/recv 单消息
-  - 多消息有序
-  - close release
-
-KcpPacketHeaderTest
-  - encode/decode RXKP header
-  - wrong magic/version drop
-  - lane mode invalid drop
-
-KcpTransportEngineTest
-  - codec encode/decode 成功
-  - codec encode failure release
-  - codec decode failure release + onError
-  - send after close failed
+KcpClientTest
+  - kcpClientSendsMessagesInOrder
+  - kcpClientRequestResponse
+  - kcpClientCustomCodecCanBeConfigured
+  - kcpClientDecodeFailureReleasesPayload
+  - kcpClientRequestTimeoutClearsPendingRequest
+  - kcpClientCloseFromEventLoopDoesNotBlock
 ```
 
-### 15.2 集成测试
+### 14.3 弱网测试
 
-新增或扩展 `UdpTransportTest`：
-
-```text
-kcpOrderedMessagesDeliveredInOrder
-kcpUnorderedMessagesCanBypassBlockedLane
-kcpRequestResponseAcrossKcp
-kcpReplyErrorCompletesExceptionally
-kcpCustomCodecCanBeConfigured
-kcpOversizedPayloadRejectedAndReleased
-kcpCloseFromEventLoopDoesNotBlock
-```
-
-### 15.3 弱网模拟测试
-
-建议新增一个测试用 handler 或 fake UDP link：
+新增 fake UDP link 或 pipeline handler：
 
 ```text
 LossyDatagramHandler
@@ -1125,142 +1050,139 @@ LossyDatagramHandler
 用例：
 
 ```text
-1. 10% random loss 下 ORDERED 全部到达。
-2. 10% random loss 下 UNORDERED 全部到达。
-3. 人工延迟 ordered 第 1 包，ordered 第 2 包不得先投递。
-4. 人工延迟 unordered lane0 第 1 包，lane1/lane2 的包可以先投递。
-5. duplicate datagram 不产生重复业务消息。
+1. KcpClient 10% random loss 下最终有序到达。
+2. KcpClient duplicate datagram 不重复投递业务消息。
+3. KcpClient reorder datagram 后仍按发送顺序投递。
+4. UdpClient 在乱序下不保证全局顺序，但全部可靠消息最终到达。
 ```
 
-### 15.4 内存泄漏测试
+### 14.4 Pipeline 兼容测试
 
-建议开启 Netty paranoid leak detector 的测试 profile：
-
-```bash
-mvn -pl rxlib "-Dtest=UdpTransportTest,Kcp*Test" -DskipTests=false -Dio.netty.leakDetection.level=paranoid test
-```
-
-### 15.5 回归测试
-
-至少执行：
-
-```bash
-mvn -pl rxlib -DskipTests compile
-mvn -pl rxlib -DskipTests test-compile
-mvn -pl rxlib "-Dtest=UdpTransportTest" -DskipTests=false test
-```
-
-网络相关回归按项目规范补充：
+新增：
 
 ```text
-SocksProxyServerIntegrationTest
-ShadowsocksServerIntegrationTest
-Socks5ClientIntegrationTest
-RrpIntegrationTest
-RemotingTest
-DnsServerIntegrationTest
+UdpClientPipelineTest
+  - udpClientWithCompression
+  - udpClientWithRedundant
+  - udpClientWithFec
+
+KcpClientPipelineTest
+  - kcpClientWithCompression
+  - kcpClientWithRedundant
+  - kcpClientWithFec
+```
+
+验证点：
+
+```text
+1. 双端开启后收发成功。
+2. 单端开启时应丢弃或 onError，不应误解码。
+3. writeUdp rejected 时 packet 释放正确。
+4. final guard 能拦截超过 MTU 的最终 datagram。
+```
+
+### 14.5 内存泄漏测试
+
+建议：
+
+```bash
+mvn -pl rxlib "-Dtest=UdpTransportTest,KcpClientTest,KcpClientPipelineTest" -DskipTests=false -Dio.netty.leakDetection.level=paranoid test
 ```
 
 ---
 
-## 16. 风险与应对
+## 15. 风险与应对
 
-### 16.1 协议兼容风险
+### 15.1 语义误用风险
 
 风险：
 
 ```text
-LEGACY_RXUP 与 KCP wire format 不兼容。
+使用方以为 KcpClient 也支持无序可靠。
 ```
 
 应对：
 
 ```text
-1. 新增 reliabilityMode，默认 LEGACY_RXUP。
-2. KCP 只在双端同时配置时启用。
-3. RXKP magic 与 RXUP magic 完全不同，避免误解码。
-4. docs 明确升级步骤。
+1. 类注释明确 ordered reliable。
+2. 文档明确无序可靠请使用 UdpClient。
+3. 不提供 sendUnordered API。
 ```
 
-### 16.2 语义变化风险
+### 15.2 协议兼容风险
 
 风险：
 
 ```text
-旧 FULL ACK 表示业务 handler 成功后 ACK；KCP ACK 只表示传输层可靠，不表示业务处理成功。
+RXUP 与 RXKC 不兼容。
 ```
 
 应对：
 
 ```text
-1. 文档明确 KCP mode 下 fullSync 不再等价。
-2. request/reply 保持应用层响应。
-3. 如业务需要“处理成功 ACK”，新增 explicit app ack，而不是复用 KCP ack。
+1. UdpClient 和 KcpClient 使用不同 magic。
+2. 两者使用不同类，不共享配置开关。
+3. 不尝试自动兼容对端协议。
 ```
 
-### 16.3 队头阻塞风险
+### 15.3 Pipeline 叠加流量风险
 
 风险：
 
 ```text
-单 KCP conv 有序会产生队头阻塞。
+KCP 重传 + FEC + Redundant 同时开启导致流量放大。
 ```
 
 应对：
 
 ```text
-1. ORDERED 明确接受该语义。
-2. UNORDERED 使用多 lane / 多 conv。
-3. 对 entity 级顺序使用 lane hint。
+1. KcpClient 默认不开 FEC/Redundant。
+2. docs 标明调参顺序。
+3. 所有额外 datagram 计入 UDP backpressure。
+4. 加监控指标。
 ```
 
-### 16.4 内存泄漏风险
+### 15.4 ByteBuf 泄漏风险
 
 风险点：
 
 ```text
-1. KCP adapter 内部 queue。
-2. output DatagramPacket content。
-3. recv ByteBuf。
-4. codec encode/decode 异常分支。
-5. close 时未清理 pending lane buffers。
+1. KCP adapter 复制 / 持有 payload 的 ownership 不清晰。
+2. output datagram rejected 后二次 release。
+3. recv payload decode failure。
+4. close 时 KCP queue 未释放。
 ```
 
 应对：
 
 ```text
-1. 所有 ownership 写入类注释。
-2. adapter 统一 release。
-3. 单测覆盖 failure / timeout / close。
-4. leak detector profile。
-```
-
-### 16.5 EventLoop 延迟风险
-
-风险：
-
-```text
-KCP update / recv drain / codec decode 都可能在 I/O 线程执行。
-```
-
-应对：
-
-```text
-1. 限制每 tick drain message 数。
-2. 限制单 payload 最大字节数。
-3. 大对象或复杂业务 decode 后续可切业务线程。
-4. 记录 tick cost 和 p99。
+1. RxKcp adapter 注释 ownership。
+2. 所有 failure 分支单测。
+3. paranoid leak detector。
 ```
 
 ---
 
-## 17. 监控指标
+## 16. 监控指标
 
-建议新增：
+### 16.1 UdpClient 指标
+
+```text
+udp.rxup.send.count
+udp.rxup.recv.count
+udp.rxup.fragment.out.count
+udp.rxup.fragment.in.count
+udp.rxup.assembly.timeout.count
+udp.rxup.ack.timeout.count
+udp.rxup.resend.count
+udp.rxup.decode.error.count
+udp.rxup.write.drop.count
+```
+
+### 16.2 KcpClient 指标
 
 ```text
 udp.kcp.session.count
-udp.kcp.lane.count
 udp.kcp.send.message.count
 udp.kcp.recv.message.count
 udp.kcp.send.bytes
@@ -1279,34 +1201,25 @@ udp.kcp.decode.error.count
 udp.kcp.encode.error.count
 udp.kcp.session.idle.close.count
 udp.kcp.tick.cost.ms
-udp.kcp.ordered.deliver.count
-udp.kcp.unordered.deliver.count
 ```
 
-日志建议：
+### 16.3 Pipeline 指标
 
 ```text
-debug:
-  session create/close
-  mode/lane selected
-
-warn:
-  invalid magic/version
-  unknown conv
-  oversized payload
-  writeUdp rejected
-  session idle timeout
-
-error:
-  codec decode unexpected exception
-  KCP adapter invariant failure
+udp.compress.in.count
+udp.compress.out.count
+udp.compress.error.count
+udp.redundant.copy.count
+udp.redundant.duplicate.drop.count
+udp.resilience.fec.recover.count
+udp.resilience.fec.fail.count
+udp.final_guard.drop.mtu.count
+udp.final_guard.drop.backpressure.count
 ```
-
-不要打印 payload 内容。
 
 ---
 
-## 18. 文档更新
+## 17. 文档更新计划
 
 需要更新：
 
@@ -1314,88 +1227,82 @@ error:
 docs/reference/net/udp.md
 ```
 
-新增章节：
+新增或调整：
 
 ```text
-## UDP KCP reliable transport
+## UDP 可靠消息/RPC
 
-能力：
-1. KCP reliable transport。
-2. ORDERED / UNORDERED packet mode。
-3. request/reply。
-4. Fury/custom codec。
+UdpClient:
+  - reliable unordered UDP message transport
+  - RXUP frame
+  - message-level ACK / resend / fragment
+  - 适合控制面、打洞、低 QPS RPC
 
-配置示例：
+KcpClient:
+  - reliable ordered UDP transport
+  - RXKC + KCP
+  - session/window/rto/update
+  - 适合顺序敏感消息
 
-UdpClientConfig config = new UdpClientConfig();
-config.setReliabilityMode(UdpReliabilityMode.KCP);
-config.setDefaultPacketOrder(UdpPacketOrder.ORDERED);
-config.setKcpUnorderedLaneCount(4);
-UdpClient client = new UdpClient(0, config);
-
-client.sendOrdered(remote, packet);
-client.sendUnordered(remote, frame);
-```
-
-也要补充兼容说明：
-
-```text
-KCP mode 只能和 KCP mode 对端通信，不能和 LEGACY_RXUP 对端混用。
+Pipeline:
+  - UdpClient 和 KcpClient 都可以使用 SocketConfig 上的 UDP 压缩、多倍发包、FEC 配置。
+  - 双端必须一致开启。
+  - 不要发给普通 UDP 目标。
 ```
 
 ---
 
-## 19. 建议提交拆分
-
-建议拆成多个 PR / commit：
+## 18. 建议提交拆分
 
 ```text
-1. docs: add UdpClient KCP migration plan
-2. transport: add UDP reliability mode and send options
-3. transport-kcp: add KCP adapter and packet header
-4. transport-kcp: add KCP session/lane scheduler
-5. transport: wire KCP engine into UdpClient
-6. transport: support KCP request/reply
-7. transport: support unordered KCP lanes
-8. test: add KCP transport loss/reorder tests
-9. docs: document KCP UDP transport usage
+1. docs: revise UDP reliable transport plan for UdpClient and KcpClient split
+2. docs: clarify UdpClient as unordered reliable transport
+3. transport: add KcpClientConfig
+4. transport: add KcpClient skeleton and lifecycle
+5. transport-kcp: add RXKC packet header and KCP adapter
+6. transport-kcp: implement KcpSession update/input/output
+7. transport: wire KcpClient codec and receive events
+8. transport: implement KcpClient request/reply
+9. test: add KcpClient ordered reliable tests
+10. test: add UDP pipeline compatibility tests for UdpClient and KcpClient
+11. docs: update UDP reference for KcpClient usage
 ```
 
 ---
 
-## 20. 最小可交付版本定义
+## 19. 最小可交付版本
 
-MVP 必须满足：
+MVP 定义：
 
 ```text
-1. `UdpClientConfig.reliabilityMode = KCP` 可启动。
-2. 两个本地 `UdpClient` 可通过 KCP 互发普通对象。
-3. `sendOrdered` 保序。
-4. `sendUnordered` 使用至少 2 条 lane，允许跨 lane 先到先投递。
-5. `request/reply` 正常。
-6. close 不阻塞 EventLoop。
-7. codec encode/decode 失败不泄漏。
-8. UDP 写出仍统一经过 `Sockets.writeUdp`。
-9. 现有 LEGACY_RXUP 测试不回退。
+1. UdpClient 不破坏现有行为，继续作为无序可靠 UDP。
+2. 新增 KcpClient，可 bind / close / send / receive。
+3. KcpClient 同一 remote 下消息严格按发送顺序投递。
+4. KcpClient 支持默认 Fury codec 和自定义 UdpClientCodec。
+5. KcpClient 支持 request / reply。
+6. KcpClient 所有 UDP output 都走 Sockets.writeUdp。
+7. KcpClient 可在双端开启 compression / redundant / FEC pipeline 后正常通信。
+8. KcpClient close 不阻塞 EventLoop。
+9. 关键 ByteBuf failure 分支无泄漏。
 ```
 
 ---
 
-## 21. 最终建议
+## 20. 最终建议
 
-第一期不要试图一次性把旧 `UdpClient` 全量删除。建议采用“双引擎 + 配置开关”的迁移方式：
-
-```text
-UdpClient facade
-  LEGACY_RXUP engine：保持现有行为
-  KCP engine：新增可靠有序/无序能力
-```
-
-有序与无序的关键不要放在修改 KCP 内部，而是放在 **lane 设计**：
+最终方向：
 
 ```text
-ORDERED = 单 ordered KCP lane。
-UNORDERED = 多 unordered KCP lane，跨 lane 不排序。
+UdpClient = 简易可靠 UDP，保留并明确为“无序可靠”。
+KcpClient = 新增 KCP UDP，明确为“有序可靠”。
 ```
 
-这样既符合 KCP 的协议模型，也能把改动控制在 rxlib 的 transport 层，后续可逐步把 Nameserver、UdpHolePunch、Hybrid 控制面迁移到 KCP mode。
+不要做：
+
+```text
+UdpClient 内部 mode 切换 KCP
+KCP 上的 unordered lane / multi conv
+一个类同时表达有序可靠和无序可靠
+```
+
+这样既保留当前 `UdpClient` 的轻量优势，也能新增 KCP 的有序可靠能力，并且两者都能复用 rxlib 已有 UDP pipeline：压缩、FEC、多倍发包、MTU guard 和背压保护。
