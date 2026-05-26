@@ -1,7 +1,5 @@
 package org.rx.net.udp;
 
-import org.rx.net.socks.UdpRelayAttributes;
-
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
@@ -51,7 +49,7 @@ class UdpPipelineMtuGuardTest {
 
         EmbeddedChannel channel = newPipeline(config);
         try {
-            UdpRelayAttributes.addRedundantPeer(channel, REMOTE);
+            Sockets.addUdpPeer(channel, config, REMOTE);
             ByteBuf payload = Unpooled.buffer(1293);
             payload.writeZero(1293);
 
@@ -97,7 +95,7 @@ class UdpPipelineMtuGuardTest {
 
         EmbeddedChannel channel = newPipeline(config);
         try {
-            UdpRelayAttributes.addRedundantPeer(channel, REMOTE);
+            Sockets.addUdpPeer(channel, config, REMOTE);
             ByteBuf payload = Unpooled.buffer(1292);
             payload.writeZero(1292);
 
@@ -126,7 +124,7 @@ class UdpPipelineMtuGuardTest {
 
         EmbeddedChannel channel = newPipeline(config);
         try {
-            UdpRelayAttributes.addRedundantPeer(channel, REMOTE);
+            Sockets.addUdpPeer(channel, config, REMOTE);
             ByteBuf payload = Unpooled.wrappedBuffer(repeatedPayload(2000));
 
             Sockets.UdpWriteResult result = Sockets.writeUdp(channel,
@@ -148,10 +146,41 @@ class UdpPipelineMtuGuardTest {
         }
     }
 
+    @Test
+    void unifiedHandlerAndPeerRegistrationAreIdempotent() {
+        SocketConfig config = compressConfig();
+        config.setUdpRedundantMultiplier(2);
+        UdpResilienceConfig resilience = UdpResilienceConfig.light();
+        resilience.setResilienceAll(false);
+        config.setUdpResilience(resilience);
+
+        EmbeddedChannel channel = new EmbeddedChannel();
+        channel.attr(SocketConfig.ATTR_CONF).set(config);
+        try {
+            Sockets.addUdpHandler(channel, config);
+            Sockets.addUdpHandler(channel, config);
+            Sockets.addUdpPeer(channel, config, REMOTE);
+            Sockets.addUdpPeer(channel, config, REMOTE);
+
+            assertNotNull(channel.pipeline().get(Sockets.UDP_FINAL_EGRESS_GUARD));
+            assertNotNull(channel.pipeline().get(UdpCompressEncoder.class.getSimpleName()));
+            assertNotNull(channel.pipeline().get(UdpRedundantEncoder.class.getSimpleName()));
+            assertNotNull(channel.pipeline().get(UdpResilience.ENCODER_NAME));
+            assertTrue(UdpPeerAttributes.shouldEncode(channel, REMOTE));
+            assertTrue(UdpResilienceAttributes.shouldApply(channel, REMOTE));
+
+            Sockets.removeUdpPeer(channel, config, REMOTE);
+            assertFalse(UdpPeerAttributes.shouldEncode(channel, REMOTE));
+            assertFalse(UdpResilienceAttributes.shouldApply(channel, REMOTE));
+        } finally {
+            channel.finishAndReleaseAll();
+        }
+    }
+
     private static EmbeddedChannel newPipeline(SocketConfig config) {
         EmbeddedChannel channel = new EmbeddedChannel();
         channel.attr(SocketConfig.ATTR_CONF).set(config);
-        Sockets.addUdpOptimizationHandlers(channel.pipeline(), config);
+        Sockets.addUdpHandler(channel, config);
         return channel;
     }
 

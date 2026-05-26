@@ -14,6 +14,7 @@ import org.rx.net.udp.UdpCompressConfig;
 import org.rx.net.udp.UdpRedundantConfig;
 import org.rx.net.udp.UdpRedundantDestinationRule;
 import org.rx.net.udp.UdpRedundantMultiplierResolver;
+import org.rx.net.udp.UdpResilienceConfig;
 import org.rx.util.function.BiAction;
 
 import java.io.Serializable;
@@ -68,6 +69,10 @@ public class SocketConfig implements Serializable {
      * 用于回收多倍发包带来的带宽开销。
      */
     private UdpCompressConfig udpCompress;
+    /**
+     * UDP FEC/弱网保护配置。null 表示不安装 UdpResilience pipeline。
+     */
+    private UdpResilienceConfig udpResilience;
     /**
      * TCP zlib 压缩级别。
      * -1 表示保持 Netty 默认值，其余取值范围为 [0, 9]。

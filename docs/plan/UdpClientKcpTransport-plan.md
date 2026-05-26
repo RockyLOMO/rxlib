@@ -122,6 +122,7 @@ public class UdpClientConfig extends SocketConfig {
     private int maxResend = 2;
     private int maxFragmentPayloadBytes = 1024;
     private int maxFragmentCount = 128;
+    private int maxAutoPeers = 4096;
 }
 ```
 
@@ -136,6 +137,7 @@ public class UdpClientConfig extends SocketConfig {
 4. 哪条消息先完整，哪条消息就可以先投递。
 5. 不存在 per-peer 全局接收序号。
 6. 不存在“必须先投递 messageId=N，才能投递 messageId=N+1”的约束。
+7. 配置 peer-scoped UDP 优化时，首次写出前登记目标、成功解码 RXUP 后登记来源，并受 `maxAutoPeers` 上限保护；出站目标必须具有兼容配置。
 ```
 
 因此它非常适合作为：
@@ -354,6 +356,7 @@ UdpClient = 无序可靠
 2. 两者所有 UDP 写出都走 Sockets.writeUdp(...)。
 3. 自有协议 header 必须在 final egress guard 之前完成。
 4. FEC / 压缩 / 多倍发包只在自有双端开启，不能直接发给普通 UDP 目标。
+5. `UdpClient` 自动登记 RXUP peer，`maxAutoPeers=0` 可禁用自动登记；裸 UDP 目标继续手动调用 `Sockets.addUdpPeer(...)`。
 ```
 
 ### 5.2 推荐 pipeline 位置
@@ -547,12 +550,15 @@ public class KcpClientConfig extends SocketConfig {
     private int receiveWindow = 128;
 
     private int sessionIdleTimeoutMillis = 60 * 1000;
+    private int maxSessions = 4096;
     private int requestTimeoutMillis = 15 * 1000;
     private int maxPayloadBytes = 128 * 1024;
     private int maxPendingBytesPerSession = 4 * 1024 * 1024;
     private int maxPendingMessagesPerSession = 1024;
 
     private boolean flushOnSend = true;
+    private byte[] authenticationKey;
+    private boolean allowNatRebinding = true;
 }
 ```
 
@@ -562,6 +568,7 @@ public class KcpClientConfig extends SocketConfig {
 1. KcpClientConfig 独立于 UdpClientConfig。
 2. 两者都继承 SocketConfig，因此都能使用 UDP compression / redundant / resilience / mtu / backpressure 配置。
 3. KCP 参数不要塞进 UdpClientConfig，避免语义污染。
+4. `authenticationKey` 为空时保持 RXKC v1 兼容行为；设置后使用认证 RXKC v2，`allowNatRebinding` 仅在认证模式下有效。
 ```
 
 ---
@@ -595,13 +602,37 @@ static final byte TYPE_CLOSE = 2;
 static final int HEADER_SIZE = 12;
 ```
 
-说明：
+兼容 v1 说明：
 
 ```text
 1. RXKC 与 RXUP magic 不同，避免误解码。
 2. CONV 用于 KCP 会话识别。
-3. 第一版不做复杂 handshake，可先用 remoteAddress + conv 建 session。
-4. 后续如需 NAT rebinding，再扩展 sessionId。
+3. 未配置 `authenticationKey` 时继续用 `remoteAddress + conv` 建 session，不接受 NAT rebinding。
+```
+
+认证 v2 datagram：
+
+```text
++----------------------+----------------------+
+| MAGIC 4B = 'RXKC'    | VERSION 1B = 2       |
++----------------------+----------------------+
+| TYPE 1B              | FLAGS 1B             |
++----------------------+----------------------+
+| RESERVED 1B          | CONV 4B              |
++----------------------+----------------------+
+| SESSION_ID 8B        | PACKET_SEQ 8B        |
++----------------------+----------------------+
+| HMAC-SHA256 TAG 16B  | KCP_SEGMENT...       |
++----------------------+----------------------+
+```
+
+认证 v2 说明：
+
+```text
+1. 发起端以签名 OPEN 建会话，接收端以签名 OPEN_ACK 确认；未确认前 OPEN 随 KCP 重传输出重发。
+2. 所有 control/data datagram 均校验截断 HMAC、方向标记和 packet sequence 重放窗口。
+3. `sessionId + conv` 稳定标识认证会话；只有校验通过且序列更新的新源地址报文可以触发 NAT rebinding。
+4. `maxSessions` 继续限制控制块和待发送队列；面向不可信网络仍需 ACL 与限流。
 ```
 
 ### 7.2 KCP 内层 logical message frame

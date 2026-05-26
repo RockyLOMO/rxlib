@@ -63,6 +63,9 @@ import org.rx.net.support.EndpointTracer;
 import org.rx.net.udp.UdpBackpressureDecision;
 import org.rx.net.udp.UdpFinalEgressGuardHandler;
 import org.rx.net.udp.UdpMtuProbeDatagramPacket;
+import org.rx.net.udp.UdpPeerAttributes;
+import org.rx.net.udp.UdpResilience;
+import org.rx.net.udp.UdpResilienceAttributes;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.BiFunc;
 import org.slf4j.Logger;
@@ -1166,16 +1169,63 @@ public final class Sockets {
         }
         final SocketConfig finalConfig = config;
         b.attr(SocketConfig.ATTR_INIT_FN, (BiAction<Channel>) ch -> {
-            addUdpFinalEgressGuard(ch.pipeline(), finalConfig, isUdpRedundantEnabled(finalConfig));
-            addUdpOptimizationHandlers(ch.pipeline(), finalConfig);
-            DiagnosticMetrics.installNetIoHandler(ch.pipeline(), finalConfig instanceof SocksConfig
-                    ? DiagnosticMetrics.NET_SOCKS_CLIENT : DiagnosticMetrics.NET_TRANSPORT_CLIENT);
+            addUdpHandler(ch, finalConfig);
             if (initChannel != null) {
                 initChannel.accept((DatagramChannel) ch);
             }
         });
         b.handler(SocketChannelInitializer.DEFAULT);
         return b;
+    }
+
+    /**
+     * 安装 UDP 统一处理管线，包括最终 MTU/背压出口、压缩、冗余、FEC 和网络指标。
+     * <p>
+     * {@link #udpBootstrap(SocketConfig, BiAction)} 创建的 channel 已自动调用本方法；
+     * 直接组装 DatagramChannel 时可显式调用。本方法支持重复调用，不重复安装 handler。
+     */
+    public static Channel addUdpHandler(Channel channel, SocketConfig config) {
+        if (channel == null) {
+            throw new InvalidException("UDP channel is null");
+        }
+        SocketConfig actual = config == null ? SocketConfig.EMPTY : config;
+        addUdpOptimizationHandlers(channel.pipeline(), actual);
+        DiagnosticMetrics.installNetIoHandler(channel.pipeline(), actual instanceof SocksConfig
+                ? DiagnosticMetrics.NET_SOCKS_CLIENT : DiagnosticMetrics.NET_TRANSPORT_CLIENT);
+        return channel;
+    }
+
+    /**
+     * 为已确认支持当前 UDP 能力的对端登记优化功能。
+     * <p>
+     * 压缩和旧冗余仅对登记 peer 生效；UdpResilience 在 {@code resilienceAll=false}
+     * 时仅对登记 peer 生效，在 {@code resilienceAll=true} 时无需登记。
+     */
+    public static void addUdpPeer(Channel channel, SocketConfig config, InetSocketAddress remoteAddress) {
+        if (channel == null || remoteAddress == null || config == null) {
+            return;
+        }
+        if (config.isUdpCompressEnabled() || isUdpRedundantEnabled(config)) {
+            UdpPeerAttributes.addEncodePeer(channel, remoteAddress);
+        }
+        if (isUdpResilienceEnabled(config) && !config.getUdpResilience().isResilienceAll()) {
+            UdpResilienceAttributes.addResiliencePeer(channel, remoteAddress);
+        }
+    }
+
+    /**
+     * 清理 {@link #addUdpPeer(Channel, SocketConfig, InetSocketAddress)} 登记的对端状态。
+     */
+    public static void removeUdpPeer(Channel channel, SocketConfig config, InetSocketAddress remoteAddress) {
+        if (channel == null || remoteAddress == null || config == null) {
+            return;
+        }
+        if (config.isUdpCompressEnabled() || isUdpRedundantEnabled(config)) {
+            UdpPeerAttributes.removeEncodePeer(channel, remoteAddress);
+        }
+        if (isUdpResilienceEnabled(config) && !config.getUdpResilience().isResilienceAll()) {
+            UdpResilienceAttributes.removeResiliencePeer(channel, remoteAddress);
+        }
     }
 
     /**
@@ -1201,9 +1251,16 @@ public final class Sockets {
         }
         boolean compressEnabled = config.isUdpCompressEnabled();
         boolean redundantEnabled = isUdpRedundantEnabled(config);
-        addUdpFinalEgressGuard(pipeline, config, redundantEnabled);
-        if (!compressEnabled && !redundantEnabled) {
+        boolean resilienceEnabled = isUdpResilienceEnabled(config);
+        addUdpFinalEgressGuard(pipeline, config, redundantEnabled || resilienceEnabled);
+        if (!compressEnabled && !redundantEnabled && !resilienceEnabled) {
             return;
+        }
+
+        // Outbound handlers run in reverse pipeline order:
+        // protocol -> compress -> redundant -> resilience -> final guard.
+        if (resilienceEnabled) {
+            UdpResilience.install(pipeline, config.getUdpResilience());
         }
 
         int multiplier = config.getUdpRedundantMultiplier();
@@ -1218,27 +1275,35 @@ public final class Sockets {
                         config.getUdpRedundantLossThresholdHigh(),
                         config.getUdpRedundantLossThresholdLow(),
                         config.getUdpRedundantStablePeriods());
-                pipeline.addLast(org.rx.net.udp.UdpRedundantDecoder.class.getSimpleName(), new org.rx.net.udp.UdpRedundantDecoder(stats));
-                if (compressEnabled) {
+                if (pipeline.get(org.rx.net.udp.UdpRedundantDecoder.class.getSimpleName()) == null) {
+                    pipeline.addLast(org.rx.net.udp.UdpRedundantDecoder.class.getSimpleName(), new org.rx.net.udp.UdpRedundantDecoder(stats));
+                }
+                if (compressEnabled && pipeline.get(org.rx.net.udp.UdpCompressDecoder.class.getSimpleName()) == null) {
                     pipeline.addLast(org.rx.net.udp.UdpCompressDecoder.class.getSimpleName(),
                             new org.rx.net.udp.UdpCompressDecoder());
                 }
-                pipeline.addLast(org.rx.net.udp.UdpRedundantEncoder.class.getSimpleName(), new org.rx.net.udp.UdpRedundantEncoder(stats, resolver));
+                if (pipeline.get(org.rx.net.udp.UdpRedundantEncoder.class.getSimpleName()) == null) {
+                    pipeline.addLast(org.rx.net.udp.UdpRedundantEncoder.class.getSimpleName(), new org.rx.net.udp.UdpRedundantEncoder(stats, resolver));
+                }
             } else {
-                pipeline.addLast(org.rx.net.udp.UdpRedundantDecoder.class.getSimpleName(), new org.rx.net.udp.UdpRedundantDecoder());
-                if (compressEnabled) {
+                if (pipeline.get(org.rx.net.udp.UdpRedundantDecoder.class.getSimpleName()) == null) {
+                    pipeline.addLast(org.rx.net.udp.UdpRedundantDecoder.class.getSimpleName(), new org.rx.net.udp.UdpRedundantDecoder());
+                }
+                if (compressEnabled && pipeline.get(org.rx.net.udp.UdpCompressDecoder.class.getSimpleName()) == null) {
                     pipeline.addLast(org.rx.net.udp.UdpCompressDecoder.class.getSimpleName(),
                             new org.rx.net.udp.UdpCompressDecoder());
                 }
-                pipeline.addLast(org.rx.net.udp.UdpRedundantEncoder.class.getSimpleName(),
-                        new org.rx.net.udp.UdpRedundantEncoder(multiplier, config.getUdpRedundantIntervalMicros(), resolver));
+                if (pipeline.get(org.rx.net.udp.UdpRedundantEncoder.class.getSimpleName()) == null) {
+                    pipeline.addLast(org.rx.net.udp.UdpRedundantEncoder.class.getSimpleName(),
+                            new org.rx.net.udp.UdpRedundantEncoder(multiplier, config.getUdpRedundantIntervalMicros(), resolver));
+                }
             }
-        } else if (compressEnabled) {
+        } else if (compressEnabled && pipeline.get(org.rx.net.udp.UdpCompressDecoder.class.getSimpleName()) == null) {
             pipeline.addLast(org.rx.net.udp.UdpCompressDecoder.class.getSimpleName(),
                     new org.rx.net.udp.UdpCompressDecoder());
         }
 
-        if (compressEnabled) {
+        if (compressEnabled && pipeline.get(org.rx.net.udp.UdpCompressEncoder.class.getSimpleName()) == null) {
             pipeline.addLast(org.rx.net.udp.UdpCompressEncoder.class.getSimpleName(),
                     new org.rx.net.udp.UdpCompressEncoder(org.rx.net.udp.UdpCompressConfig.fromSocketConfig(config)));
         }
@@ -1261,6 +1326,10 @@ public final class Sockets {
                 && (config.getUdpRedundantMultiplier() > 1
                 || config.isUdpRedundantAdaptive()
                 || config.hasUdpRedundantDestinationRules());
+    }
+
+    private static boolean isUdpResilienceEnabled(SocketConfig config) {
+        return config != null && config.getUdpResilience() != null && config.getUdpResilience().isEnabled();
     }
 
     public static void writeAndFlush(Channel channel, @NonNull Queue<?> packs) {
