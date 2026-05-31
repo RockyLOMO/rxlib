@@ -740,12 +740,52 @@ public class HttpClient implements AutoCloseable {
         final String boundary;
         final String contentType;
         final StringBuilder partPrefixBuilder = new StringBuilder(128);
+        // 预计算的总长度，>= 0 表示已知长度走 Content-Length，-1 表示未知走 chunked
+        final long totalLength;
 
         MultipartContent(Map<String, Object> forms, Map<String, DuplexStream> files) {
             this.forms = forms != null ? forms : Collections.emptyMap();
             this.files = files != null ? files : Collections.emptyMap();
             boundary = "----RxNettyBoundary" + Long.toHexString(System.nanoTime()) + Long.toHexString(ThreadLocalRandom.current().nextLong());
             contentType = "multipart/form-data; boundary=" + boundary;
+            totalLength = computeTotalLength();
+        }
+
+        /**
+         * 尝试预计算 multipart body 总字节长度。
+         * 所有文件流都支持 getLength() 时返回准确值，否则返回 -1（走 chunked）。
+         */
+        private long computeTotalLength() {
+            long total = 0;
+            for (Map.Entry<String, Object> entry : forms.entrySet()) {
+                Object value = entry.getValue();
+                if (value == null) {
+                    continue;
+                }
+                total += partPrefix(entry.getKey(), null, null).getBytes(StandardCharsets.UTF_8).length;
+                total += value.toString().getBytes(StandardCharsets.UTF_8).length;
+                total += 2;
+            }
+            for (Map.Entry<String, DuplexStream> entry : files.entrySet()) {
+                DuplexStream stream = entry.getValue();
+                if (stream == null) {
+                    continue;
+                }
+                try {
+                    long fileLen = stream.getLength();
+                    if (fileLen < 0) {
+                        return -1;
+                    }
+                    String fileName = Strings.isEmpty(stream.getName()) ? entry.getKey() : stream.getName();
+                    total += partPrefix(entry.getKey(), fileName, Files.getMediaTypeFromName(fileName)).getBytes(StandardCharsets.UTF_8).length;
+                    total += fileLen;
+                    total += 2;
+                } catch (Exception e) {
+                    return -1;
+                }
+            }
+            total += ("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8).length;
+            return total;
         }
 
         @Override
@@ -755,12 +795,47 @@ public class HttpClient implements AutoCloseable {
 
         @Override
         public boolean streaming() {
-            return true;
+            return totalLength < 0;
         }
 
         @Override
         public ByteBuf toFullContent(Channel channel) {
-            throw new UnsupportedOperationException();
+            if (totalLength < 0) {
+                throw new UnsupportedOperationException();
+            }
+            int len = (int) Math.min(totalLength, Integer.MAX_VALUE);
+            ByteBuf buf = channel.alloc().ioBuffer(len);
+            try {
+                for (Map.Entry<String, Object> entry : forms.entrySet()) {
+                    Object value = entry.getValue();
+                    if (value == null) {
+                        continue;
+                    }
+                    ByteBufUtil.writeUtf8(buf, partPrefix(entry.getKey(), null, null));
+                    ByteBufUtil.writeUtf8(buf, value.toString());
+                    buf.writeByte('\r').writeByte('\n');
+                }
+                for (Map.Entry<String, DuplexStream> entry : files.entrySet()) {
+                    DuplexStream stream = entry.getValue();
+                    if (stream == null) {
+                        continue;
+                    }
+                    String fileName = Strings.isEmpty(stream.getName()) ? entry.getKey() : stream.getName();
+                    ByteBufUtil.writeUtf8(buf, partPrefix(entry.getKey(), fileName, Files.getMediaTypeFromName(fileName)));
+                    DuplexStream in = stream.rewind();
+                    int read;
+                    byte[] tmp = new byte[Math.min((int) stream.getLength(), Constants.HEAP_BUF_SIZE)];
+                    while ((read = in.read(tmp, 0, tmp.length)) > 0) {
+                        buf.writeBytes(tmp, 0, read);
+                    }
+                    buf.writeByte('\r').writeByte('\n');
+                }
+                ByteBufUtil.writeUtf8(buf, "--" + boundary + "--\r\n");
+            } catch (Exception e) {
+                buf.release();
+                throw new InvalidException("Multipart content build failed", e);
+            }
+            return buf;
         }
 
         @Override
@@ -843,6 +918,7 @@ public class HttpClient implements AutoCloseable {
             tryClose(files.values());
         }
     }
+
 
     static final class UploadWriter {
         final Channel channel;
