@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.rx.util.pinyin.Pinyin;
 
+import com.alibaba.fastjson2.JSONObject;
+
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -59,23 +61,25 @@ public class TestUtil {
     }
 
     @Test
-    @SuppressWarnings("ConstantConditions")
-    public void email() {
-        String username = null;
-        String password = null;
-        try {
-            List<String> lines = Files.readAllLines(Paths.get("D:\\projs_r\\smtp.txt"), StandardCharsets.UTF_8);
-            for (String line : lines) {
-                if (line.startsWith("Usr:")) {
-                    username = line.substring(4).trim();
-                } else if (line.startsWith("Pwd:")) {
-                    password = line.substring(4).trim();
-                }
-            }
-        } catch (Exception e) {
-            throw new IllegalStateException("smtp.txt not found", e);
-        }
-        System.setProperty("app.smtp.timeoutMillis", "5000");
-        Helper.sendEmail("hw", username, password);
+    public void email() throws Exception {
+        String keysJson = new String(Files.readAllBytes(Paths.get("D:\\home\\.envKeys\\keys.json")), StandardCharsets.UTF_8);
+        JSONObject keys = JSONObject.parseObject(keysJson);
+
+        // gmail test
+        JSONObject gmail = keys.getJSONObject("smtp_gmail1");
+        System.setProperty("app.smtp.timeoutMillis", "15000");
+        System.setProperty("app.smtp.proxy", "http://127.0.0.1:1080");
+        Helper.sendEmail("Hello from rxlib!", gmail.getString("usr"), gmail.getString("pwd"), "rockywong.chn@qq.com");
+        log.info("gmail send ok");
+
+        // qq smtp test
+        JSONObject qq = keys.getJSONObject("smtp_qq");
+        System.setProperty("app.smtp.host", "smtp.qq.com");
+        System.setProperty("app.smtp.port", "465");
+        System.setProperty("app.smtp.ssl", "true");
+        System.setProperty("app.smtp.startTls", "false");
+        System.setProperty("app.smtp.proxy", "");
+        Helper.sendEmail("Hello from rxlib via QQ SMTP!", qq.getString("usr"), qq.getString("pwd"), "ilovehaley.kid@gmail.com");
+        log.info("qq send ok");
     }
 }
