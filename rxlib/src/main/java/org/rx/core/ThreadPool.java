@@ -803,8 +803,37 @@ public class ThreadPool extends ThreadPoolExecutor {
         return (int) Math.max(Constants.CPU_THREADS, Math.floor(Constants.CPU_THREADS * cpuUtilization * (1 + (double) waitTime / cpuTime)));
     }
 
+    static final class RxThreadLocalRunnable implements Runnable {
+        private final Runnable runnable;
+
+        private RxThreadLocalRunnable(Runnable runnable) {
+            this.runnable = runnable;
+        }
+
+        @Override
+        public void run() {
+            CTX_TRACE_ID.remove();
+            runnable.run();
+        }
+
+        static Runnable wrap(Runnable runnable) {
+            return runnable instanceof RxThreadLocalRunnable ? runnable : new RxThreadLocalRunnable(runnable);
+        }
+    }
+
+    static class RxThreadFactory extends DefaultThreadFactory {
+        public RxThreadFactory(String poolName, boolean daemon, int priority) {
+            super(poolName, daemon, priority);
+        }
+
+        @Override
+        public Thread newThread(Runnable r) {
+            return super.newThread(RxThreadLocalRunnable.wrap(r));
+        }
+    }
+
     static ThreadFactory newThreadFactory(String name, int priority) {
-        return new DefaultThreadFactory(String.format("%s%s", POOL_NAME_PREFIX, name), true, priority);
+        return new RxThreadFactory(String.format("%s%s", POOL_NAME_PREFIX, name), true, priority);
     }
 
     static boolean continueFlag(boolean def) {
