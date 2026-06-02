@@ -124,7 +124,15 @@ mf.getFuture().join(); // 阻塞至全链路结束
 
 RXlib 线程池不仅支持上下文传递，还深度集成了异步 Trace 功能，支持跨越 `Executor`、`WheelTimer` 的链路追踪。
 
-无 executor 参数的 `CompletableFuture.xxAsync()` 默认仍使用 JDK 默认 async pool。RXlib 可以通过 `app.threadPool.patchCompletableFutureAsyncPool=true` 兼容旧行为，但该能力会修改 JDK 全局静态字段，默认关闭；新代码应显式传入 `Tasks.executor()` 或使用 `ThreadPool.runAsync()`。
+无 executor 参数的 `CompletableFuture.xxAsync()` 默认会由 RXlib 尝试 patch 到 `Tasks.executor()`，以继承并清理 traceId。该能力会修改 JDK 全局静态字段，如需禁用可配置 `app.threadPool.patchCompletableFutureAsyncPool=false`；新代码仍建议显式传入 `Tasks.executor()` 或使用 `ThreadPool.runAsync()`。
+
+Spring 管理的 `ThreadPoolTaskExecutor` 会自动套用 trace 任务装饰器；确需使用非 RXlib、非 Spring 管理的原生线程池时，可用 `ThreadPool.Task` 做一次轻量包装：
+
+```java
+ExecutorService executor = Executors.newFixedThreadPool(4);
+executor.execute((Runnable) ThreadPool.Task.adapt((Runnable) () -> doWork()));
+Future<String> future = executor.submit((Callable<String>) ThreadPool.Task.adapt((Callable<String>) () -> query()));
+```
 
 ```java
 // 初始化 Trace 配置

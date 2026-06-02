@@ -65,8 +65,7 @@ public class ThreadPoolTraceIdTest {
 
             conf.setTraceName(null);
             pool.runAsync(() -> workerTraceAfterTask.set(ThreadPool.traceId())).get(5, TimeUnit.SECONDS);
-            assertEquals(staleTrace, workerTraceAfterTask.get());
-            pool.runAsync(() -> ThreadPool.endTrace()).get(5, TimeUnit.SECONDS);
+            assertNull(workerTraceAfterTask.get());
         }
     }
 
@@ -93,8 +92,7 @@ public class ThreadPoolTraceIdTest {
 
             conf.setTraceName(null);
             pool.runAsync(() -> workerTraceAfterTask.set(ThreadPool.traceId())).get(5, TimeUnit.SECONDS);
-            assertEquals(staleTrace, workerTraceAfterTask.get());
-            pool.runAsync(() -> ThreadPool.endTrace()).get(5, TimeUnit.SECONDS);
+            assertNull(workerTraceAfterTask.get());
         }
     }
 
