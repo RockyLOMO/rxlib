@@ -395,6 +395,10 @@ public class ThreadPool extends ThreadPoolExecutor {
             return adapt(fn, null, null);
         }
 
+        static <T> Task<T> adaptWithTrace(Callable<T> fn, String traceId) {
+            return new Task<>(fn, null, null, traceId);
+        }
+
         static <T> Task<T> adapt(Callable<T> fn, FlagsEnum<RunFlag> flags, Object id) {
             Task<T> t = as(fn);
             if (t != null) {
@@ -461,6 +465,10 @@ public class ThreadPool extends ThreadPoolExecutor {
         volatile InternalThreadLocalMap oldThreadLocalMap;
 
         private Task(Callable<T> fn, FlagsEnum<RunFlag> flags, Object id) {
+            this(fn, flags, id, traceId());
+        }
+
+        private Task(Callable<T> fn, FlagsEnum<RunFlag> flags, Object id, String traceId) {
             if (flags == null) {
                 flags = RunFlag.NONE.flags();
             }
@@ -490,7 +498,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             this.flags = flags;
             this.id = id;
             parent = flags.has(RunFlag.INHERIT_FAST_THREAD_LOCALS) ? InternalThreadLocalMap.getIfSet() : null;
-            traceId = traceId();
+            this.traceId = traceId;
         }
 
         public static void runWithTrace(String traceId, Runnable task) {

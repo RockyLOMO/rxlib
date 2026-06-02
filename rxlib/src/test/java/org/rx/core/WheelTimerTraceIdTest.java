@@ -1,9 +1,13 @@
 package org.rx.core;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.rx.util.function.Func;
+import org.slf4j.LoggerFactory;
 
 import java.util.UUID;
 import java.util.concurrent.ScheduledFuture;
@@ -12,6 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
@@ -102,8 +107,15 @@ public class WheelTimerTraceIdTest {
     void wheelTimerKeepsCapturedTraceWhenThreadPoolAutoTraceIsEnabled() throws Exception {
         RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
         AtomicInteger autoTraceSeq = new AtomicInteger();
+        AtomicReference<String> generatedTraceInTask = new AtomicReference<>();
         AtomicReference<String> traceInTask = new AtomicReference<>();
         String capturedTrace = "timer-captured-" + UUID.randomUUID();
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(ThreadPool.class);
+        Level oldLevel = logger.getLevel();
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.setLevel(Level.DEBUG);
+        logger.addAppender(appender);
         try (ThreadPoolConfigSnapshot ignored = ThreadPoolConfigSnapshot.capture()) {
             conf.setTraceName("rx-traceId");
             conf.setMaxTraceDepth(5);
@@ -111,8 +123,8 @@ public class WheelTimerTraceIdTest {
             pool = ThreadPool.fixed("WT-TRACE-AUTO", 1, 8);
             timer = new WheelTimer(pool);
 
-            timer.schedule(() -> {
-            }, 0, TimeUnit.MILLISECONDS).get(5, TimeUnit.SECONDS);
+            timer.schedule(() -> generatedTraceInTask.set(ThreadPool.traceId()), 0, TimeUnit.MILLISECONDS).get(5, TimeUnit.SECONDS);
+            assertEquals("timer-auto-1", generatedTraceInTask.get());
 
             ThreadPool.startTrace(capturedTrace);
             try {
@@ -123,6 +135,11 @@ public class WheelTimerTraceIdTest {
             } finally {
                 ThreadPool.endTrace();
             }
+            assertFalse(appender.list.stream()
+                    .anyMatch(e -> e.getFormattedMessage().contains("RTrace - Trace requires new")));
+        } finally {
+            logger.detachAppender(appender);
+            logger.setLevel(oldLevel);
         }
     }
 }
