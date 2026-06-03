@@ -104,6 +104,18 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         final DbColumn.IndexKind kind;
     }
 
+    @RequiredArgsConstructor
+    static final class IndexColumnSpec {
+        final String columnName;
+        final boolean desc;
+    }
+
+    @RequiredArgsConstructor
+    static final class IndexMeta {
+        final boolean unique;
+        final List<IndexColumnSpec> columns;
+    }
+
     static final String SQL_CREATE = "CREATE TABLE IF NOT EXISTS $TABLE\n" +
             "(\n" +
             "$CREATE_COLUMNS" +
@@ -574,8 +586,7 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         DbColumn dbColumn = field.getAnnotation(DbColumn.class);
         String tableName = tableName(entityType);
         String colName = columnName(field, dbColumn, columnMapping);
-        String sql = String.format("DROP INDEX %s ON %s;", indexName(tableName, colName), tableName);
-        executeUpdate(sql);
+        dropIndexIfExists(tableName, indexName(tableName, colName));
     }
 
     public <T> void createIndex(Class<T> entityType, String fieldName) {
@@ -583,13 +594,9 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         DbColumn dbColumn = field.getAnnotation(DbColumn.class);
         String tableName = tableName(entityType);
         String colName = columnName(field, dbColumn, columnMapping);
-        String index = dbColumn != null && (dbColumn.index() == DbColumn.IndexKind.UNIQUE_INDEX_ASC
-                || dbColumn.index() == DbColumn.IndexKind.UNIQUE_INDEX_DESC) ? "UNIQUE " : Strings.EMPTY;
-        String desc = dbColumn != null && (dbColumn.index() == DbColumn.IndexKind.INDEX_DESC
-                || dbColumn.index() == DbColumn.IndexKind.UNIQUE_INDEX_DESC) ? " DESC" : Strings.EMPTY;
-        String sql = String.format("CREATE %sINDEX IF NOT EXISTS %s ON %s (%s%s);", index,
-                indexName(tableName, colName), tableName, colName, desc);
-        executeUpdate(sql);
+        DbColumn.IndexKind kind = dbColumn == null ? DbColumn.IndexKind.INDEX_ASC : dbColumn.index();
+        ensureIndex(tableName, indexName(tableName, colName), isUniqueIndexKind(kind),
+                Collections.singletonList(new IndexColumnSpec(colName, isDescIndexKind(kind))));
     }
 
     String compositeIndexName(String tableName, String indexName) {
@@ -645,24 +652,151 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         }
         columns.sort(Comparator.comparingInt(p -> p.order));
         boolean unique = false;
-        StringBuilder cols = new StringBuilder();
+        List<IndexColumnSpec> indexColumns = new ArrayList<>(columns.size());
         for (CompositeIndexColumn column : columns) {
             unique |= isUniqueIndexKind(column.kind);
-            boolean desc = isDescIndexKind(column.kind);
-            cols.append(column.columnName);
-            if (desc) {
-                cols.append(" DESC");
-            }
-            cols.append(",");
+            indexColumns.add(new IndexColumnSpec(column.columnName, isDescIndexKind(column.kind)));
         }
-        cols.setLength(cols.length() - 1);
-        String sql = String.format("CREATE %sINDEX IF NOT EXISTS %s ON %s (%s);",
-                unique ? "UNIQUE " : Strings.EMPTY, compositeIndexName(tableName, indexName), tableName, cols);
-        executeUpdate(sql);
+        ensureIndex(tableName, compositeIndexName(tableName, indexName), unique, indexColumns);
     }
 
     String indexName(String tableName, String columnName) {
         return String.format("%s_%s_index", tableName, columnName);
+    }
+
+    @Override
+    public void ensureIndex(String tableName, String indexName, boolean unique, String... columnNames) {
+        if (columnNames == null || columnNames.length == 0) {
+            throw new InvalidException("Index {} columns is empty", indexName);
+        }
+        List<IndexColumnSpec> columns = new ArrayList<>(columnNames.length);
+        for (String columnName : columnNames) {
+            if (Strings.isBlank(columnName)) {
+                throw new InvalidException("Index {} column is empty", indexName);
+            }
+            String col = columnName.trim();
+            boolean desc = false;
+            int descPos = col.length() - 5;
+            if (descPos > 0 && col.regionMatches(true, descPos, " DESC", 0, 5)) {
+                desc = true;
+                col = col.substring(0, descPos).trim();
+            }
+            columns.add(new IndexColumnSpec(col, desc));
+        }
+        ensureIndex(tableName, indexName, unique, columns);
+    }
+
+    void dropIndexIfExists(String tableName, String indexName) {
+        invoke(conn -> {
+            if (findIndex(conn, tableName, indexName) == null) {
+                return;
+            }
+            try (Statement stmt = conn.createStatement()) {
+                stmt.executeUpdate(String.format("DROP INDEX %s ON %s;", indexName, tableName));
+            }
+        }, "dropIndexIfExists", Collections.emptyList());
+    }
+
+    void ensureIndex(String tableName, String indexName, boolean unique, List<IndexColumnSpec> columns) {
+        invoke(conn -> {
+            IndexMeta exists = findIndex(conn, tableName, indexName);
+            if (isSameIndex(exists, unique, columns)) {
+                return;
+            }
+
+            try (Statement stmt = conn.createStatement()) {
+                if (exists != null) {
+                    stmt.executeUpdate(String.format("DROP INDEX %s ON %s;", indexName, tableName));
+                }
+
+                StringBuilder cols = new StringBuilder();
+                for (IndexColumnSpec column : columns) {
+                    cols.append(column.columnName);
+                    if (column.desc) {
+                        cols.append(" DESC");
+                    }
+                    cols.append(",");
+                }
+                cols.setLength(cols.length() - 1);
+                stmt.executeUpdate(String.format("CREATE %sINDEX %s ON %s (%s);",
+                        unique ? "UNIQUE " : Strings.EMPTY, indexName, tableName, cols));
+            }
+        }, "ensureIndex", Collections.emptyList());
+    }
+
+    @SneakyThrows
+    IndexMeta findIndex(Connection conn, String tableName, String indexName) {
+        DatabaseMetaData metaData = conn.getMetaData();
+        String[] catalogs = new String[]{conn.getCatalog(), null};
+        String[] tables = new String[]{tableName, tableName.toUpperCase(Locale.ENGLISH), tableName.toLowerCase(Locale.ENGLISH)};
+        for (String catalog : catalogs) {
+            for (String table : tables) {
+                IndexMeta meta = findIndex(metaData, catalog, table, indexName);
+                if (meta != null) {
+                    return meta;
+                }
+            }
+        }
+        return null;
+    }
+
+    IndexMeta findIndex(DatabaseMetaData metaData, String catalog, String tableName, String indexName) throws SQLException {
+        Boolean unique = null;
+        TreeMap<Short, IndexColumnSpec> cols = new TreeMap<>();
+        try (ResultSet rs = metaData.getIndexInfo(catalog, null, tableName, false, false)) {
+            while (rs.next()) {
+                String actualIndexName = rs.getString("INDEX_NAME");
+                if (!equalsIdentifier(indexName, actualIndexName)) {
+                    continue;
+                }
+                short ordinal = rs.getShort("ORDINAL_POSITION");
+                String colName = rs.getString("COLUMN_NAME");
+                if (ordinal <= 0 || colName == null) {
+                    continue;
+                }
+                unique = !rs.getBoolean("NON_UNIQUE");
+                String ascOrDesc = rs.getString("ASC_OR_DESC");
+                cols.put(ordinal, new IndexColumnSpec(colName, "D".equalsIgnoreCase(ascOrDesc)));
+            }
+        }
+        if (unique == null || cols.isEmpty()) {
+            return null;
+        }
+        return new IndexMeta(unique, new ArrayList<>(cols.values()));
+    }
+
+    boolean isSameIndex(IndexMeta exists, boolean unique, List<IndexColumnSpec> columns) {
+        if (exists == null || exists.unique != unique || exists.columns.size() != columns.size()) {
+            return false;
+        }
+        for (int i = 0; i < columns.size(); i++) {
+            IndexColumnSpec actual = exists.columns.get(i);
+            IndexColumnSpec expected = columns.get(i);
+            if (actual.desc != expected.desc || !equalsIdentifier(actual.columnName, expected.columnName)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    boolean equalsIdentifier(String a, String b) {
+        return normalizeIdentifier(a).equals(normalizeIdentifier(b));
+    }
+
+    String normalizeIdentifier(String value) {
+        if (value == null) {
+            return Strings.EMPTY;
+        }
+        int start = 0, end = value.length();
+        if (end > 1) {
+            char first = value.charAt(0);
+            char last = value.charAt(end - 1);
+            if ((first == '`' && last == '`') || (first == '"' && last == '"')) {
+                start++;
+                end--;
+            }
+        }
+        return value.substring(start, end).toUpperCase(Locale.ENGLISH);
     }
 
     @Override

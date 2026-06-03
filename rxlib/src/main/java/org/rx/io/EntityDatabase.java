@@ -61,6 +61,11 @@ public interface EntityDatabase extends AutoCloseable {
         throw new UnsupportedOperationException("Batch JDBC execution is not supported");
     }
 
+    // 统一收口索引创建：定义相同跳过，定义不同由实现负责重建。
+    default void ensureIndex(String tableName, String indexName, boolean unique, String... columnNames) {
+        throw new UnsupportedOperationException("Low-level JDBC index management is not supported");
+    }
+
     @SneakyThrows
     default void transInvoke(int transactionIsolation, Action fn) {
         boolean doCommit = false;
