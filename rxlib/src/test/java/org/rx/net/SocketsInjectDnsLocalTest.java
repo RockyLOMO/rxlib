@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 public class SocketsInjectDnsLocalTest {
     @Test
-    public void injectNsFLiCnResolveSvcMercuryByJdkAndBootstrapDirect() throws Exception {
+    public void injectCloudFLiCnResolveSvcMercuryByJdkAndBootstrapDirect() throws Exception {
         assumeTrue(Boolean.getBoolean("rx.runExternalDnsTest"),
                 "External DNS smoke test requires -Drx.runExternalDnsTest=true");
 
@@ -33,7 +33,7 @@ public class SocketsInjectDnsLocalTest {
         NameserverClient client = new NameserverClient("codex-dns-smoke-" + UUID.randomUUID().toString());
 
         try {
-            client.registerAsync("ns.f-li.cn:854").get(20, TimeUnit.SECONDS);
+            client.registerAsync("cloud.f-li.cn:854").get(20, TimeUnit.SECONDS);
             client.waitInject(20 * 1000);
             System.out.println("nameserverDiscoveryEndpoints=" + client.discoveryEndpoints());
             System.out.println("directNameServers=" + DnsClient.directNameServers());
