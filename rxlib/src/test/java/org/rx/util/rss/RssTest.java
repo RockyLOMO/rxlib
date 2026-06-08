@@ -524,6 +524,7 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void socksTcpUpstream_FakeEndpointHashIncludesSupportEndpoint() {
+        org.rx.core.Cache.getInstance(org.rx.core.cache.MemoryCache.class);
         final AtomicInteger calls = new AtomicInteger();
         SocksRpcContract facade = new SocksRpcContract() {
             @Override
@@ -553,6 +554,54 @@ public class RssTest extends AbstractTester {
         assertTrue(fakeA.getHostString().endsWith(SocksRpcContract.FAKE_HOST_SUFFIX));
         assertTrue(fakeB.getHostString().endsWith(SocksRpcContract.FAKE_HOST_SUFFIX));
         assertEquals(2, calls.get());
+    }
+
+    @Test
+    public void socksTcpUpstream_FakeEndpointUsesParseableHostPortForUnresolvedDomain() {
+        org.rx.core.Cache.getInstance(org.rx.core.cache.MemoryCache.class);
+        final String[] capturedEndpoint = new String[1];
+        SocksRpcContract facade = new SocksRpcContract() {
+            @Override
+            public void fakeEndpoint(long hash, String realEndpoint, String token) {
+                capturedEndpoint[0] = realEndpoint;
+            }
+
+            @Override
+            public void addWhiteList(InetAddress endpoint, String token) {
+            }
+
+            @Override
+            public List<InetAddress> resolveHost(InetAddress srcIp, String host) {
+                return Collections.emptyList();
+            }
+        };
+
+        SocksConfig config = new SocksConfig();
+        String dstHost = "android-clients-" + System.nanoTime() + ".example";
+        InetSocketAddress dstEp = org.rx.net.Sockets.newUnresolvedEndpoint(dstHost, 443);
+        UpstreamSupport routed = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.100", 4093)), facade);
+
+        new SocksTcpUpstream(dstEp, config, routed).prepareDestination();
+
+        assertEquals(dstHost + ":443", capturedEndpoint[0]);
+        assertEquals(dstHost, org.rx.net.Sockets.parseEndpoint(capturedEndpoint[0]).getHostString());
+    }
+
+    @Test
+    public void rssRpcApp_FakeEndpointOverwritesStaleMalformedMapping() {
+        long hash = System.nanoTime();
+        try {
+            SocksRpcContract.fakeDict().put(hash,
+                    org.rx.net.Sockets.newUnresolvedEndpoint("android.clients.google.com/<unresolved>", 443),
+                    org.rx.core.CachePolicy.absolute(60));
+
+            RssRpcApp app = new RssRpcApp(org.mockito.Mockito.mock(SocksProxyServer.class));
+            app.fakeEndpoint(hash, "android.clients.google.com:443", SocksRpcContract.rpcToken());
+
+            assertEquals("android.clients.google.com", SocksRpcContract.fakeDict().get(hash).getHostString());
+        } finally {
+            SocksRpcContract.fakeDict().remove(hash);
+        }
     }
 
     @Test

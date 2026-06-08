@@ -1,6 +1,7 @@
 package org.rx.util.rss;
 
 import lombok.SneakyThrows;
+import org.rx.core.CachePolicy;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.SocksRpcCapabilities;
@@ -47,7 +48,8 @@ public final class RssRpcApp implements SocksRpcContract {
     @Override
     public void fakeEndpoint(long hash, String endpoint, String token) {
         SocksRpcContract.requireValidRpcToken(token);
-        SocksRpcContract.fakeDict().putIfAbsent(hash, org.rx.net.Sockets.parseEndpoint(endpoint));
+        SocksRpcContract.fakeDict().put(hash, org.rx.net.Sockets.parseEndpoint(endpoint),
+                CachePolicy.absolute(SocksRpcContract.FAKE_EXPIRE_SECONDS));
     }
 
     @SneakyThrows

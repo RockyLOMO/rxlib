@@ -79,7 +79,7 @@ public class SocksTcpUpstream extends Upstream {
         Long cacheKey = Long.valueOf(hash);
         if (!cache.containsKey(cacheKey)) {
             try {
-                String dstEpStr = realDestination.toString();
+                String dstEpStr = Sockets.toString(realDestination);
                 Tasks.runAsync(() -> {
                     facade.fakeEndpoint(hash, dstEpStr, SocksRpcContract.rpcToken());
                     return true;
