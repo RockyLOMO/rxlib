@@ -106,7 +106,6 @@ public class TcpBackpressureHandlerTest {
 
         TcpBackpressureHandler.install(inbound, outbound);
         TcpBackpressureHandler handler = outbound.pipeline().get(TcpBackpressureHandler.class);
-        handler.lastEventTs = System.nanoTime();
         AtomicInteger propagated = new AtomicInteger();
         outbound.pipeline().addLast(new ChannelInboundHandlerAdapter() {
             @Override
@@ -116,6 +115,7 @@ public class TcpBackpressureHandlerTest {
             }
         });
 
+        handler.lastEventTs = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(100);
         outbound.pipeline().fireChannelWritabilityChanged();
 
         assertEquals(1, propagated.get());

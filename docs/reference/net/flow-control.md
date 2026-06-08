@@ -23,7 +23,7 @@
 
 当前实现分三类：
 
-- 全局限速：`NetworkFlowControl` 安装 Netty `GlobalTrafficShapingHandler`，按 bytes/s 控制读写速率。
+- 全局限速：`NetworkFlowControl` 安装 Netty `GlobalChannelTrafficShapingHandler`，按 KB/s 配置、按 bytes/s 执行，并限制单次等待上限。
 - TCP 背压：`TcpBackpressureHandler` 在 outbound 不可写时暂停 inbound `autoRead`。
 - UDP 过载保护：`UdpBackpressurePolicy` 通过 pending bytes / pending packets / `isWritable()` 决定是否接受本次发送。
 
@@ -40,7 +40,8 @@ app:
       enabled: true
       uploadKilobytesPerSecond: 10240
       downloadKilobytesPerSecond: 10240
-      checkIntervalMillis: 1000
+      checkIntervalMillis: 100
+      maxDelayMillis: 200
       tcpBackpressureEnabled: true
       udpBackpressureEnabled: true
       udpMaxPendingBytes: 1048576
@@ -54,7 +55,8 @@ app:
 | `enabled` | 是否启用全局 Netty traffic shaping | `false` |
 | `uploadKilobytesPerSecond` | 全局 outbound 写速率上限，单位 KB/s，0 表示不限 | `0` |
 | `downloadKilobytesPerSecond` | 全局 inbound 读速率上限，单位 KB/s，0 表示不限 | `0` |
-| `checkIntervalMillis` | traffic shaping 统计周期 | `1000` |
+| `checkIntervalMillis` | traffic shaping 统计周期，建议 50-200ms | `100` |
+| `maxDelayMillis` | 单次限速延迟上限，避免多连接下载出现秒级静默 | `200` |
 | `tcpBackpressureEnabled` | 是否允许安装 TCP relay 背压处理器 | `true` |
 | `udpBackpressureEnabled` | 是否启用 UDP pending / writable 过载保护 | `true` |
 | `udpMaxPendingBytes` | UDP 每 channel 全局 pending bytes 上限，0 表示使用 channel/socket 默认 | `0` |
@@ -66,6 +68,7 @@ app:
 -Dapp.net.globalTraffic.enabled=true
 -Dapp.net.globalTraffic.uploadKilobytesPerSecond=10240
 -Dapp.net.globalTraffic.downloadKilobytesPerSecond=10240
+-Dapp.net.globalTraffic.maxDelayMillis=200
 -Dapp.net.globalTraffic.udpMaxPendingBytes=1048576
 ```
 
@@ -197,5 +200,5 @@ mvn -pl rxlib -DskipTests=false -Dtest=SocksProxyServerIntegrationTest,Socks5Cli
 - `ByteBuf` 所有权必须清晰：`writeUdp` 拒绝路径已释放，调用方不能二次释放。
 - TCP 背压必须覆盖恢复路径：异常、关闭、不可写到可写的状态切换都要验证。
 - UDP 只做应用层保护，不能保证对端收到，也不会自动重传。
-- `GlobalTrafficShapingHandler` 是全局共享限速器，会把安装过的 channel 聚合到同一组速率预算里。
+- `GlobalChannelTrafficShapingHandler` 是全局共享限速器，会把安装过的 channel 聚合到同一组速率预算里；`maxDelayMillis` 应保持较小，避免多下载流出现秒级静默。
 - 不要在 EventLoop 中做阻塞 DNS、文件 I/O、长计算或阻塞锁等待。

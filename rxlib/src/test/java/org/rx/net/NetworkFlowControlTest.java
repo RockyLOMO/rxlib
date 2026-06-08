@@ -6,7 +6,7 @@ import io.netty.channel.ChannelOption;
 import io.netty.channel.WriteBufferWaterMark;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.channel.socket.DatagramPacket;
-import io.netty.handler.traffic.GlobalTrafficShapingHandler;
+import io.netty.handler.traffic.GlobalChannelTrafficShapingHandler;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.rx.core.RxConfig;
@@ -55,12 +55,13 @@ public class NetworkFlowControlTest {
         EmbeddedChannel channel = new EmbeddedChannel();
         try {
             assertTrue(NetworkFlowControl.DEFAULT.install(channel));
-            GlobalTrafficShapingHandler handler = (GlobalTrafficShapingHandler) channel.pipeline()
+            GlobalChannelTrafficShapingHandler handler = (GlobalChannelTrafficShapingHandler) channel.pipeline()
                     .get(NetworkFlowControl.GLOBAL_TRAFFIC_HANDLER);
             assertNotNull(handler);
             assertEquals(4096L, handler.getWriteLimit());
             assertEquals(8192L, handler.getReadLimit());
             assertEquals(50L, handler.getCheckInterval());
+            assertEquals(200L, handler.getMaxTimeWait());
         } finally {
             channel.finishAndReleaseAll();
         }
@@ -78,7 +79,7 @@ public class NetworkFlowControlTest {
         EmbeddedChannel channel = new EmbeddedChannel();
         try {
             assertTrue(NetworkFlowControl.DEFAULT.install(channel));
-            GlobalTrafficShapingHandler handler = (GlobalTrafficShapingHandler) channel.pipeline()
+            GlobalChannelTrafficShapingHandler handler = (GlobalChannelTrafficShapingHandler) channel.pipeline()
                     .get(NetworkFlowControl.GLOBAL_TRAFFIC_HANDLER);
 
             NetworkTrafficConfig next = new NetworkTrafficConfig();
@@ -86,11 +87,13 @@ public class NetworkFlowControlTest {
             next.setUploadKilobytesPerSecond(16L);
             next.setDownloadKilobytesPerSecond(32L);
             next.setCheckIntervalMillis(25L);
+            next.setMaxDelayMillis(75L);
             NetworkFlowControl.DEFAULT.refresh(next);
 
             assertEquals(16384L, handler.getWriteLimit());
             assertEquals(32768L, handler.getReadLimit());
             assertEquals(25L, handler.getCheckInterval());
+            assertEquals(75L, handler.getMaxTimeWait());
         } finally {
             channel.finishAndReleaseAll();
         }

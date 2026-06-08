@@ -3,7 +3,7 @@ package org.rx.net;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.local.LocalChannel;
-import io.netty.handler.traffic.GlobalTrafficShapingHandler;
+import io.netty.handler.traffic.GlobalChannelTrafficShapingHandler;
 import io.netty.util.concurrent.EventExecutor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.RxConfig;
@@ -18,7 +18,7 @@ public final class NetworkFlowControl {
     private final Object trafficLock = new Object();
     private final UdpBackpressurePolicy udpBackpressurePolicy = new UdpBackpressurePolicy(this);
     private volatile NetworkTrafficConfig config = NetworkTrafficConfig.disabled();
-    private volatile GlobalTrafficShapingHandler globalTrafficHandler;
+    private volatile GlobalChannelTrafficShapingHandler globalTrafficHandler;
 
     private NetworkFlowControl() {
     }
@@ -35,11 +35,12 @@ public final class NetworkFlowControl {
         NetworkTrafficConfig snapshot = new NetworkTrafficConfig(source);
         config = snapshot;
 
-        GlobalTrafficShapingHandler handler = globalTrafficHandler;
+        GlobalChannelTrafficShapingHandler handler = globalTrafficHandler;
         if (handler != null) {
             handler.configure(snapshot.uploadBytesPerSecond(),
                     snapshot.downloadBytesPerSecond(),
                     snapshot.getCheckIntervalMillis());
+            handler.setMaxTimeWait(snapshot.getMaxDelayMillis());
         }
     }
 
@@ -54,7 +55,7 @@ public final class NetworkFlowControl {
 
         ChannelPipeline pipeline = channel.pipeline();
         if (pipeline.get(GLOBAL_TRAFFIC_HANDLER) != null
-                || pipeline.get(GlobalTrafficShapingHandler.class) != null) {
+                || pipeline.get(GlobalChannelTrafficShapingHandler.class) != null) {
             return false;
         }
         pipeline.addLast(GLOBAL_TRAFFIC_HANDLER, globalTrafficHandler(snapshot));
@@ -67,12 +68,12 @@ public final class NetworkFlowControl {
         return udpBackpressurePolicy;
     }
 
-    GlobalTrafficShapingHandler globalTrafficHandler() {
+    GlobalChannelTrafficShapingHandler globalTrafficHandler() {
         return globalTrafficHandler;
     }
 
-    private GlobalTrafficShapingHandler globalTrafficHandler(NetworkTrafficConfig snapshot) {
-        GlobalTrafficShapingHandler handler = globalTrafficHandler;
+    private GlobalChannelTrafficShapingHandler globalTrafficHandler(NetworkTrafficConfig snapshot) {
+        GlobalChannelTrafficShapingHandler handler = globalTrafficHandler;
         if (handler != null) {
             return handler;
         }
@@ -83,13 +84,13 @@ public final class NetworkFlowControl {
             }
 
             EventExecutor executor = Sockets.reactor(Sockets.ReactorNames.SHARED_TCP, true).next();
-            handler = new GlobalTrafficShapingHandler(executor);
-            handler.configure(snapshot.uploadBytesPerSecond(),
-                    snapshot.downloadBytesPerSecond(),
-                    snapshot.getCheckIntervalMillis());
+            handler = new GlobalChannelTrafficShapingHandler(executor,
+                    snapshot.uploadBytesPerSecond(), snapshot.downloadBytesPerSecond(),
+                    0L, 0L, snapshot.getCheckIntervalMillis(), snapshot.getMaxDelayMillis());
             globalTrafficHandler = handler;
-            log.info("Network global traffic shaping enabled uploadKilobytesPerSecond={} downloadKilobytesPerSecond={} checkIntervalMillis={}",
-                    snapshot.getUploadKilobytesPerSecond(), snapshot.getDownloadKilobytesPerSecond(), snapshot.getCheckIntervalMillis());
+            log.info("Network global traffic shaping enabled uploadKilobytesPerSecond={} downloadKilobytesPerSecond={} checkIntervalMillis={} maxDelayMillis={}",
+                    snapshot.getUploadKilobytesPerSecond(), snapshot.getDownloadKilobytesPerSecond(),
+                    snapshot.getCheckIntervalMillis(), snapshot.getMaxDelayMillis());
             return handler;
         }
     }
