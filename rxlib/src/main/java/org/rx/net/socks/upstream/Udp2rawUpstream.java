@@ -17,8 +17,8 @@ import org.rx.net.socks.SocksConnectionTagRegistry;
 import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.socks.SocksUserTraffic;
 import org.rx.net.socks.TrafficUser;
-import org.rx.net.socks.UdpCompressConfig;
-import org.rx.net.socks.UdpCompressStats;
+import org.rx.net.udp.UdpCompressConfig;
+import org.rx.net.udp.UdpCompressStats;
 import org.rx.net.socks.Udp2rawAuthMode;
 import org.rx.net.socks.Udp2rawAuthenticator;
 import org.rx.net.socks.Udp2rawCodec;
@@ -31,12 +31,12 @@ import org.rx.net.socks.Udp2rawOpenResult;
 import org.rx.net.socks.Udp2rawPayloadSupport;
 import org.rx.net.socks.Udp2rawSeqWindow;
 import org.rx.net.socks.UdpManager;
-import org.rx.net.socks.UdpRedundantConfig;
-import org.rx.net.socks.UdpRedundantMode;
-import org.rx.net.socks.UdpRedundantMultiplierResolver;
 import org.rx.net.socks.UdpRedundantSupport;
-import org.rx.net.socks.UdpRedundantStats;
-import org.rx.net.support.UnresolvedEndpoint;
+import org.rx.net.udp.UdpRedundantConfig;
+import org.rx.net.udp.UdpRedundantMode;
+import org.rx.net.udp.UdpRedundantMultiplierResolver;
+import org.rx.net.udp.UdpRedundantStats;
+import java.net.InetSocketAddress;
 import org.rx.net.support.UpstreamSupport;
 
 import java.net.InetSocketAddress;
@@ -61,7 +61,7 @@ public class Udp2rawUpstream extends Upstream {
     private final UpstreamSupport next;
     private final TunnelKey tunnelKey;
 
-    public Udp2rawUpstream(UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull UpstreamSupport next) {
+    public Udp2rawUpstream(InetSocketAddress dstEp, @NonNull SocksConfig config, @NonNull UpstreamSupport next) {
         super(dstEp, config);
         this.next = next;
         this.tunnelKey = new TunnelKey(next.getEndpoint());
@@ -109,7 +109,7 @@ public class Udp2rawUpstream extends Upstream {
     }
 
     public boolean writeSocks5Request(Channel relay, ByteBuf payload,
-            InetSocketAddress clientSource, UnresolvedEndpoint dstEp,
+            InetSocketAddress clientSource, InetSocketAddress dstEp,
             SocksContext context, boolean retained) {
         TunnelState state = activeState(relay);
         if (state == null) {
@@ -186,7 +186,7 @@ public class Udp2rawUpstream extends Upstream {
     }
 
     public DatagramPacket buildRequestPacket(Channel relay, ByteBuf payload,
-            InetSocketAddress clientSource, UnresolvedEndpoint dstEp) {
+            InetSocketAddress clientSource, InetSocketAddress dstEp) {
         TunnelState state = activeState(relay);
         if (state == null) {
             DiagnosticMetrics.record(METRIC_PREFIX + ".drop.count", 1D, "reason=tunnel-not-ready");
@@ -250,7 +250,7 @@ public class Udp2rawUpstream extends Upstream {
     }
 
     public boolean writeRequest(Channel relay, ByteBuf payload,
-            InetSocketAddress clientSource, UnresolvedEndpoint dstEp, boolean retained) {
+            InetSocketAddress clientSource, InetSocketAddress dstEp, boolean retained) {
         TunnelState state = activeState(relay);
         if (state == null) {
             if (retained) {
@@ -502,10 +502,10 @@ public class Udp2rawUpstream extends Upstream {
                 : socksConfig.getUdp2rawAuthMode();
         UdpCompressConfig compressConfig = result.getCapabilities() != null && result.getCapabilities().isCompress()
                 && socksConfig.isUdpCompressEnabled()
-                ? UdpCompressConfig.fromSocksConfig(socksConfig) : null;
+                ? UdpCompressConfig.fromSocketConfig(socksConfig) : null;
         UdpRedundantConfig redundantConfig = result.getCapabilities() != null && result.getCapabilities().isRedundant()
-                && Udp2rawPayloadSupport.isRedundantEnabled(UdpRedundantConfig.fromSocksConfig(socksConfig))
-                ? UdpRedundantConfig.fromSocksConfig(socksConfig) : null;
+                && Udp2rawPayloadSupport.isRedundantEnabled(UdpRedundantConfig.fromSocketConfig(socksConfig))
+                ? UdpRedundantConfig.fromSocketConfig(socksConfig) : null;
         InetSocketAddress transportAddress = next.getUdpClient() != null ? next.getUdpClient() : entryAddress;
         return new TunnelState(facade, result.getTunnelId(), result.getSessionHi(), result.getSessionLo(),
                 result.getSessionSecret(), entryAddress, transportAddress, authMode, compressConfig, redundantConfig,
@@ -656,7 +656,7 @@ public class Udp2rawUpstream extends Upstream {
                 if (serverAddress.getAddress() != null) {
                     return new InetSocketAddress(serverAddress.getAddress(), entryAddress.getPort());
                 }
-                return InetSocketAddress.createUnresolved(serverAddress.getHostString(), entryAddress.getPort());
+                return Sockets.newUnresolvedEndpoint(serverAddress.getHostString(), entryAddress.getPort());
             }
         }
         return entryAddress;
@@ -705,7 +705,7 @@ public class Udp2rawUpstream extends Upstream {
             encoded = Udp2rawMtuProbeSupport.encodeProbe(channel.alloc(), state.sessionSecret,
                     state.sessionHi, state.sessionLo, probe.seq, probe.mtu);
             Sockets.UdpWriteResult result = Sockets.writeUdp(channel,
-                    new Sockets.UdpMtuProbeDatagramPacket(encoded, state.udpTransportAddress),
+                    new org.rx.net.udp.UdpMtuProbeDatagramPacket(encoded, state.udpTransportAddress),
                     METRIC_PREFIX, "flow=mtu-probe");
             encoded = null;
             if (result != Sockets.UdpWriteResult.ACCEPTED) {
@@ -782,7 +782,7 @@ public class Udp2rawUpstream extends Upstream {
                     && (expireAtMillis <= 0L || System.currentTimeMillis() < expireAtMillis);
         }
 
-        ConnState conn(InetSocketAddress clientSource, UnresolvedEndpoint destination) {
+        ConnState conn(InetSocketAddress clientSource, InetSocketAddress destination) {
             RouteKey key = new RouteKey(clientSource, destination);
             ConnState state = routes.get(key);
             if (state != null) {
@@ -874,12 +874,12 @@ public class Udp2rawUpstream extends Upstream {
     static final class ConnState {
         final long connId;
         final InetSocketAddress clientSource;
-        final UnresolvedEndpoint destination;
+        final InetSocketAddress destination;
         final AtomicLong requestSeq = new AtomicLong();
         final Udp2rawSeqWindow responseWindow = new Udp2rawSeqWindow();
         final AtomicBoolean firstPacketSent = new AtomicBoolean();
 
-        ConnState(long connId, InetSocketAddress clientSource, UnresolvedEndpoint destination) {
+        ConnState(long connId, InetSocketAddress clientSource, InetSocketAddress destination) {
             this.connId = connId;
             this.clientSource = clientSource;
             this.destination = destination;
@@ -900,10 +900,10 @@ public class Udp2rawUpstream extends Upstream {
 
     static final class RouteKey {
         final InetSocketAddress clientSource;
-        final UnresolvedEndpoint destination;
+        final InetSocketAddress destination;
         final int hash;
 
-        RouteKey(InetSocketAddress clientSource, UnresolvedEndpoint destination) {
+        RouteKey(InetSocketAddress clientSource, InetSocketAddress destination) {
             this.clientSource = clientSource;
             this.destination = destination;
             int h = clientSource != null ? clientSource.hashCode() : 0;

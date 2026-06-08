@@ -7,7 +7,7 @@ import io.netty.handler.codec.socksx.v5.Socks5AddressEncoder;
 import io.netty.handler.codec.socksx.v5.Socks5AddressType;
 import io.netty.util.NetUtil;
 import lombok.SneakyThrows;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -54,7 +54,7 @@ public final class HttpTunnelProtocol {
     /**
      * 编码 CONNECT 请求: ACTION(1) + CONN_ID(4) + ATYP(1) + DST.ADDR(variable) + DST.PORT(2)
      */
-    public static ByteBuf encodeConnect(int connId, UnresolvedEndpoint dst) {
+    public static ByteBuf encodeConnect(int connId, InetSocketAddress dst) {
         ByteBuf buf = PooledByteBufAllocator.DEFAULT.heapBuffer(64);
         buf.writeByte(ACTION_CONNECT);
         buf.writeInt(connId);
@@ -86,7 +86,7 @@ public final class HttpTunnelProtocol {
     /**
      * 编码 UDP_FORWARD 请求: ACTION(1) + CONN_ID(4) + ATYP(1) + DST.ADDR(variable) + DST.PORT(2) + DATA(variable)
      */
-    public static ByteBuf encodeUdpForward(int connId, UnresolvedEndpoint dst, byte[] data) {
+    public static ByteBuf encodeUdpForward(int connId, InetSocketAddress dst, byte[] data) {
         ByteBuf buf = PooledByteBufAllocator.DEFAULT.heapBuffer(64 + data.length);
         buf.writeByte(ACTION_UDP_FORWARD);
         buf.writeInt(connId);
@@ -96,8 +96,8 @@ public final class HttpTunnelProtocol {
     }
 
     @SneakyThrows
-    public static void encodeAddress(ByteBuf buf, UnresolvedEndpoint dst) {
-        String host = dst.getHost();
+    public static void encodeAddress(ByteBuf buf, InetSocketAddress dst) {
+        String host = dst.getHostString();
         Socks5AddressType addrType;
         if (NetUtil.isValidIpV4Address(host)) {
             addrType = Socks5AddressType.IPv4;
@@ -112,9 +112,9 @@ public final class HttpTunnelProtocol {
     }
 
     @SneakyThrows
-    public static UnresolvedEndpoint decodeAddress(ByteBuf buf) {
+    public static InetSocketAddress decodeAddress(ByteBuf buf) {
         Socks5AddressType addrType = Socks5AddressType.valueOf(buf.readByte());
         String dstAddr = Socks5AddressDecoder.DEFAULT.decodeAddress(addrType, buf);
-        return new UnresolvedEndpoint(dstAddr, buf.readUnsignedShort());
+        return org.rx.net.Sockets.newUnresolvedEndpoint(dstAddr, buf.readUnsignedShort());
     }
 }

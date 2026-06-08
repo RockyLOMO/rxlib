@@ -5,7 +5,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.Test;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 import org.slf4j.LoggerFactory;
 
 import java.net.UnknownHostException;
@@ -25,8 +25,8 @@ class SSTcpProxyHandlerTest {
         logger.setAdditive(false);
         try {
             SSTcpProxyHandler.logConnectFailure(
-                    new UnresolvedEndpoint("missing.fly.dev", 443),
-                    new UnresolvedEndpoint("missing.fly.dev", 443),
+                    org.rx.net.Sockets.newUnresolvedEndpoint("missing.fly.dev", 443),
+                    org.rx.net.Sockets.newUnresolvedEndpoint("missing.fly.dev", 443),
                     new UnknownHostException("missing.fly.dev"));
 
             assertEquals(1, appender.list.size());

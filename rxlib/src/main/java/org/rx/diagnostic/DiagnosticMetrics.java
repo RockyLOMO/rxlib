@@ -1,11 +1,13 @@
 package org.rx.diagnostic;
 
 import io.netty.channel.ChannelPipeline;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.net.SocketConfig;
 
 /**
  * Lightweight metric bridge without stack collection.
  */
+@Slf4j
 public final class DiagnosticMetrics {
     public static final String NET_TRANSPORT_SERVER = DiagnosticNetMetrics.TRANSPORT_SERVER;
     public static final String NET_TRANSPORT_CLIENT = DiagnosticNetMetrics.TRANSPORT_CLIENT;
@@ -47,7 +49,8 @@ public final class DiagnosticMetrics {
         RECORDING.set(true);
         try {
             monitor.getStore().recordMetric(new DiagnosticMetric(timestampMillis, name, value, tags, incidentId));
-        } catch (Throwable ignored) {
+        } catch (Throwable e) {
+            log.warn("diagnostic metric record failed, name={}, tags={}, incidentId={}", name, tags, incidentId, e);
             // Metrics must never affect business execution.
         } finally {
             RECORDING.remove();
@@ -64,7 +67,12 @@ public final class DiagnosticMetrics {
 
     public static void installNetIoHandler(ChannelPipeline pipeline, String component) {
         if (isEnabled()) {
-            DiagnosticNetIoHandler.install(pipeline, component);
+            try {
+                DiagnosticNetIoHandler.install(pipeline, component);
+            } catch (Throwable e) {
+                log.warn("diagnostic net io handler install failed, component={}", component, e);
+                // Metrics install failures must never affect business execution.
+            }
         }
     }
 

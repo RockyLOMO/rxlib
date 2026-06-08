@@ -82,7 +82,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
             }
 
             try {
-                Future<T> submitted = executor.submit(() -> {
+                Future<T> submitted = executor.submit((Callable<T>) ThreadPool.Task.adaptWithTrace(() -> {
                     runningTaskCount.incrementAndGet();
                     executionStarted = true;
                     executedCount.increment();
@@ -111,7 +111,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                             }
                         }
                     }
-                });
+                }, traceId));
                 future = submitted;
                 publish();
                 if (cancelRequested.get() && submitted.cancel(cancelMayInterruptIfRunning)) {
@@ -373,7 +373,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
             }
 
             try {
-                Future<?> submitted = executor.submit(() -> {
+                Future<?> submitted = executor.submit((Callable<Void>) ThreadPool.Task.<Void>adaptWithTrace(() -> {
                     runningTaskCount.incrementAndGet();
                     executionStarted = true;
                     executionRunning = true;
@@ -398,7 +398,8 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                             runningTaskCount.decrementAndGet();
                         }
                     }
-                });
+                    return null;
+                }, traceId));
                 future = submitted;
                 if (cancelled && submitted.cancel(cancelMayInterruptIfRunning)) {
                     signalComplete();
@@ -734,7 +735,9 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     }
 
     private boolean beginTrace(String traceId, StackTraceElement[] stackTrace) {
-        boolean traceStarted = ThreadPool.startTaskTrace(traceId);
+        String current = ThreadPool.traceId();
+        boolean traceStarted = current != null && (traceId == null || traceId.equals(current))
+                ? false : ThreadPool.startTaskTrace(traceId);
         ThreadPool.CTX_STACK_TRACE.set(stackTrace != null ? stackTrace : Boolean.TRUE);
         return traceStarted;
     }

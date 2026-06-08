@@ -92,44 +92,15 @@ public class ForkJoinPoolWrapper {
     };
 
     static Runnable wrap(Runnable task) {
-        String traceId = ThreadPool.traceId();
-//        log.info("wrap Runnable {}", traceId);
-        return () -> {
-            ThreadPool.startTrace(traceId);
-            try {
-                task.run();
-            } finally {
-                ThreadPool.endTrace();
-            }
-        };
+        return (Runnable) ThreadPool.Task.adapt(task);
     }
 
     static <T> Callable<T> wrap(Callable<T> task) {
-        String traceId = ThreadPool.traceId();
-//        log.info("wrap Callable {}", traceId);
-        return () -> {
-            ThreadPool.startTrace(traceId);
-            try {
-                return task.call();
-            } finally {
-                ThreadPool.endTrace();
-            }
-        };
+        return (Callable<T>) ThreadPool.Task.adapt(task);
     }
 
     static <T> ForkJoinTask<T> wrap(ForkJoinTask<T> task) {
-        String traceId = ThreadPool.traceId();
-//        log.info("wrap ForkJoinTask {}", traceId);
-        return ForkJoinTask.adapt(() -> {
-            ThreadPool.startTrace(traceId);
-//            String tid = ThreadPool.startTrace(traceId);
-//            log.info("wrap ForkJoinTask fn {}", tid);
-            try {
-                //join() will hang
-                return task.invoke();
-            } finally {
-                ThreadPool.endTrace();
-            }
-        });
+        Callable<T> callable = (Callable<T>) ThreadPool.Task.adapt((Callable<T>) task::invoke);
+        return ForkJoinTask.adapt(callable);
     }
 }

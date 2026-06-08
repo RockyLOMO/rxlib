@@ -1,11 +1,13 @@
 package org.rx.net.socks;
 
+import org.rx.net.udp.*;
+
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import org.rx.io.Bytes;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.Sockets;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.ConcurrentHashMap;
@@ -78,7 +80,7 @@ final class Udp2rawTunnelContext {
     }
 
     Udp2rawSession getOrCreateSession(Udp2rawSessionKey key, InetSocketAddress udp2rawPeer,
-            InetSocketAddress clientSource, UnresolvedEndpoint destination, Channel entryChannel) {
+            InetSocketAddress clientSource, InetSocketAddress destination, Channel entryChannel) {
         Udp2rawSession session = sessions.get(key);
         if (session != null) {
             return session;
@@ -195,7 +197,7 @@ final class Udp2rawTunnelContext {
         return accepted;
     }
 
-    SocksContext trafficContext(InetSocketAddress source, UnresolvedEndpoint destination) {
+    SocksContext trafficContext(InetSocketAddress source, InetSocketAddress destination) {
         if (trafficUser == null || trafficUser.isAnonymous() || source == null || source.getAddress() == null) {
             return null;
         }
@@ -276,7 +278,7 @@ final class Udp2rawTunnelContext {
             encoded = Udp2rawMtuProbeSupport.encodeProbe(channel.alloc(), sessionSecret,
                     sessionHi, sessionLo, probe.seq, probe.mtu);
             Sockets.UdpWriteResult result = Sockets.writeUdp(channel,
-                    new Sockets.UdpMtuProbeDatagramPacket(encoded, peer),
+                    new org.rx.net.udp.UdpMtuProbeDatagramPacket(encoded, peer),
                     "socks.udp2raw", "flow=mtu-probe,side=server");
             encoded = null;
             if (result == Sockets.UdpWriteResult.ACCEPTED) {

@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
@@ -22,19 +22,20 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 public class Socks5ClientIntegrationTest {
-    private static final int PROXY_PORT = 16800;
-    private static final int ECHO_PORT = 16801;
-    private static final int UDP_ECHO_PORT = 16802;
-
     private SocksProxyServer proxyServer;
     private Channel echoServer;
     private Channel udpEchoServer;
+    private int proxyPort;
+    private int echoPort;
+    private int udpEchoPort;
 
     @BeforeEach
     public void setup() throws Exception {
-        SocksConfig config = new SocksConfig(PROXY_PORT);
+        final InetSocketAddress[] proxyAddress = new InetSocketAddress[1];
+        SocksConfig config = new SocksConfig(0);
         config.setDebug(true);
-        proxyServer = new SocksProxyServer(config);
+        proxyServer = new SocksProxyServer(config, null, ch -> proxyAddress[0] = (InetSocketAddress) ch.localAddress());
+        proxyPort = proxyAddress[0].getPort();
 
         echoServer = Sockets.serverBootstrap(ch -> {
             ch.pipeline().addLast(new SimpleChannelInboundHandler<ByteBuf>() {
@@ -43,7 +44,8 @@ public class Socks5ClientIntegrationTest {
                     ctx.writeAndFlush(msg.retain());
                 }
             });
-        }).bind(ECHO_PORT).sync().channel();
+        }).bind(0).sync().channel();
+        echoPort = ((InetSocketAddress) echoServer.localAddress()).getPort();
 
         udpEchoServer = Sockets.udpBootstrap(new SocketConfig(), ch -> {
             ch.pipeline().addLast(new SimpleChannelInboundHandler<DatagramPacket>() {
@@ -52,23 +54,24 @@ public class Socks5ClientIntegrationTest {
                     ctx.writeAndFlush(new DatagramPacket(msg.content().retain(), msg.sender()));
                 }
             });
-        }).bind(UDP_ECHO_PORT).sync().channel();
+        }).bind(0).sync().channel();
+        udpEchoPort = ((InetSocketAddress) udpEchoServer.localAddress()).getPort();
     }
 
     @AfterEach
     public void tearDown() {
         if (proxyServer != null) proxyServer.close();
-        if (echoServer != null) echoServer.close();
-        if (udpEchoServer != null) udpEchoServer.close();
+        if (echoServer != null) echoServer.close().syncUninterruptibly();
+        if (udpEchoServer != null) udpEchoServer.close().syncUninterruptibly();
     }
 
     @Test
     public void testConnect() throws Exception {
-        try (Socks5Client client = new Socks5Client(AuthenticEndpoint.valueOf("127.0.0.1:" + PROXY_PORT))) {
+        try (Socks5Client client = new Socks5Client(AuthenticEndpoint.valueOf("127.0.0.1:" + proxyPort))) {
             String message = "hello-socks5-tcp";
             CompletableFuture<String> result = new CompletableFuture<>();
 
-            client.connect(new UnresolvedEndpoint("127.0.0.1", ECHO_PORT)).addListener(f -> {
+            client.connect(org.rx.net.Sockets.newUnresolvedEndpoint("127.0.0.1", echoPort)).addListener(f -> {
                 if (!f.isSuccess()) {
                     result.completeExceptionally(f.cause());
                     return;
@@ -90,7 +93,7 @@ public class Socks5ClientIntegrationTest {
     @Test
     @SneakyThrows
     void testUdpAssociate() {
-        try (Socks5Client client = new Socks5Client(AuthenticEndpoint.valueOf("127.0.0.1:" + PROXY_PORT))) {
+        try (Socks5Client client = new Socks5Client(AuthenticEndpoint.valueOf("127.0.0.1:" + proxyPort))) {
             String message = "hello-socks5-udp";
             CompletableFuture<String> result = new CompletableFuture<>();
 
@@ -110,8 +113,8 @@ public class Socks5ClientIntegrationTest {
                 }
             });
 
-            System.out.println("DEBUG: Sending UDP packet to " + UDP_ECHO_PORT);
-            session.send(new UnresolvedEndpoint("127.0.0.1", UDP_ECHO_PORT),
+            System.out.println("DEBUG: Sending UDP packet to " + udpEchoPort);
+            session.send(org.rx.net.Sockets.newUnresolvedEndpoint("127.0.0.1", udpEchoPort),
                     Unpooled.copiedBuffer(message, StandardCharsets.UTF_8)).addListener(f -> {
                 if (!f.isSuccess()) {
                     result.completeExceptionally(f.cause());
@@ -125,7 +128,7 @@ public class Socks5ClientIntegrationTest {
     @Test
     @SneakyThrows
     void testUdpAssociateWithProvidedChannel() {
-        try (Socks5Client client = new Socks5Client(AuthenticEndpoint.valueOf("127.0.0.1:" + PROXY_PORT))) {
+        try (Socks5Client client = new Socks5Client(AuthenticEndpoint.valueOf("127.0.0.1:" + proxyPort))) {
             String message = "hello-socks5-udp-provided";
             CompletableFuture<String> result = new CompletableFuture<>();
 
@@ -137,7 +140,7 @@ public class Socks5ClientIntegrationTest {
                         // This handler is part of the manual pipeline
                         ByteBuf content = msg.content();
                         try {
-                             UnresolvedEndpoint src = UdpManager.socks5Decode(content);
+                             InetSocketAddress src = UdpManager.socks5Decode(content);
                              String received = content.toString(StandardCharsets.UTF_8);
                              System.out.println("DEBUG: Provided channel received from " + src + ": " + received);
                              result.complete(received);
@@ -157,8 +160,8 @@ public class Socks5ClientIntegrationTest {
                 assertEquals(udpChannel, session.getUdpRelay());
 
                 // 3. Send using session
-                System.out.println("DEBUG: Sending UDP packet via session to " + UDP_ECHO_PORT);
-                session.send(new UnresolvedEndpoint("127.0.0.1", UDP_ECHO_PORT),
+                System.out.println("DEBUG: Sending UDP packet via session to " + udpEchoPort);
+                session.send(org.rx.net.Sockets.newUnresolvedEndpoint("127.0.0.1", udpEchoPort),
                         Unpooled.copiedBuffer(message, StandardCharsets.UTF_8));
 
                 assertEquals(message, result.get(15, TimeUnit.SECONDS));

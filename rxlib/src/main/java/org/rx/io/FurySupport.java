@@ -228,20 +228,19 @@ public final class FurySupport {
 
         @Override
         public void write(MemoryBuffer buffer, InetSocketAddress value) {
-            String host = value.getHostString();
             InetAddress address = value.getAddress();
-            if (address == null || !isLiteralIp(host)) {
-                buffer.writeByte(MODE_HOST);
+            if (address != null) {
+                byte[] bytes = address.getAddress();
+                buffer.writeByte(MODE_ADDRESS);
                 buffer.writeVarUint32(value.getPort());
-                fury.writeJavaString(buffer, host);
+                buffer.writeByte(bytes.length);
+                buffer.writeBytes(bytes);
                 return;
             }
 
-            byte[] bytes = address.getAddress();
-            buffer.writeByte(MODE_ADDRESS);
+            buffer.writeByte(MODE_HOST);
             buffer.writeVarUint32(value.getPort());
-            buffer.writeByte(bytes.length);
-            buffer.writeBytes(bytes);
+            fury.writeJavaString(buffer, value.getHostString());
         }
 
         @Override
@@ -249,7 +248,7 @@ public final class FurySupport {
             int mode = buffer.readUnsignedByte();
             int port = buffer.readVarUint32();
             if (mode == MODE_HOST) {
-                return InetSocketAddress.createUnresolved(fury.readJavaString(buffer), port);
+                return newSocketAddressNoDns(fury.readJavaString(buffer), port);
             }
             if (mode != MODE_ADDRESS) {
                 throw new IllegalArgumentException("Invalid InetSocketAddress mode " + mode);
@@ -266,8 +265,20 @@ public final class FurySupport {
             }
         }
 
-        private static boolean isLiteralIp(String host) {
-            return host != null && (NetUtil.isValidIpV4Address(host) || NetUtil.isValidIpV6Address(host));
+        private static InetSocketAddress newSocketAddressNoDns(String host, int port) {
+            if (host == null) {
+                throw new IllegalArgumentException("InetSocketAddress host is null");
+            }
+            String h = host.trim();
+            byte[] bytes = NetUtil.createByteArrayFromIpAddressString(h);
+            if (bytes == null) {
+                return InetSocketAddress.createUnresolved(h, port);
+            }
+            try {
+                return new InetSocketAddress(InetAddress.getByAddress(bytes), port);
+            } catch (UnknownHostException e) {
+                throw new IllegalArgumentException(e);
+            }
         }
     }
 

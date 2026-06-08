@@ -1,5 +1,8 @@
 package org.rx.diagnostic;
 
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 public final class DiagnosticNetIo {
     private DiagnosticNetIo() {
     }
@@ -22,6 +25,11 @@ public final class DiagnosticNetIo {
         if (monitor == null || endpoint == null || bytes <= 0L) {
             return;
         }
-        monitor.recordNetIo(endpoint, operation, bytes);
+        try {
+            monitor.recordNetIo(endpoint, operation, bytes);
+        } catch (Throwable e) {
+            log.warn("diagnostic net io record failed, endpoint={}, operation={}, bytes={}", endpoint, operation, bytes, e);
+            // Diagnostic failures must never affect business execution.
+        }
     }
 }

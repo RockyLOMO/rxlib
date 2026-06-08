@@ -17,7 +17,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.io.Bytes;
 import org.rx.net.SocketConfig;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 import org.rx.util.function.BiFunc;
 
 import java.net.InetSocketAddress;
@@ -107,12 +107,8 @@ public final class UdpManager {
         }
     }
 
-    public static HeaderTemplate socks5HeaderTemplate(UnresolvedEndpoint dst) {
-        return buildHeaderTemplate(dst.getHost(), dst.getPort(), true);
-    }
-
-    public static HeaderTemplate addressHeaderTemplate(UnresolvedEndpoint dst) {
-        return buildHeaderTemplate(dst.getHost(), dst.getPort(), false);
+    public static HeaderTemplate socks5HeaderTemplate(InetSocketAddress dst) {
+        return buildHeaderTemplate(dst.getHostString(), dst.getPort(), true);
     }
 
     public static HeaderTemplate addressHeaderTemplate(InetSocketAddress dst) {
@@ -142,8 +138,8 @@ public final class UdpManager {
         return headerTemplate.composite(allocator, payload, true);
     }
 
-    public static CompositeByteBuf socks5Encode(ByteBuf buf, UnresolvedEndpoint dst) {
-        return socks5Encode(buf, dst.getHost(), dst.getPort());
+    public static CompositeByteBuf socks5Encode(ByteBuf buf, InetSocketAddress dst) {
+        return socks5Encode(buf, dst.getHostString(), dst.getPort());
     }
 
     public static CompositeByteBuf prependAddress(ByteBufAllocator allocator, ByteBuf payload, InetSocketAddress dst) {
@@ -158,10 +154,6 @@ public final class UdpManager {
             Bytes.release(compositeBuf);
             throw e;
         }
-    }
-
-    public static CompositeByteBuf socks5Encode(ByteBuf buf, InetSocketAddress dst) {
-        return socks5Encode(buf, dst.getHostString(), dst.getPort());
     }
 
     public static CompositeByteBuf socks5Encode(ByteBuf buf, String host, int port) {
@@ -180,7 +172,7 @@ public final class UdpManager {
         }
     }
 
-    public static UnresolvedEndpoint socks5Decode(ByteBuf buf) {
+    public static InetSocketAddress socks5Decode(ByteBuf buf) {
         if (!isValidSocks5UdpPacket(buf)) {
             throw new IllegalArgumentException("invalid socks5 UDP packet");
         }
@@ -225,10 +217,6 @@ public final class UdpManager {
         }
     }
 
-    public static void encode(ByteBuf buf, UnresolvedEndpoint dst) {
-        encode(buf, dst.getHost(), dst.getPort());
-    }
-
     public static void encode(ByteBuf buf, InetSocketAddress dst) {
         encode(buf, dst.getHostString(), dst.getPort());
     }
@@ -249,12 +237,12 @@ public final class UdpManager {
     }
 
     @SneakyThrows
-    public static UnresolvedEndpoint decode(ByteBuf buf) {
+    public static InetSocketAddress decode(ByteBuf buf) {
         if (!isValidAddressPayload(buf)) {
             throw new IllegalArgumentException("invalid udp address payload");
         }
         Socks5AddressType addrType = Socks5AddressType.valueOf(buf.readByte());
         String dstAddr = Socks5AddressDecoder.DEFAULT.decodeAddress(addrType, buf);
-        return new UnresolvedEndpoint(dstAddr, buf.readUnsignedShort());
+        return org.rx.net.Sockets.newUnresolvedEndpoint(dstAddr, buf.readUnsignedShort());
     }
 }

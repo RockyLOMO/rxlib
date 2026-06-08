@@ -15,7 +15,8 @@ public class NetworkTrafficConfig implements Serializable {
     private boolean enabled;
     private long uploadKilobytesPerSecond;
     private long downloadKilobytesPerSecond;
-    private long checkIntervalMillis = 1000L;
+    private long checkIntervalMillis = 100L;
+    private long maxDelayMillis = 200L;
     private boolean tcpBackpressureEnabled = true;
     private boolean udpBackpressureEnabled = true;
     private int udpMaxPendingBytes;
@@ -30,6 +31,7 @@ public class NetworkTrafficConfig implements Serializable {
             uploadKilobytesPerSecond = source.uploadKilobytesPerSecond;
             downloadKilobytesPerSecond = source.downloadKilobytesPerSecond;
             checkIntervalMillis = source.checkIntervalMillis;
+            maxDelayMillis = source.maxDelayMillis;
             tcpBackpressureEnabled = source.tcpBackpressureEnabled;
             udpBackpressureEnabled = source.udpBackpressureEnabled;
             udpMaxPendingBytes = source.udpMaxPendingBytes;
@@ -61,7 +63,8 @@ public class NetworkTrafficConfig implements Serializable {
     public void normalize() {
         uploadKilobytesPerSecond = Math.max(0L, uploadKilobytesPerSecond);
         downloadKilobytesPerSecond = Math.max(0L, downloadKilobytesPerSecond);
-        checkIntervalMillis = checkIntervalMillis > 0L ? checkIntervalMillis : 1000L;
+        checkIntervalMillis = checkIntervalMillis > 0L ? checkIntervalMillis : 100L;
+        maxDelayMillis = maxDelayMillis > 0L ? maxDelayMillis : 200L;
         udpMaxPendingBytes = Math.max(0, udpMaxPendingBytes);
         udpMaxPendingPackets = Math.max(0, udpMaxPendingPackets);
     }

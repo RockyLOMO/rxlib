@@ -4,8 +4,6 @@ import io.netty.buffer.ByteBuf;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
-import org.rx.net.support.UnresolvedEndpoint;
-
 import java.net.InetSocketAddress;
 
 @Getter
@@ -20,7 +18,7 @@ public final class Udp2rawFrame {
     private long connId;
     private long packetSeq;
     private InetSocketAddress clientSource;
-    private UnresolvedEndpoint destination;
+    private InetSocketAddress destination;
     private InetSocketAddress sourceAddress;
     private ByteBuf authTag;
 

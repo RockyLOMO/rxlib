@@ -1,5 +1,7 @@
 package org.rx.net.socks;
 
+import org.rx.net.udp.*;
+
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.channel.Channel;
@@ -279,8 +281,8 @@ public final class Udp2rawPayloadSupport {
         return old != null ? old : created;
     }
 
-    static int effectiveMultiplier(UdpRedundantConfig config, UdpRedundantStats stats,
-            UdpRedundantMultiplierResolver resolver, InetSocketAddress recipient) {
+    public static int effectiveMultiplier(UdpRedundantConfig config, UdpRedundantStats stats,
+                                          UdpRedundantMultiplierResolver resolver, InetSocketAddress recipient) {
         if (config == null) {
             return 1;
         }

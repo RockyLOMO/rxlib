@@ -4,26 +4,26 @@ import io.netty.channel.Channel;
 import lombok.Getter;
 import lombok.NonNull;
 import org.rx.net.SocketConfig;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.net.SocketAddress;
 import java.util.concurrent.CompletableFuture;
 
 @Getter
 public class Upstream {
-    protected UnresolvedEndpoint destination;
+    protected InetSocketAddress destination;
     //Maybe frontend have a different configuration from backend
     protected SocketConfig config;
 
-    public Upstream(UnresolvedEndpoint dstEp) {
+    public Upstream(InetSocketAddress dstEp) {
         this(dstEp, null);
     }
 
-    public Upstream(UnresolvedEndpoint dstEp, SocketConfig conf) {
+    public Upstream(InetSocketAddress dstEp, SocketConfig conf) {
         reuse(dstEp, conf);
     }
 
-    public void reuse(@NonNull UnresolvedEndpoint dstEp, SocketConfig conf) {
+    public void reuse(@NonNull InetSocketAddress dstEp, SocketConfig conf) {
         destination = dstEp;
         config = conf;
     }
@@ -37,6 +37,6 @@ public class Upstream {
     }
 
     public SocketAddress connectAddressHint() {
-        return destination.socketAddress();
+        return destination;
     }
 }

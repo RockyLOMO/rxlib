@@ -181,7 +181,7 @@ udpLeasePoolEnabled = true          // UDP ASSOCIATE 连接池
 udpLeasePoolMinSize = 2
 udpLeasePoolMaxSize = 32
 
-// UDP 多倍发包（游戏场景）
+// UDP 多倍发包（游戏场景，继承自 SocketConfig）
 udpRedundant.multiplier = 2         // 2倍发包
 udpRedundant.adaptive = true        // 自适应调节
 udpRedundant.intervalMicros = 1000  // 发包间隔

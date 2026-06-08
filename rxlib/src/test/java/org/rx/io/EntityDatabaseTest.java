@@ -74,6 +74,23 @@ public class EntityDatabaseTest extends AbstractTester {
         Integer age;
     }
 
+    @Data
+    public static class IndexRefreshEntity implements Serializable {
+        @DbColumn(primaryKey = true)
+        Long id;
+        @DbColumn(index = DbColumn.IndexKind.INDEX_ASC)
+        String name;
+        Integer age;
+    }
+
+    @Data
+    public static class MissingIndexEntity implements Serializable {
+        @DbColumn(primaryKey = true)
+        Long id;
+        @DbColumn(index = DbColumn.IndexKind.NONE)
+        String text;
+    }
+
     static class CountingEntityDatabaseImpl extends EntityDatabaseImpl {
         int existsByIdCalls;
 
@@ -182,6 +199,41 @@ public class EntityDatabaseTest extends AbstractTester {
             InvalidException e = assertThrows(InvalidException.class, () -> db.createMapping(DuplicateCompositeOrderEntity.class));
             assertTrue(e.getMessage().contains("duplicate order"));
         } finally {
+            db.close();
+        }
+    }
+
+    @Test
+    public void testCreateIndexRebuildsDifferentExistingColumns() {
+        EntityDatabaseImpl db = new EntityDatabaseImpl(path("h2/index_refresh"), null);
+        db.createMapping(IndexRefreshEntity.class);
+        try {
+            String tableName = db.tableName(IndexRefreshEntity.class);
+            String indexName = db.indexName(tableName, "name");
+            db.executeUpdate(String.format("DROP INDEX %s ON %s;", indexName, tableName));
+            db.executeUpdate(String.format("CREATE INDEX %s ON %s (age);", indexName, tableName));
+
+            db.createMapping(IndexRefreshEntity.class);
+
+            DataTable dt = db.executeQuery(String.format("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.INDEX_COLUMNS WHERE UPPER(TABLE_NAME)='%s' AND UPPER(INDEX_NAME)='%s' ORDER BY ORDINAL_POSITION ASC",
+                    tableName.toUpperCase(), indexName.toUpperCase()));
+            List<DataRow> rows = Linq.from(dt.getRows()).toList();
+            assertEquals(1, rows.size());
+            assertEquals("NAME", rows.get(0).get("COLUMN_NAME"));
+        } finally {
+            db.dropMapping(IndexRefreshEntity.class);
+            db.close();
+        }
+    }
+
+    @Test
+    public void testDropIndexSkipsMissingIndex() {
+        EntityDatabaseImpl db = new EntityDatabaseImpl(path("h2/drop_missing_index"), null);
+        db.createMapping(MissingIndexEntity.class);
+        try {
+            db.dropIndex(MissingIndexEntity.class, "text");
+        } finally {
+            db.dropMapping(MissingIndexEntity.class);
             db.close();
         }
     }

@@ -16,7 +16,7 @@ import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 import org.rx.util.function.BiAction;
 import org.rx.util.function.PredicateFunc;
 import org.rx.util.function.TripleAction;
@@ -34,7 +34,7 @@ import java.util.function.Function;
 // @Slf4j
 public class SocksProxyServer extends Disposable implements EventPublisher<SocksProxyServer> {
     public static final TripleAction<SocksProxyServer, SocksContext> DIRECT_ROUTER = (s, e) -> e.setUpstream(new Upstream(e.getFirstDestination()));
-    public static final PredicateFunc<UnresolvedEndpoint> DNS_CIPHER_ROUTER = dstEp -> dstEp.getPort() == SocksRpcContract.DNS_PORT
+    public static final PredicateFunc<InetSocketAddress> DNS_CIPHER_ROUTER = dstEp -> dstEp.getPort() == SocksRpcContract.DNS_PORT
             || dstEp.getPort() == 80;
     private static final long UDP_RELAY_OPERATION_TIMEOUT_SECONDS = 5L;
     public final Delegate<SocksProxyServer, SocksContext> onTcpRoute = Delegate.create(DIRECT_ROUTER),
@@ -52,7 +52,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     final AtomicInteger activeChannels = new AtomicInteger();
     // 只有压缩时一定要用
     @Setter
-    private PredicateFunc<UnresolvedEndpoint> cipherRouter;
+    private PredicateFunc<InetSocketAddress> cipherRouter;
     @Getter
     @Setter
     private Function<String, AuthResult> connectionTagResolver;
@@ -217,7 +217,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     }
 
     @SneakyThrows
-    boolean cipherRoute(UnresolvedEndpoint dstEp) {
+    boolean cipherRoute(InetSocketAddress dstEp) {
         if (cipherRouter == null) {
             return false;
         }
@@ -437,7 +437,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             if (ctxMap != null) {
                 ctxMap.clear();
             }
-            ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = relay.attr(Udp2rawHandler.ATTR_ROUTE_MAP).get();
+            ConcurrentMap<InetSocketAddress, SocksContext> routeMap = relay.attr(Udp2rawHandler.ATTR_ROUTE_MAP).get();
             if (routeMap != null) {
                 routeMap.clear();
             }

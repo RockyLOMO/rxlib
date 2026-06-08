@@ -42,13 +42,13 @@ public final class NameserverClient extends Disposable {
         Tasks.setTimeout(() -> {
             Linq<NsInfo> q = Linq.from(group).selectMany(RandomList::aliveList).where(p -> p.dnsPort != null);
             if (!q.any()) {
-                log.warn("At least one dns server that required");
+                log.warn("nsc: At least one dns server that required");
                 return;
             }
 
             List<InetSocketAddress> ns = q.select(p -> Sockets.newEndpoint(p.registerEndpoint, p.dnsPort)).distinct().toList();
             Sockets.injectNameService(ns);
-            log.info("inject ns {}", toJsonString(ns));
+            log.info("nsc: inject ns {}", toJsonString(ns));
             syncRoot.set();
         }, Constants.DEFAULT_INTERVAL, NameserverClient.class, Constants.TIMER_REPLACE_FLAG);
     }
@@ -123,14 +123,14 @@ public final class NameserverClient extends Disposable {
                     try {
                         Integer lastDp = tuple.dnsPort;
                         if (eq(tuple.dnsPort = tuple.ns.register(appName, svrEps), lastDp)) {
-                            log.debug("login ns ok {} -> {}", regEp, tuple.dnsPort);
+                            log.debug("nsc: login ns ok {} -> {}", regEp, tuple.dnsPort);
                             return;
                         }
-                        log.info("login ns {} -> {} PREV={}", regEp, tuple.dnsPort, lastDp);
+                        log.info("nsc: login ns {} -> {} PREV={}", regEp, tuple.dnsPort, lastDp);
                         registerInstanceAttrs(tuple.ns);
                         reInject();
                     } catch (Throwable e) {
-                        log.debug("login error", e);
+                        log.debug("nsc: login error", e);
                         Tasks.setTimeout(() -> {
                             tuple.dnsPort = tuple.ns.register(appName, svrEps);
                             registerInstanceAttrs(tuple.ns);
@@ -159,7 +159,7 @@ public final class NameserverClient extends Disposable {
                         handshake.invoke();
                     });
                     ns.<NEventArgs<Set<InetSocketAddress>>>attachEvent(Nameserver.EVENT_CLIENT_SYNC, (s, e) -> {
-                        log.info("sync server endpoints: {}", toJsonString(e.getValue()));
+                        log.info("nsc: sync server endpoints: {}", toJsonString(e.getValue()));
                         if (e.getValue().isEmpty()) {
                             return;
                         }
@@ -168,7 +168,7 @@ public final class NameserverClient extends Disposable {
                     }, false);
                     //onAppAddressChanged for arg#1 not work
                     ns.<Nameserver.AppChangedEventArgs>attachEvent(Nameserver.EVENT_APP_ADDRESS_CHANGED, (s, e) -> {
-                        log.info("app address changed: {} -> {}", e.getAppName(), e.getAddress());
+                        log.info("nsc: app address changed: {} -> {}", e.getAppName(), e.getAddress());
                         onAppAddressChanged.invoke(s, e);
                     }, false);
                 });

@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.rx.net.Sockets;
 import org.rx.net.socks.encryption.CipherKind;
 import org.rx.net.socks.upstream.Upstream;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.net.InetSocketAddress;
 
@@ -79,7 +79,7 @@ class SSUdpProxyHandlerTest {
             };
             SSUdpProxyHandler.RouteKey routeKey = new SSUdpProxyHandler.RouteKey(
                     new InetSocketAddress("127.0.0.1", 10003),
-                    new UnresolvedEndpoint("127.0.0.1", 53));
+                    org.rx.net.Sockets.newUnresolvedEndpoint("127.0.0.1", 53));
             Upstream upstream = new Upstream(routeKey.destination, config);
 
             assertThrows(IllegalStateException.class,

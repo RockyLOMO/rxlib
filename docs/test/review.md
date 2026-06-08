@@ -19,15 +19,6 @@
 *   [ShardingEntityDatabase](../../rxlib/src/main/java/org/rx/io/ShardingEntityDatabase.java) — 分片实体数据库。
 *   [WALFileStream](../../rxlib/src/main/java/org/rx/io/WALFileStream.java) — WAL（预写日志）文件流。
 
-### 📂 网络与传输模块 (`org.rx.net.*`)
-*   [FecConfig](../../rxlib/src/main/java/org/rx/net/FecConfig.java) — FEC（前向纠错）配置项。
-*   [FecDecoder](../../rxlib/src/main/java/org/rx/net/FecDecoder.java) — FEC 解码器。
-*   [FecEncoder](../../rxlib/src/main/java/org/rx/net/FecEncoder.java) — FEC 编码器。
-*   [FecPacket](../../rxlib/src/main/java/org/rx/net/FecPacket.java) — FEC 数据包定义。
-*   [FecUdpClient](../../rxlib/src/main/java/org/rx/net/FecUdpClient.java) — 基于 FEC 的 UDP 客户端。
-
----
-
 ## 🚫 排除包 (Excluded Packages)
 
 以下包包含第三方集成或不再活跃使用的历史底层传输实现：

@@ -19,6 +19,8 @@ import org.rx.net.Sockets;
 import org.rx.net.transport.protocol.AckSync;
 import org.rx.net.transport.protocol.UdpMessage;
 import org.rx.net.transport.protocol.UdpRpcResponse;
+import org.rx.net.udp.UdpResilienceAttributes;
+import org.rx.net.udp.UdpResilienceConfig;
 import org.rx.util.IdGenerator;
 
 import java.io.Serializable;
@@ -37,6 +39,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static org.rx.core.Extends.circuitContinue;
 import static org.rx.core.Extends.quietly;
 
+/**
+ * Reliable unordered UDP message transport using the RXUP protocol.
+ *
+ * <p>Reliability is tracked per logical message; completion order between
+ * independent messages is intentionally not guaranteed. Configured
+ * peer-scoped UDP optimizations are registered for outbound RXUP targets and
+ * successfully decoded inbound peers.</p>
+ */
 @Slf4j
 public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
     @RequiredArgsConstructor
@@ -219,11 +229,14 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
     @Getter
     final Channel channel;
     final List<Channel> channels;
+    final UdpClientConfig config;
+    final boolean autoPeerRegistrationEnabled;
     final IdGenerator generator = new IdGenerator();
     final ConcurrentMap<Integer, SendContext> pendingSends = new ConcurrentHashMap<>();
     final ConcurrentMap<ReceiveKey, ReceiveAssembly> pendingReceives = new ConcurrentHashMap<>();
     final Set<ReceiveKey> completedReceives = ConcurrentHashMap.newKeySet();
     final Set<ReceiveKey> inflightReceives = ConcurrentHashMap.newKeySet();
+    final Set<InetSocketAddress> autoPeers = ConcurrentHashMap.newKeySet();
     final ConcurrentMap<Integer, RpcRequestContext<?>> pendingRequests = new ConcurrentHashMap<>();
     @Getter
     final InetSocketAddress localEndpoint;
@@ -255,12 +268,19 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
 
     public UdpClient(int bindPort, UdpClientConfig config) {
         UdpClientConfig resolved = requireConfig(config);
+        this.config = resolved;
         codec = requireCodec(resolved.getCodec());
         waitAckTimeoutMillis = resolved.getWaitAckTimeoutMillis();
         fullSync = resolved.isFullSync();
         maxResend = resolved.getMaxResend();
         maxFragmentPayloadBytes = resolved.getMaxFragmentPayloadBytes();
         maxFragmentCount = resolved.getMaxFragmentCount();
+        UdpResilienceConfig resilience = resolved.getUdpResilience();
+        autoPeerRegistrationEnabled = resolved.isUdpCompressEnabled()
+                || resolved.getUdpRedundantMultiplier() > 1
+                || resolved.isUdpRedundantAdaptive()
+                || resolved.hasUdpRedundantDestinationRules()
+                || resilience != null && resilience.isEnabled() && !resilience.isResilienceAll();
         bootstrap = Sockets.udpBootstrap(resolved, ch -> ch.pipeline().addLast(HANDLER));
         InetSocketAddress bindAddress = Sockets.newAnyEndpoint(bindPort);
         channels = Sockets.bindChannels(bootstrap, bindAddress, resolved);
@@ -423,7 +443,6 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
 
     SendContext beginSend(InetSocketAddress remoteAddress, Object packet, int waitAckTimeoutMillis, boolean fullSync, int messageId) {
         ensureFragmentSettings();
-
         AckSync ack = fullSync ? AckSync.FULL : waitAckTimeoutMillis > 0 ? AckSync.SEMI : AckSync.NONE;
         int alive = waitAckTimeoutMillis > 0 ? waitAckTimeoutMillis : defaultAliveMillis();
         ByteBuf payload = null;
@@ -450,6 +469,7 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
             }
 
             try {
+                registerAutoPeer(remoteAddress);
                 context.writeFuture = writeFragments(context);
             } catch (Throwable e) {
                 failSend(context, e);
@@ -482,7 +502,6 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
             log.warn("Discard unknown udp packet magic {} from {}", Integer.toHexString(magic), sender);
             return;
         }
-
         int startIndex = buf.readerIndex();
         buf.readInt();
         byte type = buf.readByte();
@@ -581,6 +600,7 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
             ByteBuf merged = assembly.buildPayload(channel.alloc());
             try {
                 Object pack = codec.decode(merged);
+                registerAutoPeer(sender);
                 handleLogicalMessage(sender, key, new UdpMessage(messageId, ack, alive, sender, pack));
             } finally {
                 Bytes.release(merged);
@@ -830,6 +850,23 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
         assembly.release();
     }
 
+    void registerAutoPeer(InetSocketAddress remoteAddress) {
+        int maxAutoPeers = config.getMaxAutoPeers();
+        if (!autoPeerRegistrationEnabled || maxAutoPeers <= 0 || remoteAddress == null
+                || autoPeers.contains(remoteAddress)) {
+            return;
+        }
+        InetSocketAddress normalized = UdpResilienceAttributes.normalize(remoteAddress);
+        if (!autoPeers.add(normalized)) {
+            return;
+        }
+        if (autoPeers.size() > maxAutoPeers) {
+            autoPeers.remove(normalized);
+            return;
+        }
+        Sockets.addUdpPeer(channel, config, normalized);
+    }
+
     void onHandlerError(Throwable error) {
         log.error("udp client error {}", localEndpoint, error);
         quietly(() -> publishEvent(onError, new NEventArgs<>(error)));
@@ -862,6 +899,10 @@ public class UdpClient implements EventPublisher<UdpClient>, AutoCloseable {
         pendingReceives.clear();
         completedReceives.clear();
         inflightReceives.clear();
+        for (InetSocketAddress remoteAddress : autoPeers) {
+            Sockets.removeUdpPeer(channel, config, remoteAddress);
+        }
+        autoPeers.clear();
 
         boolean inEventLoop = false;
         Thread current = Thread.currentThread();

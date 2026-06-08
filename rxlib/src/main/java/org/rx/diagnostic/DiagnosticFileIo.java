@@ -1,14 +1,22 @@
 package org.rx.diagnostic;
 
+import lombok.extern.slf4j.Slf4j;
+
 import java.io.File;
 
+@Slf4j
 public final class DiagnosticFileIo {
     private DiagnosticFileIo() {
     }
 
     public static void recordRead(File file, long bytes, long elapsedNanos) {
         if (file != null && isEnabled()) {
-            recordRead(file.getAbsolutePath(), bytes, elapsedNanos);
+            try {
+                recordRead(file.getAbsolutePath(), bytes, elapsedNanos);
+            } catch (Throwable e) {
+                log.warn("diagnostic file io read record failed, bytes={}", bytes, e);
+                // Diagnostic failures must never affect business execution.
+            }
         }
     }
 
@@ -18,7 +26,12 @@ public final class DiagnosticFileIo {
 
     public static void recordWrite(File file, long bytes, long elapsedNanos) {
         if (file != null && isEnabled()) {
-            recordWrite(file.getAbsolutePath(), bytes, elapsedNanos);
+            try {
+                recordWrite(file.getAbsolutePath(), bytes, elapsedNanos);
+            } catch (Throwable e) {
+                log.warn("diagnostic file io write record failed, bytes={}", bytes, e);
+                // Diagnostic failures must never affect business execution.
+            }
         }
     }
 
@@ -47,7 +60,12 @@ public final class DiagnosticFileIo {
         if (monitor == null || path == null) {
             return;
         }
-        monitor.recordFileIo(path, operation, bytes, elapsedNanos);
+        try {
+            monitor.recordFileIo(path, operation, bytes, elapsedNanos);
+        } catch (Throwable e) {
+            log.warn("diagnostic file io record failed, path={}, operation={}, bytes={}", path, operation, bytes, e);
+            // Diagnostic failures must never affect business execution.
+        }
     }
 }
 

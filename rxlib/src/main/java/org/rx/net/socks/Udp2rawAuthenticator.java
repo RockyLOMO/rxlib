@@ -110,7 +110,7 @@ public final class Udp2rawAuthenticator {
         updateLong(mac, frame.getConnId());
         updateLong(mac, frame.getPacketSeq());
         updateEndpoint(mac, frame.getClientSource());
-        updateEndpoint(mac, frame.getDestination() != null ? frame.getDestination().getHost() : null,
+        updateEndpoint(mac, frame.getDestination() != null ? frame.getDestination().getHostString() : null,
                 frame.getDestination() != null ? frame.getDestination().getPort() : 0);
         updateEndpoint(mac, frame.getSourceAddress());
     }

@@ -1,5 +1,7 @@
 package org.rx.net.socks;
 
+import org.rx.net.udp.*;
+
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelPipeline;
 import lombok.extern.slf4j.Slf4j;
@@ -204,11 +206,11 @@ final class Udp2rawServerEntryManager extends Disposable {
     }
 
     private UdpCompressConfig configCompress() {
-        return UdpCompressConfig.fromSocksConfig(server.getConfig());
+        return UdpCompressConfig.fromSocketConfig(server.getConfig());
     }
 
     private UdpRedundantConfig configRedundant() {
-        return UdpRedundantConfig.fromSocksConfig(server.getConfig());
+        return UdpRedundantConfig.fromSocketConfig(server.getConfig());
     }
 
     private TrafficUser resolveTrafficUser(Udp2rawOpenRequest request) {

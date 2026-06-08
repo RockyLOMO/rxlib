@@ -28,7 +28,7 @@ app:
     queueOfferTimeoutMillis: 0
     serialQueueCapacity: 4096
     serialQueueHardLimit: 100000
-    patchCompletableFutureAsyncPool: false
+    patchCompletableFutureAsyncPool: true
     resizeCooldownMillis: 1000
   cache:
     physicalMemoryUsageWarningThreshold: 95

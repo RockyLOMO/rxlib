@@ -10,7 +10,7 @@ import org.rx.net.socks.UdpRelayGroupOpenResult;
 import org.rx.net.socks.UdpRelayGroupUpdateResult;
 import org.rx.net.socks.Udp2rawOpenRequest;
 import org.rx.net.socks.Udp2rawOpenResult;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -47,7 +47,7 @@ public final class RssRpcApp implements SocksRpcContract {
     @Override
     public void fakeEndpoint(long hash, String endpoint, String token) {
         SocksRpcContract.requireValidRpcToken(token);
-        SocksRpcContract.fakeDict().putIfAbsent(hash, UnresolvedEndpoint.valueOf(endpoint));
+        SocksRpcContract.fakeDict().putIfAbsent(hash, org.rx.net.Sockets.parseEndpoint(endpoint));
     }
 
     @SneakyThrows

@@ -12,7 +12,7 @@ import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.UdpClientUpstream;
 import org.rx.net.support.UpstreamSupport;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -27,7 +27,7 @@ class SocksUdpRelayHandlerTest {
     static final class AsyncUpstream extends Upstream {
         final CompletableFuture<Void> readyFuture = new CompletableFuture<>();
 
-        AsyncUpstream(UnresolvedEndpoint dstEp) {
+        AsyncUpstream(InetSocketAddress dstEp) {
             super(dstEp);
         }
 
@@ -41,7 +41,7 @@ class SocksUdpRelayHandlerTest {
         final InetSocketAddress[] relayAddresses;
         final AtomicInteger nextIndex = new AtomicInteger();
 
-        FakePortHoppingUpstream(UnresolvedEndpoint dstEp, SocksConfig config, InetSocketAddress... relayAddresses) {
+        FakePortHoppingUpstream(InetSocketAddress dstEp, SocksConfig config, InetSocketAddress... relayAddresses) {
             super(dstEp, config, new UpstreamSupport(new AuthenticEndpoint(relayAddresses[0]), null));
             this.relayAddresses = relayAddresses;
         }
@@ -90,7 +90,7 @@ class SocksUdpRelayHandlerTest {
         SocksProxyServer server = new SocksProxyServer(config);
         EmbeddedChannel relay = new EmbeddedChannel(SocksUdpRelayHandler.DEFAULT);
         try {
-            AsyncUpstream upstream = new AsyncUpstream(new UnresolvedEndpoint("127.0.0.1", 15300));
+            AsyncUpstream upstream = new AsyncUpstream(org.rx.net.Sockets.newUnresolvedEndpoint("127.0.0.1", 15300));
             server.onUdpRoute.replace((s, e) -> e.setUpstream(upstream));
             relay.attr(SocksContext.SOCKS_SVR).set(server);
 
@@ -190,7 +190,7 @@ class SocksUdpRelayHandlerTest {
             InetSocketAddress firstRelay = new InetSocketAddress("127.0.0.1", 23001);
             InetSocketAddress secondRelay = new InetSocketAddress("127.0.0.1", 23002);
             FakePortHoppingUpstream upstream = new FakePortHoppingUpstream(
-                    new UnresolvedEndpoint("127.0.0.1", 15302), config, firstRelay, secondRelay);
+                    org.rx.net.Sockets.newUnresolvedEndpoint("127.0.0.1", 15302), config, firstRelay, secondRelay);
             server.onUdpRoute.replace((s, e) -> e.setUpstream(upstream));
             relay.attr(SocksContext.SOCKS_SVR).set(server);
 
@@ -242,7 +242,7 @@ class SocksUdpRelayHandlerTest {
             try {
                 assertEquals(udpClient, request.recipient());
                 assertTrue(UdpManager.isValidSocks5UdpPacket(request.content()));
-                UnresolvedEndpoint dstEp = UdpManager.socks5Decode(request.content());
+                InetSocketAddress dstEp = UdpManager.socks5Decode(request.content());
                 assertEquals(15302, dstEp.getPort());
                 byte[] payload = new byte[request.content().readableBytes()];
                 request.content().readBytes(payload);
@@ -262,7 +262,7 @@ class SocksUdpRelayHandlerTest {
             try {
                 assertEquals(clientAddr, response.recipient());
                 assertTrue(UdpManager.isValidSocks5UdpPacket(response.content()));
-                UnresolvedEndpoint srcEp = UdpManager.socks5Decode(response.content());
+                InetSocketAddress srcEp = UdpManager.socks5Decode(response.content());
                 assertEquals(15302, srcEp.getPort());
                 byte[] payload = new byte[response.content().readableBytes()];
                 response.content().readBytes(payload);
@@ -328,9 +328,9 @@ class SocksUdpRelayHandlerTest {
             InetSocketAddress staleRelay = new InetSocketAddress("127.0.0.1", 23103);
             SocksConfig config = new SocksConfig(new LocalAddress("UDP_PORT_HOPPING_CLEANUP_TEST"));
             FakePortHoppingUpstream upstream = new FakePortHoppingUpstream(
-                    new UnresolvedEndpoint("127.0.0.1", 15303), config, firstRelay, secondRelay);
+                    org.rx.net.Sockets.newUnresolvedEndpoint("127.0.0.1", 15303), config, firstRelay, secondRelay);
             SocksContext context = SocksContext.getCtx(new InetSocketAddress("127.0.0.1", 22103),
-                    new UnresolvedEndpoint("127.0.0.1", 15303));
+                    org.rx.net.Sockets.newUnresolvedEndpoint("127.0.0.1", 15303));
             context.setUpstream(upstream);
 
             ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = new ConcurrentHashMap<>();
@@ -344,11 +344,11 @@ class SocksUdpRelayHandlerTest {
             udp2rawCtxMap.put(staleRelay, context);
             relay.attr(Udp2rawHandler.ATTR_CTX_MAP).set(udp2rawCtxMap);
 
-            ConcurrentMap<UnresolvedEndpoint, SocksContext> routeMap = new ConcurrentHashMap<>();
-            UnresolvedEndpoint routeKey = new UnresolvedEndpoint("127.0.0.1", 15303);
+            ConcurrentMap<InetSocketAddress, SocksContext> routeMap = new ConcurrentHashMap<>();
+            InetSocketAddress routeKey = org.rx.net.Sockets.newUnresolvedEndpoint("127.0.0.1", 15303);
             routeMap.put(routeKey, context);
             relay.attr(SocksUdpRelayHandler.ATTR_ROUTE_MAP).set(routeMap);
-            ConcurrentMap<UnresolvedEndpoint, SocksContext> udp2rawRouteMap = new ConcurrentHashMap<>();
+            ConcurrentMap<InetSocketAddress, SocksContext> udp2rawRouteMap = new ConcurrentHashMap<>();
             udp2rawRouteMap.put(routeKey, context);
             relay.attr(Udp2rawHandler.ATTR_ROUTE_MAP).set(udp2rawRouteMap);
             relay.attr(SocksUdpRelayHandler.ATTR_LAST_ROUTE).set(

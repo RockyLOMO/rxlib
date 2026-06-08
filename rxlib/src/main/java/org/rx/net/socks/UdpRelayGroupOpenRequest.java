@@ -3,7 +3,7 @@ package org.rx.net.socks;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
@@ -17,7 +17,7 @@ public final class UdpRelayGroupOpenRequest implements Serializable {
 
     private String clientId;
     private InetSocketAddress clientAddr;
-    private UnresolvedEndpoint firstDestination;
+    private InetSocketAddress firstDestination;
     private int initialRelayCount = 1;
     private int minActiveRelays = 1;
     private int maxRelayCount = 1;

@@ -9,6 +9,10 @@ import io.netty.channel.Channel;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.rx.exception.InvalidException;
+import org.rx.net.Sockets;
+import org.rx.net.udp.UdpPeerAttributes;
+import org.rx.net.udp.UdpResilienceAttributes;
+import org.rx.net.udp.UdpResilienceConfig;
 import org.rx.net.transport.protocol.AckSync;
 
 import java.io.Serializable;
@@ -174,6 +178,144 @@ class UdpTransportTest {
         ch.closeFuture().syncUninterruptibly();
 
         assertFalse(ch.isOpen());
+    }
+
+    @Test
+    @Timeout(10)
+    void udpClientWithCompressionPipeline() throws Exception {
+        UdpClientConfig config = new UdpClientConfig();
+        config.setCodec(new StringUtf8Codec());
+        config.setUdpCompressEnabled(true);
+        assertPipelineReceive(config, repeatedValue("compress"));
+    }
+
+    @Test
+    @Timeout(10)
+    void udpClientWithRedundantPipeline() throws Exception {
+        UdpClientConfig config = new UdpClientConfig();
+        config.setCodec(new StringUtf8Codec());
+        config.setUdpRedundantMultiplier(2);
+        assertPipelineReceive(config, "redundant");
+    }
+
+    @Test
+    @Timeout(10)
+    void udpClientWithFecPipeline() throws Exception {
+        UdpClientConfig config = new UdpClientConfig();
+        config.setCodec(new StringUtf8Codec());
+        config.setUdpResilience(peerScopedResilience());
+        assertPipelineReceive(config, "fec");
+    }
+
+    @Test
+    @Timeout(10)
+    void udpClientWithCombinedOptimizationPipelines() throws Exception {
+        UdpClientConfig config = new UdpClientConfig();
+        config.setCodec(new StringUtf8Codec());
+        config.setUdpCompressEnabled(true);
+        config.setUdpRedundantMultiplier(2);
+        config.setUdpResilience(peerScopedResilience());
+        assertPipelineReceive(config, repeatedValue("combined"));
+    }
+
+    @Test
+    @Timeout(10)
+    void udpClientRegistersPipelinePeerAutomatically() throws Exception {
+        UdpClientConfig config = new UdpClientConfig();
+        config.setCodec(new StringUtf8Codec());
+        config.setUdpCompressEnabled(true);
+        config.setUdpResilience(peerScopedResilience());
+        try (UdpClient server = new UdpClient(0, config);
+             UdpClient client = new UdpClient(0, config)) {
+            CountDownLatch received = new CountDownLatch(1);
+            server.onReceive.add((s, e) -> received.countDown());
+
+            client.send(server.getLocalEndpoint(), repeatedValue("automatic")).syncUninterruptibly();
+
+            assertTrue(received.await(4, TimeUnit.SECONDS));
+            assertTrue(UdpPeerAttributes.shouldEncode(client.getChannel(), server.getLocalEndpoint()));
+            assertTrue(UdpResilienceAttributes.shouldApply(client.getChannel(), server.getLocalEndpoint()));
+            assertTrue(UdpPeerAttributes.shouldEncode(server.getChannel(), client.getLocalEndpoint()));
+            assertTrue(UdpResilienceAttributes.shouldApply(server.getChannel(), client.getLocalEndpoint()));
+        }
+    }
+
+    @Test
+    @Timeout(10)
+    void udpClientSupportsManualPeerRegistrationWhenAutomaticRegistrationIsDisabled() throws Exception {
+        UdpClientConfig config = new UdpClientConfig();
+        config.setCodec(new StringUtf8Codec());
+        config.setUdpCompressEnabled(true);
+        config.setUdpResilience(peerScopedResilience());
+        config.setMaxAutoPeers(0);
+        try (UdpClient server = new UdpClient(0, config);
+             UdpClient client = new UdpClient(0, config)) {
+            Sockets.addUdpPeer(client.getChannel(), config, server.getLocalEndpoint());
+            Sockets.addUdpPeer(client.getChannel(), config, server.getLocalEndpoint());
+            Sockets.addUdpPeer(server.getChannel(), config, client.getLocalEndpoint());
+            CountDownLatch received = new CountDownLatch(1);
+            server.onReceive.add((s, e) -> received.countDown());
+
+            client.send(server.getLocalEndpoint(), repeatedValue("manual-compatible")).syncUninterruptibly();
+
+            assertTrue(received.await(4, TimeUnit.SECONDS));
+            assertTrue(UdpPeerAttributes.shouldEncode(client.getChannel(), server.getLocalEndpoint()));
+            assertTrue(UdpResilienceAttributes.shouldApply(client.getChannel(), server.getLocalEndpoint()));
+            assertTrue(UdpPeerAttributes.shouldEncode(server.getChannel(), client.getLocalEndpoint()));
+        }
+    }
+
+    @Test
+    @Timeout(5)
+    void udpClientBoundsAutomaticallyRegisteredPeersAndCleansThemOnClose() {
+        UdpClientConfig config = new UdpClientConfig();
+        config.setCodec(new StringUtf8Codec());
+        config.setUdpCompressEnabled(true);
+        config.setMaxAutoPeers(1);
+        InetSocketAddress first = new InetSocketAddress("127.0.0.1", 9);
+        InetSocketAddress second = new InetSocketAddress("127.0.0.1", 10);
+        UdpClient client = new UdpClient(0, config);
+        try {
+            client.send(first, "first", 0, false).syncUninterruptibly();
+            client.send(second, "second", 0, false).syncUninterruptibly();
+
+            assertTrue(UdpPeerAttributes.shouldEncode(client.getChannel(), first));
+            assertFalse(UdpPeerAttributes.shouldEncode(client.getChannel(), second));
+        } finally {
+            client.close();
+        }
+        assertFalse(UdpPeerAttributes.shouldEncode(client.getChannel(), first));
+    }
+
+    void assertPipelineReceive(UdpClientConfig config, String expected) throws Exception {
+        try (UdpClient server = new UdpClient(0, config);
+             UdpClient client = new UdpClient(0, config)) {
+            CountDownLatch received = new CountDownLatch(1);
+            String[] value = new String[1];
+            server.onReceive.add((s, e) -> {
+                value[0] = e.getValue().packet();
+                received.countDown();
+            });
+
+            client.send(server.getLocalEndpoint(), expected).syncUninterruptibly();
+
+            assertTrue(received.await(4, TimeUnit.SECONDS));
+            assertEquals(expected, value[0]);
+        }
+    }
+
+    static UdpResilienceConfig peerScopedResilience() {
+        UdpResilienceConfig config = UdpResilienceConfig.light();
+        config.setResilienceAll(false);
+        return config;
+    }
+
+    static String repeatedValue(String prefix) {
+        StringBuilder value = new StringBuilder(prefix);
+        for (int i = 0; i < 256; i++) {
+            value.append("-same-value");
+        }
+        return value.toString();
     }
 
     static final class EchoRequest implements Serializable {

@@ -150,6 +150,7 @@ public final class RxConfig {
         String NET_GLOBAL_TRAFFIC_UPLOAD_KILOBYTES_PER_SECOND = "app.net.globalTraffic.uploadKilobytesPerSecond";
         String NET_GLOBAL_TRAFFIC_DOWNLOAD_KILOBYTES_PER_SECOND = "app.net.globalTraffic.downloadKilobytesPerSecond";
         String NET_GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS = "app.net.globalTraffic.checkIntervalMillis";
+        String NET_GLOBAL_TRAFFIC_MAX_DELAY_MILLIS = "app.net.globalTraffic.maxDelayMillis";
         String NET_GLOBAL_TRAFFIC_TCP_BACKPRESSURE_ENABLED = "app.net.globalTraffic.tcpBackpressureEnabled";
         String NET_GLOBAL_TRAFFIC_UDP_BACKPRESSURE_ENABLED = "app.net.globalTraffic.udpBackpressureEnabled";
         String NET_GLOBAL_TRAFFIC_UDP_MAX_PENDING_BYTES = "app.net.globalTraffic.udpMaxPendingBytes";
@@ -805,6 +806,8 @@ public final class RxConfig {
                 ConfigNames.NET_GLOBAL_TRAFFIC_DOWNLOAD_KILOBYTES_PER_SECOND, net.globalTraffic.getDownloadKilobytesPerSecond()));
         net.globalTraffic.setCheckIntervalMillis(SystemPropertyUtil.getLong(
                 ConfigNames.NET_GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS, net.globalTraffic.getCheckIntervalMillis()));
+        net.globalTraffic.setMaxDelayMillis(SystemPropertyUtil.getLong(
+                ConfigNames.NET_GLOBAL_TRAFFIC_MAX_DELAY_MILLIS, net.globalTraffic.getMaxDelayMillis()));
         net.globalTraffic.setTcpBackpressureEnabled(SystemPropertyUtil.getBoolean(
                 ConfigNames.NET_GLOBAL_TRAFFIC_TCP_BACKPRESSURE_ENABLED, net.globalTraffic.isTcpBackpressureEnabled()));
         net.globalTraffic.setUdpBackpressureEnabled(SystemPropertyUtil.getBoolean(

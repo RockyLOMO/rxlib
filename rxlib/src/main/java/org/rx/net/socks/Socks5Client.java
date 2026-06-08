@@ -19,7 +19,7 @@ import org.rx.net.AuthenticEndpoint;
 import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
 import org.rx.net.support.EndpointTracer;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 import org.rx.util.function.BiAction;
 
 import java.net.InetSocketAddress;
@@ -32,7 +32,7 @@ import java.util.concurrent.CompletableFuture;
  * <p>Usage – CONNECT:
  * <pre>{@code
  * Socks5Client client = new Socks5Client(AuthenticEndpoint.valueOf("user:pass@proxy:1080"));
- * client.connect(new UnresolvedEndpoint("example.com", 80))
+ * client.connect(org.rx.net.Sockets.newUnresolvedEndpoint("example.com", 80))
  *       .addListener(f -> {
  *           Channel ch = (Channel) ((Future<?>) f).getNow();
  *           ch.writeAndFlush(Unpooled.copiedBuffer("GET / HTTP/1.0\r\n\r\n", CharsetUtil.UTF_8));
@@ -46,7 +46,7 @@ import java.util.concurrent.CompletableFuture;
  *         DatagramPacket pkt = e.getValue();
  *         // pkt.sender() is the decoded SOCKS5 source; pkt.content() is the payload (must be released)
  *     });
- *     session.send(new UnresolvedEndpoint("8.8.8.8", 53), dnsQueryBuf);
+ *     session.send(org.rx.net.Sockets.newUnresolvedEndpoint("8.8.8.8", 53), dnsQueryBuf);
  * });
  * }</pre>
  */
@@ -105,7 +105,7 @@ public class Socks5Client extends Disposable {
          * A SOCKS5 UDP header is prepended automatically. The {@code payload} reference
          * count is transferred to the datagram; do not use it after this call.
          */
-        public ChannelFuture send(@NonNull UnresolvedEndpoint destination, @NonNull ByteBuf payload) {
+        public ChannelFuture send(@NonNull InetSocketAddress destination, @NonNull ByteBuf payload) {
             CompositeByteBuf packet = UdpManager.socks5Encode(payload, destination);
             return udpRelay.writeAndFlush(new DatagramPacket(packet, relayAddress));
         }
@@ -158,12 +158,12 @@ public class Socks5Client extends Disposable {
             // releases msg after channelRead0 returns).
             ByteBuf content = msg.content().retain();
             try {
-                UnresolvedEndpoint src = UdpManager.socks5Decode(content);
+                InetSocketAddress src = UdpManager.socks5Decode(content);
                 // After socks5Decode the readerIndex points at the application payload.
                 DatagramPacket decoded = new DatagramPacket(
                         content.retain(),  // caller must release
                         msg.recipient(),
-                        new InetSocketAddress(src.getHost(), src.getPort()));
+                        src);
                 session.publishEventAsync(session.onReceive, new NEventArgs<>(decoded))
                         .whenComplete((r, e) -> Bytes.release(decoded));
             } finally {
@@ -199,7 +199,7 @@ public class Socks5Client extends Disposable {
      * @param destination the host/port to connect to through the proxy
      * @return a future that completes (with the ready {@link Channel}) after the SOCKS5 handshake
      */
-    public Future<Channel> connect(@NonNull UnresolvedEndpoint destination) {
+    public Future<Channel> connect(@NonNull InetSocketAddress destination) {
         return connect(destination, null);
     }
 
@@ -212,7 +212,7 @@ public class Socks5Client extends Disposable {
      * @param initChannel  optional extra pipeline setup (may be {@code null})
      * @return a future that completes with the ready {@link Channel} after the SOCKS5 handshake
      */
-    public Future<Channel> connect(@NonNull UnresolvedEndpoint destination, BiAction<Channel> initChannel) {
+    public Future<Channel> connect(@NonNull InetSocketAddress destination, BiAction<Channel> initChannel) {
         checkNotClosed();
         Socks5ClientHandler handler = createHandler(Socks5CommandType.CONNECT);
         Sockets.bootstrap(config, proxyServer.getConnectEndpoint(), ch -> {
@@ -221,7 +221,7 @@ public class Socks5Client extends Disposable {
             if (initChannel != null) {
                 initChannel.accept(ch);
             }
-        }).connect(destination.socketAddress());
+        }).connect(destination);
         return handler.connectFuture();
     }
 

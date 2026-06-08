@@ -27,7 +27,6 @@ import org.rx.core.RxConfig;
 import org.rx.core.RxConfig.DiagnosticConfig;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.socks.SocksConfig;
-import org.rx.net.support.UnresolvedEndpoint;
 
 import java.lang.reflect.Field;
 import java.net.InetAddress;
@@ -288,6 +287,30 @@ public class SocketsTest {
     }
 
     @Test
+    public void testUdpPipelineResolvesDirectUnresolvedIpLiteralWrite() {
+        SocketConfig config = new SocketConfig();
+        EmbeddedChannel channel = new EmbeddedChannel();
+        channel.attr(SocketConfig.ATTR_CONF).set(config);
+        Sockets.addUdpOptimizationHandlers(channel.pipeline(), config);
+
+        ByteBuf payload = Unpooled.copiedBuffer("udp-unresolved-ip", StandardCharsets.UTF_8);
+        DatagramPacket packet = new DatagramPacket(payload, InetSocketAddress.createUnresolved("127.0.0.1", 53));
+
+        ChannelFuture future = channel.writeAndFlush(packet);
+        channel.runPendingTasks();
+        channel.runScheduledPendingTasks();
+
+        assertTrue(future.isSuccess());
+        DatagramPacket outbound = channel.readOutbound();
+        assertNotNull(outbound);
+        assertFalse(outbound.recipient().isUnresolved());
+        assertEquals("127.0.0.1", outbound.recipient().getAddress().getHostAddress());
+        outbound.release();
+        assertEquals(0, Sockets.udpPendingWriteBytes(channel));
+        channel.finishAndReleaseAll();
+    }
+
+    @Test
     public void testUdpWriteDropsWhenChannelUnwritable() {
         EmbeddedChannel channel = new EmbeddedChannel();
         channel.config().setOption(ChannelOption.WRITE_BUFFER_WATER_MARK, WriteBufferWaterMark.DEFAULT);
@@ -463,15 +486,15 @@ public class SocketsTest {
     }
 
     @Test
-    public void testUnresolvedEndpointKeepsDomainUnresolved() {
-        UnresolvedEndpoint endpoint = new UnresolvedEndpoint("example.com", 443);
-        InetSocketAddress address = endpoint.socketAddress();
+    public void testNewUnresolvedEndpointKeepsDomainUnresolved() {
+        InetSocketAddress endpoint = org.rx.net.Sockets.newUnresolvedEndpoint("example.com", 443);
+        InetSocketAddress address = endpoint;
         assertEquals("example.com", address.getHostString());
         assertEquals(443, address.getPort());
         assertNull(address.getAddress(), "域名目的地必须交给远端解析");
 
-        UnresolvedEndpoint ipEndpoint = new UnresolvedEndpoint("127.0.0.1", 443);
-        assertEquals("127.0.0.1", ipEndpoint.socketAddress().getAddress().getHostAddress());
+        InetSocketAddress ipEndpoint = org.rx.net.Sockets.newUnresolvedEndpoint("127.0.0.1", 443);
+        assertEquals("127.0.0.1", ipEndpoint.getAddress().getHostAddress());
     }
 
     @Test
@@ -594,9 +617,9 @@ public class SocketsTest {
 
     @Test
     public void testShouldBypassTcpCompressionForEncryptedPorts() {
-        assertTrue(Sockets.shouldBypassTcpCompression(new UnresolvedEndpoint("example.com", 443)));
-        assertTrue(Sockets.shouldBypassTcpCompression(new UnresolvedEndpoint("example.com", 993)));
-        assertFalse(Sockets.shouldBypassTcpCompression(new UnresolvedEndpoint("example.com", 80)));
+        assertTrue(Sockets.shouldBypassTcpCompression(org.rx.net.Sockets.newUnresolvedEndpoint("example.com", 443)));
+        assertTrue(Sockets.shouldBypassTcpCompression(org.rx.net.Sockets.newUnresolvedEndpoint("example.com", 993)));
+        assertFalse(Sockets.shouldBypassTcpCompression(org.rx.net.Sockets.newUnresolvedEndpoint("example.com", 80)));
     }
 
     @Test
@@ -655,7 +678,7 @@ public class SocketsTest {
         assertEquals("192.168.31.1", directServers.get(1).getHostString());
         assertEquals(53, directServers.get(1).getPort());
 
-        Object resolverGroup = Sockets.tcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.DIRECT);
+        Object resolverGroup = Sockets.currentTcpDirectDnsAddressResolverGroup();
         Field builderField = resolverGroup.getClass().getDeclaredField("dnsResolverBuilder");
         builderField.setAccessible(true);
         Object builder = builderField.get(resolverGroup);
@@ -674,7 +697,25 @@ public class SocketsTest {
 
         Bootstrap bootstrap = Sockets.bootstrap(new SocketConfig(), ch -> {
         });
-        assertSame(DefaultAddressResolverGroup.INSTANCE, bootstrap.config().resolver());
+        assertSame(Sockets.tcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.DIRECT), bootstrap.config().resolver());
+        assertSame(DefaultAddressResolverGroup.INSTANCE, Sockets.currentTcpDirectDnsAddressResolverGroup());
+    }
+
+    @Test
+    public void testRefreshTcpResolverPicksInjectedNameserverAfterBootstrapCreated() {
+        RxConfig.INSTANCE.getNet().getDns().getDirectServers().clear();
+
+        Bootstrap bootstrap = Sockets.bootstrap(new SocketConfig(), ch -> {
+        });
+        Object directResolver = bootstrap.config().resolver();
+        assertSame(Sockets.tcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.DIRECT), directResolver);
+        assertSame(DefaultAddressResolverGroup.INSTANCE, Sockets.currentTcpDirectDnsAddressResolverGroup());
+
+        Sockets.setInjectedNameServers(Collections.singletonList(Sockets.parseEndpoint("127.0.0.1:753")));
+        Sockets.refreshTcpResolver(bootstrap, Sockets.newUnresolvedEndpoint("svc-mercury", 1211));
+
+        assertSame(directResolver, bootstrap.config().resolver());
+        assertNotSame(DefaultAddressResolverGroup.INSTANCE, Sockets.currentTcpDirectDnsAddressResolverGroup());
     }
 
     private DiagnosticConfig memDiagnosticConfig(String name) {

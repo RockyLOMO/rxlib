@@ -14,7 +14,7 @@ import org.rx.io.Bytes;
 import org.rx.net.Sockets;
 import org.rx.net.http.HttpClient;
 import org.rx.net.http.HttpClientConfig;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.net.InetSocketAddress;
 import java.util.List;
@@ -40,12 +40,12 @@ public class HttpTunnelClient extends Disposable {
 
     static class TunnelConnection {
         final int connId;
-        final UnresolvedEndpoint destination;
+        final InetSocketAddress destination;
         volatile Channel inbound;
         volatile boolean active;
         volatile java.util.concurrent.Future<?> pollFuture;
 
-        TunnelConnection(int connId, UnresolvedEndpoint destination) {
+        TunnelConnection(int connId, InetSocketAddress destination) {
             this.connId = connId;
             this.destination = destination;
         }
@@ -129,7 +129,7 @@ public class HttpTunnelClient extends Disposable {
             ctx.pipeline().remove(Socks5CommandRequestDecoder.class);
             ctx.pipeline().remove(this);
 
-            UnresolvedEndpoint dstEp = new UnresolvedEndpoint(msg.dstAddr(), msg.dstPort());
+            InetSocketAddress dstEp = org.rx.net.Sockets.newUnresolvedEndpoint(msg.dstAddr(), msg.dstPort());
 
             if (msg.type() == Socks5CommandType.CONNECT) {
                 handleConnect(ctx, inbound, msg.dstAddrType(), dstEp);
@@ -146,7 +146,7 @@ public class HttpTunnelClient extends Disposable {
      * TCP CONNECT: 通过 HTTP 隧道建连
      */
     private void handleConnect(ChannelHandlerContext ctx, Channel inbound,
-                               Socks5AddressType dstAddrType, UnresolvedEndpoint dstEp) {
+                               Socks5AddressType dstAddrType, InetSocketAddress dstEp) {
         int connId = HttpTunnelProtocol.nextConnId();
         log.info("HttpTunnel CONNECT connId={} dst={}", connId, dstEp);
 
@@ -193,7 +193,7 @@ public class HttpTunnelClient extends Disposable {
      * UDP ASSOCIATE: 返回绑定地址
      */
     private void handleUdpAssociate(ChannelHandlerContext ctx, Channel inbound,
-                                    Socks5AddressType dstAddrType, UnresolvedEndpoint dstEp) {
+                                    Socks5AddressType dstAddrType, InetSocketAddress dstEp) {
         InetSocketAddress bindEp = Sockets.getLocalAddress(inbound);
         // 简单实现: 返回绑定地址，UDP 数据通过额外协议处理
         ctx.writeAndFlush(new DefaultSocks5CommandResponse(

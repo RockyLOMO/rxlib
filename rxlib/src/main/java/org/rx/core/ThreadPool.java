@@ -384,12 +384,20 @@ public class ThreadPool extends ThreadPoolExecutor {
         }
     }
 
-    static class Task<T> implements Runnable, Callable<T>, Supplier<T> {
+    public static class Task<T> implements Runnable, Callable<T>, Supplier<T> {
         private static final AtomicInteger TASK_COUNTER = new AtomicInteger();
         // 减少stackTrace
-        // static <T> Task<T> adapt(Callable<T> fn) {
-        // return adapt(fn, null, null);
-        // }
+        public static Task<Void> adapt(Runnable fn) {
+            return Task.<Void>adapt(fn, null, null);
+        }
+
+        public static <T> Task<T> adapt(Callable<T> fn) {
+            return adapt(fn, null, null);
+        }
+
+        static <T> Task<T> adaptWithTrace(Callable<T> fn, String traceId) {
+            return new Task<>(fn, null, null, traceId);
+        }
 
         static <T> Task<T> adapt(Callable<T> fn, FlagsEnum<RunFlag> flags, Object id) {
             Task<T> t = as(fn);
@@ -452,9 +460,15 @@ public class ThreadPool extends ThreadPoolExecutor {
         volatile boolean singleLockAcquired;
         volatile boolean threadLocalMapSet;
         volatile boolean threadTraceStarted;
+        volatile boolean poolManaged;
+        volatile boolean callerRuns;
         volatile InternalThreadLocalMap oldThreadLocalMap;
 
         private Task(Callable<T> fn, FlagsEnum<RunFlag> flags, Object id) {
+            this(fn, flags, id, traceId());
+        }
+
+        private Task(Callable<T> fn, FlagsEnum<RunFlag> flags, Object id, String traceId) {
             if (flags == null) {
                 flags = RunFlag.NONE.flags();
             }
@@ -484,7 +498,31 @@ public class ThreadPool extends ThreadPoolExecutor {
             this.flags = flags;
             this.id = id;
             parent = flags.has(RunFlag.INHERIT_FAST_THREAD_LOCALS) ? InternalThreadLocalMap.getIfSet() : null;
-            traceId = traceId();
+            this.traceId = traceId;
+        }
+
+        public static void runWithTrace(String traceId, Runnable task) {
+            clearTrace();
+            try {
+                if (Strings.isNotEmpty(traceId)) {
+                    startTrace(traceId);
+                }
+                task.run();
+            } finally {
+                clearTrace();
+            }
+        }
+
+        public static <T> T callWithTrace(String traceId, Callable<T> task) throws Exception {
+            clearTrace();
+            try {
+                if (Strings.isNotEmpty(traceId)) {
+                    startTrace(traceId);
+                }
+                return task.call();
+            } finally {
+                clearTrace();
+            }
         }
 
         @SneakyThrows
@@ -493,6 +531,25 @@ public class ThreadPool extends ThreadPoolExecutor {
             if (skipExecution) {
                 return null;
             }
+            boolean cleanupTrace = false;
+            if (!poolManaged) {
+                clearTrace();
+                cleanupTrace = true;
+                if (Strings.isNotEmpty(traceId)) {
+                    startTrace(traceId);
+                }
+            }
+            try {
+                return callCore();
+            } finally {
+                if (cleanupTrace) {
+                    clearTrace();
+                }
+            }
+        }
+
+        @SneakyThrows
+        private T callCore() {
             if (RxConfig.INSTANCE.trace.slowMethodElapsedMicros > 0) {
                 T r = null;
                 Throwable ex = null;
@@ -760,6 +817,12 @@ public class ThreadPool extends ThreadPoolExecutor {
     public static String traceId() {
         Object peek = CTX_TRACE_ID.get().peek();
         return peek instanceof Tuple ? ((Tuple<String, Integer>) peek).left : (String) peek;
+    }
+
+    @SneakyThrows
+    public static void clearTrace() {
+        CTX_TRACE_ID.remove();
+        onTraceIdChanged.invoke(EventPublisher.STATIC_QUIETLY_EVENT_INSTANCE, null);
     }
 
     @SneakyThrows
@@ -1155,6 +1218,10 @@ public class ThreadPool extends ThreadPoolExecutor {
         if (task == null) {
             return;
         }
+        task.poolManaged = true;
+        if (!task.callerRuns) {
+            clearTrace();
+        }
 
         FlagsEnum<RunFlag> flags = task.flags;
         if (flags.has(RunFlag.SINGLE)) {
@@ -1182,7 +1249,7 @@ public class ThreadPool extends ThreadPoolExecutor {
             task.threadLocalMapSet = true;
             setThreadLocalMap(t, copyThreadLocalMap(task.parent));
         }
-        if (flags.has(RunFlag.THREAD_TRACE)) {
+        if (flags.has(RunFlag.THREAD_TRACE) || Strings.isNotEmpty(task.traceId)) {
             task.threadTraceStarted = startTaskTrace(task.traceId);
         }
     }
@@ -1214,25 +1281,31 @@ public class ThreadPool extends ThreadPoolExecutor {
             return;
         }
 
-        if (task.skipExecution) {
-            return;
-        }
-        FlagsEnum<RunFlag> flags = task.flags;
-        Object id = task.id;
-        if (task.singleLockAcquired && id != null) {
-            runningSingleTasks.remove(id);
-            if (log.isDebugEnabled()) {
-                log.debug("CTX release {} -> {}", id, task.flags.name());
+        try {
+            if (task.skipExecution) {
+                return;
             }
-        }
-        if (task.threadLocalMapSet) {
-            setThreadLocalMap(Thread.currentThread(), task.oldThreadLocalMap);
-            task.oldThreadLocalMap = null;
-            task.threadLocalMapSet = false;
-        }
-        if (task.threadTraceStarted) {
-            endTrace();
-            task.threadTraceStarted = false;
+            Object id = task.id;
+            if (task.singleLockAcquired && id != null) {
+                runningSingleTasks.remove(id);
+                if (log.isDebugEnabled()) {
+                    log.debug("CTX release {} -> {}", id, task.flags.name());
+                }
+            }
+            if (task.threadLocalMapSet) {
+                setThreadLocalMap(Thread.currentThread(), task.oldThreadLocalMap);
+                task.oldThreadLocalMap = null;
+                task.threadLocalMapSet = false;
+            }
+            if (task.threadTraceStarted) {
+                endTrace();
+                task.threadTraceStarted = false;
+            }
+        } finally {
+            if (!task.callerRuns) {
+                clearTrace();
+            }
+            task.poolManaged = false;
         }
     }
 
@@ -1251,6 +1324,10 @@ public class ThreadPool extends ThreadPoolExecutor {
     private void runInCaller(Runnable r) {
         Thread thread = Thread.currentThread();
         Throwable error = null;
+        Task<?> task = setTask(r);
+        if (task != null) {
+            task.callerRuns = true;
+        }
         beforeExecute(thread, r);
         try {
             r.run();
@@ -1262,6 +1339,9 @@ public class ThreadPool extends ThreadPoolExecutor {
             throw e;
         } finally {
             afterExecute(r, error);
+            if (task != null) {
+                task.callerRuns = false;
+            }
         }
     }
 

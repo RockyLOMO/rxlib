@@ -2,15 +2,17 @@ package org.rx.net.socks;
 
 import io.netty.channel.Channel;
 import io.netty.util.AttributeKey;
+import org.rx.net.udp.UdpPeerAttributes;
+import org.rx.net.udp.UdpResilienceAttributes;
 
 import java.net.InetSocketAddress;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 public final class UdpRelayAttributes {
     static final AttributeKey<Boolean> ATTR_CLIENT_LOCKED = AttributeKey.valueOf("udpClientLocked");
     static final AttributeKey<InetSocketAddress> ATTR_CLIENT_ORIGIN_ADDR = AttributeKey.valueOf("udpClientOriginAddr");
-    static final AttributeKey<ConcurrentMap<InetSocketAddress, Boolean>> ATTR_REDUNDANT_PEERS = AttributeKey.valueOf("udpRedundantPeers");
+    static final AttributeKey<ConcurrentMap<InetSocketAddress, Boolean>> ATTR_REDUNDANT_PEERS =
+            UdpPeerAttributes.ATTR_ENCODE_PEERS;
     static final AttributeKey<Boolean> ATTR_REDUNDANT_CLIENT_PEER = AttributeKey.valueOf("udpRedundantClientPeer");
     static final AttributeKey<InetSocketAddress> ATTR_REDUNDANT_CLIENT_ADDR = AttributeKey.valueOf("udpRedundantClientAddr");
 
@@ -18,22 +20,14 @@ public final class UdpRelayAttributes {
     }
 
     public static ConcurrentMap<InetSocketAddress, Boolean> initRedundantPeers(Channel channel) {
-        ConcurrentMap<InetSocketAddress, Boolean> peers = channel.attr(ATTR_REDUNDANT_PEERS).get();
-        if (peers != null) {
-            return peers;
-        }
-        ConcurrentMap<InetSocketAddress, Boolean> created = new ConcurrentHashMap<>();
-        if (!channel.attr(ATTR_REDUNDANT_PEERS).compareAndSet(null, created)) {
-            return channel.attr(ATTR_REDUNDANT_PEERS).get();
-        }
-        return created;
+        return UdpPeerAttributes.initEncodePeers(channel);
     }
 
     public static void addRedundantPeer(Channel channel, InetSocketAddress address) {
         if (channel == null || address == null) {
             return;
         }
-        addNormalizedRedundantPeer(channel, normalize(address));
+        UdpPeerAttributes.addEncodePeer(channel, address);
     }
 
     public static void addRedundantClientPeerIfChanged(Channel channel, InetSocketAddress address) {
@@ -45,7 +39,7 @@ public final class UdpRelayAttributes {
         if (normalized.equals(current)) {
             return;
         }
-        addNormalizedRedundantPeer(channel, normalized);
+        UdpPeerAttributes.addEncodePeer(channel, normalized);
         channel.attr(ATTR_REDUNDANT_CLIENT_ADDR).set(normalized);
     }
 
@@ -53,15 +47,11 @@ public final class UdpRelayAttributes {
         if (channel == null || address == null) {
             return;
         }
-        ConcurrentMap<InetSocketAddress, Boolean> peers = channel.attr(ATTR_REDUNDANT_PEERS).get();
-        if (peers != null) {
-            peers.remove(normalize(address));
-        }
+        UdpPeerAttributes.removeEncodePeer(channel, address);
     }
 
     public static boolean shouldEncode(Channel channel, InetSocketAddress recipient) {
-        ConcurrentMap<InetSocketAddress, Boolean> peers = channel.attr(ATTR_REDUNDANT_PEERS).get();
-        return peers != null && recipient != null && peers.containsKey(normalize(recipient));
+        return UdpPeerAttributes.shouldEncode(channel, recipient);
     }
 
     public static boolean shouldTrackClientAsRedundantPeer(SocksConfig config) {
@@ -77,17 +67,10 @@ public final class UdpRelayAttributes {
                 : UdpRedundantSupport.allowSocksUdpResponse(config);
     }
 
-    static InetSocketAddress normalize(InetSocketAddress address) {
+    public static InetSocketAddress normalize(InetSocketAddress address) {
         if (address == null) {
             return null;
         }
-        if (address.getAddress() != null) {
-            return new InetSocketAddress(address.getAddress(), address.getPort());
-        }
-        return InetSocketAddress.createUnresolved(address.getHostString(), address.getPort());
-    }
-
-    private static void addNormalizedRedundantPeer(Channel channel, InetSocketAddress normalizedAddress) {
-        initRedundantPeers(channel).put(normalizedAddress, Boolean.TRUE);
+        return UdpResilienceAttributes.normalize(address);
     }
 }

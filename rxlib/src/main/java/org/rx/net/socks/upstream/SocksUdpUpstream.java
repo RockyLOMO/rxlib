@@ -9,6 +9,7 @@ import org.rx.core.Tasks;
 import org.rx.core.cache.MemoryCache;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.AuthenticEndpoint;
+import org.rx.net.Sockets;
 import org.rx.net.socks.Socks5Client;
 import org.rx.net.socks.Socks5Client.Socks5UdpLease;
 import org.rx.net.socks.Socks5Client.Socks5UdpSession;
@@ -25,13 +26,12 @@ import org.rx.net.socks.UdpRelayGroupUpdateResult;
 import org.rx.net.socks.UdpRelayAttributes;
 import org.rx.net.socks.UdpRedundantSupport;
 import org.rx.net.socks.UdpLeasePoolKey;
-import org.rx.net.socks.UdpPortHoppingConfig;
-import org.rx.net.socks.UdpPortHoppingMode;
-import org.rx.net.support.UnresolvedEndpoint;
+import org.rx.net.udp.UdpPortHoppingConfig;
+import org.rx.net.udp.UdpPortHoppingMode;
+import java.net.InetSocketAddress;
 import org.rx.net.support.UpstreamSupport;
 
 import java.nio.channels.ClosedChannelException;
-import java.net.InetSocketAddress;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -56,7 +56,7 @@ public class SocksUdpUpstream extends Upstream {
 
     private final UpstreamSupport next;
 
-    public SocksUdpUpstream(UnresolvedEndpoint dstEp, @NonNull SocksConfig config, @NonNull UpstreamSupport next) {
+    public SocksUdpUpstream(InetSocketAddress dstEp, @NonNull SocksConfig config, @NonNull UpstreamSupport next) {
         super(dstEp, config);
         this.next = next;
     }
@@ -413,7 +413,7 @@ public class SocksUdpUpstream extends Upstream {
                 if (serverAddress.getAddress() != null) {
                     return new InetSocketAddress(serverAddress.getAddress(), relayAddress.getPort());
                 }
-                return InetSocketAddress.createUnresolved(serverAddress.getHostString(), relayAddress.getPort());
+                return Sockets.newUnresolvedEndpoint(serverAddress.getHostString(), relayAddress.getPort());
             }
         }
         return relayAddress;

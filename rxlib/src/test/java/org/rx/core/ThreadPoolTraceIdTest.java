@@ -65,8 +65,7 @@ public class ThreadPoolTraceIdTest {
 
             conf.setTraceName(null);
             pool.runAsync(() -> workerTraceAfterTask.set(ThreadPool.traceId())).get(5, TimeUnit.SECONDS);
-            assertEquals(staleTrace, workerTraceAfterTask.get());
-            pool.runAsync(() -> ThreadPool.endTrace()).get(5, TimeUnit.SECONDS);
+            assertNull(workerTraceAfterTask.get());
         }
     }
 
@@ -93,8 +92,7 @@ public class ThreadPoolTraceIdTest {
 
             conf.setTraceName(null);
             pool.runAsync(() -> workerTraceAfterTask.set(ThreadPool.traceId())).get(5, TimeUnit.SECONDS);
-            assertEquals(staleTrace, workerTraceAfterTask.get());
-            pool.runAsync(() -> ThreadPool.endTrace()).get(5, TimeUnit.SECONDS);
+            assertNull(workerTraceAfterTask.get());
         }
     }
 
@@ -157,6 +155,40 @@ public class ThreadPoolTraceIdTest {
             Thread.sleep(10);
         }
         assertTrue(condition.ok());
+    }
+
+    @Test
+    void nativeThreadInheritsTraceIdButThreadPoolWorkerIsClean() throws Exception {
+        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.getThreadPool();
+        String traceId = "main-trace-" + UUID.randomUUID();
+        AtomicReference<String> threadTrace = new AtomicReference<>();
+        AtomicReference<String> poolTrace = new AtomicReference<>();
+        
+        try (ThreadPoolConfigSnapshot ignored = ThreadPoolConfigSnapshot.capture()) {
+            conf.setTraceName("rx-traceId");
+            conf.setMaxTraceDepth(5);
+            pool = ThreadPool.fixed("TRACE-INHERIT", 1, 8);
+            
+            ThreadPool.startTrace(traceId);
+            try {
+                // 1. 原生 Thread 应该继承 traceId (用户期望的原生继承行为)
+                Thread t = new Thread(() -> {
+                    threadTrace.set(ThreadPool.traceId());
+                });
+                t.start();
+                t.join();
+                
+                // 2. ThreadPool 正常继承 traceId，但是它的 worker 线程启动时应该是干净的
+                pool.runAsync(() -> {
+                    poolTrace.set(ThreadPool.traceId());
+                }).get(5, TimeUnit.SECONDS);
+                
+                assertEquals(traceId, threadTrace.get(), "Native Thread MUST inherit traceId");
+                assertEquals(traceId, poolTrace.get(), "ThreadPool MUST inherit traceId from task");
+            } finally {
+                ThreadPool.endTrace();
+            }
+        }
     }
 
     private interface Condition {

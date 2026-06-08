@@ -1,5 +1,7 @@
 package org.rx.net.socks;
 
+import org.rx.net.udp.*;
+
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -13,7 +15,7 @@ import org.junit.jupiter.api.Timeout;
 import org.rx.bean.DateTime;
 import org.rx.core.RxConfig;
 import org.rx.net.Sockets;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.net.DatagramSocket;
 import java.net.InetAddress;
@@ -328,8 +330,8 @@ class Udp2rawFixedEntryIntegrationTest {
             Udp2rawOpenRequest request = new Udp2rawOpenRequest();
             request.setClientId("junit-p6");
             request.setMaxSessions(8);
-            request.setCompress(UdpCompressConfig.fromSocksConfig(config));
-            request.setRedundant(UdpRedundantConfig.fromSocksConfig(config));
+            request.setCompress(UdpCompressConfig.fromSocketConfig(config));
+            request.setRedundant(UdpRedundantConfig.fromSocketConfig(config));
             Udp2rawOpenResult open = proxy.openUdp2rawTunnel(request, SocksRpcContract.rpcToken());
             assertTrue(open.isSuccess());
             assertTrue(open.getCapabilities().isCompress());
@@ -657,7 +659,7 @@ class Udp2rawFixedEntryIntegrationTest {
         frame.setFlags(Udp2rawCodec.FLAG_NEW_CONN | Udp2rawCodec.FLAG_HAS_CLIENT
                 | Udp2rawCodec.FLAG_HAS_DST | Udp2rawCodec.FLAG_AUTH_TAG);
         frame.setClientSource(clientSource);
-        frame.setDestination(new UnresolvedEndpoint(destination.getHostString(), destination.getPort()));
+        frame.setDestination(destination);
         ByteBuf authTag = Udp2rawAuthenticator.sign(UnpooledByteBufAllocator.DEFAULT,
                 open.getSessionSecret(), frame, payload);
         frame.setAuthTag(authTag);
@@ -688,7 +690,7 @@ class Udp2rawFixedEntryIntegrationTest {
                 frame.setClientSource(clientSource);
             }
             if ((flags & Udp2rawCodec.FLAG_HAS_DST) != 0) {
-                frame.setDestination(new UnresolvedEndpoint(destination.getHostString(), destination.getPort()));
+                frame.setDestination(destination);
             }
             if (sign) {
                 authTag = Udp2rawAuthenticator.sign(UnpooledByteBufAllocator.DEFAULT,
@@ -795,7 +797,7 @@ class Udp2rawFixedEntryIntegrationTest {
             }
             frame.setFlags(flags);
             frame.setClientSource(clientSource);
-            frame.setDestination(new UnresolvedEndpoint(destination.getHostString(), destination.getPort()));
+            frame.setDestination(destination);
             authTag = Udp2rawAuthenticator.sign(UnpooledByteBufAllocator.DEFAULT,
                     open.getSessionSecret(), frame, body);
             frame.setAuthTag(authTag);

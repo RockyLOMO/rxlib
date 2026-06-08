@@ -10,7 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.*;
 import org.rx.core.Tasks;
 import org.rx.net.Sockets;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -92,15 +92,15 @@ class HttpTunnelTest {
     @Test
     @Order(1)
     void testProtocolEncodeConnect() {
-        org.rx.net.support.UnresolvedEndpoint dst = new org.rx.net.support.UnresolvedEndpoint("127.0.0.1", ECHO_PORT);
+        InetSocketAddress dst = org.rx.net.Sockets.newUnresolvedEndpoint("127.0.0.1", ECHO_PORT);
         int connId = HttpTunnelProtocol.nextConnId();
         ByteBuf buf = HttpTunnelProtocol.encodeConnect(connId, dst);
 
         try {
             assertEquals(HttpTunnelProtocol.ACTION_CONNECT, buf.readByte());
             assertEquals(connId, buf.readInt());
-            org.rx.net.support.UnresolvedEndpoint decoded = HttpTunnelProtocol.decodeAddress(buf);
-            assertEquals("127.0.0.1", decoded.getHost());
+            InetSocketAddress decoded = HttpTunnelProtocol.decodeAddress(buf);
+            assertEquals("127.0.0.1", decoded.getHostString());
             assertEquals(ECHO_PORT, decoded.getPort());
         } finally {
             buf.release();

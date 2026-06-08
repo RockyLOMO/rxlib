@@ -20,7 +20,7 @@ import org.rx.core.RxConfig;
 import org.rx.core.Strings;
 import org.rx.exception.InvalidException;
 import org.rx.net.socks.upstream.Upstream;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.net.InetSocketAddress;
 import java.nio.file.Paths;
@@ -33,7 +33,7 @@ public final class SocksContext extends EventArgs {
     static final AttributeKey<SocksProxyServer> SOCKS_SVR = AttributeKey.valueOf("sSvr");
     private static final AttributeKey<SocksContext> SOCKS_CTX = AttributeKey.valueOf("sCtx");
 
-    public static SocksContext getCtx(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
+    public static SocksContext getCtx(InetSocketAddress srcEp, InetSocketAddress dstEp) {
         return new SocksContext(srcEp, dstEp);
     }
 
@@ -96,7 +96,7 @@ public final class SocksContext extends EventArgs {
     @Getter
     private InetSocketAddress source;
     @Getter
-    private UnresolvedEndpoint firstDestination;
+    private InetSocketAddress firstDestination;
 
     @Getter
     @Setter
@@ -113,7 +113,7 @@ public final class SocksContext extends EventArgs {
     transient Channel inbound;
     transient ChannelFuture outbound;
 
-    private SocksContext(InetSocketAddress srcEp, UnresolvedEndpoint dstEp) {
+    private SocksContext(InetSocketAddress srcEp, InetSocketAddress dstEp) {
         this.source = srcEp;
         this.firstDestination = dstEp;
     }

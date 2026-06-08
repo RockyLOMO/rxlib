@@ -120,7 +120,7 @@
    - `org.rx.net.socks.Udp2rawFixedEntryIntegrationTest`
 3. 如果后续补充 udp2raw / redundant / traffic accounting 修改，再补充：
    - `org.rx.net.socks.Udp2rawHandlerTest`
-   - `org.rx.net.socks.UdpRedundantTest`
+   - `org.rx.net.udp.UdpRedundantTest`
 4. 只有 workflow run `conclusion=success` 才认为 CI 通过。
 
 # 当前提交进度
@@ -167,7 +167,7 @@
 - 新增 `Socks5WarmupHandler`，不继承 `ProxyHandler`；状态固定为 `INIT -> AUTHING -> READY -> CONNECTING -> CONSUMED/FAILED`。
 - warm channel 创建顺序固定为：bootstrap initializer 内先执行 `Sockets.addTcpClientHandler(channel, config, svrEp.getEndpoint())`，再 `pipeline.addLast(Socks5WarmupHandler)`。这样 TLS/cipher/compress 对 SOCKS5 auth 报文同样生效。
 - `READY` 时记录 `readyAtMillis`；borrow 时同时检查 `channel.isActive()` 和 `now - readyAtMillis < tcpWarmPoolMaxIdleMillis`，任一失败都 retire。
-- `Socks5WarmupHandler` 提供单次 `connect(UnresolvedEndpoint dst)` 和单次 `setConnectedCallback(Action)`；调用方必须先 `setConnectedCallback(...)` 再 `connect(...)`。
+- `Socks5WarmupHandler` 提供单次 `connect(InetSocketAddress dst)` 和单次 `setConnectedCallback(Action)`；未解析地址由 `Sockets.newUnresolvedEndpoint(...)` 统一构造，调用方必须先 `setConnectedCallback(...)` 再 `connect(...)`。
 - `setConnectedCallback(...)` 的执行时序固定为：
   - 收到 `Socks5CommandResponse(SUCCESS)` 后，先在 handler 内部同步执行 `connectedCallback.invoke()`，用于安装 `cipherRoute + COMPRESS_BOTH` 的 `CipherDecoder/CipherEncoder`
   - 然后移除 warmup handler 自己加的 SOCKS codec

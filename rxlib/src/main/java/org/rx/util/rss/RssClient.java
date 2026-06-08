@@ -45,14 +45,14 @@ import org.rx.net.socks.UdpRelayGroupOpenResult;
 import org.rx.net.socks.UdpRelayGroupUpdateResult;
 import org.rx.net.socks.Udp2rawOpenRequest;
 import org.rx.net.socks.Udp2rawOpenResult;
-import org.rx.net.socks.UdpPortHoppingMode;
-import org.rx.net.socks.UdpRedundantMode;
+import org.rx.net.udp.UdpPortHoppingMode;
+import org.rx.net.udp.UdpRedundantMode;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Udp2rawUpstream;
 import org.rx.net.socks.upstream.UdpClientUpstream;
 import org.rx.net.socks.upstream.Upstream;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 import org.rx.net.support.UpstreamSupport;
 import org.rx.net.support.V2RayGeoManager;
 import org.rx.net.transport.TcpClientConfig;
@@ -1410,7 +1410,7 @@ public final class RssClient {
         AtomicBoolean sourceSteeringEnabled = new AtomicBoolean(true);
         BiFunc<SocksContext, UpstreamSupport> selectUpstreamFn = e -> {
             InetAddress srcHost = sourceAddress(e.getSource());
-            UnresolvedEndpoint dstEp = e.getFirstDestination();
+            InetSocketAddress dstEp = e.getFirstDestination();
             RandomList<UpstreamSupport> servers = resolveUserSocksServers(socksServersRef.get(),
                     userSocksServersRef == null ? null : userSocksServersRef.get(), e.getUser());
             UpstreamSupport next;
@@ -1429,17 +1429,17 @@ public final class RssClient {
             if (e.getUpstream() != null) {
                 return;
             }
-            UnresolvedEndpoint dstEp = e.getFirstDestination();
+            InetSocketAddress dstEp = e.getFirstDestination();
             SocksConfig currentOutConf = outConfRef.get();
             RssClientConf currentConf = rssConf;
             boolean routeLog = currentConf != null && currentConf.hasRouteFlag();
             long userRuleBegin = routeLog ? System.nanoTime() : 0L;
             boolean userRoute = e.getUser() instanceof ShadowUser && ((ShadowUser) e.getUser()).getRouteMatcher() != null;
-            RouteAction userRuleAction = matchUserRoute(e.getUser(), dstEp.getHost(), dstEp.getPort(), e.getSource());
+            RouteAction userRuleAction = matchUserRoute(e.getUser(), dstEp.getHostString(), dstEp.getPort(), e.getSource());
             if (userRuleAction == RouteAction.BLOCK) {
                 if (routeLog) {
                     log.info("route dst TCP {} BLOCK <- {} {}",
-                            dstEp.getHost(), userRoute ? "user:route" : "defaultRoute",
+                            dstEp.getHostString(), userRoute ? "user:route" : "defaultRoute",
                             Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
                 }
                 String username = e.getUser() == null ? "anonymous" : e.getUser().getUsername();
@@ -1448,7 +1448,7 @@ public final class RssClient {
             if (userRuleAction == RouteAction.DIRECT) {
                 if (routeLog) {
                     log.info("route dst TCP {} DIRECT <- {} {}",
-                            dstEp.getHost(), userRoute ? "user:route" : "defaultRoute",
+                            dstEp.getHostString(), userRoute ? "user:route" : "defaultRoute",
                             Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
                 }
                 e.setUpstream(new Upstream(dstEp));
@@ -1456,7 +1456,7 @@ public final class RssClient {
             }
             if (routeLog) {
                 log.info("route dst TCP {} PROXY <- {} {}",
-                        dstEp.getHost(),
+                        dstEp.getHostString(),
                         userRoute ? "user:route" : "defaultRoute",
                         Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
             }
@@ -1467,17 +1467,17 @@ public final class RssClient {
             if (e.getUpstream() != null) {
                 return;
             }
-            UnresolvedEndpoint dstEp = e.getFirstDestination();
+            InetSocketAddress dstEp = e.getFirstDestination();
             SocksConfig currentOutConf = outConfRef.get();
             RssClientConf currentConf = rssConf;
             boolean routeLog = currentConf != null && currentConf.hasRouteFlag();
             long userRuleBegin = routeLog ? System.nanoTime() : 0L;
             boolean userRoute = e.getUser() instanceof ShadowUser && ((ShadowUser) e.getUser()).getRouteMatcher() != null;
-            RouteAction userRuleAction = matchUserRoute(e.getUser(), dstEp.getHost(), dstEp.getPort(), e.getSource());
+            RouteAction userRuleAction = matchUserRoute(e.getUser(), dstEp.getHostString(), dstEp.getPort(), e.getSource());
             if (userRuleAction == RouteAction.BLOCK) {
                 if (routeLog) {
                     log.info("route dst UDP {} BLOCK <- {} {}",
-                            dstEp.getHost(), userRoute ? "user:route" : "defaultRoute",
+                            dstEp.getHostString(), userRoute ? "user:route" : "defaultRoute",
                             Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
                 }
                 String username = e.getUser() == null ? "anonymous" : e.getUser().getUsername();
@@ -1486,7 +1486,7 @@ public final class RssClient {
             if (userRuleAction == RouteAction.DIRECT) {
                 if (routeLog) {
                     log.info("route dst UDP {} DIRECT <- {} {}",
-                            dstEp.getHost(), userRoute ? "user:route" : "defaultRoute",
+                            dstEp.getHostString(), userRoute ? "user:route" : "defaultRoute",
                             Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
                 }
                 e.setUpstream(new Upstream(dstEp));
@@ -1494,7 +1494,7 @@ public final class RssClient {
             }
             if (routeLog) {
                 log.info("route dst UDP {} PROXY <- {} {}",
-                        dstEp.getHost(),
+                        dstEp.getHostString(),
                         userRoute ? "user:route" : "defaultRoute",
                         Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
             }
@@ -1518,17 +1518,17 @@ public final class RssClient {
         return nextUpstream(socksServers, srcHost, null);
     }
 
-    static UpstreamSupport nextUpstream(RandomList<UpstreamSupport> socksServers, InetAddress srcHost, UnresolvedEndpoint dstEp) {
+    static UpstreamSupport nextUpstream(RandomList<UpstreamSupport> socksServers, InetAddress srcHost, InetSocketAddress dstEp) {
         return nextUpstream(socksServers, srcHost, dstEp, true);
     }
 
     static UpstreamSupport nextUpstream(RandomList<UpstreamSupport> socksServers, InetAddress srcHost,
-            UnresolvedEndpoint dstEp, boolean allowSourceSteering) {
+            InetSocketAddress dstEp, boolean allowSourceSteering) {
         return nextUpstream(socksServers, srcHost, dstEp, allowSourceSteering, 0);
     }
 
     static UpstreamSupport nextUpstream(RandomList<UpstreamSupport> socksServers, InetAddress srcHost,
-            UnresolvedEndpoint dstEp, boolean allowSourceSteering, int steeringTtl) {
+            InetSocketAddress dstEp, boolean allowSourceSteering, int steeringTtl) {
         try {
             UpstreamSupport next = allowSourceSteering && srcHost != null && useSourceSteering(steeringTtl, dstEp)
                     ? socksServers.next(srcHost, steeringTtl, true)
@@ -1625,7 +1625,7 @@ public final class RssClient {
         return null;
     }
 
-    static boolean useSourceSteering(int steeringTtl, UnresolvedEndpoint dstEp) {
+    static boolean useSourceSteering(int steeringTtl, InetSocketAddress dstEp) {
         return steeringTtl > 0 && (dstEp == null || !isCommonStatelessPort(dstEp.getPort()));
     }
 
@@ -1663,7 +1663,7 @@ public final class RssClient {
         throw new NoSuchElementException();
     }
 
-    static Upstream createUdpRouteUpstream(UnresolvedEndpoint dstEp, SocksConfig config, UpstreamSupport next) {
+    static Upstream createUdpRouteUpstream(InetSocketAddress dstEp, SocksConfig config, UpstreamSupport next) {
         if (next == null) {
             return new Upstream(dstEp);
         }

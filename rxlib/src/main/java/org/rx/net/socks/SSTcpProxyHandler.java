@@ -5,7 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.EndpointTracer;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.net.InetSocketAddress;
 
@@ -19,17 +19,17 @@ public class SSTcpProxyHandler extends ChannelInboundHandlerAdapter {
         Channel inbound = ctx.channel();
         ShadowsocksServer server = Sockets.getAttr(inbound, ShadowsocksConfig.SVR);
         boolean debug = server.config.isDebug();
-        UnresolvedEndpoint dstEp = inbound.attr(ShadowsocksConfig.REMOTE_DEST).get();
+        InetSocketAddress dstEp = inbound.attr(ShadowsocksConfig.REMOTE_DEST).get();
 
         SocksContext e = SocksContext.getCtx(Sockets.getOriginRemoteAddress(inbound), dstEp);
         server.publishEvent(server.onTcpRoute, e);
         Upstream upstream = e.getUpstream();
-        UnresolvedEndpoint upDstEp = upstream.getDestination();
+        InetSocketAddress upDstEp = upstream.getDestination();
 
         ChannelFuture outboundFuture = Sockets.bootstrap(inbound.eventLoop(), upstream.getConfig(), upstream.connectAddressHint(), outbound -> {
             upstream.initChannel(outbound);
             inbound.pipeline().addLast(SocksTcpFrontendRelayHandler.DEFAULT);
-        }).connect(upDstEp.socketAddress()).addListener((ChannelFutureListener) f -> {
+        }).connect(upDstEp).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 logConnectFailure(upDstEp, dstEp, f.cause());
                 Sockets.closeOnFlushed(inbound);
@@ -48,7 +48,7 @@ public class SSTcpProxyHandler extends ChannelInboundHandlerAdapter {
         ctx.fireChannelRead(msg).pipeline().remove(this);
     }
 
-    static void logConnectFailure(UnresolvedEndpoint upDstEp, UnresolvedEndpoint dstEp, Throwable cause) {
+    static void logConnectFailure(InetSocketAddress upDstEp, InetSocketAddress dstEp, Throwable cause) {
         log.warn("SS TCP connect to backend {}[{}] fail source={} cause={} message={}",
                 upDstEp, dstEp, SSTcpProxyHandler.class.getName(),
                 cause == null ? "unknown" : cause.getClass().getName(),

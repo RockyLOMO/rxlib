@@ -3,7 +3,7 @@ package org.rx.util.rss;
 import org.junit.jupiter.api.Test;
 import org.rx.bean.RandomList;
 import org.rx.net.AuthenticEndpoint;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 import org.rx.net.support.UpstreamSupport;
 
 import java.net.InetAddress;
@@ -87,7 +87,7 @@ class RssClientWeightedRoutingTest {
             UpstreamSupport backup = upstream("127.0.0.1", 1081, 0);
             RandomList<UpstreamSupport> servers = weightedServers(primary, backup);
             InetAddress source = InetAddress.getByName("10.250.0.8");
-            UnresolvedEndpoint https = new UnresolvedEndpoint("example.com", 443);
+            InetSocketAddress https = org.rx.net.Sockets.newUnresolvedEndpoint("example.com", 443);
 
             assertSame(primary, RssClient.nextUpstream(servers, source, https, true, 60));
             servers.setWeight(primary, 0);
@@ -109,7 +109,7 @@ class RssClientWeightedRoutingTest {
             UpstreamSupport backup = upstream("127.0.0.1", 1081, 0);
             RandomList<UpstreamSupport> servers = weightedServers(primary, backup);
             InetAddress source = InetAddress.getByName("10.250.0.9");
-            UnresolvedEndpoint ssh = new UnresolvedEndpoint("example.com", 22);
+            InetSocketAddress ssh = org.rx.net.Sockets.newUnresolvedEndpoint("example.com", 22);
 
             assertSame(primary, RssClient.nextUpstream(servers, source, ssh, true, 60));
             servers.setWeight(primary, 0);
@@ -131,7 +131,7 @@ class RssClientWeightedRoutingTest {
             UpstreamSupport backup = upstream("127.0.0.1", 1081, 0);
             RandomList<UpstreamSupport> servers = weightedServers(primary, backup);
             InetAddress source = InetAddress.getByName("10.250.0.10");
-            UnresolvedEndpoint ssh = new UnresolvedEndpoint("example.com", 22);
+            InetSocketAddress ssh = org.rx.net.Sockets.newUnresolvedEndpoint("example.com", 22);
 
             assertSame(primary, RssClient.nextUpstream(servers, source, ssh, true, 60));
             servers.setWeight(primary, 0);
@@ -152,7 +152,7 @@ class RssClientWeightedRoutingTest {
             UpstreamSupport primary = upstream("127.0.0.1", 1080, 1);
             UpstreamSupport backup = upstream("127.0.0.1", 1081, 0);
             RandomList<UpstreamSupport> servers = weightedServers(primary, backup);
-            UnresolvedEndpoint ssh = new UnresolvedEndpoint("example.com", 22);
+            InetSocketAddress ssh = org.rx.net.Sockets.newUnresolvedEndpoint("example.com", 22);
 
             assertSame(primary, RssClient.nextUpstream(servers, null, ssh, true, 60));
             servers.setWeight(primary, 0);
@@ -171,7 +171,7 @@ class RssClientWeightedRoutingTest {
         UpstreamSupport backup = upstream("127.0.0.1", 1081, 0);
         RandomList<UpstreamSupport> servers = weightedServers(primary, backup);
         RssRuntime.ShadowRoutePlan plan = RssRuntime.ShadowRoutePlan.direct(servers);
-        UnresolvedEndpoint ssh = new UnresolvedEndpoint("example.com", 22);
+        InetSocketAddress ssh = org.rx.net.Sockets.newUnresolvedEndpoint("example.com", 22);
 
         assertSame(primary, plan.nextSupport(null, ssh, 60));
         servers.setWeight(primary, 0);

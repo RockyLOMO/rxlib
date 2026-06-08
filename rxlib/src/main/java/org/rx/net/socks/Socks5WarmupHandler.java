@@ -7,7 +7,7 @@ import lombok.Getter;
 import lombok.Setter;
 import org.rx.core.Strings;
 import org.rx.util.function.Action;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -125,7 +125,7 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
         ctx.fireChannelRead(msg);
     }
 
-    public ChannelFuture connect(UnresolvedEndpoint destination) {
+    public ChannelFuture connect(InetSocketAddress destination) {
         if (ctx == null) {
             throw new IllegalStateException("handler not initialized");
         }
@@ -136,7 +136,7 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
         connectPromise = ctx.newPromise();
         scheduleCommandTimeout();
         ctx.writeAndFlush(new DefaultSocks5CommandRequest(
-                Socks5CommandType.CONNECT, Socks5AddressType.DOMAIN, destination.getHost(), destination.getPort()));
+                Socks5CommandType.CONNECT, Socks5AddressType.DOMAIN, destination.getHostString(), destination.getPort()));
         return connectPromise;
     }
 

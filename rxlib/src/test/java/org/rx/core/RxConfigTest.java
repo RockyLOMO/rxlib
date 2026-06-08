@@ -161,17 +161,20 @@ class RxConfigTest {
         String upload = RxConfig.ConfigNames.NET_GLOBAL_TRAFFIC_UPLOAD_KILOBYTES_PER_SECOND;
         String download = RxConfig.ConfigNames.NET_GLOBAL_TRAFFIC_DOWNLOAD_KILOBYTES_PER_SECOND;
         String checkInterval = RxConfig.ConfigNames.NET_GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS;
+        String maxDelay = RxConfig.ConfigNames.NET_GLOBAL_TRAFFIC_MAX_DELAY_MILLIS;
         String udpPendingPackets = RxConfig.ConfigNames.NET_GLOBAL_TRAFFIC_UDP_MAX_PENDING_PACKETS;
         String oldEnabled = System.getProperty(enabled);
         String oldUpload = System.getProperty(upload);
         String oldDownload = System.getProperty(download);
         String oldCheckInterval = System.getProperty(checkInterval);
+        String oldMaxDelay = System.getProperty(maxDelay);
         String oldUdpPendingPackets = System.getProperty(udpPendingPackets);
         try {
             System.setProperty(enabled, "true");
             System.setProperty(upload, "2048");
             System.setProperty(download, "4096");
             System.setProperty(checkInterval, "50");
+            System.setProperty(maxDelay, "150");
             System.setProperty(udpPendingPackets, "16");
 
             conf.refreshFromSystemProperty();
@@ -180,12 +183,14 @@ class RxConfigTest {
             assertEquals(2048L, conf.net.globalTraffic.getUploadKilobytesPerSecond());
             assertEquals(4096L, conf.net.globalTraffic.getDownloadKilobytesPerSecond());
             assertEquals(50L, conf.net.globalTraffic.getCheckIntervalMillis());
+            assertEquals(150L, conf.net.globalTraffic.getMaxDelayMillis());
             assertEquals(16, conf.net.globalTraffic.getUdpMaxPendingPackets());
         } finally {
             restoreProperty(enabled, oldEnabled);
             restoreProperty(upload, oldUpload);
             restoreProperty(download, oldDownload);
             restoreProperty(checkInterval, oldCheckInterval);
+            restoreProperty(maxDelay, oldMaxDelay);
             restoreProperty(udpPendingPackets, oldUdpPendingPackets);
             conf.net.globalTraffic = new NetworkTrafficConfig(oldConfig);
             NetworkFlowControl.DEFAULT.refresh(oldConfig);

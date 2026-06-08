@@ -10,7 +10,7 @@ import org.rx.core.Disposable;
 import org.rx.io.Bytes;
 import org.rx.net.Sockets;
 import org.rx.net.http.HttpServer;
-import org.rx.net.support.UnresolvedEndpoint;
+import java.net.InetSocketAddress;
 
 import java.net.InetSocketAddress;
 import java.util.Queue;
@@ -43,7 +43,7 @@ public class HttpTunnelServer extends Disposable {
      */
     static class TcpConnection {
         final int connId;
-        final UnresolvedEndpoint destination;
+        final InetSocketAddress destination;
         volatile Channel outbound;
         volatile ChannelFuture connectFuture;
         /**
@@ -55,7 +55,7 @@ public class HttpTunnelServer extends Disposable {
          */
         final Queue<byte[]> responseQueue = new ConcurrentLinkedQueue<>();
 
-        TcpConnection(int connId, UnresolvedEndpoint destination) {
+        TcpConnection(int connId, InetSocketAddress destination) {
             this.connId = connId;
             this.destination = destination;
         }
@@ -154,7 +154,7 @@ public class HttpTunnelServer extends Disposable {
     // ---- TCP CONNECT ----
 
     private void handleConnect(int connId, ByteBuf content, org.rx.net.http.ServerResponse res) {
-        UnresolvedEndpoint dst = HttpTunnelProtocol.decodeAddress(content);
+        InetSocketAddress dst = HttpTunnelProtocol.decodeAddress(content);
         log.info("HttpTunnel CONNECT connId={} dst={}", connId, dst);
 
         TcpConnection conn = new TcpConnection(connId, dst);
@@ -163,7 +163,7 @@ public class HttpTunnelServer extends Disposable {
         // 建立到真实目标的 TCP 连接
         conn.connectFuture = Sockets.bootstrap(null, outbound -> {
             outbound.pipeline().addLast(new TcpBackendHandler(connId));
-        }).connect(dst.socketAddress());
+        }).connect(dst);
 
         conn.connectFuture.addListener((ChannelFutureListener) f -> {
             if (f.isSuccess()) {
@@ -221,7 +221,7 @@ public class HttpTunnelServer extends Disposable {
     // ---- UDP FORWARD ----
 
     private void handleUdpForward(int connId, ByteBuf content, org.rx.net.http.ServerResponse res) {
-        UnresolvedEndpoint dst = HttpTunnelProtocol.decodeAddress(content);
+        InetSocketAddress dst = HttpTunnelProtocol.decodeAddress(content);
         byte[] data = new byte[content.readableBytes()];
         content.readBytes(data);
 
@@ -235,7 +235,7 @@ public class HttpTunnelServer extends Disposable {
         }).bind(0).addListener((ChannelFutureListener) f -> {
             if (f.isSuccess()) {
                 Channel ch = f.channel();
-                InetSocketAddress dstAddr = dst.socketAddress();
+                InetSocketAddress dstAddr = dst;
                 ch.writeAndFlush(new DatagramPacket(Unpooled.wrappedBuffer(data), dstAddr));
             }
         });
@@ -344,7 +344,7 @@ public class HttpTunnelServer extends Disposable {
             // 编码: senderAddrLen(4) + senderAddr + data
             InetSocketAddress sender = packet.sender();
             ByteBuf addrBuf = Bytes.heapBuffer();
-            HttpTunnelProtocol.encodeAddress(addrBuf, new UnresolvedEndpoint(sender));
+            HttpTunnelProtocol.encodeAddress(addrBuf, sender);
             byte[] addrBytes = new byte[addrBuf.readableBytes()];
             addrBuf.readBytes(addrBytes);
             addrBuf.release();
