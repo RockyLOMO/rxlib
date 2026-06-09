@@ -3,7 +3,7 @@ package org.rx.net.rpc;
 import io.netty.util.AttributeKey;
 import io.netty.util.concurrent.DefaultPromise;
 import io.netty.util.concurrent.FastThreadLocal;
-import io.netty.util.concurrent.ImmediateEventExecutor;
+import io.netty.util.concurrent.GlobalEventExecutor;
 import io.netty.util.concurrent.Promise;
 import io.netty.util.internal.ThreadLocalRandom;
 import lombok.NonNull;
@@ -91,7 +91,7 @@ public final class Remoting {
     public static class ServerBean {
         static class EventContext {
             final EventArgs computedArgs;
-            final Promise<EventArgs> computedPromise = new DefaultPromise<EventArgs>(ImmediateEventExecutor.INSTANCE);
+            final Promise<EventArgs> computedPromise = new DefaultPromise<EventArgs>(GlobalEventExecutor.INSTANCE);
             volatile HybridSession computingSession;
 
             EventContext(EventArgs computedArgs) {

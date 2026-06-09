@@ -9,6 +9,7 @@ import org.rx.core.Arrays;
 import org.rx.core.Cache;
 import org.rx.core.CachePolicy;
 import org.rx.core.Tasks;
+import org.rx.core.cache.MemoryCache;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.socks.SocksConnectionTagRegistry;
@@ -16,7 +17,6 @@ import org.rx.net.socks.Socks5ClientHandler;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.socks.TcpWarmPoolKey;
-import java.net.InetSocketAddress;
 import org.rx.net.support.UpstreamSupport;
 
 import java.net.InetAddress;
@@ -28,6 +28,7 @@ import java.util.concurrent.TimeUnit;
 public class SocksTcpUpstream extends Upstream {
     private static final long HASH_OFFSET = 0xcbf29ce484222325L;
     private static final long HASH_PRIME = 0x100000001b3L;
+    private static final String FAKE_ENDPOINT_CACHE_PREFIX = "socks.fakeEndpoint.";
     private static final AttributeKey<UpstreamSupport> ATTR_ACTIVE_SUPPORT =
             AttributeKey.valueOf("socksTcpUpstreamActiveSupport");
 
@@ -75,17 +76,16 @@ public class SocksTcpUpstream extends Upstream {
         long hash = fakeEndpointHash(next, realDestination);
         destination = org.rx.net.Sockets.newUnresolvedEndpoint(SocksRpcContract.fakeHost(hash), Arrays.randomNext(SocksRpcContract.FAKE_PORT_OBFS));
 
-        Cache<Long, Boolean> cache = Cache.getInstance();
-        Long cacheKey = Long.valueOf(hash);
+        Cache<String, String> cache = fakeEndpointCache();
+        String cacheKey = fakeEndpointCacheKey(hash);
         if (!cache.containsKey(cacheKey)) {
             try {
                 String dstEpStr = Sockets.toString(realDestination);
                 Tasks.runAsync(() -> {
-                    facade.fakeEndpoint(hash, dstEpStr, SocksRpcContract.rpcToken());
-                    return true;
+                    return facade.fakeEndpoint(hash, dstEpStr, SocksRpcContract.rpcToken());
                 }).whenCompleteAsync((r, e) -> {
                     if (BooleanUtils.isTrue(r)) {
-                        cache.put(cacheKey, r, CachePolicy.absolute(SocksRpcContract.FAKE_EXPIRE_SECONDS));
+                        cache.put(cacheKey, dstEpStr, CachePolicy.absolute(SocksRpcContract.FAKE_EXPIRE_SECONDS));
                     }
                 }).get(SocksRpcContract.ASYNC_TIMEOUT, TimeUnit.MILLISECONDS);
             } catch (Exception e) {
@@ -93,6 +93,18 @@ public class SocksTcpUpstream extends Upstream {
             }
         }
         return destination;
+    }
+
+    public static String cachedFakeEndpoint(long hash) {
+        return fakeEndpointCache().get(fakeEndpointCacheKey(hash));
+    }
+
+    static Cache<String, String> fakeEndpointCache() {
+        return Cache.getInstance(MemoryCache.class);
+    }
+
+    private static String fakeEndpointCacheKey(long hash) {
+        return FAKE_ENDPOINT_CACHE_PREFIX + Long.toHexString(hash);
     }
 
     static long fakeEndpointHash(UpstreamSupport support, InetSocketAddress dstEp) {

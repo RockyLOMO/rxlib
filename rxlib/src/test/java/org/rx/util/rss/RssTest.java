@@ -498,7 +498,8 @@ public class RssTest extends AbstractTester {
         AuthenticEndpoint upstream = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1090), "u", "p");
         SocksRpcContract facade = new SocksRpcContract() {
             @Override
-            public void fakeEndpoint(long hash, String realEndpoint, String token) {
+            public boolean fakeEndpoint(long hash, String realEndpoint, String token) {
+                return true;
             }
 
             @Override
@@ -528,8 +529,9 @@ public class RssTest extends AbstractTester {
         final AtomicInteger calls = new AtomicInteger();
         SocksRpcContract facade = new SocksRpcContract() {
             @Override
-            public void fakeEndpoint(long hash, String realEndpoint, String token) {
+            public boolean fakeEndpoint(long hash, String realEndpoint, String token) {
                 calls.incrementAndGet();
+                return true;
             }
 
             @Override
@@ -562,8 +564,9 @@ public class RssTest extends AbstractTester {
         final String[] capturedEndpoint = new String[1];
         SocksRpcContract facade = new SocksRpcContract() {
             @Override
-            public void fakeEndpoint(long hash, String realEndpoint, String token) {
+            public boolean fakeEndpoint(long hash, String realEndpoint, String token) {
                 capturedEndpoint[0] = realEndpoint;
+                return true;
             }
 
             @Override
@@ -601,6 +604,67 @@ public class RssTest extends AbstractTester {
             assertEquals("android.clients.google.com", SocksRpcContract.fakeDict().get(hash).getHostString());
         } finally {
             SocksRpcContract.fakeDict().remove(hash);
+        }
+    }
+
+    @Test
+    public void rssRpcApp_RecoverFakeEndpointRequestsClientCachedMappingViaRpcEvent() throws Exception {
+        org.rx.core.Cache.getInstance(org.rx.core.cache.MemoryCache.class);
+        int rpcPort = freePort();
+        SocksProxyServer backSvr = new SocksProxyServer(new SocksConfig(new LocalAddress("RSS_FAKE_RECOVER_RPC_BACK")));
+        TcpServer rpcServer = null;
+        SocksRpcContract facade = null;
+        Long hash = null;
+        try {
+            RssRpcApp app = new RssRpcApp(backSvr);
+            RpcServerConfig rpcServerConf = new RpcServerConfig(new TcpServerConfig(rpcPort));
+            rpcServerConf.getHybridConfig().setEnableUdpDirect(false);
+            rpcServerConf.getHybridConfig().setEnableUdpHolePunch(false);
+            rpcServerConf.setEventComputeVersion(RpcServerConfig.EVENT_LATEST_COMPUTE);
+            rpcServerConf.getEventBroadcastVersions().add(SocksRpcContract.RPC_EVENT_VERSION);
+            rpcServerConf.getTcpConfig().setConnectTimeoutMillis(SocksRpcContract.FAKE_RECOVER_RPC_TIMEOUT_MILLIS);
+            rpcServer = Remoting.register(app, rpcServerConf);
+
+            InetSocketAddress rpcEndpoint = new InetSocketAddress("127.0.0.1", rpcPort);
+            RpcClientConfig<SocksRpcContract> rpcClientConf = RpcClientConfig.poolMode(rpcEndpoint, 1, 1);
+            rpcClientConf.getHybridConfig().setEnableUdpDirect(false);
+            rpcClientConf.getHybridConfig().setEnableUdpHolePunch(false);
+            SocksRpcContract delegate = Remoting.createFacade(SocksRpcContract.class, rpcClientConf);
+            RpcClientConfig<SocksRpcContract> eventClientConf =
+                    RpcClientConfig.statefulMode(rpcEndpoint, SocksRpcContract.RPC_EVENT_VERSION);
+            eventClientConf.getHybridConfig().setEnableUdpDirect(false);
+            eventClientConf.getHybridConfig().setEnableUdpHolePunch(false);
+            SocksRpcContract eventDelegate = Remoting.createFacade(SocksRpcContract.class, eventClientConf);
+            facade = new RssClient.ForwardingSocksRpcContract(delegate, eventDelegate);
+            assertTrue(Remoting.ping(eventDelegate, 1000));
+            Thread.sleep(200L);
+
+            String dstHost = "recover-" + System.nanoTime() + ".example";
+            InetSocketAddress dstEp = org.rx.net.Sockets.newUnresolvedEndpoint(dstHost, 443);
+            UpstreamSupport upstream = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 9900)), facade);
+            InetSocketAddress fakeEp = new SocksTcpUpstream(dstEp, new SocksConfig(), upstream).prepareDestination();
+            hash = SocksRpcContract.parseFakeHostHash(fakeEp.getHostString());
+            assertNotNull(hash);
+            assertEquals(dstHost + ":443", SocksTcpUpstream.cachedFakeEndpoint(hash.longValue()));
+
+            SocksRpcContract.fakeDict().remove(hash);
+            InetSocketAddress recovered = app.recoverFakeEndpoint(hash.longValue(), fakeEp.getHostString());
+
+            assertNotNull(recovered);
+            assertEquals(dstHost, recovered.getHostString());
+            assertEquals(443, recovered.getPort());
+            assertEquals(dstHost, SocksRpcContract.fakeDict().get(hash).getHostString());
+        } finally {
+            if (facade != null) {
+                facade.close();
+            }
+            if (rpcServer != null) {
+                rpcServer.close();
+            }
+            if (hash != null) {
+                SocksRpcContract.fakeDict().remove(hash);
+            }
+            backSvr.close();
         }
     }
 
@@ -707,7 +771,8 @@ public class RssTest extends AbstractTester {
         AtomicInteger closeCount = new AtomicInteger();
         SocksRpcContract facade = new SocksRpcContract() {
             @Override
-            public void fakeEndpoint(long hash, String realEndpoint, String token) {
+            public boolean fakeEndpoint(long hash, String realEndpoint, String token) {
+                return true;
             }
 
             @Override
@@ -747,7 +812,8 @@ public class RssTest extends AbstractTester {
         AtomicInteger closeCount = new AtomicInteger();
         SocksRpcContract facade = new SocksRpcContract() {
             @Override
-            public void fakeEndpoint(long hash, String realEndpoint, String token) {
+            public boolean fakeEndpoint(long hash, String realEndpoint, String token) {
+                return true;
             }
 
             @Override
@@ -789,7 +855,8 @@ public class RssTest extends AbstractTester {
         AtomicInteger calls = new AtomicInteger();
         SocksRpcContract delegate = new SocksRpcContract() {
             @Override
-            public void fakeEndpoint(long hash, String realEndpoint, String token) {
+            public boolean fakeEndpoint(long hash, String realEndpoint, String token) {
+                return true;
             }
 
             @Override
@@ -1550,7 +1617,8 @@ public class RssTest extends AbstractTester {
         UpstreamSupport support = new UpstreamSupport(
                 AuthenticEndpoint.valueOf("u:p@127.0.0.1:9900"), new SocksRpcContract() {
             @Override
-            public void fakeEndpoint(long hash, String realEndpoint, String token) {
+            public boolean fakeEndpoint(long hash, String realEndpoint, String token) {
+                return true;
             }
 
             @Override

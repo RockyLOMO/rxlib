@@ -5,15 +5,21 @@ import io.netty.channel.local.LocalAddress;
 import io.netty.channel.local.LocalChannel;
 import io.netty.handler.codec.socksx.v5.*;
 import lombok.extern.slf4j.Slf4j;
+import org.rx.core.CachePolicy;
+import org.rx.core.Tasks;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.*;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.support.EndpointTracer;
-import java.net.InetSocketAddress;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 @ChannelHandler.Sharable
@@ -22,6 +28,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     static final DefaultSocks5CommandResponse SUCCESS_IPv4 = new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, Socks5AddressType.IPv4);
     static final DefaultSocks5CommandResponse SUCCESS_DOMAIN = new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, Socks5AddressType.DOMAIN);
     static final DefaultSocks5CommandResponse SUCCESS_IPv6 = new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, Socks5AddressType.IPv6);
+    static final ConcurrentMap<Long, CompletableFuture<InetSocketAddress>> FAKE_RECOVERIES = new ConcurrentHashMap<>();
 
     @Override
     protected void channelRead0(ChannelHandlerContext inbound, DefaultSocks5CommandRequest msg) {
@@ -38,13 +45,21 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             return;
         }
 
+        Socks5CommandType commandType = msg.type();
+        Socks5AddressType dstAddrType = msg.dstAddrType();
         InetSocketAddress dstEp = org.rx.net.Sockets.newUnresolvedEndpoint(msg.dstAddr(), msg.dstPort());
         String dstEpHost = dstEp.getHostString();
         if (dstEpHost.endsWith(SocksRpcContract.FAKE_HOST_SUFFIX)) {
             Long hash = SocksRpcContract.parseFakeHostHash(dstEpHost);
             InetSocketAddress realEp = hash == null ? null : SocksRpcContract.fakeDict().get(hash);
             if (realEp == null) {
-                log.error("socks5[{}] recover dstEp {} fail", config.getListenPort(), dstEp);
+                if (hash != null && server.getFakeEndpointResolver() != null && commandType == Socks5CommandType.CONNECT) {
+                    log.debug("socks5[{}] recover dstEp {} miss, request client recovery", config.getListenPort(), dstEp);
+                    recoverFakeEndpoint(inbound, server, config, commandType, dstAddrType, dstEp, hash.longValue());
+                } else {
+                    failFakeEndpointRecovery(inbound, dstAddrType, config, dstEp);
+                }
+                return;
             } else {
                 if (config.isDebug()) {
                     log.info("socks5[{}] recover dstEp {}[{}]", config.getListenPort(), dstEp, realEp);
@@ -53,6 +68,13 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             }
         }
 
+        handleCommand(inbound, server, config, commandType, dstAddrType, dstEp);
+    }
+
+    private void handleCommand(ChannelHandlerContext inbound, SocksProxyServer server, SocksConfig config,
+                               Socks5CommandType commandType, Socks5AddressType dstAddrType, InetSocketAddress dstEp) {
+        ChannelPipeline pipeline = inbound.pipeline();
+        Channel inCh = inbound.channel();
         InetSocketAddress srcEp = Sockets.getOriginRemoteAddress(inCh);
         ProxyManageHandler manageHandler = ProxyManageHandler.get(inbound);
         if (!server.isAuthEnabled() && manageHandler != null && manageHandler.getUser().isAnonymous()
@@ -65,17 +87,17 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         }
         TrafficUser user = manageHandler != null ? manageHandler.getTrafficUser() : TrafficUser.ANONYMOUS;
         TrafficLoginInfo loginInfo = manageHandler != null ? manageHandler.getInfo() : null;
-        if (msg.type() == Socks5CommandType.CONNECT) {
+        if (commandType == Socks5CommandType.CONNECT) {
             SocksContext e = SocksContext.getCtx(srcEp, dstEp);
             SocksUserTraffic.attach(e, user, loginInfo);
             try {
                 server.publishEvent(server.onTcpRoute, e);
-                connect(inCh, msg.dstAddrType(), e, null);
+                connect(inCh, dstAddrType, e, null);
             } catch (Exception ex) {
-                failTcpRoute(inbound, msg.dstAddrType(), config, e, ex);
+                failTcpRoute(inbound, dstAddrType, config, e, ex);
             }
-        } else if (msg.type() == Socks5CommandType.UDP_ASSOCIATE) {
-            log.debug("socks5[{}] UDP_ASSOCIATE {}", config.getListenPort(), msg);
+        } else if (commandType == Socks5CommandType.UDP_ASSOCIATE) {
+            log.debug("socks5[{}] UDP_ASSOCIATE {}", config.getListenPort(), dstEp);
             String idleHandlerName = ProxyChannelIdleHandler.class.getSimpleName();
             if (pipeline.get(idleHandlerName) != null) {
                 pipeline.remove(idleHandlerName);
@@ -132,7 +154,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 if (!f.isSuccess()) {
                     log.warn("socks5[{}] UDP_ASSOCIATE relay bind failed for {}", config.getListenPort(), clientTcpAddr, f.cause());
                     inbound.writeAndFlush(new DefaultSocks5CommandResponse(
-                                    Socks5CommandStatus.FAILURE, msg.dstAddrType()))
+                                    Socks5CommandStatus.FAILURE, dstAddrType))
                             .addListener(ChannelFutureListener.CLOSE);
                     return;
                 }
@@ -148,9 +170,73 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                         Socks5CommandStatus.SUCCESS, atyp, udpAdvertiseAddr.getAddress().getHostAddress(), udpAdvertiseAddr.getPort()));
             });
         } else {
-            log.warn("Command {} not support", msg.type());
-            inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.COMMAND_UNSUPPORTED, msg.dstAddrType())).addListener(ChannelFutureListener.CLOSE);
+            log.warn("Command {} not support", commandType);
+            inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.COMMAND_UNSUPPORTED, dstAddrType)).addListener(ChannelFutureListener.CLOSE);
         }
+    }
+
+    private void recoverFakeEndpoint(ChannelHandlerContext inbound, SocksProxyServer server, SocksConfig config,
+                                     Socks5CommandType commandType, Socks5AddressType dstAddrType,
+                                     InetSocketAddress fakeEp, long hash) {
+        CompletableFuture<InetSocketAddress> future = recoverFakeEndpointAsync(server, hash, fakeEp.getHostString());
+        AtomicBoolean completed = new AtomicBoolean();
+        Channel channel = inbound.channel();
+        channel.eventLoop().schedule(() -> {
+            if (completed.compareAndSet(false, true)) {
+                if (!channel.isOpen()) {
+                    return;
+                }
+                failFakeEndpointRecovery(inbound, dstAddrType, config, fakeEp);
+            }
+        }, SocksRpcContract.FAKE_RECOVER_WAIT_MILLIS, TimeUnit.MILLISECONDS);
+        future.whenComplete((realEp, error) -> channel.eventLoop().execute(() -> {
+            if (!completed.compareAndSet(false, true)) {
+                return;
+            }
+            if (!channel.isOpen()) {
+                return;
+            }
+            if (error != null || realEp == null) {
+                failFakeEndpointRecovery(inbound, dstAddrType, config, fakeEp);
+                return;
+            }
+            handleCommand(inbound, server, config, commandType, dstAddrType, realEp);
+        }));
+    }
+
+    private CompletableFuture<InetSocketAddress> recoverFakeEndpointAsync(SocksProxyServer server, long hash, String fakeHost) {
+        Long key = Long.valueOf(hash);
+        CompletableFuture<InetSocketAddress> current = FAKE_RECOVERIES.get(key);
+        if (current != null) {
+            return current;
+        }
+        CompletableFuture<InetSocketAddress> created = Tasks.runAsync(() -> {
+            InetSocketAddress recovered = server.recoverFakeEndpoint(hash, fakeHost);
+            if (recovered != null) {
+                SocksRpcContract.fakeDict().put(key, recovered, CachePolicy.absolute(SocksRpcContract.FAKE_EXPIRE_SECONDS));
+                DiagnosticMetrics.record("socks.fake.endpoint.recover.success.count", 1D, "port=" + server.getConfig().getListenPort());
+            }
+            return recovered;
+        });
+        CompletableFuture<InetSocketAddress> previous = FAKE_RECOVERIES.putIfAbsent(key, created);
+        if (previous != null) {
+            return previous;
+        }
+        created.whenComplete((r, e) -> FAKE_RECOVERIES.remove(key, created));
+        return created;
+    }
+
+    private void failFakeEndpointRecovery(ChannelHandlerContext inbound, Socks5AddressType dstAddrType,
+                                          SocksConfig config, InetSocketAddress fakeEp) {
+        if (DiagnosticMetrics.isEnabled()) {
+            DiagnosticMetrics.record("socks.fake.endpoint.recover.failure.count", 1D, "port=" + config.getListenPort());
+        }
+        log.warn("socks5[{}] recover dstEp {} fail", config.getListenPort(), fakeEp);
+        if (!inbound.channel().isOpen()) {
+            return;
+        }
+        inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, dstAddrType))
+                .addListener(ChannelFutureListener.CLOSE);
     }
 
     private void failTcpRoute(ChannelHandlerContext inbound, Socks5AddressType dstAddrType, SocksConfig config,

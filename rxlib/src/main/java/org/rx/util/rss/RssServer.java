@@ -14,6 +14,7 @@ import org.rx.net.rpc.RpcServerConfig;
 import org.rx.net.socks.Authenticator;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksProxyServer;
+import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.socks.SocksUser;
 import org.rx.net.udp.UdpPortHoppingMode;
 import org.rx.net.udp.UdpRedundantMode;
@@ -62,7 +63,14 @@ public final class RssServer {
         int actualRpcPort = rpcPort == null ? port + 1 : rpcPort;
         RpcServerConfig rpcConf = new RpcServerConfig(new TcpServerConfig(actualRpcPort));
         rpcConf.getTcpConfig().setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CIPHER_BOTH).flags());
+        rpcConf.getTcpConfig().setConnectTimeoutMillis(SocksRpcContract.FAKE_RECOVER_RPC_TIMEOUT_MILLIS);
+        rpcConf.setEventComputeVersion(RpcServerConfig.EVENT_LATEST_COMPUTE);
+        rpcConf.getEventBroadcastVersions().add(SocksRpcContract.RPC_EVENT_VERSION);
         RssRpcApp app = new RssRpcApp(outSvr, outUdp2rawSvr);
+        outSvr.setFakeEndpointResolver(app::recoverFakeEndpoint);
+        if (outUdp2rawSvr != null) {
+            outUdp2rawSvr.setFakeEndpointResolver(app::recoverFakeEndpoint);
+        }
         Remoting.register(app, rpcConf);
         serverInit();
         app.await();

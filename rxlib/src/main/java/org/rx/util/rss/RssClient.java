@@ -28,8 +28,10 @@ import org.rx.net.http.HttpServer;
 import org.rx.net.nameserver.NameserverConfig;
 import org.rx.net.nameserver.NameserverImpl;
 import org.rx.net.rpc.Remoting;
+import org.rx.net.rpc.RemotingEventArgs;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.socks.Authenticator;
+import org.rx.net.socks.FakeEndpointRecovery;
 import org.rx.net.socks.RrpConfig;
 import org.rx.net.socks.RrpServer;
 import org.rx.net.socks.ShadowsocksConfig;
@@ -281,14 +283,31 @@ public final class RssClient {
 
     static final class ForwardingSocksRpcContract implements SocksRpcContract {
         final SocksRpcContract delegate;
+        final SocksRpcContract eventDelegate;
 
         ForwardingSocksRpcContract(SocksRpcContract delegate) {
+            this(delegate, null);
+        }
+
+        ForwardingSocksRpcContract(SocksRpcContract delegate, SocksRpcContract eventDelegate) {
             this.delegate = delegate;
+            this.eventDelegate = eventDelegate;
+            if (eventDelegate != null) {
+                eventDelegate.<RemotingEventArgs<FakeEndpointRecovery>>attachEvent(
+                        SocksRpcContract.EVENT_FAKE_ENDPOINT_RECOVERY, (s, e) -> {
+                            FakeEndpointRecovery recovery = e.getValue();
+                            if (recovery == null) {
+                                return;
+                            }
+                            recovery.setRealEndpoint(SocksTcpUpstream.cachedFakeEndpoint(recovery.getHash()));
+                            e.setValue(recovery);
+                        }, false);
+            }
         }
 
         @Override
-        public void fakeEndpoint(long hash, String realEndpoint, String token) {
-            delegate.fakeEndpoint(hash, realEndpoint, token);
+        public boolean fakeEndpoint(long hash, String realEndpoint, String token) {
+            return delegate.fakeEndpoint(hash, realEndpoint, token);
         }
 
         @Override
@@ -379,6 +398,7 @@ public final class RssClient {
         @Override
         public void close() {
             tryClose(delegate);
+            tryClose(eventDelegate);
         }
     }
 
@@ -826,7 +846,13 @@ public final class RssClient {
         rpcConf.setRequestTimeoutMillis(resolveRpcRequestTimeoutMillis(conf));
         TcpClientConfig tcpConfig = rpcConf.getTcpConfig();
         tcpConfig.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CIPHER_BOTH).flags());
-        facade = new ForwardingSocksRpcContract(Remoting.createFacade(SocksRpcContract.class, rpcConf));
+        SocksRpcContract delegate = Remoting.createFacade(SocksRpcContract.class, rpcConf);
+
+        RpcClientConfig<SocksRpcContract> eventRpcConf = RpcClientConfig.statefulMode(rpcEndpoint, SocksRpcContract.RPC_EVENT_VERSION);
+        eventRpcConf.setRequestTimeoutMillis(resolveRpcRequestTimeoutMillis(conf));
+        eventRpcConf.getTcpConfig().setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CIPHER_BOTH).flags());
+        SocksRpcContract eventDelegate = Remoting.createFacade(SocksRpcContract.class, eventRpcConf);
+        facade = new ForwardingSocksRpcContract(delegate, eventDelegate);
         facadeByRpcEndpoint.put(rpcKey, facade);
         createdFacades.add(facade);
         return facade;
