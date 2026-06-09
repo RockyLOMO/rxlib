@@ -2,7 +2,11 @@ package org.rx.util.rss;
 
 import lombok.SneakyThrows;
 import org.rx.core.CachePolicy;
+import org.rx.core.Strings;
+import org.rx.net.Sockets;
 import org.rx.net.dns.DnsClient;
+import org.rx.net.rpc.RemotingEventArgs;
+import org.rx.net.socks.FakeEndpointRecovery;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.SocksRpcCapabilities;
 import org.rx.net.socks.SocksRpcContract;
@@ -11,7 +15,6 @@ import org.rx.net.socks.UdpRelayGroupOpenResult;
 import org.rx.net.socks.UdpRelayGroupUpdateResult;
 import org.rx.net.socks.Udp2rawOpenRequest;
 import org.rx.net.socks.Udp2rawOpenResult;
-import java.net.InetSocketAddress;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -46,10 +49,29 @@ public final class RssRpcApp implements SocksRpcContract {
     }
 
     @Override
-    public void fakeEndpoint(long hash, String endpoint, String token) {
+    public boolean fakeEndpoint(long hash, String endpoint, String token) {
         SocksRpcContract.requireValidRpcToken(token);
-        SocksRpcContract.fakeDict().put(hash, org.rx.net.Sockets.parseEndpoint(endpoint),
+        SocksRpcContract.fakeDict().put(hash, Sockets.parseEndpoint(endpoint),
                 CachePolicy.absolute(SocksRpcContract.FAKE_EXPIRE_SECONDS));
+        return true;
+    }
+
+    public InetSocketAddress recoverFakeEndpoint(long hash, String fakeHost) {
+        FakeEndpointRecovery recovery = new FakeEndpointRecovery(hash, fakeHost);
+        RemotingEventArgs<FakeEndpointRecovery> args = RemotingEventArgs.compute(recovery);
+        try {
+            publishEvent(SocksRpcContract.EVENT_FAKE_ENDPOINT_RECOVERY, args);
+        } catch (Throwable e) {
+            return null;
+        }
+
+        FakeEndpointRecovery value = args.getValue();
+        if (value == null || Strings.isEmpty(value.getRealEndpoint())) {
+            return null;
+        }
+        InetSocketAddress endpoint = Sockets.parseEndpoint(value.getRealEndpoint());
+        SocksRpcContract.fakeDict().put(hash, endpoint, CachePolicy.absolute(SocksRpcContract.FAKE_EXPIRE_SECONDS));
+        return endpoint;
     }
 
     @SneakyThrows

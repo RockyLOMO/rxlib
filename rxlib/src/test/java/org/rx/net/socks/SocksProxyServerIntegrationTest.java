@@ -46,9 +46,10 @@ class SocksProxyServerIntegrationTest {
         }
 
         @Override
-        public void fakeEndpoint(long hash, String realEndpoint, String token) {
+        public boolean fakeEndpoint(long hash, String realEndpoint, String token) {
             SocksRpcContract.requireValidRpcToken(token);
             SocksRpcContract.fakeDict().putIfAbsent(hash, org.rx.net.Sockets.parseEndpoint(realEndpoint));
+            return true;
         }
 
         @Override

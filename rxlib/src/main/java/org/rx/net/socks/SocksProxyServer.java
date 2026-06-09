@@ -29,6 +29,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 // @Slf4j
@@ -56,6 +57,9 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     @Getter
     @Setter
     private Function<String, AuthResult> connectionTagResolver;
+    @Getter
+    @Setter
+    private BiFunction<Long, String, InetSocketAddress> fakeEndpointResolver;
 
     public boolean isBind() {
         for (Channel channel : tcpChannels) {
@@ -81,6 +85,11 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
 
     boolean isTrafficBindingEnabled() {
         return authenticator != null || connectionTagResolver != null;
+    }
+
+    InetSocketAddress recoverFakeEndpoint(long hash, String fakeHost) {
+        BiFunction<Long, String, InetSocketAddress> resolver = fakeEndpointResolver;
+        return resolver == null ? null : resolver.apply(Long.valueOf(hash), fakeHost);
     }
 
     public SocksProxyServer(SocksConfig config) {
