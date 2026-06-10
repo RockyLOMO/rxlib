@@ -51,7 +51,7 @@ RSS server 是 2c / 1.5GiB 小机器，`MaxDirectMemorySize=640m`，所以 UDP p
 | `GLOBAL_UDP_MAX_PENDING_BYTES` | `131072` | 每 channel 最多 128KiB pending write bytes |
 | `GLOBAL_UDP_MAX_PENDING_PACKETS` | `256` | 每 channel 最多 256 个 pending UDP packet |
 
-两侧实际 JVM 参数形态一致：
+两侧公共 JVM 参数形态：
 
 ```bash
 -Dapp.net.globalTraffic.enabled=true
@@ -62,13 +62,43 @@ RSS server 是 2c / 1.5GiB 小机器，`MaxDirectMemorySize=640m`，所以 UDP p
 -Dapp.net.globalTraffic.udpBackpressureEnabled=true
 -Dapp.net.globalTraffic.udpMaxPendingBytes=${GLOBAL_UDP_MAX_PENDING_BYTES}
 -Dapp.net.globalTraffic.udpMaxPendingPackets=${GLOBAL_UDP_MAX_PENDING_PACKETS}
+-Dapp.diagnostic.h2.enabled=false
+-Dapp.diagnostic.disk.scan.enabled=false
+-Dapp.diagnostic.nmt.enabled=false
+```
+
+RSS server B 额外设置 fake host 控制面恢复等待：
+
+```bash
+-Dapp.net.socks.fakeEndpointRecoverWaitMillis=${FAKE_ENDPOINT_RECOVER_WAIT_MILLIS}
 ```
 
 性能优先策略：
 
-- `checkIntervalMillis=1000`，不追求精确整形，降低 traffic shaping 周期调度频率。
+- `checkIntervalMillis=100`，使用 Netty 默认级别的 100ms 调度粒度，减少多连接下载时的秒级批量放行。
 - 全局限速只做粗保护，防止持续打满公网出口导致排队膨胀。
+- RSS 生产脚本关闭诊断 H2 落库、磁盘扫描和 NMT 采集，避免诊断线程在下载压测时抢 CPU / IO。
 - 如果线上 RTT 抖动明显，优先把对应节点降到 95%；如果 RTT 平稳且吞吐不足，再临时调到 99% 或关闭全局限速压测。
+
+## 2026-06-10 线上观测
+
+并发下载 5 个文件时，旧配置较前一版已有改善，但仍出现 4 个下载进度在 20% / 30% 一段一段停顿的问题。登录 RSS client / RSS server 观察到：
+
+| 节点 | 现象 | 判断 |
+| --- | --- | --- |
+| RSS client | `rx-diagnostic-h2-writer` 单线程可打满一个 CPU；当前流量很低时 JVM 仍约 49% CPU | 诊断 H2 写入/清理抢占 CPU，影响 EventLoop 和 traffic shaping 定时任务 |
+| RSS server | 2c 小机上 `MVStore`、`H2-serializer`、G1 线程明显抢 CPU；日志有 `diagnostic h2 batch slow` / `queue pressure` | 诊断 H2 在小内存小 CPU 机器上成为热点 |
+| 两侧网卡 | `tc qdisc` backlog 为 0，TCP `Send-Q/Recv-Q` 基本为 0 | 系统网卡队列不是主要瓶颈 |
+| 全局限速 | 两侧实际运行 `checkIntervalMillis=1000` | 1s shaping tick 会造成按秒批量放行，不适合“5 个进度条都流畅”的体验 |
+| fake host 控制面 | server 最近日志仍有大量 `recover dstEp ... fail`，client 只看到少量 `fakeEndpointRecovery` 事件重订阅 | 事件机制存在，但 server 侧 200ms 等待窗口偏窄，RTT/CPU 抖动下容易提前失败 |
+
+处理结论：
+
+- `deploy/rss/start.sh`、`deploy/rss-svr/start.sh`、`deploy/rss-svr/rollback.sh` 默认 `GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS=100`。
+- `deploy/rss-svr/start.sh`、`deploy/rss-svr/rollback.sh` 默认 `FAKE_ENDPOINT_RECOVER_WAIT_MILLIS=1200`，避免 server 缓存 miss 后 RPC 事件还没回包就返回 SOCKS failure。
+- `SocksTcpUpstream.prepareDestination()` 在 client 本地先写入 fake host 映射，再异步推送给 server；即使初始 `fakeEndpoint` RPC push 慢或失败，server 后续 `fakeEndpointRecovery` 事件也能从 client cache 找到真实 endpoint。
+- 启动脚本默认追加 `-Dapp.diagnostic.h2.enabled=false -Dapp.diagnostic.disk.scan.enabled=false -Dapp.diagnostic.nmt.enabled=false`。
+- 这次调整优先消除本机诊断 CPU/IO 抖动，再提升全局控流调度平滑度；暂不继续放大 TCP/UDP pending 队列，避免游戏低延迟场景下排队变深。
 
 ## 全局控流边界
 
@@ -219,9 +249,10 @@ dest
 
 | 目标 | 建议 |
 | --- | --- |
-| 性能优先，粗控流 | 维持 98%、`checkIntervalMillis=1000` |
+| 性能优先，粗控流 | 维持 98%、`checkIntervalMillis=100` |
 | client RTT 抖动明显 | client 降到 95%，或将 `GLOBAL_UDP_MAX_PENDING_BYTES` 降到 `131072` |
 | server RTT 抖动明显 | server 降到 95%，或将 `GLOBAL_UDP_MAX_PENDING_BYTES` 降到 `65536` |
+| fake host recover fail 持续出现 | 先确认 client event `fakeEndpointRecovery` 已订阅，再临时把 server `FAKE_ENDPOINT_RECOVER_WAIT_MILLIS` 提到 `1500..2000` |
 | UDP drop 明显但 RTT 平稳 | client 可提高到 `524288 / 512 packets`；server 可提高到 `262144 / 512 packets` |
 | 严格出口整形 | 不建议在热点路径继续加逻辑，优先用 Linux `tc` / SQM 在网卡层处理 |
 

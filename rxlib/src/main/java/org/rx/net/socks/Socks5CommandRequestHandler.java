@@ -188,7 +188,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 }
                 failFakeEndpointRecovery(inbound, dstAddrType, config, fakeEp);
             }
-        }, SocksRpcContract.FAKE_RECOVER_WAIT_MILLIS, TimeUnit.MILLISECONDS);
+        }, SocksRpcContract.fakeRecoverWaitMillis(), TimeUnit.MILLISECONDS);
         future.whenComplete((realEp, error) -> channel.eventLoop().execute(() -> {
             if (!completed.compareAndSet(false, true)) {
                 return;
