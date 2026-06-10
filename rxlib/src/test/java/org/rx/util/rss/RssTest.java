@@ -591,6 +591,37 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
+    public void socksTcpUpstream_CachesFakeEndpointWhenRpcPushFails() {
+        org.rx.core.Cache.getInstance(org.rx.core.cache.MemoryCache.class);
+        SocksRpcContract facade = new SocksRpcContract() {
+            @Override
+            public boolean fakeEndpoint(long hash, String realEndpoint, String token) {
+                return false;
+            }
+
+            @Override
+            public void addWhiteList(InetAddress endpoint, String token) {
+            }
+
+            @Override
+            public List<InetAddress> resolveHost(InetAddress srcIp, String host) {
+                return Collections.emptyList();
+            }
+        };
+
+        SocksConfig config = new SocksConfig();
+        String dstHost = "recover-cache-" + System.nanoTime() + ".example";
+        InetSocketAddress dstEp = org.rx.net.Sockets.newUnresolvedEndpoint(dstHost, 443);
+        UpstreamSupport routed = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.100", 4093)), facade);
+
+        InetSocketAddress fakeEp = new SocksTcpUpstream(dstEp, config, routed).prepareDestination();
+        Long hash = SocksRpcContract.parseFakeHostHash(fakeEp.getHostString());
+
+        assertNotNull(hash);
+        assertEquals(dstHost + ":443", SocksTcpUpstream.cachedFakeEndpoint(hash.longValue()));
+    }
+
+    @Test
     public void rssRpcApp_FakeEndpointOverwritesStaleMalformedMapping() {
         long hash = System.nanoTime();
         try {
@@ -604,6 +635,28 @@ public class RssTest extends AbstractTester {
             assertEquals("android.clients.google.com", SocksRpcContract.fakeDict().get(hash).getHostString());
         } finally {
             SocksRpcContract.fakeDict().remove(hash);
+        }
+    }
+
+    @Test
+    public void socksRpcContract_FakeRecoverWaitMillisReadsSystemProperty() {
+        String key = SocksRpcContract.FAKE_RECOVER_WAIT_MILLIS_PROPERTY;
+        String old = System.getProperty(key);
+        try {
+            System.clearProperty(key);
+            assertEquals(SocksRpcContract.FAKE_RECOVER_WAIT_MILLIS, SocksRpcContract.fakeRecoverWaitMillis());
+
+            System.setProperty(key, "1500");
+            assertEquals(1500L, SocksRpcContract.fakeRecoverWaitMillis());
+
+            System.setProperty(key, "0");
+            assertEquals(SocksRpcContract.FAKE_RECOVER_WAIT_MILLIS, SocksRpcContract.fakeRecoverWaitMillis());
+        } finally {
+            if (old == null) {
+                System.clearProperty(key);
+            } else {
+                System.setProperty(key, old);
+            }
         }
     }
 

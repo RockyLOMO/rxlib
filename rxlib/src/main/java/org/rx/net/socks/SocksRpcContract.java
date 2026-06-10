@@ -1,5 +1,6 @@
 package org.rx.net.socks;
 
+import io.netty.util.internal.SystemPropertyUtil;
 import org.rx.core.Arrays;
 import org.rx.core.Cache;
 import org.rx.core.EventPublisher;
@@ -17,7 +18,8 @@ public interface SocksRpcContract extends AutoCloseable, DnsServer.ResolveInterc
     String FAKE_HOST_SUFFIX = Strings.cas("AS(120,46,102,45,108,105,46,99,110)");
     int[] FAKE_PORT_OBFS = new int[]{443, 3306};
     int FAKE_EXPIRE_SECONDS = 60 * 5;
-    int FAKE_RECOVER_WAIT_MILLIS = 200;
+    String FAKE_RECOVER_WAIT_MILLIS_PROPERTY = "app.net.socks.fakeEndpointRecoverWaitMillis";
+    int FAKE_RECOVER_WAIT_MILLIS = 1200;
     int FAKE_RECOVER_RPC_TIMEOUT_MILLIS = 5000;
     int RPC_EVENT_VERSION = 1;
     String EVENT_FAKE_ENDPOINT_RECOVERY = "fakeEndpointRecovery";
@@ -56,6 +58,11 @@ public interface SocksRpcContract extends AutoCloseable, DnsServer.ResolveInterc
     static boolean isValidRpcToken(String token) {
         String expected = RxConfig.INSTANCE.getRtoken();
         return !Strings.isEmpty(expected) && expected.equals(token);
+    }
+
+    static long fakeRecoverWaitMillis() {
+        long configured = SystemPropertyUtil.getLong(FAKE_RECOVER_WAIT_MILLIS_PROPERTY, FAKE_RECOVER_WAIT_MILLIS);
+        return configured > 0L ? configured : FAKE_RECOVER_WAIT_MILLIS;
     }
 
     static void requireValidRpcToken(String token) {
