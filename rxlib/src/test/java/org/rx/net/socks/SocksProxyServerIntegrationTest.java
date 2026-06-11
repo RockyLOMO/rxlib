@@ -397,6 +397,47 @@ class SocksProxyServerIntegrationTest {
 
     @Test
     @SneakyThrows
+    @Timeout(value = 15)
+    void socks5UdpAssociate_FakeCommandDestinationDoesNotFailRecovery() {
+        int proxyPort = 15324;
+        SocksConfig config = new SocksConfig(proxyPort);
+        config.getWhiteList();
+        SocksProxyServer proxy = new SocksProxyServer(config, null);
+
+        try {
+            Thread.sleep(300);
+            try (Socket tcp = new Socket("127.0.0.1", proxyPort)) {
+                tcp.setSoTimeout(4000);
+                OutputStream out = tcp.getOutputStream();
+                InputStream in = tcp.getInputStream();
+
+                out.write(new byte[]{0x05, 0x01, 0x00});
+                out.flush();
+                assertArrayEquals(new byte[]{0x05, 0x00}, readExact(in, 2, 4000));
+
+                byte[] host = SocksRpcContract.fakeHost(0x12345678L).getBytes(StandardCharsets.US_ASCII);
+                ByteBuf req = Unpooled.buffer(7 + host.length);
+                req.writeByte(0x05);
+                req.writeByte(0x03);
+                req.writeByte(0x00);
+                req.writeByte(0x03);
+                req.writeByte(host.length);
+                req.writeBytes(host);
+                req.writeShort(443);
+                out.write(toBytes(req));
+                out.flush();
+
+                byte[] resp = readAtLeast(in, 10, 32, 4000);
+                assertEquals(0x05, resp[0] & 0xFF, "VER");
+                assertEquals(0x00, resp[1] & 0xFF, "UDP_ASSOCIATE must ignore fake command dst");
+            }
+        } finally {
+            proxy.close();
+        }
+    }
+
+    @Test
+    @SneakyThrows
     @Timeout(value = 60)
     void socks5UdpRelay_chained_e2e() {
         // Scenario: Client -> Proxy A (15284) -> Proxy B (15285) -> UDP Echo Server (UDP_ECHO_PORT)

@@ -71,6 +71,21 @@ public class H2StoreCacheTest extends AbstractTester {
             }
             return super.deleteById(entityType, id);
         }
+
+        @Override
+        public <T> long delete(EntityQueryLambda<T> query) {
+            deleteCalls.incrementAndGet();
+            if (blockDelete) {
+                deleteStarted.countDown();
+                try {
+                    assertTrue(allowDelete.await(2, TimeUnit.SECONDS));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    fail(e);
+                }
+            }
+            return super.delete(query);
+        }
     }
 
     static class TrackingEntityDatabase implements EntityDatabase {
@@ -402,6 +417,8 @@ public class H2StoreCacheTest extends AbstractTester {
         H2StoreCache<String, String> cache = new H2StoreCache<>(db, 64, 1);
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try {
+            cache.onExpired.add((s, e) -> {
+            });
             cache.setPrefetchCount(1);
             long expireAt = System.currentTimeMillis() + 200;
             cache.syncPut("expire-a", "va", new CachePolicy(expireAt, 0));
@@ -424,6 +441,29 @@ public class H2StoreCacheTest extends AbstractTester {
             db.blockDelete = false;
             db.allowDelete.countDown();
             executor.shutdownNow();
+            cache.close();
+            db.close();
+        }
+    }
+
+    @Test
+    public void testExpungeStaleFastDeletesExpiredWithoutFullEntityScan() throws Exception {
+        InstrumentedEntityDatabase db = new InstrumentedEntityDatabase(path("h2/expunge_fast_" + UUID.randomUUID()));
+        H2StoreCache<String, String> cache = new H2StoreCache<>(db, 64, 1);
+        try {
+            long expireAt = System.currentTimeMillis() + 1000;
+            cache.syncPut("fast-expire", "v1", new CachePolicy(expireAt, 0));
+            assertTrue(db.existsById(H2CacheItem.class, H2StoreCache.furyHash("fast-expire")));
+            Thread.sleep(1100);
+
+            db.findByCalls.set(0);
+            db.deleteCalls.set(0);
+            cache.expungeStale();
+
+            assertFalse(db.existsById(H2CacheItem.class, H2StoreCache.furyHash("fast-expire")));
+            assertEquals(0, db.findByCalls.get(), "fast expunge should not SELECT full cache rows");
+            assertEquals(1, db.deleteCalls.get());
+        } finally {
             cache.close();
             db.close();
         }

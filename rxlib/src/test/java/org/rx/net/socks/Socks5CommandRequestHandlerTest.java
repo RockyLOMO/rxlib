@@ -5,6 +5,9 @@ import org.rx.net.udp.*;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.channel.local.LocalAddress;
+import io.netty.handler.codec.socksx.v5.Socks5ServerEncoder;
+import io.netty.util.ReferenceCountUtil;
+import org.rx.net.socks.upstream.Upstream;
 import io.netty.handler.codec.socksx.v5.DefaultSocks5CommandRequest;
 import io.netty.handler.codec.socksx.v5.Socks5AddressType;
 import io.netty.handler.codec.socksx.v5.Socks5CommandRequestDecoder;
@@ -128,5 +131,44 @@ class Socks5CommandRequestHandlerTest {
 
         assertTrue(Sockets.hasTcpCompressionHandlers(inbound));
         assertTrue(Sockets.hasTcpCompressionHandlers(outbound));
+    }
+
+    @Test
+    void relay_DomainConnectRepliesIpv4BindAddress() throws Exception {
+        SocksConfig config = new SocksConfig(new LocalAddress("SOCKS5_DOMAIN_CONNECT_REPLY_TEST"));
+        SocksProxyServer server = new SocksProxyServer(config, null);
+        EmbeddedChannel inbound = new EmbeddedChannel(Socks5ServerEncoder.DEFAULT);
+        EmbeddedChannel outbound = new EmbeddedChannel();
+        try {
+            inbound.attr(SocksContext.SOCKS_SVR).set(server);
+            InetSocketAddress srcEp = new InetSocketAddress("127.0.0.1", 52000);
+            InetSocketAddress dstEp = org.rx.net.Sockets.newUnresolvedEndpoint("example.com", 443);
+            SocksContext e = SocksContext.getCtx(srcEp, dstEp);
+            e.setUpstream(new Upstream(dstEp));
+            SocksContext.markCtx(inbound, outbound, e);
+
+            Method method = Socks5CommandRequestHandler.class.getDeclaredMethod("relay",
+                    io.netty.channel.Channel.class, io.netty.channel.Channel.class, Socks5AddressType.class, SocksContext.class);
+            method.setAccessible(true);
+            method.invoke(Socks5CommandRequestHandler.DEFAULT, inbound, outbound, Socks5AddressType.DOMAIN, e);
+
+            io.netty.buffer.ByteBuf response = inbound.readOutbound();
+            assertNotNull(response);
+            try {
+                assertEquals(10, response.readableBytes());
+                assertEquals(0x05, response.readUnsignedByte());
+                assertEquals(0x00, response.readUnsignedByte());
+                assertEquals(0x00, response.readUnsignedByte());
+                assertEquals(Socks5AddressType.IPv4.byteValue(), response.readUnsignedByte());
+                assertEquals(0, response.readInt());
+                assertEquals(0, response.readUnsignedShort());
+            } finally {
+                ReferenceCountUtil.release(response);
+            }
+            assertFalse(inbound.finishAndReleaseAll());
+            assertFalse(outbound.finishAndReleaseAll());
+        } finally {
+            server.close();
+        }
     }
 }

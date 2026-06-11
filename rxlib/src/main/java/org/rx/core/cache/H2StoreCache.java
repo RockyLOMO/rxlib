@@ -4,6 +4,8 @@ import lombok.NonNull;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.IteratorUtils;
+import org.rx.bean.DataRow;
+import org.rx.bean.DataTable;
 import org.rx.bean.Tuple;
 import org.rx.codec.CodecUtil;
 import org.rx.core.*;
@@ -106,6 +108,18 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
         ExpungeCursor(long expiration, long id) {
             this.expiration = expiration;
             this.id = id;
+        }
+    }
+
+    static final class ExpiredRef {
+        final long id;
+        final long version;
+        final long expiration;
+
+        ExpiredRef(long id, long version, long expiration) {
+            this.id = id;
+            this.version = version;
+            this.expiration = expiration;
         }
     }
 
@@ -586,6 +600,9 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
         }
         long expireBefore = System.currentTimeMillis();
         int batchSize = Math.max(1, prefetchCount);
+        if (onExpired.isEmpty() && fastExpungeStale(expireBefore, batchSize)) {
+            return;
+        }
         ExpungeCursor cursor = null;
         while (true) {
             List<H2CacheItem> stales = findExpiredPage(cursor, expireBefore, batchSize);
@@ -600,6 +617,32 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
             }
             H2CacheItem tail = stales.get(stales.size() - 1);
             cursor = new ExpungeCursor(tail.getExpiration(), tail.getId());
+        }
+    }
+
+    boolean fastExpungeStale(long expireBefore, int batchSize) {
+        ExpungeCursor cursor = null;
+        dbLock.readLock().lock();
+        try {
+            while (true) {
+                List<ExpiredRef> stales = findExpiredRefPage(cursor, expireBefore, batchSize);
+                if (stales.isEmpty()) {
+                    break;
+                }
+                for (ExpiredRef stale : stales) {
+                    deleteExpiredPersistedIfMatched(stale);
+                }
+                if (stales.size() < batchSize) {
+                    break;
+                }
+                ExpiredRef tail = stales.get(stales.size() - 1);
+                cursor = new ExpungeCursor(tail.expiration, tail.id);
+            }
+            return true;
+        } catch (UnsupportedOperationException e) {
+            return false;
+        } finally {
+            dbLock.readLock().unlock();
         }
     }
 
@@ -1353,6 +1396,47 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
                     .limit(limit - page.size())));
         }
         return page;
+    }
+
+    List<ExpiredRef> findExpiredRefPage(ExpungeCursor cursor, long expireBefore, int limit) {
+        String tableName = db.tableName(H2CacheItem.class);
+        String cursorClause = cursor == null ? Strings.EMPTY : String.format(Locale.ROOT,
+                " AND (expiration>%d OR (expiration=%d AND id>%d))",
+                cursor.expiration, cursor.expiration, cursor.id);
+        String sql = String.format(Locale.ROOT,
+                "SELECT id AS ID,version AS VERSION,expiration AS EXPIRATION FROM %s WHERE expiration<=%d%s ORDER BY expiration ASC,id ASC LIMIT %d",
+                tableName, expireBefore, cursorClause, limit);
+        DataTable dt = db.executeQuery(sql, H2CacheItem.class);
+        List<ExpiredRef> page = new ArrayList<>();
+        for (DataRow row : dt.getRows()) {
+            page.add(new ExpiredRef(longCell(row.get(0)), longCell(row.get(1)), longCell(row.get(2))));
+        }
+        return page;
+    }
+
+    long longCell(Object value) {
+        return value instanceof Number ? ((Number) value).longValue() : Long.parseLong(String.valueOf(value));
+    }
+
+    boolean hasPendingNewer(long id, long observedVersion) {
+        long nowEpoch = epoch.get();
+        for (PendingOp op : pendingLatest.values()) {
+            if (op != null && op.epoch == nowEpoch && op.itemSnapshot != null
+                    && op.itemSnapshot.getId() == id && op.seq > observedVersion) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    DeleteResult deleteExpiredPersistedIfMatched(ExpiredRef ref) {
+        if (hasPendingNewer(ref.id, ref.version)) {
+            return DeleteResult.SKIPPED_NEWER;
+        }
+        long deleted = db.delete(new EntityQueryLambda<>(H2CacheItem.class)
+                .eq(H2CacheItem::getId, ref.id)
+                .le(H2CacheItem::getVersion, ref.version));
+        return deleted > 0 ? DeleteResult.COMMITTED : DeleteResult.SKIPPED_NEWER;
     }
 
     List<H2CacheItem> findValueHashPage(long valueHash, Long afterId, int limit) {
