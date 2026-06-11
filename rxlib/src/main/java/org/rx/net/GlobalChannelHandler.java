@@ -133,7 +133,9 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
             if (!f.isSuccess()) {
                 Throwable cause = f.cause();
                 if (isExpectedChannelException(cause)) {
-                    log.warn("Channel[{}] expected write failure {}", ctx.channel().id(), connectFailureSummary(cause));
+                    if (log.isDebugEnabled()) {
+                        log.debug("Channel[{}] expected write failure {}", ctx.channel().id(), connectFailureSummary(cause));
+                    }
                     return;
                 }
                 log.error("Channel write operation failed", cause);
@@ -144,7 +146,9 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
         if (isExpectedChannelException(cause)) {
-            log.warn("Channel[{}] expected close {}", ctx.channel().id(), connectFailureSummary(cause));
+            if (log.isDebugEnabled()) {
+                log.debug("Channel[{}] expected close {}", ctx.channel().id(), connectFailureSummary(cause));
+            }
             ctx.close();
             return;
         }

@@ -25,9 +25,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @ChannelHandler.Sharable
 public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<DefaultSocks5CommandRequest> {
     public static final Socks5CommandRequestHandler DEFAULT = new Socks5CommandRequestHandler();
-    static final DefaultSocks5CommandResponse SUCCESS_IPv4 = new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, Socks5AddressType.IPv4);
-    static final DefaultSocks5CommandResponse SUCCESS_DOMAIN = new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, Socks5AddressType.DOMAIN);
-    static final DefaultSocks5CommandResponse SUCCESS_IPv6 = new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, Socks5AddressType.IPv6);
+    static final DefaultSocks5CommandResponse SUCCESS_CONNECT =
+            new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, Socks5AddressType.IPv4);
     static final ConcurrentMap<Long, CompletableFuture<InetSocketAddress>> FAKE_RECOVERIES = new ConcurrentHashMap<>();
 
     @Override
@@ -56,10 +55,15 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 if (hash != null && server.getFakeEndpointResolver() != null && commandType == Socks5CommandType.CONNECT) {
                     log.debug("socks5[{}] recover dstEp {} miss, request client recovery", config.getListenPort(), dstEp);
                     recoverFakeEndpoint(inbound, server, config, commandType, dstAddrType, dstEp, hash.longValue());
-                } else {
-                    failFakeEndpointRecovery(inbound, dstAddrType, config, dstEp);
+                    return;
                 }
-                return;
+                if (commandType != Socks5CommandType.UDP_ASSOCIATE) {
+                    failFakeEndpointRecovery(inbound, dstAddrType, config, dstEp);
+                    return;
+                }
+                if (config.isDebug()) {
+                    log.debug("socks5[{}] UDP_ASSOCIATE skip fake command dstEp recovery {}", config.getListenPort(), dstEp);
+                }
             } else {
                 if (config.isDebug()) {
                     log.info("socks5[{}] recover dstEp {}[{}]", config.getListenPort(), dstEp, realEp);
@@ -415,22 +419,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         InetSocketAddress dstEp = e.getUpstream().getDestination();
         outbound.pipeline().addLast(SocksTcpBackendRelayHandler.DEFAULT);
 
-        DefaultSocks5CommandResponse commandResponse;
-        switch (dstAddrType.byteValue()) {
-            case 1:
-                commandResponse = SUCCESS_IPv4;
-                break;
-            case 3:
-                commandResponse = SUCCESS_DOMAIN;
-                break;
-            case 4:
-                commandResponse = SUCCESS_IPv6;
-                break;
-            default:
-                commandResponse = new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, dstAddrType);
-                break;
-        }
-        inbound.writeAndFlush(commandResponse).addListener((ChannelFutureListener) f -> {
+        inbound.writeAndFlush(SUCCESS_CONNECT).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 Sockets.closeOnFlushed(f.channel());
                 return;

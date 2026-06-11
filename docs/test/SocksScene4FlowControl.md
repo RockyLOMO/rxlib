@@ -62,9 +62,11 @@ RSS server 是 2c / 1.5GiB 小机器，`MaxDirectMemorySize=640m`，所以 UDP p
 -Dapp.net.globalTraffic.udpBackpressureEnabled=true
 -Dapp.net.globalTraffic.udpMaxPendingBytes=${GLOBAL_UDP_MAX_PENDING_BYTES}
 -Dapp.net.globalTraffic.udpMaxPendingPackets=${GLOBAL_UDP_MAX_PENDING_PACKETS}
+-Dapp.diagnostic.enabled=false
 -Dapp.diagnostic.h2.enabled=false
 -Dapp.diagnostic.disk.scan.enabled=false
 -Dapp.diagnostic.nmt.enabled=false
+-Dapp.trace.keepDays=0
 ```
 
 RSS server B 额外设置 fake host 控制面恢复等待：
@@ -77,7 +79,7 @@ RSS server B 额外设置 fake host 控制面恢复等待：
 
 - `checkIntervalMillis=100`，使用 Netty 默认级别的 100ms 调度粒度，减少多连接下载时的秒级批量放行。
 - 全局限速只做粗保护，防止持续打满公网出口导致排队膨胀。
-- RSS 生产脚本关闭诊断 H2 落库、磁盘扫描和 NMT 采集，避免诊断线程在下载压测时抢 CPU / IO。
+- RSS 生产脚本关闭诊断框架、诊断 H2 落库、磁盘扫描、NMT 采集和 trace agent，避免诊断线程、JFR sampler、ByteBuddy 动态 agent 在下载压测时抢 CPU / IO。
 - 如果线上 RTT 抖动明显，优先把对应节点降到 95%；如果 RTT 平稳且吞吐不足，再临时调到 99% 或关闭全局限速压测。
 
 ## 2026-06-10 线上观测
@@ -97,8 +99,38 @@ RSS server B 额外设置 fake host 控制面恢复等待：
 - `deploy/rss/start.sh`、`deploy/rss-svr/start.sh`、`deploy/rss-svr/rollback.sh` 默认 `GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS=100`。
 - `deploy/rss-svr/start.sh`、`deploy/rss-svr/rollback.sh` 默认 `FAKE_ENDPOINT_RECOVER_WAIT_MILLIS=1200`，避免 server 缓存 miss 后 RPC 事件还没回包就返回 SOCKS failure。
 - `SocksTcpUpstream.prepareDestination()` 在 client 本地先写入 fake host 映射，再异步推送给 server；即使初始 `fakeEndpoint` RPC push 慢或失败，server 后续 `fakeEndpointRecovery` 事件也能从 client cache 找到真实 endpoint。
-- 启动脚本默认追加 `-Dapp.diagnostic.h2.enabled=false -Dapp.diagnostic.disk.scan.enabled=false -Dapp.diagnostic.nmt.enabled=false`。
+- 启动脚本默认追加 `-Dapp.diagnostic.enabled=false -Dapp.diagnostic.h2.enabled=false -Dapp.diagnostic.disk.scan.enabled=false -Dapp.diagnostic.nmt.enabled=false -Dapp.trace.keepDays=0`。
 - 这次调整优先消除本机诊断 CPU/IO 抖动，再提升全局控流调度平滑度；暂不继续放大 TCP/UDP pending 队列，避免游戏低延迟场景下排队变深。
+
+## 2026-06-10 最终部署验证
+
+本次最终上线版本额外处理了 5 个线上噪声/热点点：
+
+| 项 | 处理 | 影响 |
+| --- | --- | --- |
+| SOCKS5 `UDP_ASSOCIATE` fake command dst | `Socks5CommandRequestHandler` 对 `UDP_ASSOCIATE` 的 fake command 目的地址跳过 command 阶段 recover；真实目标仍以 UDP packet header 为准 | 消除 server 端无 `COMPUTE_ARGS` 的 `recover dstEp ... fail` |
+| SOCKS5 `CONNECT` DOMAIN 响应 | CONNECT 成功响应统一返回 `ATYP=IPv4, BND.ADDR=0.0.0.0, BND.PORT=0` | 修复 curl `--socks5-hostname` 域名型 CONNECT 卡在 request granted 前的问题，避免输出 `DOMAIN len=0` 的兼容性风险 |
+| H2 cache 过期清理 | `H2StoreCache` 在没有 `onExpired` listener 时使用 id/version/expiration 轻量页查询，并按 `id + version` 条件删除 | 避免 `SELECT * FROM h2_cache_item`、key/value 反序列化和 tombstone 写放大 |
+| 预期连接关闭日志 | `GlobalChannelHandler` 将 expected close / expected write failure 从 WARN 降到 DEBUG，并在 DEBUG 关闭时不构造 summary | 降低 server 高短连接/reset 场景的日志 IO 与字符串分配 |
+| 生产诊断开销 | client/server `start.sh` 关闭 `app.diagnostic.enabled` 和 `app.trace.keepDays` | 不再启动 `rx-diagnostic-*` / JFR sampler，不再动态加载 trace ByteBuddy agent，降低空闲 CPU 和内存噪声 |
+
+线上验证结果：
+
+| 节点 | 验证项 | 结果 |
+| --- | --- | --- |
+| RSS client | 新进程参数 | `Xms1g/Xmx2g`、`reactorThreadAmount=8`、全局限速 `4785/23926 KiB/s`、UDP pending `256KiB/512` 生效 |
+| RSS client | drain | 旧进程进入 180s drain，新进程 slot `b` 已绑定端口；上一轮旧进程已按 drain 退出 |
+| RSS client | 23:33 后日志 | `recover dstEp=0`、`COMPUTE_ARGS=0`、`NativeIoException=0`、`decompress=0`、`slowSql=0`、`expected close/write=0` |
+| RSS server | 新进程参数 | `Xms256m/Xmx256m`、`reactorThreadAmount=2`、全局限速 `7178/7178 KiB/s`、UDP pending `128KiB/256`、fake recover `1200ms` 生效 |
+| RSS server | 23:32 后日志 | `recover dstEp=0`、`COMPUTE_ARGS=0`、`NativeIoException=0`、`decompress=0`、`slowSql=0`、`expected close/write=0` |
+| socks5h 连通性 | client 本机 `curl --socks5-hostname 127.0.0.1:6885` | `example.com=200`、`google generate_204=204`、`cloudflare trace=200`，域名型 CONNECT 已通 |
+| 5 并发下载 | 5 路 `https://speed.cloudflare.com/__down?bytes=10485760` | 全部 HTTP 200，10MiB 完整下载，耗时 `8.37s..8.74s`，未见 4 路长时间 0 进度 |
+| CPU/内存 | client/server 排水后最终采样 | client 即时 CPU 约 `2%`、RSS 约 `2.1GiB`；server 即时 CPU 约 `2%`、RSS 约 `474MiB`；主要 CPU 线程是 JIT compiler 和少量 EventLoop，未见诊断/JFR 线程 |
+
+仍需注意：
+
+- client 配置里还保留 `104.168.27.48` 备用上游且权重不为 0。若该节点长期不可达，重启窗口或主上游短暂不可用时会产生健康检查失败、`fail-open` 和 fakeEndpoint RPC push 失败日志；主链路恢复后当前观测已不再持续出现。
+- server 端 `Connection reset by peer` 属于对端关闭/短连接 reset，最终版本已降为 DEBUG，不再作为 WARN 噪声放大。
 
 ## 全局控流边界
 
