@@ -510,6 +510,28 @@ public class H2StoreCacheTest extends AbstractTester {
     }
 
     @Test
+    public void testMissingTableRecreatedForGetAndFlush() {
+        InstrumentedEntityDatabase db = new InstrumentedEntityDatabase(path("h2/missing_table_" + UUID.randomUUID()));
+        H2StoreCache<String, String> cache = new H2StoreCache<>(db, 64, 1);
+        try {
+            db.dropMapping(H2CacheItem.class);
+            assertNull(cache.get("missing-table-miss"));
+            assertFalse(db.existsById(H2CacheItem.class, H2StoreCache.furyHash("missing-table-miss")));
+
+            db.dropMapping(H2CacheItem.class);
+            cache.fastPut("missing-table-put", "v1");
+            cache.flush("missing-table-put");
+
+            H2CacheItem item = db.findById(H2CacheItem.class, H2StoreCache.furyHash("missing-table-put"));
+            assertNotNull(item);
+            assertEquals("v1", item.getValue());
+        } finally {
+            cache.close();
+            db.close();
+        }
+    }
+
+    @Test
     public void testConstructorAppliesCustomL1MaxSizeAndStripeCount() {
         H2StoreCache<String, String> cache = new H2StoreCache<>(new TrackingEntityDatabase(), 64, 3);
         assertTrue(cache.l1Cache.cache.policy().eviction().isPresent());

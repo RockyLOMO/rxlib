@@ -64,11 +64,16 @@ public class DataTable implements Extends {
 
     @SneakyThrows
     public static DataTable read(JdbcResultSet resultSet) {
+        Object result = resultSet.getResult();
+        if (!(result instanceof LocalResult)) {
+            return read((ResultSet) resultSet, false);
+        }
+
         DataTable dt = new DataTable();
         try (JdbcResultSet rs = resultSet) {
-            LocalResult result = (LocalResult) rs.getResult();
+            LocalResult localResult = (LocalResult) result;
             //include orderby expr
-            Expression[] exprs = Reflects.readField(result, "expressions");
+            Expression[] exprs = Reflects.readField(localResult, "expressions");
             if (exprs.length > 0) {
                 dt.setTableName(exprs[0].getTableName());
             }

@@ -125,11 +125,12 @@ RSS server B 额外设置 fake host 控制面恢复等待：
 | RSS server | 23:32 后日志 | `recover dstEp=0`、`COMPUTE_ARGS=0`、`NativeIoException=0`、`decompress=0`、`slowSql=0`、`expected close/write=0` |
 | socks5h 连通性 | client 本机 `curl --socks5-hostname 127.0.0.1:6885` | `example.com=200`、`google generate_204=204`、`cloudflare trace=200`，域名型 CONNECT 已通 |
 | 5 并发下载 | 5 路 `https://speed.cloudflare.com/__down?bytes=10485760` | 全部 HTTP 200，10MiB 完整下载，耗时 `8.37s..8.74s`，未见 4 路长时间 0 进度 |
+| RSS client 灰节点 | `/home/rss/conf.yml` 中 `new104` / `new104-tun` | 2026-06-11 已将 `104.168.27.48` 两个上游权重设为 `0`，避免不可达灰节点继续触发 `9901` RPC 建连超时 |
 | CPU/内存 | client/server 排水后最终采样 | client 即时 CPU 约 `2%`、RSS 约 `2.1GiB`；server 即时 CPU 约 `2%`、RSS 约 `474MiB`；主要 CPU 线程是 JIT compiler 和少量 EventLoop，未见诊断/JFR 线程 |
 
 仍需注意：
 
-- client 配置里还保留 `104.168.27.48` 备用上游且权重不为 0。若该节点长期不可达，重启窗口或主上游短暂不可用时会产生健康检查失败、`fail-open` 和 fakeEndpoint RPC push 失败日志；主链路恢复后当前观测已不再持续出现。
+- `104.168.27.48` 是灰节点，当前不可达时必须保持 `new104` / `new104-tun` 权重为 `0`。本次调整后 RSS client 新进程独占监听 `6885/8082`，最近日志未再出现 `104.168.27.48`、`:9901`、`ObjectPool doCreateIdle`、`ConnectTimeoutException` 或 `fail-open`。
 - server 端 `Connection reset by peer` 属于对端关闭/短连接 reset，最终版本已降为 DEBUG，不再作为 WARN 噪声放大。
 
 ## 全局控流边界

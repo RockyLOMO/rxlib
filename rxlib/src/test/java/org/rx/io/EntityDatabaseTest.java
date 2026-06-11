@@ -3,6 +3,7 @@ package org.rx.io;
 import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.h2.tools.Server;
 import org.junit.jupiter.api.Test;
 import org.rx.AbstractTester;
 import org.rx.annotation.DbColumn;
@@ -15,9 +16,11 @@ import org.rx.test.PersonBean;
 import org.rx.test.PersonGender;
 
 import java.io.Serializable;
+import java.net.ServerSocket;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -178,6 +181,36 @@ public class EntityDatabaseTest extends AbstractTester {
         } finally {
             db.dropMapping(H2CacheItem.class);
             db.close();
+        }
+    }
+
+    @Test
+    public void testExecuteQuerySupportsH2TcpRemoteResult() throws Exception {
+        int port;
+        try (ServerSocket socket = new ServerSocket(0)) {
+            port = socket.getLocalPort();
+        }
+
+        Server server = Server.createTcpServer("-tcpPort", String.valueOf(port), "-ifNotExists").start();
+        String dbName = "remote_result_" + UUID.randomUUID().toString().replace("-", "");
+        EntityDatabaseImpl db = new EntityDatabaseImpl(
+                "jdbc:h2:tcp://127.0.0.1:" + port + "/mem:" + dbName + ";MODE=MySQL;DB_CLOSE_DELAY=-1",
+                null, 2, true);
+        try {
+            db.createMapping(H2CacheItem.class);
+            H2CacheItem<String, String> item = new H2CacheItem<>("remote-key", "remote-val", CachePolicy.absolute(60));
+            item.setVersion(1);
+            db.save(item);
+
+            DataTable dt = db.executeQuery(String.format("SELECT id AS ID,version AS VERSION,expiration AS EXPIRATION FROM %s",
+                    db.tableName(H2CacheItem.class)), H2CacheItem.class);
+
+            List<DataRow> rows = Linq.from(dt.getRows()).toList();
+            assertEquals(1, rows.size());
+            assertEquals(item.getId(), ((Number) rows.get(0).get("id")).longValue());
+        } finally {
+            db.close();
+            server.stop();
         }
     }
 
