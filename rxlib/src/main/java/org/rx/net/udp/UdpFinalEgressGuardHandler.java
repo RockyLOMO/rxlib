@@ -67,6 +67,7 @@ public final class UdpFinalEgressGuardHandler extends ChannelDuplexHandler {
 
         if (!channel.isActive()) {
             Sockets.releaseUdpPacket(packet, metricPrefix, tags, "final-inactive", 0, 0);
+            debugDrop(channel, packet, "final-inactive", bytes, 0, 0, 0, 0, effectiveConfig);
             completeDroppedWrite(promise);
             return;
         }
@@ -83,6 +84,7 @@ public final class UdpFinalEgressGuardHandler extends ChannelDuplexHandler {
         int udpMtu = effectiveConfig != null ? Math.max(0, effectiveConfig.getUdpMtu()) : 0;
         if (!(packet instanceof UdpMtuProbeDatagramPacket) && udpMtu > 0 && bytes > udpMtu) {
             Sockets.releaseUdpPacketByMtu(packet, metricPrefix, tags, bytes, udpMtu);
+            debugDrop(channel, packet, "mtu-exceeded", bytes, bytes, udpMtu, 0, 0, effectiveConfig);
             completeDroppedWrite(promise);
             return;
         }
@@ -103,6 +105,8 @@ public final class UdpFinalEgressGuardHandler extends ChannelDuplexHandler {
         if (!decision.accepted) {
             Sockets.releaseUdpPacket(packet, metricPrefix, tags, decision.reason, decision.queuedBytes,
                     decision.limitBytes, decision.queuedPackets, decision.limitPackets);
+            debugDrop(channel, packet, decision.reason, bytes, decision.queuedBytes,
+                    decision.limitBytes, decision.queuedPackets, decision.limitPackets, effectiveConfig);
             completeDroppedWrite(promise);
             return;
         }
@@ -142,6 +146,8 @@ public final class UdpFinalEgressGuardHandler extends ChannelDuplexHandler {
                     promise, metricPrefix, tags, limitBytes));
         } catch (Throwable e) {
             Sockets.releaseUdpPacket(packet, metricPrefix, tags, "final-unresolved-recipient", 0, limitBytes);
+            debugDrop(ctx.channel(), packet, "final-unresolved-recipient", 0, 0, limitBytes, 0, 0,
+                    Sockets.udpEffectiveConfig(ctx.channel(), config));
             failPromise(promise, e);
         }
     }
@@ -154,6 +160,8 @@ public final class UdpFinalEgressGuardHandler extends ChannelDuplexHandler {
             Sockets.releaseUdpPacket(packet, metricPrefix, tags, "final-unresolved-recipient", 0, limitBytes);
             log.warn("UDP final resolve recipient fail channel={} recipient={}",
                     ctx.channel(), originalRecipient, resolveError(originalRecipient, error));
+            debugDrop(ctx.channel(), packet, "final-unresolved-recipient", 0, 0, limitBytes, 0, 0,
+                    Sockets.udpEffectiveConfig(ctx.channel(), config));
             completeDroppedWrite(promise);
             return;
         }
@@ -220,5 +228,16 @@ public final class UdpFinalEgressGuardHandler extends ChannelDuplexHandler {
         if (!promise.isVoid()) {
             promise.trySuccess();
         }
+    }
+
+    private static void debugDrop(Channel channel, DatagramPacket packet, String reason, int bytes,
+                                  int queuedBytes, int limitBytes, int queuedPackets, int limitPackets,
+                                  SocketConfig effectiveConfig) {
+        if (effectiveConfig == null || !effectiveConfig.isDebug() || !log.isInfoEnabled()) {
+            return;
+        }
+        log.info("UDP final egress drop reason={} channel={} recipient={} bytes={} queuedBytes={} limitBytes={} queuedPackets={} limitPackets={} writable={} active={}",
+                reason, channel, packet == null ? null : packet.recipient(), bytes, queuedBytes, limitBytes,
+                queuedPackets, limitPackets, channel != null && channel.isWritable(), channel != null && channel.isActive());
     }
 }
