@@ -3,6 +3,7 @@ package org.rx.bean;
 import org.junit.jupiter.api.Test;
 import org.rx.core.Tasks;
 
+import java.util.NoSuchElementException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -22,6 +23,15 @@ class RandomListAddOrUpdateTest {
         assertFalse(list.addOrUpdate("a", 5), "更新权重仍返回 false（非新元素）");
         assertEquals(5, list.getWeight("a"));
         assertEquals(1, list.size());
+    }
+
+    @Test
+    void next_allZeroWeight_throwsNoSuchElementException() {
+        RandomList<String> list = new RandomList<>();
+        list.add("a", 0);
+        list.add("b", 0);
+
+        assertThrows(NoSuchElementException.class, list::next);
     }
 
     @Test

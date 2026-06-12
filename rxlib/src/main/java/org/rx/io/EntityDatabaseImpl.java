@@ -432,6 +432,12 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 save(entity, doInsert);
                 return;
             }
+            if (isMissingTable(e, entity.getClass())) {
+                log.info("ensure mapping {} after table missing: {}", entity.getClass().getSimpleName(), e.getMessage());
+                createMapping(entity.getClass());
+                save(entity, doInsert);
+                return;
+            }
             throw e;
         }
     }
@@ -449,7 +455,15 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     @Override
     public <T> boolean deleteById(Class<T> entityType, Serializable id) {
         SqlMeta meta = getMeta(entityType);
-        return executeUpdate(meta.deleteSql, singletonParams(id)) > 0;
+        try {
+            return executeUpdate(meta.deleteSql, singletonParams(id)) > 0;
+        } catch (Exception e) {
+            if (isMissingTable(e, entityType)) {
+                createMapping(entityType);
+                return false;
+            }
+            throw InvalidException.sneaky(e);
+        }
     }
 
     @Override
@@ -476,11 +490,19 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
 
         long total = 0;
         int rf;
-        while ((rf = executeUpdate(execSql, params)) > 0) {
-            total += rf;
-            if (max != -1 && total >= max) {
-                break;
+        try {
+            while ((rf = executeUpdate(execSql, params)) > 0) {
+                total += rf;
+                if (max != -1 && total >= max) {
+                    break;
+                }
             }
+        } catch (Exception e) {
+            if (isMissingTable(e, query.entityType)) {
+                createMapping(query.entityType);
+                return 0;
+            }
+            throw InvalidException.sneaky(e);
         }
         return total;
     }
@@ -494,7 +516,16 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         replaceSelectColumns(sql, "COUNT(*)");
         List<Object> params = new ArrayList<>();
         appendClause(sql, query, params, false, null, null);
-        Number num = executeScalar(sql.toString(), params);
+        Number num;
+        try {
+            num = executeScalar(sql.toString(), params);
+        } catch (Exception e) {
+            if (isMissingTable(e, query.entityType)) {
+                createMapping(query.entityType);
+                return 0;
+            }
+            throw InvalidException.sneaky(e);
+        }
         if (num == null) {
             return 0;
         }
@@ -510,19 +541,44 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         replaceSelectColumns(sql, "1");
         List<Object> params = new ArrayList<>();
         appendClause(sql, query, params, false, 1, null);
-        return executeScalar(sql.toString(), params) != null;
+        try {
+            return executeScalar(sql.toString(), params) != null;
+        } catch (Exception e) {
+            if (isMissingTable(e, query.entityType)) {
+                createMapping(query.entityType);
+                return false;
+            }
+            throw InvalidException.sneaky(e);
+        }
     }
 
     @Override
     public <T> boolean existsById(Class<T> entityType, Serializable id) {
         SqlMeta meta = getMeta(entityType);
-        return executeScalar(meta.existsByIdSql, singletonParams(id)) != null;
+        try {
+            return executeScalar(meta.existsByIdSql, singletonParams(id)) != null;
+        } catch (Exception e) {
+            if (isMissingTable(e, entityType)) {
+                createMapping(entityType);
+                return false;
+            }
+            throw InvalidException.sneaky(e);
+        }
     }
 
     @Override
     public <T> T findById(Class<T> entityType, Serializable id) {
         SqlMeta meta = getMeta(entityType);
-        List<T> list = executeQuery(meta.findByIdSql, singletonParams(id), entityType);
+        List<T> list;
+        try {
+            list = executeQuery(meta.findByIdSql, singletonParams(id), entityType);
+        } catch (Exception e) {
+            if (isMissingTable(e, entityType)) {
+                createMapping(entityType);
+                return null;
+            }
+            throw InvalidException.sneaky(e);
+        }
         return list.isEmpty() ? null : list.get(0);
     }
 
@@ -543,7 +599,15 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         StringBuilder sql = new StringBuilder(meta.selectSql);
         List<Object> params = new ArrayList<>();
         appendClause(sql, query, params);
-        return executeQuery(sql.toString(), params, query.entityType);
+        try {
+            return executeQuery(sql.toString(), params, query.entityType);
+        } catch (Exception e) {
+            if (isMissingTable(e, query.entityType)) {
+                createMapping(query.entityType);
+                return Collections.emptyList();
+            }
+            throw InvalidException.sneaky(e);
+        }
     }
 
     <T> void replaceSelectColumns(StringBuilder sql, String newColumns) {
@@ -573,6 +637,22 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
             throw new InvalidException("Entity {} mapping not found", entityType);
         }
         return meta;
+    }
+
+    boolean isMissingTable(Throwable e, Class<?> entityType) {
+        if (!(e instanceof JdbcSQLSyntaxErrorException)) {
+            return false;
+        }
+        String message = e.getMessage();
+        if (message == null) {
+            return false;
+        }
+        String normalized = message.toLowerCase(Locale.ENGLISH);
+        if (!normalized.contains("table") || !normalized.contains("not found")) {
+            return false;
+        }
+        String tableName = tableName(entityType).toLowerCase(Locale.ENGLISH);
+        return normalized.contains(tableName) || normalized.contains(tableName.replace("_", ""));
     }
     // endregion
 

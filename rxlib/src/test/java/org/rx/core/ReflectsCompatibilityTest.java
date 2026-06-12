@@ -6,14 +6,26 @@ import org.rx.bean.Decimal;
 import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
 import java.util.Arrays;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ReflectsCompatibilityTest {
     interface DefaultGreeting {
         default String hello() {
             return "hello";
         }
+    }
+
+    interface ConcurrentProxy {
+        String echo(String value);
+
+        String triple(String a, String b, String c);
     }
 
     public static class InvokeTarget {
@@ -52,6 +64,55 @@ public class ReflectsCompatibilityTest {
                 (p, method, args) -> null);
         String value = Reflects.invokeDefaultMethod(DefaultGreeting.class.getMethod("hello"), proxy);
         assertEquals("hello", value);
+    }
+
+    @Test
+    void dynamicProxyBeanKeepsInvocationStatePerConcurrentCall() throws Exception {
+        CountDownLatch echoEntered = new CountDownLatch(1);
+        CountDownLatch tripleEntered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicReference<Throwable> error = new AtomicReference<>();
+        ConcurrentProxy proxy = Sys.proxy(ConcurrentProxy.class, (m, p) -> {
+            Object[] snapshot = p.arguments;
+            if ("echo".equals(m.getName())) {
+                echoEntered.countDown();
+                assertTrue(tripleEntered.await(3, TimeUnit.SECONDS));
+                assertSame(snapshot, p.arguments);
+                release.countDown();
+                return p.arguments[0];
+            }
+            if ("triple".equals(m.getName())) {
+                assertTrue(echoEntered.await(3, TimeUnit.SECONDS));
+                tripleEntered.countDown();
+                assertTrue(release.await(3, TimeUnit.SECONDS));
+                assertSame(snapshot, p.arguments);
+                return p.arguments[0] + p.arguments[1].toString() + p.arguments[2];
+            }
+            return null;
+        });
+
+        Thread t1 = new Thread(() -> {
+            try {
+                assertEquals("a", proxy.echo("a"));
+            } catch (Throwable e) {
+                error.compareAndSet(null, e);
+                release.countDown();
+            }
+        }, "dynamic-proxy-echo-test");
+        Thread t2 = new Thread(() -> {
+            try {
+                assertEquals("bcd", proxy.triple("b", "c", "d"));
+            } catch (Throwable e) {
+                error.compareAndSet(null, e);
+                release.countDown();
+            }
+        }, "dynamic-proxy-triple-test");
+        t1.start();
+        t2.start();
+        t1.join(4000);
+        t2.join(4000);
+
+        assertNull(error.get());
     }
 
     @Test

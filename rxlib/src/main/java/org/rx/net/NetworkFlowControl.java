@@ -37,8 +37,9 @@ public final class NetworkFlowControl {
 
         GlobalChannelTrafficShapingHandler handler = globalTrafficHandler;
         if (handler != null) {
-            handler.configure(snapshot.uploadBytesPerSecond(),
-                    snapshot.downloadBytesPerSecond(),
+            boolean enabled = snapshot.isTrafficShapingEnabled();
+            handler.configure(enabled ? snapshot.uploadBytesPerSecond() : 0L,
+                    enabled ? snapshot.downloadBytesPerSecond() : 0L,
                     snapshot.getCheckIntervalMillis());
             handler.setMaxTimeWait(snapshot.getMaxDelayMillis());
         }
@@ -59,6 +60,7 @@ public final class NetworkFlowControl {
             return false;
         }
         pipeline.addLast(GLOBAL_TRAFFIC_HANDLER, globalTrafficHandler(snapshot));
+        NetworkFlowDiagnostics.register(channel);
         DiagnosticMetrics.record("net.flow.global.traffic.channel.count", 1D,
                 "protocol=" + Sockets.protocolName(channel));
         return true;

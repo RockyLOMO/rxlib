@@ -100,6 +100,42 @@ public class NetworkFlowControlTest {
     }
 
     @Test
+    public void testRefreshDisabledZeroesExistingGlobalTrafficHandler() {
+        NetworkTrafficConfig config = new NetworkTrafficConfig();
+        config.setEnabled(true);
+        config.setUploadKilobytesPerSecond(4L);
+        config.setDownloadKilobytesPerSecond(8L);
+        config.setCheckIntervalMillis(50L);
+        NetworkFlowControl.DEFAULT.refresh(config);
+
+        EmbeddedChannel channel = new EmbeddedChannel();
+        EmbeddedChannel nextChannel = new EmbeddedChannel();
+        try {
+            assertTrue(NetworkFlowControl.DEFAULT.install(channel));
+            GlobalChannelTrafficShapingHandler handler = (GlobalChannelTrafficShapingHandler) channel.pipeline()
+                    .get(NetworkFlowControl.GLOBAL_TRAFFIC_HANDLER);
+            assertNotNull(handler);
+            assertEquals(4096L, handler.getWriteLimit());
+            assertEquals(8192L, handler.getReadLimit());
+
+            NetworkTrafficConfig next = new NetworkTrafficConfig();
+            next.setEnabled(false);
+            next.setUploadKilobytesPerSecond(4L);
+            next.setDownloadKilobytesPerSecond(8L);
+            next.setCheckIntervalMillis(50L);
+            NetworkFlowControl.DEFAULT.refresh(next);
+
+            assertEquals(0L, handler.getWriteLimit());
+            assertEquals(0L, handler.getReadLimit());
+            assertFalse(NetworkFlowControl.DEFAULT.install(nextChannel));
+            assertNull(nextChannel.pipeline().get(NetworkFlowControl.GLOBAL_TRAFFIC_HANDLER));
+        } finally {
+            nextChannel.finishAndReleaseAll();
+            channel.finishAndReleaseAll();
+        }
+    }
+
+    @Test
     public void testGlobalUdpPendingBytesCapsSocketDefault() {
         NetworkTrafficConfig config = new NetworkTrafficConfig();
         config.setUdpMaxPendingBytes(4);

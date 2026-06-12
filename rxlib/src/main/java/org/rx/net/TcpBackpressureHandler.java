@@ -62,6 +62,7 @@ public class TcpBackpressureHandler extends ChannelInboundHandlerAdapter {
     // 通知恢复队列、恢复上游读取
     final QuadraAction<Channel, Channel, Throwable> onBackpressureEnd;
     volatile long lastEventTs;
+    volatile long pauseStartNano;
     // 是否暂停写入（用于业务层，如队列暂停）
     @Getter
     volatile boolean paused;
@@ -96,7 +97,8 @@ public class TcpBackpressureHandler extends ChannelInboundHandlerAdapter {
                 if (!timer.compareAndSet(null, schedule)) {
                     schedule.cancel(false);
                 }
-                log.info("Backpressure setTimeout[{}]", nextMs);
+                NetworkFlowDiagnostics.recordTcpBackpressureTimeout();
+                log.debug("Backpressure setTimeout[{}]", nextMs);
                 return;
             }
 
@@ -114,7 +116,9 @@ public class TcpBackpressureHandler extends ChannelInboundHandlerAdapter {
             // ---- 写入过载 ----
             paused = true;
             lastEventTs = nowNano;
-            log.info("Channel {} Backpressure start[notWritable]", outbound);
+            pauseStartNano = nowNano;
+            NetworkFlowDiagnostics.recordTcpBackpressureStart();
+            log.debug("Channel {} Backpressure start[notWritable]", outbound);
             TripleAction<Channel, Channel> fn = onBackpressureStart;
             if (fn != null) {
                 fn.accept(inbound, outbound);
@@ -131,7 +135,11 @@ public class TcpBackpressureHandler extends ChannelInboundHandlerAdapter {
         // ---- 恢复 ----
         paused = false;
         lastEventTs = nowNano;
-        log.info("Channel {} Backpressure end[writable]", outbound);
+        long startNano = pauseStartNano;
+        pauseStartNano = 0L;
+        NetworkFlowDiagnostics.recordTcpBackpressureEnd(startNano > 0L && nowNano > startNano
+                ? (nowNano - startNano) / Constants.NANO_TO_MILLIS : 0L);
+        log.debug("Channel {} Backpressure end[writable]", outbound);
         QuadraAction<Channel, Channel, Throwable> fn = onBackpressureEnd;
         if (fn != null) {
             fn.accept(inbound, outbound, cause);

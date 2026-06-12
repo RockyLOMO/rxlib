@@ -1,7 +1,6 @@
 package org.rx.bean;
 
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import org.rx.util.function.TripleFunc;
 import org.springframework.cglib.proxy.MethodInterceptor;
 import org.springframework.cglib.proxy.MethodProxy;
@@ -9,7 +8,6 @@ import org.springframework.cglib.proxy.MethodProxy;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 
-@RequiredArgsConstructor
 public class DynamicProxyBean implements MethodInterceptor, InvocationHandler {
     final TripleFunc<Method, DynamicProxyBean, Object> fn;
     @Getter
@@ -18,6 +16,10 @@ public class DynamicProxyBean implements MethodInterceptor, InvocationHandler {
     Method jdkProxy;
     @Getter
     public Object[] arguments;
+
+    public DynamicProxyBean(TripleFunc<Method, DynamicProxyBean, Object> fn) {
+        this.fn = fn;
+    }
 
     public <T> T argument(int i) {
         return (T) arguments[i];
@@ -39,17 +41,19 @@ public class DynamicProxyBean implements MethodInterceptor, InvocationHandler {
 
     @Override
     public Object intercept(Object proxyObject, Method method, Object[] arguments, MethodProxy methodProxy) throws Throwable {
-        this.proxyObject = proxyObject;
-        this.method = methodProxy;
-        this.arguments = arguments;
-        return fn.invoke(method, this);
+        DynamicProxyBean snapshot = new DynamicProxyBean(fn);
+        snapshot.proxyObject = proxyObject;
+        snapshot.method = methodProxy;
+        snapshot.arguments = arguments;
+        return fn.invoke(method, snapshot);
     }
 
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-        proxyObject = proxy;
-        arguments = args;
-        jdkProxy = method;
-        return fn.invoke(method, this);
+        DynamicProxyBean snapshot = new DynamicProxyBean(fn);
+        snapshot.proxyObject = proxy;
+        snapshot.arguments = args;
+        snapshot.jdkProxy = method;
+        return fn.invoke(method, snapshot);
     }
 }

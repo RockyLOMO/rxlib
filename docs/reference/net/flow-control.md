@@ -29,6 +29,8 @@
 
 注意：`app.net.globalTraffic.enabled` 只控制全局 traffic shaping handler，不是 TCP/UDP 背压总开关。TCP 和 UDP 背压分别由 `tcpBackpressureEnabled`、`udpBackpressureEnabled` 控制。
 
+运行期关闭 `app.net.globalTraffic.enabled` 后，新 channel 不再安装全局 shaping；如果已有 `GlobalChannelTrafficShapingHandler`，刷新配置时 read/write limit 会降为 `0`，避免旧 handler 继续排队。
+
 ## 配置方式
 
 `rx.yml` 或业务配置中可增加：
@@ -65,11 +67,12 @@ app:
 也可以使用 JVM 参数覆盖：
 
 ```bash
--Dapp.net.globalTraffic.enabled=true
+-Dapp.net.globalTraffic.enabled=${GLOBAL_TRAFFIC_ENABLED}
 -Dapp.net.globalTraffic.uploadKilobytesPerSecond=10240
 -Dapp.net.globalTraffic.downloadKilobytesPerSecond=10240
 -Dapp.net.globalTraffic.maxDelayMillis=200
 -Dapp.net.globalTraffic.udpMaxPendingBytes=1048576
+-Dapp.net.flowDebug.udpDrops=false
 ```
 
 如果运行期直接修改 `RxConfig.INSTANCE.getNet().getGlobalTraffic()`，修改后需要刷新：

@@ -19,6 +19,8 @@ RSS client 入口配置来自 `/home/rss/conf.yml`。进程级网络控流参数
 
 RSS server 的 `deploy/rss-svr/rollback.sh` 也会独立启动 JVM，因此需要与 `start.sh` 保持同一组控流参数，避免回滚后丢失限速和 UDP pending 保护。
 
+全局控流一键开关是 `GLOBAL_TRAFFIC_ENABLED`，映射到 `-Dapp.net.globalTraffic.enabled`。默认 `true`；需要排除全局 shaping 影响时，在 client 或 server 启动前设置 `GLOBAL_TRAFFIC_ENABLED=false` 即可。
+
 ## RSS Client 启动控流
 
 `deploy/rss/start.sh` 当前按运营商常用 Mbps 口径换算，`Mb/s` 表示 bit/s，不是 Byte/s。
@@ -54,7 +56,7 @@ RSS server 是 2c / 1.5GiB 小机器，`MaxDirectMemorySize=640m`，所以 UDP p
 两侧公共 JVM 参数形态：
 
 ```bash
--Dapp.net.globalTraffic.enabled=true
+-Dapp.net.globalTraffic.enabled=${GLOBAL_TRAFFIC_ENABLED}
 -Dapp.net.globalTraffic.uploadKilobytesPerSecond=${GLOBAL_TRAFFIC_UPLOAD_KBPS}
 -Dapp.net.globalTraffic.downloadKilobytesPerSecond=${GLOBAL_TRAFFIC_DOWNLOAD_KBPS}
 -Dapp.net.globalTraffic.checkIntervalMillis=${GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS}
@@ -68,6 +70,38 @@ RSS server 是 2c / 1.5GiB 小机器，`MaxDirectMemorySize=640m`，所以 UDP p
 -Dapp.diagnostic.nmt.enabled=false
 -Dapp.trace.keepDays=0
 ```
+
+`GLOBAL_TRAFFIC_ENABLED=false` 时，`NetworkFlowControl` 会跳过新 channel 的 `GlobalChannelTrafficShapingHandler` 安装；如果进程内刷新配置时已有 handler，也会把 read/write limit 配置为 `0`，避免旧 handler 继续按原限速排队。
+
+## RSS 流量诊断开关
+
+`deploy/rss/start.sh`、`deploy/rss-svr/start.sh`、`deploy/rss-svr/rollback.sh` 保留一组默认关闭的流量诊断开关，用于排查并发大文件下载 5s 后出现的 3~5s 卡点，以及 UDP 背压/最终出口丢包：
+
+| 环境变量 | 默认值 | JVM 参数 | 说明 |
+| --- | --- | --- | --- |
+| `FLOW_DEBUG_ENABLED` | `false` | `-Dapp.net.flowDebug.enabled` | 打开后每秒输出 `NET_FLOW_DEBUG` 聚合日志 |
+| `FLOW_DEBUG_INTERVAL_MILLIS` | `1000` | `-Dapp.net.flowDebug.intervalMillis` | 聚合扫描周期，建议现场排查保持 1s |
+| `FLOW_DEBUG_TOP_CHANNELS` | `8` | `-Dapp.net.flowDebug.topChannels` | 输出 pending / 不可写 / 背压相关 channel 的前 N 个 |
+| `FLOW_DEBUG_UDP_DROPS` | `false` | `-Dapp.net.flowDebug.udpDrops` | 打开后把 UDP backpressure / final egress drop 以 INFO 输出，方便线上直接 grep |
+
+现场排查命令示例：
+
+```bash
+FLOW_DEBUG_ENABLED=true FLOW_DEBUG_TOP_CHANNELS=8 ./start.sh publish replace
+FLOW_DEBUG_UDP_DROPS=true ./start.sh publish replace
+```
+
+重点字段：
+
+| 字段 | 判断方向 |
+| --- | --- |
+| `globalQueue` | Netty `GlobalChannelTrafficShapingHandler` 内部延迟队列；若卡顿时明显膨胀，优先看全局限速/调度公平性 |
+| `outPending` | Netty channel outbound buffer；若持续膨胀，说明写端或系统 socket 发送侧拥塞 |
+| `proxyReadDelta` / `proxyWriteDelta` | 本周期所有 SOCKS 会话经 `ProxyManageHandler` 统计到的读/写增量 |
+| top channel 的 `rDelta` / `wDelta` | 单条 SOCKS 会话本周期读/写增量；用于判断多个下载是否公平分配带宽 |
+| `autoReadOff` / `tcpBpPaused` | TCP 背压是否暂停上游读取；若卡顿时升高，说明单连接写水位在竞争 |
+| `tcpBpDelta` / `avgPauseMs` | 本周期背压开始/结束/定时延迟次数和平均暂停时长 |
+| `lastRead` / `lastWrite` | 全局 TrafficCounter 最近统计吞吐，用来对照下载进度是否被批量放行 |
 
 RSS server B 额外设置 fake host 控制面恢复等待：
 
@@ -125,11 +159,12 @@ RSS server B 额外设置 fake host 控制面恢复等待：
 | RSS server | 23:32 后日志 | `recover dstEp=0`、`COMPUTE_ARGS=0`、`NativeIoException=0`、`decompress=0`、`slowSql=0`、`expected close/write=0` |
 | socks5h 连通性 | client 本机 `curl --socks5-hostname 127.0.0.1:6885` | `example.com=200`、`google generate_204=204`、`cloudflare trace=200`，域名型 CONNECT 已通 |
 | 5 并发下载 | 5 路 `https://speed.cloudflare.com/__down?bytes=10485760` | 全部 HTTP 200，10MiB 完整下载，耗时 `8.37s..8.74s`，未见 4 路长时间 0 进度 |
+| RSS client 灰节点 | `/home/rss/conf.yml` 中 `new104` / `new104-tun` | 2026-06-11 已将 `104.168.27.48` 两个上游权重设为 `0`，避免不可达灰节点继续触发 `9901` RPC 建连超时 |
 | CPU/内存 | client/server 排水后最终采样 | client 即时 CPU 约 `2%`、RSS 约 `2.1GiB`；server 即时 CPU 约 `2%`、RSS 约 `474MiB`；主要 CPU 线程是 JIT compiler 和少量 EventLoop，未见诊断/JFR 线程 |
 
 仍需注意：
 
-- client 配置里还保留 `104.168.27.48` 备用上游且权重不为 0。若该节点长期不可达，重启窗口或主上游短暂不可用时会产生健康检查失败、`fail-open` 和 fakeEndpoint RPC push 失败日志；主链路恢复后当前观测已不再持续出现。
+- `104.168.27.48` 是灰节点，当前不可达时必须保持 `new104` / `new104-tun` 权重为 `0`。本次调整后 RSS client 新进程独占监听 `6885/8082`，最近日志未再出现 `104.168.27.48`、`:9901`、`ObjectPool doCreateIdle`、`ConnectTimeoutException` 或 `fail-open`。
 - server 端 `Connection reset by peer` 属于对端关闭/短连接 reset，最终版本已降为 DEBUG，不再作为 WARN 噪声放大。
 
 ## 全局控流边界
@@ -144,6 +179,15 @@ RSS server B 额外设置 fake host 控制面恢复等待：
 | TCP relay | 只在成对 relay 场景安装 TCP 背压 | outbound 不可写时暂停 inbound `autoRead` |
 
 注意：全局限速不是精确网卡限速；它是 Netty channel 级读写节流。双进程灰度或 coexist 期间，每个进程各自有一份限速预算，总出口可能短时超过单进程配置。
+
+开关边界：
+
+| 配置 | 行为 |
+| --- | --- |
+| `GLOBAL_TRAFFIC_ENABLED=true` | 安装全局 shaping，按 upload/download KiB/s 粗控流 |
+| `GLOBAL_TRAFFIC_ENABLED=false` | 不再给新 channel 安装全局 shaping；已有 handler 在配置刷新后 read/write limit 变为 `0` |
+| `FLOW_DEBUG_ENABLED=true` | 每周期扫描 channel 并输出聚合诊断，适合短时现场排查 |
+| `FLOW_DEBUG_UDP_DROPS=true` | 只打开 UDP drop 入口日志，不打开全量 channel 聚合扫描 |
 
 ## UDP 请求方向链路
 

@@ -1,12 +1,15 @@
 package org.rx.net.udp;
 
 import io.netty.channel.Channel;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.net.NetworkFlowControl;
+import org.rx.net.NetworkFlowDiagnostics;
 import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
+@Slf4j
 public final class UdpBackpressurePolicy {
     private final NetworkFlowControl owner;
 
@@ -65,6 +68,9 @@ public final class UdpBackpressurePolicy {
             queuedPackets = pendingPackets.incrementAndGet();
             if (queuedPackets > limitPackets) {
                 pendingPackets.addAndGet(-1);
+                logDrop(channel, reasonPrefix + "pending-packets-overlimit", bytes,
+                        pendingBytes == null ? 0 : Math.max(0, pendingBytes.get()), limitBytes,
+                        queuedPackets, limitPackets);
                 return UdpBackpressureDecision.packetsOverLimit(reasonPrefix + "pending-packets-overlimit",
                         queuedPackets, limitPackets);
             }
@@ -76,6 +82,8 @@ public final class UdpBackpressurePolicy {
             if (limitPackets > 0) {
                 pendingPackets.addAndGet(-1);
             }
+            logDrop(channel, reasonPrefix + "pending-overlimit", bytes, queuedBytes, limitBytes,
+                    queuedPackets, limitPackets);
             return UdpBackpressureDecision.bytesOverLimit(reasonPrefix + "pending-overlimit",
                     queuedBytes, limitBytes, queuedPackets, limitPackets);
         }
@@ -84,6 +92,8 @@ public final class UdpBackpressurePolicy {
             if (limitPackets > 0) {
                 pendingPackets.addAndGet(-1);
             }
+            logDrop(channel, reasonPrefix + "not-writable", bytes, queuedBytes, limitBytes,
+                    queuedPackets, limitPackets);
             return UdpBackpressureDecision.unwritable(reasonPrefix + "not-writable",
                     queuedBytes, limitBytes, queuedPackets, limitPackets);
         }
@@ -96,6 +106,25 @@ public final class UdpBackpressurePolicy {
         }
         if (pendingPackets != null && limitPackets > 0) {
             pendingPackets.addAndGet(-1);
+        }
+    }
+
+    private void logDrop(Channel channel, String reason, int bytes,
+                         int queuedBytes, int limitBytes, int queuedPackets, int limitPackets) {
+        boolean flowDebug = NetworkFlowDiagnostics.isUdpDropDebugEnabled();
+        if (!flowDebug && !log.isDebugEnabled()) {
+            return;
+        }
+        if (flowDebug) {
+            log.info("UDP backpressure drop reason={} channel={} bytes={} queuedBytes={} limitBytes={} queuedPackets={} limitPackets={} writable={} active={} globalUdpLimitBytes={} globalUdpLimitPackets={}",
+                    reason, channel, bytes, queuedBytes, limitBytes, queuedPackets, limitPackets,
+                    channel != null && channel.isWritable(), channel != null && channel.isActive(),
+                    owner.config().getUdpMaxPendingBytes(), owner.config().getUdpMaxPendingPackets());
+        } else {
+            log.debug("UDP backpressure drop reason={} channel={} bytes={} queuedBytes={} limitBytes={} queuedPackets={} limitPackets={} writable={} active={} globalUdpLimitBytes={} globalUdpLimitPackets={}",
+                    reason, channel, bytes, queuedBytes, limitBytes, queuedPackets, limitPackets,
+                    channel != null && channel.isWritable(), channel != null && channel.isActive(),
+                    owner.config().getUdpMaxPendingBytes(), owner.config().getUdpMaxPendingPackets());
         }
     }
 }
