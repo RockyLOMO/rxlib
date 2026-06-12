@@ -3,6 +3,7 @@ package org.rx.net.udp;
 import io.netty.channel.Channel;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.NetworkFlowControl;
+import org.rx.net.NetworkFlowDiagnostics;
 import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
 
@@ -110,12 +111,20 @@ public final class UdpBackpressurePolicy {
 
     private void logDrop(Channel channel, String reason, int bytes,
                          int queuedBytes, int limitBytes, int queuedPackets, int limitPackets) {
-        if (!log.isDebugEnabled()) {
+        boolean flowDebug = NetworkFlowDiagnostics.isUdpDropDebugEnabled();
+        if (!flowDebug && !log.isDebugEnabled()) {
             return;
         }
-        log.debug("UDP backpressure drop reason={} channel={} bytes={} queuedBytes={} limitBytes={} queuedPackets={} limitPackets={} writable={} active={} globalUdpLimitBytes={} globalUdpLimitPackets={}",
-                reason, channel, bytes, queuedBytes, limitBytes, queuedPackets, limitPackets,
-                channel != null && channel.isWritable(), channel != null && channel.isActive(),
-                owner.config().getUdpMaxPendingBytes(), owner.config().getUdpMaxPendingPackets());
+        if (flowDebug) {
+            log.info("UDP backpressure drop reason={} channel={} bytes={} queuedBytes={} limitBytes={} queuedPackets={} limitPackets={} writable={} active={} globalUdpLimitBytes={} globalUdpLimitPackets={}",
+                    reason, channel, bytes, queuedBytes, limitBytes, queuedPackets, limitPackets,
+                    channel != null && channel.isWritable(), channel != null && channel.isActive(),
+                    owner.config().getUdpMaxPendingBytes(), owner.config().getUdpMaxPendingPackets());
+        } else {
+            log.debug("UDP backpressure drop reason={} channel={} bytes={} queuedBytes={} limitBytes={} queuedPackets={} limitPackets={} writable={} active={} globalUdpLimitBytes={} globalUdpLimitPackets={}",
+                    reason, channel, bytes, queuedBytes, limitBytes, queuedPackets, limitPackets,
+                    channel != null && channel.isWritable(), channel != null && channel.isActive(),
+                    owner.config().getUdpMaxPendingBytes(), owner.config().getUdpMaxPendingPackets());
+        }
     }
 }

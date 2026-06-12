@@ -9,6 +9,7 @@ import io.netty.channel.socket.DatagramPacket;
 import io.netty.util.ReferenceCountUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.NetworkFlowControl;
+import org.rx.net.NetworkFlowDiagnostics;
 import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
 
@@ -233,11 +234,14 @@ public final class UdpFinalEgressGuardHandler extends ChannelDuplexHandler {
     private static void debugDrop(Channel channel, DatagramPacket packet, String reason, int bytes,
                                   int queuedBytes, int limitBytes, int queuedPackets, int limitPackets,
                                   SocketConfig effectiveConfig) {
-        if (effectiveConfig == null || !effectiveConfig.isDebug() || !log.isInfoEnabled()) {
+        boolean flowDebug = NetworkFlowDiagnostics.isUdpDropDebugEnabled();
+        if (!flowDebug && (effectiveConfig == null || !effectiveConfig.isDebug())) {
             return;
         }
-        log.info("UDP final egress drop reason={} channel={} recipient={} bytes={} queuedBytes={} limitBytes={} queuedPackets={} limitPackets={} writable={} active={}",
-                reason, channel, packet == null ? null : packet.recipient(), bytes, queuedBytes, limitBytes,
-                queuedPackets, limitPackets, channel != null && channel.isWritable(), channel != null && channel.isActive());
+        if (log.isInfoEnabled()) {
+            log.info("UDP final egress drop reason={} channel={} recipient={} bytes={} queuedBytes={} limitBytes={} queuedPackets={} limitPackets={} writable={} active={}",
+                    reason, channel, packet == null ? null : packet.recipient(), bytes, queuedBytes, limitBytes,
+                    queuedPackets, limitPackets, channel != null && channel.isWritable(), channel != null && channel.isActive());
+        }
     }
 }
