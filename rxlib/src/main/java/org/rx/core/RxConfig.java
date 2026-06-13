@@ -176,6 +176,15 @@ public final class RxConfig {
         String DNS_DOH_TIMEOUT_MILLIS = "app.net.dns.dohTimeoutMillis";
         String DNS_DOH_MAX_IN_FLIGHT = "app.net.dns.dohMaxInFlight";
         String DNS_DOH_ENDPOINTS = "app.net.dns.dohEndpoints";
+        String DNS_CACHE_PREFETCH = "app.net.dns.prefetch";
+        String DNS_CACHE_PREFETCH_THRESHOLD_PERCENT = "app.net.dns.prefetchThresholdPercent";
+        String DNS_CACHE_SERVE_EXPIRED = "app.net.dns.serveExpired";
+        String DNS_CACHE_SERVE_EXPIRED_TTL_SECONDS = "app.net.dns.serveExpiredTtlSeconds";
+        String DNS_CACHE_SERVE_EXPIRED_REPLY_TTL_SECONDS = "app.net.dns.serveExpiredReplyTtlSeconds";
+        String DNS_CACHE_SERVE_EXPIRED_CLIENT_TIMEOUT_MILLIS = "app.net.dns.serveExpiredClientTimeoutMillis";
+        String DNS_CACHE_STORAGE = "app.net.dns.cacheStorage";
+        String DNS_CACHE_MAXIMUM_SIZE = "app.net.dns.cacheMaximumSize";
+        String DNS_CACHE_MAXIMUM_BYTES = "app.net.dns.cacheMaximumBytes";
         String REST_LOG_MODE = "app.rest.logMode";
         String REST_LOG_NAME_LIST = "app.rest.logNameList";
         String REST_FORWARDS = "app.rest.forwards";
@@ -486,6 +495,53 @@ public final class RxConfig {
     @Getter
     @Setter
     @ToString
+    public static class DnsCacheConfig {
+        public enum StorageMode {
+            MEMORY,
+            PERSISTENT,
+            HYBRID
+        }
+
+        boolean prefetch;
+        int prefetchThresholdPercent = 10;
+        boolean serveExpired;
+        int serveExpiredTtlSeconds = 86400;
+        int serveExpiredReplyTtlSeconds = 30;
+        int serveExpiredClientTimeoutMillis = 1800;
+        StorageMode storage = StorageMode.HYBRID;
+        int maximumSize = 4096;
+        long maximumBytes;
+
+        public void normalize() {
+            if (prefetchThresholdPercent < 1) {
+                prefetchThresholdPercent = 1;
+            } else if (prefetchThresholdPercent > 100) {
+                prefetchThresholdPercent = 100;
+            }
+            if (serveExpiredTtlSeconds < 0) {
+                serveExpiredTtlSeconds = 0;
+            }
+            if (serveExpiredReplyTtlSeconds < 1) {
+                serveExpiredReplyTtlSeconds = 1;
+            }
+            if (serveExpiredClientTimeoutMillis < 0) {
+                serveExpiredClientTimeoutMillis = 0;
+            }
+            if (maximumSize < 1) {
+                maximumSize = 1;
+            }
+            if (maximumBytes < 0) {
+                maximumBytes = 0;
+            }
+            if (storage == null) {
+                storage = StorageMode.HYBRID;
+            }
+        }
+    }
+
+    @Getter
+    @Setter
+    @ToString
     public static class DnsConfig {
         final List<String> directServers = newConcurrentList(true);
         final List<String> remoteServers = newConcurrentList(true);
@@ -497,6 +553,7 @@ public final class RxConfig {
         int dohTimeoutMillis = 5000;
         int dohMaxInFlight = 64;
         final List<String> dohEndpoints = newConcurrentList(true);
+        DnsCacheConfig cache = new DnsCacheConfig();
     }
 
     @Getter
@@ -840,6 +897,20 @@ public final class RxConfig {
         net.dns.dohTimeoutMillis = SystemPropertyUtil.getInt(ConfigNames.DNS_DOH_TIMEOUT_MILLIS, net.dns.dohTimeoutMillis);
         net.dns.dohMaxInFlight = SystemPropertyUtil.getInt(ConfigNames.DNS_DOH_MAX_IN_FLIGHT, net.dns.dohMaxInFlight);
         reset(net.dns.dohEndpoints, ConfigNames.DNS_DOH_ENDPOINTS);
+        net.dns.cache.prefetch = SystemPropertyUtil.getBoolean(ConfigNames.DNS_CACHE_PREFETCH, net.dns.cache.prefetch);
+        net.dns.cache.prefetchThresholdPercent = SystemPropertyUtil.getInt(
+                ConfigNames.DNS_CACHE_PREFETCH_THRESHOLD_PERCENT, net.dns.cache.prefetchThresholdPercent);
+        net.dns.cache.serveExpired = SystemPropertyUtil.getBoolean(ConfigNames.DNS_CACHE_SERVE_EXPIRED, net.dns.cache.serveExpired);
+        net.dns.cache.serveExpiredTtlSeconds = SystemPropertyUtil.getInt(
+                ConfigNames.DNS_CACHE_SERVE_EXPIRED_TTL_SECONDS, net.dns.cache.serveExpiredTtlSeconds);
+        net.dns.cache.serveExpiredReplyTtlSeconds = SystemPropertyUtil.getInt(
+                ConfigNames.DNS_CACHE_SERVE_EXPIRED_REPLY_TTL_SECONDS, net.dns.cache.serveExpiredReplyTtlSeconds);
+        net.dns.cache.serveExpiredClientTimeoutMillis = SystemPropertyUtil.getInt(
+                ConfigNames.DNS_CACHE_SERVE_EXPIRED_CLIENT_TIMEOUT_MILLIS, net.dns.cache.serveExpiredClientTimeoutMillis);
+        net.dns.cache.storage = getEnum(ConfigNames.DNS_CACHE_STORAGE, net.dns.cache.storage);
+        net.dns.cache.maximumSize = SystemPropertyUtil.getInt(ConfigNames.DNS_CACHE_MAXIMUM_SIZE, net.dns.cache.maximumSize);
+        net.dns.cache.maximumBytes = SystemPropertyUtil.getLong(ConfigNames.DNS_CACHE_MAXIMUM_BYTES, net.dns.cache.maximumBytes);
+        net.dns.cache.normalize();
 
         rest.logMode = SystemPropertyUtil.getInt(ConfigNames.REST_LOG_MODE, rest.logMode);
         reset(rest.logNameList, ConfigNames.REST_LOG_NAME_LIST);

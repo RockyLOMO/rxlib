@@ -7,14 +7,14 @@ import org.rx.core.EventPublisher;
 import org.rx.core.RxConfig;
 import org.rx.core.Strings;
 import org.rx.core.cache.H2StoreCache;
-import org.rx.net.dns.DnsServer;
+import org.rx.net.dns.DnsResolveInterceptor;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-public interface SocksRpcContract extends AutoCloseable, DnsServer.ResolveInterceptor, EventPublisher<SocksRpcContract> {
+public interface SocksRpcContract extends AutoCloseable, DnsResolveInterceptor, EventPublisher<SocksRpcContract> {
     String FAKE_HOST_SUFFIX = Strings.cas("AS(120,46,102,45,108,105,46,99,110)");
     int[] FAKE_PORT_OBFS = new int[]{443, 3306};
     int FAKE_EXPIRE_SECONDS = 60 * 5;

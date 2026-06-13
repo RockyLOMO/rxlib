@@ -22,9 +22,37 @@
 |------|------|
 | **双协议支持** | 同时监听 TCP/UDP，使用 Netty 内置编解码器 `TcpDnsQueryDecoder` / `DatagramDnsQueryDecoder` |
 | **hosts 权重负载** | 支持 `enableHostsWeight` 模式，相同域名多 IP 时按权重分配，返回 1-2 个 IP |
-| **解析拦截器** | `ResolveInterceptor` 接口支持自定义解析逻辑，可对接外部服务（如服务发现） |
+| **解析拦截器** | `DnsResolveInterceptor` 接口支持自定义解析逻辑，可对接外部服务（如服务发现） |
 | **防缓存击穿** | `resolvingPromises` 按域名与记录类型合并并发解析，防止缓存穿透（thundering-herd） |
 | **H2 持久缓存** | 使用 `H2StoreCache` 作为 DNS 缓存后端，支持 TTL 和跨进程共享 |
+
+## 本地解析与缓存配置
+
+`DnsClient` 与 `DnsServer` 共用 hosts、interceptor、熔断和 interceptor cache 逻辑。解析顺序为：
+
+1. hosts 本地命中直接返回。
+2. interceptor cache 命中直接返回。
+3. interceptor 未命中时异步解析，并按域名/记录类型合并并发请求。
+4. interceptor 返回 `null` 时继续走上游 DNS。
+
+系统属性配置：
+
+```properties
+app.net.dns.prefetch=false
+app.net.dns.prefetchThresholdPercent=10
+app.net.dns.serveExpired=false
+app.net.dns.serveExpiredTtlSeconds=86400
+app.net.dns.serveExpiredReplyTtlSeconds=30
+app.net.dns.serveExpiredClientTimeoutMillis=1800
+
+# memory / persistent / hybrid，默认 hybrid
+app.net.dns.cacheStorage=hybrid
+
+# memory 模式 maximumBytes>0 时按轻量估算字节限流，否则按 item 数限流。
+# persistent/hybrid 模式复用 EntityDatabaseImpl + H2StoreCache，maximumSize 控制 L1 item 数。
+app.net.dns.cacheMaximumSize=4096
+app.net.dns.cacheMaximumBytes=0
+```
 
 ## 适用场景
 - 在代理服务器或高性能爬虫等需要大量 DNS 解析的场景中，防止 DNS 解析阻塞 Netty 线程池。

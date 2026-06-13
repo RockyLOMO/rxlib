@@ -9,6 +9,7 @@ import org.rx.core.Tasks;
 import org.rx.exception.InvalidException;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
+import org.rx.net.dns.DnsResolveInterceptor;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.nameserver.NameserverImpl;
 import org.rx.net.socks.ShadowsocksConfig;
@@ -55,7 +56,7 @@ final class RssRuntime implements AutoCloseable {
     final CopyOnWriteArrayList<UpstreamSnapshot> closingUpstreamSnapshots = new CopyOnWriteArrayList<>();
     final AtomicBoolean drainStarted = new AtomicBoolean();
 
-    SwitchingRandomList<DnsServer.ResolveInterceptor> dnsInterceptors = new SwitchingRandomList<>();
+    SwitchingRandomList<DnsResolveInterceptor> dnsInterceptors = new SwitchingRandomList<>();
     volatile UpstreamSnapshot upstreamSnapshot;
     volatile DnsServer dnsSvr;
     volatile NameserverImpl nameserverRef;
@@ -105,7 +106,7 @@ final class RssRuntime implements AutoCloseable {
         UpstreamSnapshot nextUpstream = null;
         InServersPlan inServersPlan = null;
         DnsServer nextDnsServer = null;
-        SwitchingRandomList<DnsServer.ResolveInterceptor> nextDnsInterceptors = null;
+        SwitchingRandomList<DnsResolveInterceptor> nextDnsInterceptors = null;
         NameserverImpl nextNameserver = null;
         RrpServerPlan rrpPlan = null;
         ShadowServersPlan shadowPlan = null;
@@ -895,7 +896,7 @@ final class RssRuntime implements AutoCloseable {
     static final class UpstreamSnapshot {
         final RandomList<UpstreamSupport> socksServers;
         final RandomList<UpstreamSupport> udp2rawSocksServers;
-        final RandomList<DnsServer.ResolveInterceptor> dnsInterceptors;
+        final RandomList<DnsResolveInterceptor> dnsInterceptors;
         final Map<String, RandomList<UpstreamSupport>> userSocksServers;
         final Map<String, RandomList<UpstreamSupport>> udp2rawUserSocksServers;
         final List<RssClientConf.SocksServer> configuredSocksServers;
@@ -908,7 +909,7 @@ final class RssRuntime implements AutoCloseable {
 
         UpstreamSnapshot(RandomList<UpstreamSupport> socksServers,
                          RandomList<UpstreamSupport> udp2rawSocksServers,
-                         RandomList<DnsServer.ResolveInterceptor> dnsInterceptors) {
+                         RandomList<DnsResolveInterceptor> dnsInterceptors) {
             this(socksServers, udp2rawSocksServers, dnsInterceptors,
                     Collections.<String, RandomList<UpstreamSupport>>emptyMap(),
                     Collections.<String, RandomList<UpstreamSupport>>emptyMap(), null, null);
@@ -916,7 +917,7 @@ final class RssRuntime implements AutoCloseable {
 
         UpstreamSnapshot(RandomList<UpstreamSupport> socksServers,
                          RandomList<UpstreamSupport> udp2rawSocksServers,
-                         RandomList<DnsServer.ResolveInterceptor> dnsInterceptors,
+                         RandomList<DnsResolveInterceptor> dnsInterceptors,
                          List<AuthenticEndpoint> configuredSocksServers,
                          List<AuthenticEndpoint> configuredUdp2rawSocksServers) {
             this(socksServers, udp2rawSocksServers, dnsInterceptors,
@@ -928,7 +929,7 @@ final class RssRuntime implements AutoCloseable {
 
         UpstreamSnapshot(RandomList<UpstreamSupport> socksServers,
                          RandomList<UpstreamSupport> udp2rawSocksServers,
-                         RandomList<DnsServer.ResolveInterceptor> dnsInterceptors,
+                         RandomList<DnsResolveInterceptor> dnsInterceptors,
                          Map<String, RandomList<UpstreamSupport>> userSocksServers,
                          Map<String, RandomList<UpstreamSupport>> udp2rawUserSocksServers,
                          List<RssClientConf.SocksServer> configuredSocksServers,

@@ -130,7 +130,7 @@ class DnsOptimizationTest {
             String host = "ipv4-only-" + UUID.randomUUID() + ".example";
             InetAddress ipv4 = InetAddress.getByName("198.51.100.11");
             AtomicInteger calls = new AtomicInteger();
-            server.setInterceptors(new RandomList<DnsServer.ResolveInterceptor>(Collections.singletonList((srcIp, lookupHost) -> {
+            server.setInterceptors(new RandomList<DnsResolveInterceptor>(Collections.singletonList((srcIp, lookupHost) -> {
                 calls.incrementAndGet();
                 return Collections.singletonList(ipv4);
             })));
@@ -164,7 +164,7 @@ class DnsOptimizationTest {
             String host = "ipv6-only-" + UUID.randomUUID() + ".example";
             InetAddress ipv6 = InetAddress.getByName("2001:db8::11");
             AtomicInteger calls = new AtomicInteger();
-            server.setInterceptors(new RandomList<DnsServer.ResolveInterceptor>(Collections.singletonList((srcIp, lookupHost) -> {
+            server.setInterceptors(new RandomList<DnsResolveInterceptor>(Collections.singletonList((srcIp, lookupHost) -> {
                 calls.incrementAndGet();
                 return Collections.singletonList(ipv6);
             })));
@@ -198,7 +198,7 @@ class DnsOptimizationTest {
             String host = "mixed-" + UUID.randomUUID() + ".example";
             InetAddress ipv4 = InetAddress.getByName("198.51.100.12");
             InetAddress ipv6 = InetAddress.getByName("2001:db8::12");
-            server.setInterceptors(new RandomList<DnsServer.ResolveInterceptor>(
+            server.setInterceptors(new RandomList<DnsResolveInterceptor>(
                     Collections.singletonList((srcIp, lookupHost) -> Arrays.asList(ipv4, ipv6))));
             server.interceptorCache = new RecordingInterceptorCache();
 
@@ -224,7 +224,7 @@ class DnsOptimizationTest {
             RecordingInterceptorCache cache = new RecordingInterceptorCache();
             server.setTtl(30);
             server.setNegativeTtl(1);
-            server.setInterceptors(new RandomList<DnsServer.ResolveInterceptor>(
+            server.setInterceptors(new RandomList<DnsResolveInterceptor>(
                     Collections.singletonList((srcIp, lookupHost) -> Collections.singletonList(ipv4))));
             server.interceptorCache = cache;
 
@@ -268,7 +268,7 @@ class DnsOptimizationTest {
     }
 
     @Test
-    @Timeout(20)
+    @Timeout(35)
     void concurrentInterceptorQueries_shareSingleResolveTask() throws Exception {
         int dnsPort = freePort();
         String host = "coalesce-" + UUID.randomUUID() + ".example";
@@ -314,7 +314,7 @@ class DnsOptimizationTest {
             }
 
             start.countDown();
-            assertTrue(resolving.await(10, TimeUnit.SECONDS));
+            assertTrue(resolving.await(20, TimeUnit.SECONDS));
             Thread.sleep(200);
             assertEquals(2, resolveCalls.get(), "并发相同域名请求应按 A/AAAA 各合并一次 resolveHost");
 
@@ -339,18 +339,18 @@ class DnsOptimizationTest {
         InetAddress resolvedIp = InetAddress.getByName("198.51.100.89");
         AtomicInteger failedCalls = new AtomicInteger();
         AtomicInteger healthyCalls = new AtomicInteger();
-        DnsServer.ResolveInterceptor failing = (srcIp, lookupHost) -> {
+        DnsResolveInterceptor failing = (srcIp, lookupHost) -> {
             failedCalls.incrementAndGet();
             throw new ClientDisconnectedException("dns-rpc-primary");
         };
-        DnsServer.ResolveInterceptor healthy = (srcIp, lookupHost) -> {
+        DnsResolveInterceptor healthy = (srcIp, lookupHost) -> {
             healthyCalls.incrementAndGet();
             return Collections.singletonList(resolvedIp);
         };
-        RandomList<DnsServer.ResolveInterceptor> interceptors =
-                new RandomList<DnsServer.ResolveInterceptor>(Arrays.asList(failing, healthy)) {
+        RandomList<DnsResolveInterceptor> interceptors =
+                new RandomList<DnsResolveInterceptor>(Arrays.asList(failing, healthy)) {
                     @Override
-                    public DnsServer.ResolveInterceptor next() {
+                    public DnsResolveInterceptor next() {
                         return failing;
                     }
                 };

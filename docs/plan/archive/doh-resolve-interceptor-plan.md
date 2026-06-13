@@ -31,7 +31,7 @@ TcpDnsQueryDecoder -> TcpDnsResponseEncoder -> DnsHandler
 ```text
 JDK InetAddress
     -> Sockets nsProxy
-    -> DoHClient (ResolveInterceptor)
+    -> DoHClient (DnsResolveInterceptor)
     -> TLS/HTTP POST /dns-query
     -> remote DnsServer TCP port
     -> DnsTcpPortMuxHandler
@@ -57,7 +57,7 @@ JDK InetAddress
 
 建议类名：
 
-- `org.rx.net.dns.DoHClient implements DnsServer.ResolveInterceptor, AutoCloseable`
+- `org.rx.net.dns.DoHClient implements DnsResolveInterceptor, AutoCloseable`
 - `org.rx.net.dns.DoHEndpoint`
 - `org.rx.net.dns.DoHMessageCodec`
 
@@ -65,7 +65,7 @@ JDK InetAddress
 
 - 给 `Sockets.injectNameService(DoHClient)` 使用。
 - 直接连接远程 `DnsServer` 的 TCP DNS 端口，不需要本地 DNS 端口。
-- 实现 `ResolveInterceptor#resolveHost(InetAddress srcIp, String host)`。
+- 实现 `DnsResolveInterceptor#resolveHost(InetAddress srcIp, String host)`。
 - 内部发起 DoH 请求，返回 `List<InetAddress>`。
 
 `DoHEndpoint` 字段建议：
@@ -166,12 +166,12 @@ HTTP 状态建议：
 
 1. hosts 命中。
 2. fake host 后缀。
-3. `ResolveInterceptor`。
+3. `DnsResolveInterceptor`。
 4. upstream DNS。
 
 需要同步修正：
 
-- `ResolveInterceptor` 返回 `null` 表示未处理或临时失败，不能缓存 NXDOMAIN。
+- `DnsResolveInterceptor` 返回 `null` 表示未处理或临时失败，不能缓存 NXDOMAIN。
 - 空列表才表示明确 negative answer，并按 `negativeTtl` 缓存。
 - A 查询只能写 A record，AAAA 查询只能写 AAAA record。
 - `interceptorCache` key 增加命名空间和 qtype，例如 `"_dns:int:A:" + domain`。
@@ -251,7 +251,7 @@ Sockets.injectNameService(client);
 public static void injectNameService(DoHClient client)
 ```
 
-该重载本质仍调用 `injectNameService(DnsServer.ResolveInterceptor)`，主要提升可读性。
+该重载本质仍调用 `injectNameService(DnsResolveInterceptor)`，主要提升可读性。
 
 ## DoH wire codec
 
@@ -368,7 +368,7 @@ DnsTcpPortMuxHandler：
 
 - TLS 和 DNS-over-TCP 共端口时，首包误判会导致协议失败。处理：TLS/HTTP 命中优先，其他全部回落 DNS；记录 malformed 指标。
 - DoH 服务端需要证书。处理：生产使用正式证书或内网 CA；测试才允许自签和 trust-all。
-- `ResolveInterceptor` 当前缺少 qtype。处理：`DoHClient` 先 A/AAAA 合并，服务端响应按原 query type 过滤；后续可扩展接口。
+- `DnsResolveInterceptor` 当前缺少 qtype。处理：`DoHClient` 先 A/AAAA 合并，服务端响应按原 query type 过滤；后续可扩展接口。
 - `HttpObjectAggregator` 会聚合 body。处理：DoH DNS message 最大 65535，聚合上限固定，超过拒绝。
 - 反复注入 `Sockets.injectNameService` 可能泄漏旧 client。处理：替换时关闭旧 `AutoCloseable` interceptor。
 
@@ -394,11 +394,11 @@ DnsTcpPortMuxHandler：
 - 新增 `DnsTcpPortMuxHandler`，按首包分流 TLS DoH、显式允许的明文 HTTP DoH、DNS-over-TCP；判定后移除自身，避免后续热点路径重复分支。
 - 新增 `DoHServerHandler`，支持 `POST /dns-query`、`application/dns-message`、最大 body 限制、DoH wire 响应。
 - 新增 `DoHMessageCodec`，支持 DNS wire query/response 编解码、A/AAAA 地址解析、name compression pointer、NXDOMAIN 空结果。
-- 新增 `DnsResolveCore`，抽离 hosts、fake host、`ResolveInterceptor`、upstream DNS 的共享解析链路。
-- 修正 `ResolveInterceptor` 语义：返回 `null` 不再缓存 NXDOMAIN，而是 fallback upstream；空列表才按 `negativeTtl` 缓存 negative answer。
+- 新增 `DnsResolveCore`，抽离 hosts、fake host、`DnsResolveInterceptor`、upstream DNS 的共享解析链路。
+- 修正 `DnsResolveInterceptor` 语义：返回 `null` 不再缓存 NXDOMAIN，而是 fallback upstream；空列表才按 `negativeTtl` 缓存 negative answer。
 - 修正 A/AAAA 响应过滤：A 查询只返回 A record，AAAA 查询只返回 AAAA record。
 - `interceptorCache` 已增加 qtype 命名空间：`_dns:int:A:`、`_dns:int:AAAA:`；single-flight 仍按域名合并，避免 A/AAAA 双查询重复打到拦截器。
-- 新增 `DoHEndpoint` 与 `DoHClient`，`DoHClient` 可作为 `DnsServer.ResolveInterceptor` 接入 `Sockets.injectNameService(DoHClient)`。
+- 新增 `DoHEndpoint` 与 `DoHClient`，`DoHClient` 可作为 `DnsResolveInterceptor` 接入 `Sockets.injectNameService(DoHClient)`。
 - `DoHClient` 使用已解析 `InetSocketAddress` 并配置 `NoopAddressResolverGroup.INSTANCE`，避免 DoH endpoint bootstrap 触发系统 DNS 或注入后递归解析。
 - `Sockets.injectNameService(...)` 替换全局 interceptor 时会关闭旧的 `AutoCloseable` interceptor；旧 `List<InetSocketAddress>` 注入路径也改为可关闭包装器。
 - `RxConfig.DnsConfig` 和 `rx.yml` 已新增 DoH 配置字段。

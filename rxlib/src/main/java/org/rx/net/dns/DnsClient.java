@@ -1,16 +1,17 @@
 package org.rx.net.dns;
 
 import io.netty.channel.AddressedEnvelope;
+import io.netty.channel.EventLoop;
 import io.netty.handler.codec.dns.DnsQuestion;
 import io.netty.handler.codec.dns.DnsResponse;
 import io.netty.resolver.ResolvedAddressTypes;
 import io.netty.resolver.dns.*;
 import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.Promise;
 
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.Disposable;
 import org.rx.core.RxConfig;
 import org.rx.exception.InvalidException;
 import org.rx.net.Sockets;
@@ -29,7 +30,7 @@ import static org.rx.core.Tasks.await;
 import static org.rx.core.Extends.quietly;
 
 @Slf4j
-public class DnsClient extends Disposable {
+public class DnsClient extends DnsResolverSupport {
     static class DnsServerAddressStreamProviderImpl implements DnsServerAddressStreamProvider {
         final DnsServerAddresses nameServer;
 
@@ -174,6 +175,7 @@ public class DnsClient extends Disposable {
 
     @Getter
     final DnsServerAddressStreamProvider nameServerProvider;
+    final EventLoop executor;
     final DnsNameResolver nameResolver;
 
     public DnsClient(@NonNull Collection<InetSocketAddress> nameServerList) {
@@ -182,7 +184,8 @@ public class DnsClient extends Disposable {
 
     public DnsClient(@NonNull Collection<InetSocketAddress> nameServerList, boolean localSystemFallback) {
         nameServerProvider = nameServerProvider(nameServerList, localSystemFallback);
-        nameResolver = new DnsNameResolverBuilder(Sockets.reactor(Sockets.ReactorNames.SHARED_UDP, false).next())
+        executor = Sockets.reactor(Sockets.ReactorNames.SHARED_UDP, false).next();
+        nameResolver = new DnsNameResolverBuilder(executor)
                 .nameServerProvider(nameServerProvider)
                 .channelType(Sockets.udpChannelClass())
                 .socketChannelType(Sockets.tcpChannelClass())
@@ -212,22 +215,81 @@ public class DnsClient extends Disposable {
     }
 
     public Future<InetAddress> resolveAsync(String inetHost) {
-        return nameResolver.resolve(inetHost);
+        Future<List<InetAddress>> local = resolveLocalAllAsync(null, inetHost, null, executor);
+        if (local == null) {
+            return nameResolver.resolve(inetHost);
+        }
+
+        Promise<InetAddress> promise = executor.newPromise();
+        local.addListener(f -> {
+            if (!f.isSuccess()) {
+                promise.tryFailure(f.cause());
+                return;
+            }
+
+            List<InetAddress> ips = ((Future<List<InetAddress>>) f).getNow();
+            if (ips == null) {
+                nameResolver.resolve(inetHost).addListener(upstream -> {
+                    if (upstream.isSuccess()) {
+                        promise.trySuccess(((Future<InetAddress>) upstream).getNow());
+                    } else {
+                        promise.tryFailure(upstream.cause());
+                    }
+                });
+                return;
+            }
+            if (ips.isEmpty()) {
+                promise.tryFailure(new UnknownHostException(inetHost));
+                return;
+            }
+            promise.trySuccess(ips.get(0));
+        });
+        return promise;
     }
 
     public Future<List<InetAddress>> resolveAllAsync(String inetHost) {
-        return nameResolver.resolveAll(inetHost);
+        Future<List<InetAddress>> local = resolveLocalAllAsync(null, inetHost, null, executor);
+        if (local == null) {
+            return nameResolver.resolveAll(inetHost);
+        }
+
+        Promise<List<InetAddress>> promise = executor.newPromise();
+        local.addListener(f -> {
+            if (!f.isSuccess()) {
+                promise.tryFailure(f.cause());
+                return;
+            }
+
+            List<InetAddress> ips = ((Future<List<InetAddress>>) f).getNow();
+            if (ips != null) {
+                promise.trySuccess(ips);
+                return;
+            }
+            nameResolver.resolveAll(inetHost).addListener(upstream -> {
+                if (upstream.isSuccess()) {
+                    promise.trySuccess(((Future<List<InetAddress>>) upstream).getNow());
+                } else {
+                    promise.tryFailure(upstream.cause());
+                }
+            });
+        });
+        return promise;
     }
 
     public InetAddress resolve(String inetHost) {
-        return await(nameResolver.resolve(inetHost));
+        return await(resolveAsync(inetHost));
     }
 
     public List<InetAddress> resolveAll(String inetHost) {
-        return await(nameResolver.resolveAll(inetHost));
+        return await(resolveAllAsync(inetHost));
     }
 
     public void clearCache() {
         nameResolver.resolveCache().clear();
+        if (interceptorCache != null) {
+            interceptorCache.clear();
+        }
+        resolvingPromises.clear();
+        domainKeyCache.clear();
     }
 }
