@@ -32,7 +32,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 @Slf4j
-public class DoHClient implements DnsServer.ResolveInterceptor, AutoCloseable {
+public class DoHClient implements DnsResolveInterceptor, AutoCloseable {
     public static final int DEFAULT_MAX_IN_FLIGHT = 64;
 
     @Getter

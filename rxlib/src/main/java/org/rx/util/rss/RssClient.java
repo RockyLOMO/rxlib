@@ -22,6 +22,7 @@ import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.TransportFlags;
 import org.rx.net.dns.DnsClient;
+import org.rx.net.dns.DnsResolveInterceptor;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.http.HttpClient;
 import org.rx.net.http.HttpServer;
@@ -710,7 +711,7 @@ public final class RssClient {
     static RssRuntime.UpstreamSnapshot buildUpstreams(RssClientConf conf) {
         RandomList<UpstreamSupport> socksServers = new RandomList<>();
         RandomList<UpstreamSupport> udp2rawSocksServers = new RandomList<>();
-        RandomList<DnsServer.ResolveInterceptor> dnsInterceptors = new RandomList<>();
+        RandomList<DnsResolveInterceptor> dnsInterceptors = new RandomList<>();
         List<SocksRpcContract> createdFacades = new ArrayList<>();
         Map<String, SocksRpcContract> facadeByRpcEndpoint = new LinkedHashMap<>();
         Map<String, InetSocketAddress> rpcEndpointByServerHost = buildRpcEndpointsByServerHost(conf);
@@ -778,7 +779,7 @@ public final class RssClient {
         }
     }
 
-    static void addDnsInterceptorWeight(RandomList<DnsServer.ResolveInterceptor> dnsInterceptors,
+    static void addDnsInterceptorWeight(RandomList<DnsResolveInterceptor> dnsInterceptors,
             SocksRpcContract facade, int weight) {
         if (dnsInterceptors == null || facade == null || weight <= 0) {
             return;
@@ -930,14 +931,14 @@ public final class RssClient {
         return servers;
     }
 
-    static DnsServer createDnsServer(RssClientConf conf, RandomList<DnsServer.ResolveInterceptor> dnsInterceptors) {
+    static DnsServer createDnsServer(RssClientConf conf, RandomList<DnsResolveInterceptor> dnsInterceptors) {
         DnsServer dnsServer = new DnsServer(conf.shadowDnsPort);
         applyDnsConfig(dnsServer, conf, dnsInterceptors);
         dnsServer.addHostsFile("hosts.txt");
         return dnsServer;
     }
 
-    static void applyDnsConfig(DnsServer dnsServer, RssClientConf conf, RandomList<DnsServer.ResolveInterceptor> dnsInterceptors) {
+    static void applyDnsConfig(DnsServer dnsServer, RssClientConf conf, RandomList<DnsResolveInterceptor> dnsInterceptors) {
         dnsServer.setTtl(60 * conf.dnsTtlMinutes);
         dnsServer.setNegativeTtl(DnsServer.DEFAULT_NEGATIVE_TTL);
         dnsServer.setInterceptors(dnsInterceptors);

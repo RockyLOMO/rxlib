@@ -74,7 +74,7 @@ public class DnsServerIntegrationTest extends AbstractTester {
     void setInterceptors_empty_clearsResolverState() throws Exception {
         DnsServer server = new DnsServer(freeDnsPort(), Collections.emptyList());
         try {
-            server.setInterceptors(new RandomList<DnsServer.ResolveInterceptor>(Collections.emptyList()));
+            server.setInterceptors(new RandomList<DnsResolveInterceptor>(Collections.emptyList()));
             assertNull(server.interceptors);
             assertNull(server.interceptorCache);
         } finally {

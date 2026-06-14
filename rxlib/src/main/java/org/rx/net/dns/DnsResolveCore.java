@@ -63,7 +63,7 @@ public final class DnsResolveCore {
             return promise;
         }
 
-        RandomList<DnsServer.ResolveInterceptor> interceptors = server.interceptors;
+        RandomList<DnsResolveInterceptor> interceptors = server.interceptors;
         DnsRecordType queryType = question.type();
         if (interceptors != null && !domain.endsWith(".lan") && (queryType == DnsRecordType.A || queryType == DnsRecordType.AAAA)) {
             String cacheKey = server.cacheKey(domain, queryType);
@@ -181,13 +181,13 @@ public final class DnsResolveCore {
         return new String(chars);
     }
 
-    static void cacheInterceptorResultByFamily(DnsServer server, String domain, List<InetAddress> resolvedIps) {
+    static void cacheInterceptorResultByFamily(DnsResolverSupport resolver, String domain, List<InetAddress> resolvedIps) {
         List<InetAddress> aRecords = filterByType(resolvedIps, DnsRecordType.A);
         List<InetAddress> aaaaRecords = filterByType(resolvedIps, DnsRecordType.AAAA);
-        server.interceptorCache.put(server.cacheKey(domain, DnsRecordType.A), aRecords,
-                CachePolicy.absolute(aRecords.isEmpty() ? server.negativeTtl : server.ttl));
-        server.interceptorCache.put(server.cacheKey(domain, DnsRecordType.AAAA), aaaaRecords,
-                CachePolicy.absolute(aaaaRecords.isEmpty() ? server.negativeTtl : server.ttl));
+        resolver.interceptorCache.put(resolver.cacheKey(domain, DnsRecordType.A), aRecords,
+                CachePolicy.absolute(aRecords.isEmpty() ? resolver.negativeTtl : resolver.ttl));
+        resolver.interceptorCache.put(resolver.cacheKey(domain, DnsRecordType.AAAA), aaaaRecords,
+                CachePolicy.absolute(aaaaRecords.isEmpty() ? resolver.negativeTtl : resolver.ttl));
     }
 
     static List<InetAddress> filterByType(List<InetAddress> ips, DnsRecordType queryType) {
@@ -228,7 +228,7 @@ public final class DnsResolveCore {
         return response;
     }
 
-    private static void resolveByInterceptor(DnsServer server, DnsClient upstream, RandomList<DnsServer.ResolveInterceptor> interceptors,
+    private static void resolveByInterceptor(DnsServer server, DnsClient upstream, RandomList<DnsResolveInterceptor> interceptors,
                                              InetAddress srcIp, String domain, String resolveKey, DefaultDnsQuery query, boolean isTcp,
                                              Promise<List<InetAddress>> resolvePromise, Promise<DefaultDnsResponse> responsePromise) {
         query.retain();
@@ -261,52 +261,52 @@ public final class DnsResolveCore {
         });
     }
 
-    private static List<InetAddress> resolveByInterceptorWithFailover(DnsServer server, RandomList<DnsServer.ResolveInterceptor> interceptors,
-                                                                      InetAddress srcIp, String domain) throws Throwable {
+    static List<InetAddress> resolveByInterceptorWithFailover(DnsResolverSupport resolver, RandomList<DnsResolveInterceptor> interceptors,
+                                                              InetAddress srcIp, String domain) throws Throwable {
         long now = System.currentTimeMillis();
-        DnsServer.ResolveInterceptor selected;
+        DnsResolveInterceptor selected;
         try {
             selected = interceptors.next();
         } catch (NoSuchElementException e) {
             throw new NoAvailableDnsInterceptorException(domain);
         }
-        if (server.isInterceptorAvailable(selected, now)) {
+        if (resolver.isInterceptorAvailable(selected, now)) {
             try {
                 List<InetAddress> ips = selected.resolveHost(srcIp, domain);
-                server.markInterceptorSuccess(selected);
+                resolver.markInterceptorSuccess(selected);
                 return ips;
             } catch (Throwable e) {
                 if (!isRecoverableInterceptorFailure(e)) {
                     throw e;
                 }
-                server.markInterceptorFailure(selected);
+                resolver.markInterceptorFailure(selected);
                 log.warn("dns interceptor temporarily disabled {}+{}: {}", srcIp, domain, e.toString());
-                return resolveByAlternateInterceptor(server, interceptors, selected, srcIp, domain, e);
+                return resolveByAlternateInterceptor(resolver, interceptors, selected, srcIp, domain, e);
             }
         }
-        return resolveByAlternateInterceptor(server, interceptors, selected, srcIp, domain, null);
+        return resolveByAlternateInterceptor(resolver, interceptors, selected, srcIp, domain, null);
     }
 
-    private static List<InetAddress> resolveByAlternateInterceptor(DnsServer server, RandomList<DnsServer.ResolveInterceptor> interceptors,
-                                                                   DnsServer.ResolveInterceptor skipped, InetAddress srcIp,
+    private static List<InetAddress> resolveByAlternateInterceptor(DnsResolverSupport resolver, RandomList<DnsResolveInterceptor> interceptors,
+                                                                   DnsResolveInterceptor skipped, InetAddress srcIp,
                                                                    String domain, Throwable lastFailure) throws Throwable {
-        List<DnsServer.ResolveInterceptor> candidates = interceptors.aliveList();
-        server.retainInterceptorBreakerKeys(candidates);
+        List<DnsResolveInterceptor> candidates = interceptors.aliveList();
+        resolver.retainInterceptorBreakerKeys(candidates);
         long now = System.currentTimeMillis();
-        for (DnsServer.ResolveInterceptor candidate : candidates) {
-            if (candidate == skipped || !server.isInterceptorAvailable(candidate, now)) {
+        for (DnsResolveInterceptor candidate : candidates) {
+            if (candidate == skipped || !resolver.isInterceptorAvailable(candidate, now)) {
                 continue;
             }
             try {
                 List<InetAddress> ips = candidate.resolveHost(srcIp, domain);
-                server.markInterceptorSuccess(candidate);
+                resolver.markInterceptorSuccess(candidate);
                 return ips;
             } catch (Throwable e) {
                 if (!isRecoverableInterceptorFailure(e)) {
                     throw e;
                 }
                 lastFailure = e;
-                server.markInterceptorFailure(candidate);
+                resolver.markInterceptorFailure(candidate);
                 log.warn("dns interceptor temporarily disabled {}+{}: {}", srcIp, domain, e.toString());
             }
         }
@@ -316,7 +316,7 @@ public final class DnsResolveCore {
         throw new NoAvailableDnsInterceptorException(domain);
     }
 
-    private static boolean isRecoverableInterceptorFailure(Throwable e) {
+    static boolean isRecoverableInterceptorFailure(Throwable e) {
         Throwable cause = e;
         while (cause != null) {
             if (cause instanceof ClientDisconnectedException || cause instanceof TimeoutException || cause instanceof IOException) {
@@ -327,7 +327,7 @@ public final class DnsResolveCore {
         return false;
     }
 
-    private static void logResolveFailure(InetAddress srcIp, String domain, Throwable e, boolean coalescedWaiter) {
+    static void logResolveFailure(InetAddress srcIp, String domain, Throwable e, boolean coalescedWaiter) {
         if (isRecoverableInterceptorFailure(e) || e instanceof NoAvailableDnsInterceptorException) {
             log.warn("dns query {}+{} resolveHost unavailable{}: {}", srcIp, domain,
                     coalescedWaiter ? " (coalesced)" : "", e.toString());

@@ -54,6 +54,7 @@ import org.rx.io.Bytes;
 import org.rx.io.Files;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DoHClient;
+import org.rx.net.dns.DnsResolveInterceptor;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.http.HttpClient;
 import org.rx.net.http.HttpClientConfig;
@@ -236,7 +237,7 @@ public final class Sockets {
     static final Map<String, MultithreadEventLoopGroup> reactors = new ConcurrentHashMap<>();
     static final Map<String, EventLoopGroup> localReactors = new ConcurrentHashMap<>();
     static String loopbackAddr;
-    static volatile DnsServer.ResolveInterceptor nsInterceptor;
+    static volatile DnsResolveInterceptor nsInterceptor;
     static volatile List<InetSocketAddress> injectedNameServers = Collections.emptyList();
     static volatile PublicIpSnapshot publicIpSnapshot = PublicIpSnapshot.empty;
     static final AddressResolverGroup<InetSocketAddress> TCP_DIRECT_RESOLVER_GROUP = new DynamicTcpDirectResolverGroup();
@@ -418,12 +419,12 @@ public final class Sockets {
     }
 
     public static void injectNameService(@NonNull DoHClient client) {
-        injectNameService((DnsServer.ResolveInterceptor) client);
+        injectNameService((DnsResolveInterceptor) client);
     }
 
     @SneakyThrows
-    public static void injectNameService(@NonNull DnsServer.ResolveInterceptor interceptor) {
-        DnsServer.ResolveInterceptor old = nsInterceptor;
+    public static void injectNameService(@NonNull DnsResolveInterceptor interceptor) {
+        DnsResolveInterceptor old = nsInterceptor;
         if (nsInterceptor == null) {
             synchronized (Sockets.class) {
                 if (nsInterceptor == null) {
@@ -483,14 +484,14 @@ public final class Sockets {
         DnsClient.resetDirectClient();
     }
 
-    private static void closeOldNameService(DnsServer.ResolveInterceptor old, DnsServer.ResolveInterceptor current) {
+    private static void closeOldNameService(DnsResolveInterceptor old, DnsResolveInterceptor current) {
         if (old == null || old == current || !(old instanceof AutoCloseable)) {
             return;
         }
         quietly(((AutoCloseable) old)::close);
     }
 
-    static final class DnsClientNameService implements DnsServer.ResolveInterceptor, AutoCloseable {
+    static final class DnsClientNameService implements DnsResolveInterceptor, AutoCloseable {
         final List<InetSocketAddress> nameServers;
         final DnsClient client;
 
@@ -517,7 +518,7 @@ public final class Sockets {
             if (Strings.hashEquals(method.getName(), M_0)) {
                 String host = (String) args[0];
                 // null means delegate to the platform resolver; empty means negative answer.
-                DnsServer.ResolveInterceptor interceptor = nsInterceptor;
+                DnsResolveInterceptor interceptor = nsInterceptor;
                 try {
                     List<InetAddress> addresses = interceptor != null ? interceptor.resolveHost(null, host) : null;
                     if (addresses != null) {
@@ -554,7 +555,7 @@ public final class Sockets {
         return Proxy.newProxyInstance(resolverInterface.getClassLoader(), new Class[]{resolverInterface}, (pObject, method, args) -> {
             if (Strings.hashEquals(method.getName(), M_1)) {
                 String host = (String) args[0];
-                DnsServer.ResolveInterceptor interceptor = nsInterceptor;
+                DnsResolveInterceptor interceptor = nsInterceptor;
                 try {
                     List<InetAddress> addresses = interceptor != null ? interceptor.resolveHost(null, host) : null;
                     if (addresses != null) {

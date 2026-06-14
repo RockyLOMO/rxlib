@@ -30,6 +30,7 @@ import org.rx.net.Sockets;
 import org.rx.net.TransportFlags;
 import org.rx.net.http.ServerRequest;
 import org.rx.net.http.ServerResponse;
+import org.rx.net.dns.DnsResolveInterceptor;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.nameserver.NameserverConfig;
 import org.rx.net.rpc.Remoting;
@@ -847,7 +848,7 @@ public class RssTest extends AbstractTester {
         RandomList<UpstreamSupport> servers = new RandomList<>();
         servers.add(support, 1);
         RssRuntime.UpstreamSnapshot snapshot = new RssRuntime.UpstreamSnapshot(servers, new RandomList<UpstreamSupport>(),
-                new RandomList<DnsServer.ResolveInterceptor>());
+                new RandomList<DnsResolveInterceptor>());
 
         support.retainConnection();
         RssClient.closeUpstreamsWhenIdle(snapshot);
@@ -888,7 +889,7 @@ public class RssTest extends AbstractTester {
         RandomList<UpstreamSupport> servers = new RandomList<>();
         servers.add(support, 1);
         RssRuntime.UpstreamSnapshot snapshot = new RssRuntime.UpstreamSnapshot(servers, new RandomList<UpstreamSupport>(),
-                new RandomList<DnsServer.ResolveInterceptor>());
+                new RandomList<DnsResolveInterceptor>());
 
         support.retainConnection();
         snapshot.closeDeadlineMillis = System.currentTimeMillis() - 1L;
@@ -952,7 +953,7 @@ public class RssTest extends AbstractTester {
         RandomList<UpstreamSupport> servers = new RandomList<>();
         servers.add(support, 0);
         RssRuntime.UpstreamSnapshot snapshot = new RssRuntime.UpstreamSnapshot(servers, new RandomList<UpstreamSupport>(),
-                new RandomList<DnsServer.ResolveInterceptor>());
+                new RandomList<DnsResolveInterceptor>());
         RssClientHttpHandler.Query query = new RssClientHttpHandler.Query();
         query.fromMillis = 0L;
         query.toMillis = System.currentTimeMillis();
@@ -984,7 +985,7 @@ public class RssTest extends AbstractTester {
         RandomList<UpstreamSupport> currentServers = new RandomList<>();
         currentServers.add(currentSupport, 1);
         RssRuntime.UpstreamSnapshot currentSnapshot = new RssRuntime.UpstreamSnapshot(currentServers,
-                new RandomList<UpstreamSupport>(), new RandomList<DnsServer.ResolveInterceptor>(),
+                new RandomList<UpstreamSupport>(), new RandomList<DnsResolveInterceptor>(),
                 Collections.singletonList(currentEndpoint), Collections.<AuthenticEndpoint>emptyList());
 
         AuthenticEndpoint oldEndpoint = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1081), "old", "secret");
@@ -995,7 +996,7 @@ public class RssTest extends AbstractTester {
         RandomList<UpstreamSupport> oldServers = new RandomList<>();
         oldServers.add(oldSupport, 2);
         RssRuntime.UpstreamSnapshot oldSnapshot = new RssRuntime.UpstreamSnapshot(oldServers,
-                new RandomList<UpstreamSupport>(), new RandomList<DnsServer.ResolveInterceptor>(),
+                new RandomList<UpstreamSupport>(), new RandomList<DnsResolveInterceptor>(),
                 Collections.singletonList(oldEndpoint), Collections.<AuthenticEndpoint>emptyList());
         oldSnapshot.closing = true;
         oldSnapshot.closeDeadlineMillis = System.currentTimeMillis() + RssClient.UPSTREAM_CLOSE_MAX_WAIT_MILLIS;
@@ -1033,7 +1034,7 @@ public class RssTest extends AbstractTester {
         AuthenticEndpoint disabledEndpoint = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1082), "off", "secret");
         disabledEndpoint.getParameters().put("w", "0");
         RssRuntime.UpstreamSnapshot snapshot = new RssRuntime.UpstreamSnapshot(servers, new RandomList<UpstreamSupport>(),
-                new RandomList<DnsServer.ResolveInterceptor>(), Arrays.asList(enabledEndpoint, disabledEndpoint),
+                new RandomList<DnsResolveInterceptor>(), Arrays.asList(enabledEndpoint, disabledEndpoint),
                 Collections.<AuthenticEndpoint>emptyList());
         RssClientHttpHandler.Query query = new RssClientHttpHandler.Query();
         query.fromMillis = 0L;
@@ -1397,7 +1398,7 @@ public class RssTest extends AbstractTester {
             udp2rawUserOnly.add(support, 1);
             udp2rawUserServers.put("ss-rocky", udp2rawUserOnly);
             RssRuntime.UpstreamSnapshot snapshot = new RssRuntime.UpstreamSnapshot(defaults,
-                    new RandomList<UpstreamSupport>(), new RandomList<DnsServer.ResolveInterceptor>(),
+                    new RandomList<UpstreamSupport>(), new RandomList<DnsResolveInterceptor>(),
                     userServers, udp2rawUserServers,
                     Collections.<RssClientConf.SocksServer>emptyList(), Collections.<RssClientConf.SocksServer>emptyList());
 
@@ -1423,7 +1424,7 @@ public class RssTest extends AbstractTester {
             RandomList<UpstreamSupport> defaults = new RandomList<>();
             defaults.add(support, 1);
             RssRuntime.UpstreamSnapshot snapshot = new RssRuntime.UpstreamSnapshot(defaults,
-                    new RandomList<UpstreamSupport>(), new RandomList<DnsServer.ResolveInterceptor>());
+                    new RandomList<UpstreamSupport>(), new RandomList<DnsResolveInterceptor>());
 
             RssClient.updateUpstreamHealth(snapshot, defaults, support, false, true);
             RssClient.updateUpstreamHealth(snapshot, defaults, support, false, true);
@@ -1495,7 +1496,7 @@ public class RssTest extends AbstractTester {
             RandomList<UpstreamSupport> servers = new RandomList<>();
             servers.add(support, 0);
             RssRuntime.UpstreamSnapshot snapshot = new RssRuntime.UpstreamSnapshot(servers,
-                    new RandomList<UpstreamSupport>(), new RandomList<DnsServer.ResolveInterceptor>());
+                    new RandomList<UpstreamSupport>(), new RandomList<DnsResolveInterceptor>());
 
             assertTrue(RssClient.pingUpstream(support));
             RssClient.updateUpstreamHealth(snapshot, servers, support, true, true);
