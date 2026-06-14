@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.dns.*;
 import io.netty.util.ReferenceCounted;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.core.RxConfig;
 
 import java.io.Serializable;
@@ -11,8 +12,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+@Slf4j
 final class DnsResponseCacheEntry implements Serializable {
     private static final long serialVersionUID = -6384440696278742988L;
+    static final int NEGATIVE_TTL_SOA_PARSE_FAILED = -1;
 
     static final class RecordEntry implements Serializable {
         private static final long serialVersionUID = -1476093579681822406L;
@@ -67,8 +70,18 @@ final class DnsResponseCacheEntry implements Serializable {
     }
 
     static DnsResponseCacheEntry tryCreate(DnsResponse response, int fallbackTtlSeconds) {
-        if (response == null || response.isTruncated()
-                || (response.code() != DnsResponseCode.NOERROR && response.code() != DnsResponseCode.NXDOMAIN)) {
+        if (response == null) {
+            skipCache("null response");
+            return null;
+        }
+        if (response.isTruncated()) {
+            skipCache("truncated");
+            return null;
+        }
+        if (response.code() != DnsResponseCode.NOERROR && response.code() != DnsResponseCode.NXDOMAIN) {
+            if (log.isDebugEnabled()) {
+                log.debug("dns response cache skip: unsupported rcode {}", response.code());
+            }
             return null;
         }
 
@@ -81,19 +94,31 @@ final class DnsResponseCacheEntry implements Serializable {
 
         int ttlSeconds;
         if (response.code() == DnsResponseCode.NOERROR && !answers.isEmpty()) {
-            if (hasNonPositiveTtl(answers) || hasNonPositiveTtl(authorities) || hasNonPositiveTtl(additionals)) {
+            if (hasNonPositiveTtl(answers)) {
+                skipCache("positive answer ttl <= 0");
+                return null;
+            }
+            if (hasNonPositiveTtl(authorities) || hasNonPositiveTtl(additionals)) {
+                skipCache("positive extra ttl <= 0");
                 return null;
             }
             ttlSeconds = minPositiveTtl(answers, authorities, additionals);
             if (ttlSeconds <= 0) {
+                skipCache("positive ttl <= 0");
                 return null;
             }
         } else {
             if (hasNonPositiveTtl(answers) || hasNonPositiveTtl(authorities) || hasNonPositiveTtl(additionals)) {
+                skipCache("negative record ttl <= 0");
                 return null;
             }
             ttlSeconds = negativeTtlSeconds(authorities, fallbackTtlSeconds);
+            if (ttlSeconds == NEGATIVE_TTL_SOA_PARSE_FAILED) {
+                skipCache("soa parse failed");
+                return null;
+            }
             if (ttlSeconds <= 0) {
+                skipCache("negative ttl <= 0");
                 return null;
             }
         }
@@ -111,6 +136,9 @@ final class DnsResponseCacheEntry implements Serializable {
         for (int i = 0; i < count; i++) {
             DnsRecord record = response.recordAt(section, i);
             if (!(record instanceof DnsRawRecord)) {
+                if (log.isDebugEnabled()) {
+                    log.debug("dns response cache skip: non raw record section={} type={}", section, record.type());
+                }
                 return null;
             }
 
@@ -167,7 +195,10 @@ final class DnsResponseCacheEntry implements Serializable {
             hasSoa = true;
             long ttl = record.ttl;
             long minimum = readSoaMinimum(record.content);
-            long candidate = minimum >= 0 ? Math.min(ttl, minimum) : ttl;
+            if (minimum < 0) {
+                return NEGATIVE_TTL_SOA_PARSE_FAILED;
+            }
+            long candidate = Math.min(ttl, minimum);
             if (candidate < min) {
                 min = candidate;
             }
@@ -218,6 +249,12 @@ final class DnsResponseCacheEntry implements Serializable {
                 | ((long) content[offset + 1] & 0xff) << 16
                 | ((long) content[offset + 2] & 0xff) << 8
                 | ((long) content[offset + 3] & 0xff);
+    }
+
+    static void skipCache(String reason) {
+        if (log.isDebugEnabled()) {
+            log.debug("dns response cache skip: {}", reason);
+        }
     }
 
     boolean isFresh(long nowMillis) {

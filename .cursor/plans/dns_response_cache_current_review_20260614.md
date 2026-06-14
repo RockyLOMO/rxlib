@@ -27,8 +27,11 @@
 5. `PERSISTENT` 模式下 `H2StoreCache` 的 L1 容量改为 `cacheMaximumSize`，不再固定为 `1`。
 6. `DnsResolverSupport` 增加统一 `clearDnsCache()`；`DnsClient.clearCache()` 与 `DnsServer.clearCache()` 已对齐清理 response cache、refresh promise、interceptor cache 和 domain key cache。
 7. 文档已明确：当前 `prefetch` / `serve-expired` 只覆盖 `DnsServer` upstream DNS query 路径，不覆盖 `DnsClient.resolve*` 的 address-level stale cache。
+8. 已补 NXDOMAIN / NODATA negative cache 测试，覆盖 SOA TTL 与 SOA minimum 取小值、无 SOA fallback、SOA TTL/minimum=0 不缓存、SOA 解析失败不缓存。
+9. `DnsResponseCacheEntry.tryCreate()` 已增加 debug skip reason，覆盖 truncated、unsupported rcode、non raw record、positive/negative TTL 非法、SOA 解析失败等原因。
+10. 已明确 OPT/EDNS 策略：当前保守跳过含非 `DnsRawRecord` 的 response cache，不扩展 ECS/DNSSEC/DO/CD 等 cache key 维度。
 
-未在本次实现的项：`DnsClient.resolve*` 的 address-level stale cache、metrics 细分命名、复杂 response cache key 维度扩展。这些属于 P2，需单独评估 Netty resolve cache 双层 TTL 语义与指标兼容性。
+未在本次实现的项：`DnsClient.resolve*` 的 address-level stale cache、metrics 细分命名、复杂 response cache key 维度扩展、positive response 丢弃 TTL<=0 authority/additional 后继续缓存。这些属于 P2，需单独评估 Netty resolve cache 双层 TTL 语义、指标兼容性与 EDNS 语义。
 
 ## 总体结论
 

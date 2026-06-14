@@ -36,13 +36,14 @@
 3. interceptor 未命中时异步解析，并按域名/记录类型合并并发请求。
 4. interceptor 返回 `null` 时继续走上游 DNS。
 
-`DnsServer` 的 upstream query 路径额外有 response cache：
+`DnsServer -> queryUpstream -> upstream.query(question)` 路径额外有 response cache：
 
 1. cache key 使用标准化域名、记录类型和 record class。
 2. fresh 命中时用缓存快照重新构造 `DnsResponse`，不会复用 Netty `ByteBuf`。
 3. `serveExpired=true` 且存在 stale entry 时，上游失败或超过 `serveExpiredClientTimeoutMillis` 会返回 stale response。
 4. `prefetch=true` 时，fresh 命中进入 TTL 后段会触发单 key 后台刷新，当前请求仍立即返回缓存值。
-5. `DnsClient.resolve*` 目前不使用 rxlib response cache；它仍由 Netty `DnsNameResolver` 自身处理 resolve cache。
+5. 当前只缓存可深拷贝的 `DnsRawRecord`；遇到 OPT/EDNS 等非 raw record 时保守跳过整个 response cache。
+6. `DnsClient.resolve/resolveAll` 目前不使用 rxlib response cache；它们仍由 Netty `DnsNameResolver` 自身处理 resolve cache。
 
 系统属性配置：
 

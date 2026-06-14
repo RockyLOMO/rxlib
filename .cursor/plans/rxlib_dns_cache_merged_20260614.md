@@ -38,6 +38,7 @@ rxlib 提供了 `DnsClient` 与 `DnsServer`：
 ### 2.2 Netty 缓存的边界区分
 - **`DnsServer` 转发路径**：走的是完整的 rxlib DNS response cache，支持过期回退与预获取。
 - **`DnsClient.resolve*`**：这部分代码调用的依然是 Netty 底层自带的 resolve cache。因此，Netty 的缓存机制与新增的 rxlib 增强机制**并不完全重叠**。未来若需要对 `resolve` 接口也应用 serve-expired，需在 Netty 外层独立加盖封装，目前 MVP 阶段暂且区分开。
+- **OPT/EDNS**：当前只缓存可深拷贝的 `DnsRawRecord`；遇到 OPT/EDNS 等非 raw record 时保守跳过整个 response cache，避免在未扩展 ECS/DNSSEC/DO/CD 等 key 维度前产生错误复用。
 
 ---
 

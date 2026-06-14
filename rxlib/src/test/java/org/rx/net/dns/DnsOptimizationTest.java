@@ -29,6 +29,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -207,6 +208,80 @@ class DnsOptimizationTest {
         return InetAddress.getByAddress(bytes);
     }
 
+    static DnsResponseCacheEntry negativeCacheEntry(DnsResponseCode code, boolean withSoa,
+                                                    long soaTtl, long soaMinimum, int fallbackTtlSeconds) {
+        DefaultDnsResponse response = new DefaultDnsResponse(200,
+                io.netty.handler.codec.dns.DnsOpCode.QUERY, code);
+        if (withSoa) {
+            response.addRecord(DnsSection.AUTHORITY, new DefaultDnsRawRecord("example.com",
+                    DnsRecordType.SOA, io.netty.handler.codec.dns.DnsRecord.CLASS_IN, soaTtl,
+                    Unpooled.wrappedBuffer(soaContent(soaMinimum))));
+        }
+        try {
+            return DnsResponseCacheEntry.tryCreate(response, fallbackTtlSeconds);
+        } finally {
+            ReferenceCountUtil.release(response);
+        }
+    }
+
+    static DnsResponseCacheEntry negativeCacheEntryWithInvalidSoa(DnsResponseCode code, int fallbackTtlSeconds) {
+        DefaultDnsResponse response = new DefaultDnsResponse(201,
+                io.netty.handler.codec.dns.DnsOpCode.QUERY, code);
+        response.addRecord(DnsSection.AUTHORITY, new DefaultDnsRawRecord("example.com",
+                DnsRecordType.SOA, io.netty.handler.codec.dns.DnsRecord.CLASS_IN, 60,
+                Unpooled.wrappedBuffer(new byte[]{1, 'n'})));
+        try {
+            return DnsResponseCacheEntry.tryCreate(response, fallbackTtlSeconds);
+        } finally {
+            ReferenceCountUtil.release(response);
+        }
+    }
+
+    static byte[] soaContent(long minimum) {
+        byte[] mname = dnsName("ns.example");
+        byte[] rname = dnsName("hostmaster.example");
+        byte[] bytes = new byte[mname.length + rname.length + 20];
+        int offset = 0;
+        System.arraycopy(mname, 0, bytes, offset, mname.length);
+        offset += mname.length;
+        System.arraycopy(rname, 0, bytes, offset, rname.length);
+        offset += rname.length;
+        writeUnsignedInt(bytes, offset, 1);
+        writeUnsignedInt(bytes, offset + 4, 2);
+        writeUnsignedInt(bytes, offset + 8, 3);
+        writeUnsignedInt(bytes, offset + 12, 4);
+        writeUnsignedInt(bytes, offset + 16, minimum);
+        return bytes;
+    }
+
+    static byte[] dnsName(String name) {
+        String[] labels = name.split("\\.");
+        byte[][] encodedLabels = new byte[labels.length][];
+        int len = 1;
+        for (int i = 0; i < labels.length; i++) {
+            encodedLabels[i] = labels[i].getBytes(StandardCharsets.US_ASCII);
+            len += 1 + encodedLabels[i].length;
+        }
+
+        byte[] bytes = new byte[len];
+        int offset = 0;
+        for (int i = 0; i < encodedLabels.length; i++) {
+            byte[] label = encodedLabels[i];
+            bytes[offset++] = (byte) label.length;
+            System.arraycopy(label, 0, bytes, offset, label.length);
+            offset += label.length;
+        }
+        bytes[offset] = 0;
+        return bytes;
+    }
+
+    static void writeUnsignedInt(byte[] bytes, int offset, long value) {
+        bytes[offset] = (byte) (value >>> 24);
+        bytes[offset + 1] = (byte) (value >>> 16);
+        bytes[offset + 2] = (byte) (value >>> 8);
+        bytes[offset + 3] = (byte) value;
+    }
+
     @Test
     void upstreamResponseCache_disabledSwitchSkipsPlainCache() throws Exception {
         DnsCacheConfigState state = new DnsCacheConfigState();
@@ -278,6 +353,54 @@ class DnsOptimizationTest {
             upstream.close();
             server.close();
             state.restore();
+        }
+    }
+
+    @Test
+    void upstreamResponseCache_nxdomainNegativeTtlUsesSoaOrFallback() {
+        DnsResponseCacheEntry entry = negativeCacheEntry(DnsResponseCode.NXDOMAIN, true, 300, 60, 5);
+        assertNotNull(entry);
+        assertEquals(60, entry.freshTtlSeconds);
+
+        entry = negativeCacheEntry(DnsResponseCode.NXDOMAIN, true, 30, 300, 5);
+        assertNotNull(entry);
+        assertEquals(30, entry.freshTtlSeconds);
+
+        entry = negativeCacheEntry(DnsResponseCode.NXDOMAIN, false, 0, 0, 7);
+        assertNotNull(entry);
+        assertEquals(7, entry.freshTtlSeconds);
+
+        assertNull(negativeCacheEntry(DnsResponseCode.NXDOMAIN, true, 0, 60, 5));
+        assertNull(negativeCacheEntry(DnsResponseCode.NXDOMAIN, true, 60, 0, 5));
+        assertNull(negativeCacheEntryWithInvalidSoa(DnsResponseCode.NXDOMAIN, 5));
+    }
+
+    @Test
+    void upstreamResponseCache_nodataNegativeTtlUsesSoaOrFallback() {
+        DnsResponseCacheEntry entry = negativeCacheEntry(DnsResponseCode.NOERROR, true, 120, 45, 5);
+        assertNotNull(entry);
+        assertEquals(45, entry.freshTtlSeconds);
+
+        entry = negativeCacheEntry(DnsResponseCode.NOERROR, false, 0, 0, 9);
+        assertNotNull(entry);
+        assertEquals(9, entry.freshTtlSeconds);
+
+        assertNull(negativeCacheEntry(DnsResponseCode.NOERROR, true, 0, 60, 5));
+        assertNull(negativeCacheEntry(DnsResponseCode.NOERROR, true, 60, 0, 5));
+        assertNull(negativeCacheEntryWithInvalidSoa(DnsResponseCode.NOERROR, 5));
+    }
+
+    @Test
+    void upstreamResponseCache_optRecordIsNotCached() {
+        DefaultDnsResponse response = new DefaultDnsResponse(202,
+                io.netty.handler.codec.dns.DnsOpCode.QUERY, DnsResponseCode.NOERROR);
+        response.addRecord(DnsSection.ADDITIONAL,
+                new io.netty.handler.codec.dns.DefaultDnsOptEcsRecord(4096,
+                        io.netty.channel.socket.InternetProtocolFamily.IPv4));
+        try {
+            assertNull(DnsResponseCacheEntry.tryCreate(response, 5));
+        } finally {
+            ReferenceCountUtil.release(response);
         }
     }
 
