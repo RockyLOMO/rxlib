@@ -1,5 +1,7 @@
 package org.rx.net.dns;
 
+import io.netty.handler.codec.dns.DefaultDnsQuestion;
+import io.netty.handler.codec.dns.DnsRecord;
 import io.netty.handler.codec.dns.DnsRecordType;
 import io.netty.util.concurrent.EventExecutor;
 import io.netty.util.concurrent.Future;
@@ -26,12 +28,129 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Slf4j
 abstract class DnsResolverSupport extends Disposable {
     static final String DOMAIN_PREFIX = "_dns:";
+    static final String INTERCEPTOR_PREFIX = "_dns:int:";
+    static final String RESOLVE_PREFIX = "_dns:int:*:";
+    static final String RESPONSE_PREFIX = "_dns:rsp:";
     static final String CACHE_TYPE_ALL = "ALL";
     static final long DEFAULT_INTERCEPTOR_BREAKER_MILLIS = 30_000L;
+
+    static final class DomainCacheKeys {
+        final String domain;
+        volatile String domainKey;
+        volatile String interceptorAllKey;
+        volatile String interceptorAKey;
+        volatile String interceptorAaaaKey;
+        volatile String resolveAllKey;
+        volatile String resolveAKey;
+        volatile String resolveAaaaKey;
+        volatile String responseInAllKey;
+        volatile String responseInAKey;
+        volatile String responseInAaaaKey;
+
+        DomainCacheKeys(String domain) {
+            this.domain = domain;
+        }
+
+        String domainKey() {
+            String key = domainKey;
+            if (key == null) {
+                key = buildDomainKey(domain);
+                domainKey = key;
+            }
+            return key;
+        }
+
+        String interceptorKey(DnsRecordType queryType) {
+            if (queryType == DnsRecordType.A) {
+                String key = interceptorAKey;
+                if (key == null) {
+                    key = buildTypedKey(INTERCEPTOR_PREFIX, DnsRecordType.A.name(), domain);
+                    interceptorAKey = key;
+                }
+                return key;
+            }
+            if (queryType == DnsRecordType.AAAA) {
+                String key = interceptorAaaaKey;
+                if (key == null) {
+                    key = buildTypedKey(INTERCEPTOR_PREFIX, DnsRecordType.AAAA.name(), domain);
+                    interceptorAaaaKey = key;
+                }
+                return key;
+            }
+            if (queryType == null) {
+                String key = interceptorAllKey;
+                if (key == null) {
+                    key = buildTypedKey(INTERCEPTOR_PREFIX, CACHE_TYPE_ALL, domain);
+                    interceptorAllKey = key;
+                }
+                return key;
+            }
+            return buildTypedKey(INTERCEPTOR_PREFIX, queryType.name(), domain);
+        }
+
+        String resolveKey(DnsRecordType queryType) {
+            if (queryType == DnsRecordType.A) {
+                String key = resolveAKey;
+                if (key == null) {
+                    key = buildTypedKey(RESOLVE_PREFIX, DnsRecordType.A.name(), domain);
+                    resolveAKey = key;
+                }
+                return key;
+            }
+            if (queryType == DnsRecordType.AAAA) {
+                String key = resolveAaaaKey;
+                if (key == null) {
+                    key = buildTypedKey(RESOLVE_PREFIX, DnsRecordType.AAAA.name(), domain);
+                    resolveAaaaKey = key;
+                }
+                return key;
+            }
+            if (queryType == null) {
+                String key = resolveAllKey;
+                if (key == null) {
+                    key = buildTypedKey(RESOLVE_PREFIX, CACHE_TYPE_ALL, domain);
+                    resolveAllKey = key;
+                }
+                return key;
+            }
+            return buildTypedKey(RESOLVE_PREFIX, queryType.name(), domain);
+        }
+
+        String responseKey(DnsRecordType queryType, int dnsClass) {
+            if (dnsClass == DnsRecord.CLASS_IN) {
+                if (queryType == DnsRecordType.A) {
+                    String key = responseInAKey;
+                    if (key == null) {
+                        key = buildResponseKey(DnsRecordType.A.name(), dnsClass, domain);
+                        responseInAKey = key;
+                    }
+                    return key;
+                }
+                if (queryType == DnsRecordType.AAAA) {
+                    String key = responseInAaaaKey;
+                    if (key == null) {
+                        key = buildResponseKey(DnsRecordType.AAAA.name(), dnsClass, domain);
+                        responseInAaaaKey = key;
+                    }
+                    return key;
+                }
+                if (queryType == null) {
+                    String key = responseInAllKey;
+                    if (key == null) {
+                        key = buildResponseKey(CACHE_TYPE_ALL, dnsClass, domain);
+                        responseInAllKey = key;
+                    }
+                    return key;
+                }
+            }
+            return buildResponseKey(queryType != null ? queryType.name() : CACHE_TYPE_ALL, dnsClass, domain);
+        }
+    }
 
     @Setter
     int ttl = 1800;
@@ -46,9 +165,18 @@ abstract class DnsResolverSupport extends Disposable {
     int negativeTtl = DnsServer.DEFAULT_NEGATIVE_TTL;
     RandomList<DnsResolveInterceptor> interceptors;
     Cache<String, List<InetAddress>> interceptorCache;
-    final Cache<String, String> domainKeyCache = new MemoryCache<>(b -> b.maximumSize(4096));
+    Cache<String, DnsResponseCacheEntry> responseCache;
+    final Cache<String, DomainCacheKeys> domainKeyCache = new MemoryCache<>(b -> b.maximumSize(4096));
     final Map<String, Promise<List<InetAddress>>> resolvingPromises = new ConcurrentHashMap<>();
+    final Map<String, Promise<DnsResponseCacheEntry>> responseRefreshPromises = new ConcurrentHashMap<>();
     final Map<DnsResolveInterceptor, Long> interceptorBreakerUntil = new ConcurrentHashMap<>();
+    final AtomicLong responseCacheFreshHits = new AtomicLong();
+    final AtomicLong responseCacheStaleHits = new AtomicLong();
+    final AtomicLong responseCacheMisses = new AtomicLong();
+    final AtomicLong responseCachePrefetchStarted = new AtomicLong();
+    final AtomicLong responseCachePrefetchSuccess = new AtomicLong();
+    final AtomicLong responseCachePrefetchFailure = new AtomicLong();
+    final AtomicLong responseCacheUpstreamFailServedExpired = new AtomicLong();
     @Setter
     long interceptorBreakerOpenMillis = DEFAULT_INTERCEPTOR_BREAKER_MILLIS;
 
@@ -82,11 +210,37 @@ abstract class DnsResolverSupport extends Disposable {
         }
     }
 
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    Cache<String, DnsResponseCacheEntry> newResponseCache() {
+        RxConfig.DnsCacheConfig config = RxConfig.INSTANCE.getNet().getDns().getCache();
+        config.normalize();
+        switch (config.getStorage()) {
+            case MEMORY:
+                return newMemoryResponseCache(config);
+            case PERSISTENT:
+                return (Cache) new H2StoreCache<String, DnsResponseCacheEntry>(
+                        EntityDatabase.DEFAULT, 1L, 1);
+            case HYBRID:
+            default:
+                return (Cache) new H2StoreCache<String, DnsResponseCacheEntry>(
+                        EntityDatabase.DEFAULT, config.getMaximumSize(), 2);
+        }
+    }
+
     MemoryCache<String, List<InetAddress>> newMemoryInterceptorCache(RxConfig.DnsCacheConfig config) {
         final long maximumBytes = config.getMaximumBytes();
         if (maximumBytes > 0) {
             return new MemoryCache<>(
                     b -> b.maximumWeight(maximumBytes).weigher(DnsResolverSupport::estimateInetAddressListBytes));
+        }
+        return new MemoryCache<>(b -> b.maximumSize(config.getMaximumSize()));
+    }
+
+    MemoryCache<String, DnsResponseCacheEntry> newMemoryResponseCache(RxConfig.DnsCacheConfig config) {
+        final long maximumBytes = config.getMaximumBytes();
+        if (maximumBytes > 0) {
+            return new MemoryCache<>(
+                    b -> b.maximumWeight(maximumBytes).weigher(DnsResolverSupport::estimateDnsResponseEntryBytes));
         }
         return new MemoryCache<>(b -> b.maximumSize(config.getMaximumSize()));
     }
@@ -108,6 +262,14 @@ abstract class DnsResolverSupport extends Disposable {
             return 1;
         }
         return bytes > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) bytes;
+    }
+
+    static int estimateDnsResponseEntryBytes(String key, DnsResponseCacheEntry value) {
+        if (value == null) {
+            return 1;
+        }
+        int bytes = value.sizeInBytes(key);
+        return bytes <= 0 ? 1 : bytes;
     }
 
     boolean isInterceptorAvailable(DnsResolveInterceptor interceptor, long nowMillis) {
@@ -163,26 +325,59 @@ abstract class DnsResolverSupport extends Disposable {
     }
 
     String cacheKey(String domain) {
-        final String normalized = normalizeHost(domain);
-        return domainKeyCache.get(normalized, k -> DOMAIN_PREFIX.concat(k));
+        return domainKeys(domain).domainKey();
     }
 
     String cacheKey(String domain, DnsRecordType queryType) {
-        final String normalized = normalizeHost(domain);
-        final String typeName = queryType != null ? queryType.name() : CACHE_TYPE_ALL;
-        return domainKeyCache.get(typeName + ":" + normalized,
-                k -> DOMAIN_PREFIX.concat("int:").concat(typeName).concat(":").concat(normalized));
+        return domainKeys(domain).interceptorKey(queryType);
     }
 
     String resolveKey(String domain, DnsRecordType queryType) {
-        final String normalized = normalizeHost(domain);
-        final String typeName = queryType != null ? queryType.name() : CACHE_TYPE_ALL;
-        return domainKeyCache.get("*:" + typeName + ":" + normalized,
-                k -> DOMAIN_PREFIX.concat("int:*:").concat(typeName).concat(":").concat(normalized));
+        return domainKeys(domain).resolveKey(queryType);
+    }
+
+    String responseCacheKey(String domain, DnsRecordType queryType, int dnsClass) {
+        return domainKeys(domain).responseKey(queryType, dnsClass);
+    }
+
+    String responseCacheKey(DefaultDnsQuestion question) {
+        return responseCacheKey(question.name(), question.type(), question.dnsClass());
     }
 
     String normalizeHost(String host) {
         return DnsResolveCore.normalizeDomain(host);
+    }
+
+    DomainCacheKeys domainKeys(String domain) {
+        final String normalized = normalizeHost(domain);
+        return domainKeyCache.get(normalized, k -> new DomainCacheKeys(k));
+    }
+
+    static String buildDomainKey(String domain) {
+        return new StringBuilder(DOMAIN_PREFIX.length() + domain.length())
+                .append(DOMAIN_PREFIX)
+                .append(domain)
+                .toString();
+    }
+
+    static String buildTypedKey(String prefix, String typeName, String domain) {
+        return new StringBuilder(prefix.length() + typeName.length() + 1 + domain.length())
+                .append(prefix)
+                .append(typeName)
+                .append(':')
+                .append(domain)
+                .toString();
+    }
+
+    static String buildResponseKey(String typeName, int dnsClass, String domain) {
+        return new StringBuilder(RESPONSE_PREFIX.length() + typeName.length() + 12 + domain.length())
+                .append(RESPONSE_PREFIX)
+                .append(typeName)
+                .append(':')
+                .append(dnsClass)
+                .append(':')
+                .append(domain)
+                .toString();
     }
 
     Future<List<InetAddress>> resolveLocalAllAsync(InetAddress srcIp, String host, DnsRecordType queryType,

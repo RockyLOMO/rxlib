@@ -10,6 +10,7 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.rx.bean.RandomList;
 import org.rx.core.Cache;
 import org.rx.core.CachePolicy;
+import org.rx.core.RxConfig;
 import org.rx.core.Tasks;
 import org.rx.core.cache.H2StoreCache;
 import org.rx.net.Sockets;
@@ -24,7 +25,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 public final class DnsResolveCore {
@@ -92,7 +96,7 @@ public final class DnsResolveCore {
                         List<InetAddress> result = waitPromise.getNow();
                         if (result == null) {
                             query.retain();
-                            queryUpstream(upstream, query, isTcp, promise);
+                            queryUpstream(server, upstream, query, isTcp, promise);
                             return;
                         }
                         promise.trySuccess(newInterceptorResponse(query, isTcp, question, server, srcIp, domain, result));
@@ -105,7 +109,7 @@ public final class DnsResolveCore {
         }
 
         query.retain();
-        queryUpstream(upstream, query, isTcp, promise);
+        queryUpstream(server, upstream, query, isTcp, promise);
         return promise;
     }
 
@@ -121,7 +125,8 @@ public final class DnsResolveCore {
         }
     }
 
-    static void evictInterceptorCache(Cache<String, List<InetAddress>> cache, String cacheKey) {
+    @SuppressWarnings("rawtypes")
+    static void evictInterceptorCache(Cache cache, String cacheKey) {
         try {
             if (cache instanceof H2StoreCache) {
                 ((H2StoreCache<?, ?>) cache).fastRemove(cacheKey);
@@ -243,7 +248,7 @@ public final class DnsResolveCore {
                 resolvePromise.trySuccess(resolvedIps);
                 if (resolvedIps == null) {
                     handoffToUpstream = true;
-                    queryUpstream(upstream, query, isTcp, responsePromise);
+                    queryUpstream(server, upstream, query, isTcp, responsePromise);
                     return;
                 }
                 DefaultDnsQuestion question = query.recordAt(DnsSection.QUESTION);
@@ -336,33 +341,203 @@ public final class DnsResolveCore {
         log.error("dns query {}+{} resolveHost error", srcIp, domain, e);
     }
 
-    private static void queryUpstream(DnsClient upstream, DefaultDnsQuery query, boolean isTcp, Promise<DefaultDnsResponse> promise) {
+    private static void queryUpstream(DnsServer server, DnsClient upstream, DefaultDnsQuery query, boolean isTcp,
+                                      Promise<DefaultDnsResponse> promise) {
         DefaultDnsQuestion question = query.recordAt(DnsSection.QUESTION);
+        String domain = normalizeDomain(question.name());
+        String cacheKey = server.responseCacheKey(domain, question.type(), question.dnsClass());
+        RxConfig.DnsCacheConfig config = RxConfig.INSTANCE.getNet().getDns().getCache();
+        config.normalize();
+
+        DnsResponseCacheEntry cached = getCachedResponse(server, cacheKey, domain);
+        long now = System.currentTimeMillis();
+        if (cached != null && cached.isFresh(now)) {
+            server.responseCacheFreshHits.incrementAndGet();
+            promise.trySuccess(cached.newResponse(query, isTcp, false, config.getServeExpiredReplyTtlSeconds(), now));
+            if (cached.shouldPrefetch(config, now)) {
+                refreshUpstream(server, upstream, copyQuestion(question), cacheKey, domain, "prefetch");
+            }
+            query.release();
+            logQuery(null, domain, Integer.valueOf(cached.answers.size()), "CACHE");
+            return;
+        }
+
+        boolean staleUsable = cached != null && cached.isServeExpiredAllowed(config, now);
+        if (staleUsable && config.getServeExpiredClientTimeoutMillis() == 0) {
+            server.responseCacheStaleHits.incrementAndGet();
+            promise.trySuccess(cached.newResponse(query, isTcp, true, config.getServeExpiredReplyTtlSeconds(), now));
+            refreshUpstream(server, upstream, copyQuestion(question), cacheKey, domain, "stale-refresh");
+            query.release();
+            logQuery(null, domain, Integer.valueOf(cached.answers.size()), "STALE");
+            return;
+        }
+
+        server.responseCacheMisses.incrementAndGet();
+        queryUpstream0(server, upstream, query, isTcp, promise, copyQuestion(question), cacheKey, domain,
+                staleUsable ? cached : null, config);
+    }
+
+    static DnsResponseCacheEntry getCachedResponse(DnsServer server, String cacheKey, String domain) {
+        Cache<String, DnsResponseCacheEntry> cache = server.responseCache;
+        if (cache == null) {
+            return null;
+        }
+        try {
+            return cache.get(cacheKey);
+        } catch (RuntimeException e) {
+            log.warn("dns response cache invalid {} key={}, evict and resolve again: {}", domain, cacheKey, e.toString());
+            evictInterceptorCache(cache, cacheKey);
+            return null;
+        }
+    }
+
+    private static void queryUpstream0(DnsServer server, DnsClient upstream, DefaultDnsQuery query, boolean isTcp,
+                                       Promise<DefaultDnsResponse> promise, DefaultDnsQuestion question,
+                                       String cacheKey, String domain, DnsResponseCacheEntry stale,
+                                       RxConfig.DnsCacheConfig config) {
+        AtomicBoolean completed = new AtomicBoolean();
+        ScheduledFuture<?> timeoutFuture = null;
+        if (stale != null && config.getServeExpiredClientTimeoutMillis() > 0) {
+            timeoutFuture = upstream.executor.schedule(() -> {
+                if (!completed.compareAndSet(false, true)) {
+                    return;
+                }
+
+                long now = System.currentTimeMillis();
+                server.responseCacheStaleHits.incrementAndGet();
+                server.responseCacheUpstreamFailServedExpired.incrementAndGet();
+                promise.trySuccess(stale.newResponse(query, isTcp, true, config.getServeExpiredReplyTtlSeconds(), now));
+                logQuery(null, domain, Integer.valueOf(stale.answers.size()), "STALE_TIMEOUT");
+            }, config.getServeExpiredClientTimeoutMillis(), TimeUnit.MILLISECONDS);
+        }
+
+        final ScheduledFuture<?> finalTimeoutFuture = timeoutFuture;
         upstream.query(question).addListener(f -> {
             try {
                 AddressedEnvelope<DnsResponse, InetSocketAddress> envelope =
                         (AddressedEnvelope<DnsResponse, InetSocketAddress>) f.getNow();
                 if (!f.isSuccess()) {
                     log.error("dns query fail {} -> {}", question, envelope != null ? envelope.content() : null, f.cause());
-                    promise.trySuccess(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.SERVFAIL));
-                    if (envelope == null) {
-                        return;
+                    if (stale != null && completed.compareAndSet(false, true)) {
+                        server.responseCacheStaleHits.incrementAndGet();
+                        server.responseCacheUpstreamFailServedExpired.incrementAndGet();
+                        promise.trySuccess(stale.newResponse(query, isTcp, true,
+                                config.getServeExpiredReplyTtlSeconds(), System.currentTimeMillis()));
+                        logQuery(null, domain, Integer.valueOf(stale.answers.size()), "STALE_FAIL");
+                    } else if (completed.compareAndSet(false, true)) {
+                        promise.trySuccess(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.SERVFAIL));
                     }
+                    if (envelope != null) {
+                        envelope.release();
+                    }
+                    return;
                 }
                 try {
                     DnsResponse response = envelope.content();
-                    promise.trySuccess(DnsMessageUtil.newResponse(query, response, isTcp));
-                    logQuery(null, normalizeDomain(question.name()), Integer.valueOf(response.count(DnsSection.ANSWER)), "ANSWER");
+                    DnsResponseCacheEntry entry = cacheUpstreamResponse(server, cacheKey, response, config);
+                    if (completed.compareAndSet(false, true)) {
+                        promise.trySuccess(DnsMessageUtil.newResponse(query, response, isTcp));
+                        logQuery(null, domain, Integer.valueOf(response.count(DnsSection.ANSWER)), "ANSWER");
+                    } else if (entry != null) {
+                        logQuery(null, domain, Integer.valueOf(entry.answers.size()), "REFRESH");
+                    }
                 } finally {
                     envelope.release();
                 }
             } catch (Throwable e) {
                 log.error("dns query {} unexpected fail", question, e);
-                promise.trySuccess(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.SERVFAIL));
+                if (stale != null && completed.compareAndSet(false, true)) {
+                    server.responseCacheStaleHits.incrementAndGet();
+                    server.responseCacheUpstreamFailServedExpired.incrementAndGet();
+                    promise.trySuccess(stale.newResponse(query, isTcp, true,
+                            config.getServeExpiredReplyTtlSeconds(), System.currentTimeMillis()));
+                    logQuery(null, domain, Integer.valueOf(stale.answers.size()), "STALE_ERROR");
+                } else if (completed.compareAndSet(false, true)) {
+                    promise.trySuccess(DnsMessageUtil.newErrorResponse(query, DnsResponseCode.SERVFAIL));
+                }
             } finally {
+                if (finalTimeoutFuture != null) {
+                    finalTimeoutFuture.cancel(false);
+                }
                 query.release();
             }
         });
+    }
+
+    private static DefaultDnsQuestion copyQuestion(DefaultDnsQuestion question) {
+        return new DefaultDnsQuestion(question.name(), question.type(), question.dnsClass());
+    }
+
+    private static void refreshUpstream(DnsServer server, DnsClient upstream, DefaultDnsQuestion question,
+                                        String cacheKey, String domain, String reason) {
+        Promise<DnsResponseCacheEntry> refreshPromise = new DefaultPromise<DnsResponseCacheEntry>(upstream.executor);
+        Promise<DnsResponseCacheEntry> old = server.responseRefreshPromises.putIfAbsent(cacheKey, refreshPromise);
+        if (old != null) {
+            return;
+        }
+
+        server.responseCachePrefetchStarted.incrementAndGet();
+        upstream.query(question).addListener(f -> {
+            try {
+                AddressedEnvelope<DnsResponse, InetSocketAddress> envelope =
+                        (AddressedEnvelope<DnsResponse, InetSocketAddress>) f.getNow();
+                if (!f.isSuccess()) {
+                    server.responseCachePrefetchFailure.incrementAndGet();
+                    refreshPromise.tryFailure(f.cause());
+                    log.warn("dns response cache {} refresh fail {}: {}", reason, domain, f.cause().toString());
+                    if (envelope != null) {
+                        envelope.release();
+                    }
+                    return;
+                }
+                try {
+                    DnsResponseCacheEntry entry = cacheUpstreamResponse(server, cacheKey, envelope.content(),
+                            RxConfig.INSTANCE.getNet().getDns().getCache());
+                    if (entry != null) {
+                        server.responseCachePrefetchSuccess.incrementAndGet();
+                        refreshPromise.trySuccess(entry);
+                    } else {
+                        server.responseCachePrefetchFailure.incrementAndGet();
+                        refreshPromise.trySuccess(null);
+                    }
+                } finally {
+                    envelope.release();
+                }
+            } catch (Throwable e) {
+                server.responseCachePrefetchFailure.incrementAndGet();
+                refreshPromise.tryFailure(e);
+                log.warn("dns response cache {} refresh error {}: {}", reason, domain, e.toString());
+            } finally {
+                server.responseRefreshPromises.remove(cacheKey, refreshPromise);
+            }
+        });
+    }
+
+    static DnsResponseCacheEntry cacheUpstreamResponse(DnsServer server, String cacheKey, DnsResponse response,
+                                                       RxConfig.DnsCacheConfig config) {
+        if (server.responseCache == null) {
+            return null;
+        }
+        config.normalize();
+        DnsResponseCacheEntry entry = DnsResponseCacheEntry.tryCreate(response, server.negativeTtl);
+        if (entry == null) {
+            return null;
+        }
+
+        CachePolicy policy;
+        if (config.isServeExpired()) {
+            int staleSeconds = config.getServeExpiredTtlSeconds();
+            if (staleSeconds == 0) {
+                policy = new CachePolicy(System.currentTimeMillis() + TimeUnit.DAYS.toMillis(3650), 0);
+            } else {
+                long expireAt = entry.freshExpireMillis() + ((long) staleSeconds * 1000L);
+                policy = new CachePolicy(expireAt < 0 ? Long.MAX_VALUE : expireAt, 0);
+            }
+        } else {
+            policy = CachePolicy.absolute(entry.freshTtlSeconds);
+        }
+        server.responseCache.put(cacheKey, entry, policy);
+        return entry;
     }
 
     private static void logQuery(InetAddress srcIp, String domain, Object result, String phase) {

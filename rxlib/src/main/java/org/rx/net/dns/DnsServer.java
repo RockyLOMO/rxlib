@@ -33,6 +33,7 @@ public class DnsServer extends DnsResolverSupport {
 
     //AES or TLS mainly for TCP
     public DnsServer(int port, Collection<InetSocketAddress> nameServerList) {
+        responseCache = newResponseCache();
         boolean upstreamLocalSystemFallback = DnsClient.localSystemFallback();
         if (nameServerList == null || nameServerList.isEmpty()) {
             nameServerList = DnsClient.directNameServers();
@@ -55,6 +56,7 @@ public class DnsServer extends DnsResolverSupport {
 
     @Override
     protected void dispose() {
+        responseRefreshPromises.clear();
         for (Channel channel : tcpChannels) {
             closeChannel(channel);
         }

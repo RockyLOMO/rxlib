@@ -53,21 +53,23 @@ maximumSize = 4096
 maximumBytes = 0
 ```
 
-当前真正接入 cache 创建逻辑的是：
+当前接入 cache 创建逻辑的是：
 
 - `cache.storage`
 - `cache.maximumSize`
 - `cache.maximumBytes`
 
-接入位置主要是 `DnsResolverSupport.newInterceptorCache()`，用于 interceptor/local resolve cache。
+接入位置包括 `DnsResolverSupport.newInterceptorCache()` 与 `newResponseCache()`，分别用于 interceptor/local resolve cache 和 `DnsServer` upstream response cache。
 
-`prefetch` 与 `serveExpired` 配置目前已经被读取和 normalize，但从代码路径看，尚未真正接入：
+`prefetch` 与 `serveExpired` 已经接入 `DnsServer` 的 upstream DNS 转发路径：
 
-- 没有看到 prefetch 命中后后台刷新逻辑。
-- 没有看到 serve-expired 在上游失败或超时时返回 stale cache 的逻辑。
-- `DnsResolveCore.queryUpstream(...)` 仍然直接调用 `upstream.query(question)`；失败时返回 `SERVFAIL`。
+- `DnsResolveCore.queryUpstream(...)` 外层增加了 response cache。
+- fresh cache 命中时直接返回缓存快照构造的新 response。
+- fresh 命中且进入 TTL 后段时，可按 `prefetch` 配置触发单 key 后台刷新。
+- stale cache 命中且 `serveExpired=true` 时，上游失败或超过 `serveExpiredClientTimeoutMillis` 会返回 stale response。
+- response cache 存储的是 record 快照，不缓存 Netty `DnsResponse` / `ByteBuf` 对象。
 
-因此当前阶段配置这些开关，更多是为后续实现预留；实际对 upstream DNS 转发的 prefetch / stale fallback 收益还没有生效。
+当前实现范围主要覆盖 `DnsServer` 的 raw upstream query 转发路径；`DnsClient.resolve*` 仍主要依赖 Netty `DnsNameResolver` 自身 resolve cache。
 
 ## 推荐运行参数
 
@@ -129,14 +131,14 @@ DNS_CACHE_PREFETCH=true
 
 原因：
 
-1. 当前还没有看到 prefetch 实际刷新逻辑接入。
-2. 后续实现后，prefetch 会增加额外 DNS 请求，对 2C 小机器收益有限。
-3. rss-svr 更需要低抖动和低内存，而不是更激进的热点刷新。
+1. prefetch 会增加额外 DNS 请求，对 2C 小机器收益有限。
+2. rss-svr 更需要低抖动和低内存，而不是更激进的热点刷新。
+3. `serveExpired` 已能覆盖短时间上游 DNS 抖动，默认收益更直接。
 
 `DNS_CACHE_SERVE_EXPIRED=true` 可以先放入启动参数：
 
-- 当前实现阶段基本无实际效果，但不会明显增加开销。
-- 后续 serve-expired 接入后，可以直接获得上游 DNS 故障时的可用性提升。
+- upstream response cache 已接入后，短时间上游 DNS 失败或超时时可以返回 stale 记录。
+- stale response TTL 由 `DNS_CACHE_SERVE_EXPIRED_REPLY_TTL_SECONDS` 控制，避免客户端长时间持有过期结果。
 
 ## 参数解释
 
@@ -184,13 +186,13 @@ DNS_CACHE_PREFETCH=true
 
 推荐：`15`
 
-后续真正实现 serve-expired 后，返回 stale 记录时给客户端的 TTL 不宜过长，避免客户端长期持有过期结果。
+返回 stale 记录时给客户端的 TTL 不宜过长，避免客户端长期持有过期结果。
 
 ### DNS_CACHE_SERVE_EXPIRED_CLIENT_TIMEOUT_MILLIS
 
 推荐：`300`
 
-后续真正实现 serve-expired 后，有 stale 记录时最多等上游 300ms；如果上游没有及时返回，就先返回 stale，避免 DNS 阻塞连接建立。
+有 stale 记录时最多等上游 300ms；如果上游没有及时返回，就先返回 stale，避免 DNS 阻塞连接建立。
 
 ### DNS_CACHE_PREFETCH_THRESHOLD_PERCENT
 
@@ -244,14 +246,14 @@ DnsServer
 
 - Netty cache 与 rxlib interceptor cache 不完全重复。
 - Netty cache 主要覆盖 `DnsClient.resolve*`。
-- rss-svr 作为 DNS server 转发时，普通 upstream query 当前仍需要 rxlib 自己实现 message/cache/stale 逻辑。
-- 当前新增的 rxlib cache 配置主要影响 interceptor/local resolve cache，不等于完整 upstream DNS response cache。
+- rss-svr 作为 DNS server 转发时，普通 upstream query 已有 rxlib response cache 与 stale fallback。
+- 当前新增的 rxlib cache 配置同时影响 interceptor/local resolve cache 与 upstream DNS response cache。
 
-## 当前未实现 / 待补齐项
+## 已补齐 / 后续事项
 
 ### 1. upstream response cache
 
-需要在 `DnsResolveCore.queryUpstream(...)` 外层增加 response cache：
+已在 `DnsResolveCore.queryUpstream(...)` 外层增加 response cache：
 
 ```text
 cache key = normalized domain + record type + record class
@@ -259,11 +261,11 @@ cache key = normalized domain + record type + record class
 
 命中 fresh cache 时直接返回缓存构造的新 response。
 
-注意不能直接缓存 Netty `DnsResponse` / `DefaultDnsRawRecord` / `ByteBuf`，必须深拷贝 record 内容，出 cache 时重新创建 response，避免引用计数问题。
+当前不会直接缓存 Netty `DnsResponse` / `DefaultDnsRawRecord` / `ByteBuf`，而是深拷贝 record 内容，出 cache 时重新创建 response，避免引用计数问题。
 
 ### 2. serve-expired 真正生效
 
-需要实现：
+已实现：
 
 ```text
 upstream 成功：更新 cache，返回 fresh
@@ -279,7 +281,7 @@ upstream 超时：如果存在 stale 且 serveExpired=true，返回 stale
 
 ### 3. prefetch 真正生效
 
-需要实现：
+已实现：
 
 ```text
 fresh cache hit
@@ -305,7 +307,7 @@ fresh cache hit
 
 ### 5. start.sh 参数接入
 
-建议后续把本文推荐参数正式加入 `deploy/rss-svr/start.sh`：
+本文推荐参数已加入 `deploy/rss-svr/start.sh`：
 
 ```bash
 DNS_CACHE_PREFETCH=${DNS_CACHE_PREFETCH:-false}
@@ -319,15 +321,15 @@ DNS_CACHE_SERVE_EXPIRED_CLIENT_TIMEOUT_MILLIS=${DNS_CACHE_SERVE_EXPIRED_CLIENT_T
 DNS_CACHE_PREFETCH_THRESHOLD_PERCENT=${DNS_CACHE_PREFETCH_THRESHOLD_PERCENT:-10}
 ```
 
-并追加到 `APP_OPTIONS`。
+并已追加到 `APP_OPTIONS`。
 
 ## 建议落地顺序
 
-1. 先合入 `start.sh` 参数，默认使用小内存 MEMORY cache。
-2. 实现 upstream response cache。
-3. 实现 serve-expired fallback。
-4. 增加日志与计数：fresh hit / stale hit / miss / upstream fail served expired。
-5. 再评估是否为非 rss-svr 场景打开 prefetch。
+1. `start.sh` 参数已接入，默认使用小内存 MEMORY cache。
+2. upstream response cache 已实现。
+3. serve-expired fallback 已实现。
+4. 已增加日志与计数：fresh hit / stale hit / miss / prefetch / upstream fail served expired。
+5. 后续再评估是否为非 rss-svr 场景打开 prefetch。
 
 ## 最终建议
 
@@ -345,7 +347,7 @@ DNS_CACHE_SERVE_EXPIRED_CLIENT_TIMEOUT_MILLIS=300
 DNS_CACHE_PREFETCH_THRESHOLD_PERCENT=10
 ```
 
-其中真正影响当前实现内存大小的是：
+其中影响当前实现内存大小的是：
 
 ```bash
 DNS_CACHE_STORAGE=MEMORY
@@ -353,4 +355,4 @@ DNS_CACHE_MAXIMUM_SIZE=256
 DNS_CACHE_MAXIMUM_BYTES=65536
 ```
 
-`DNS_CACHE_PREFETCH` 当前建议保持关闭；`DNS_CACHE_SERVE_EXPIRED` 可以先打开作为后续实现预留，但当前 upstream 转发路径还没有 stale fallback，需要后续补齐。
+`DNS_CACHE_PREFETCH` 当前建议保持关闭；`DNS_CACHE_SERVE_EXPIRED` 建议打开，用于上游 DNS 短时失败或超时时返回 stale 记录。
