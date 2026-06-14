@@ -176,6 +176,7 @@ public final class RxConfig {
         String DNS_DOH_TIMEOUT_MILLIS = "app.net.dns.dohTimeoutMillis";
         String DNS_DOH_MAX_IN_FLIGHT = "app.net.dns.dohMaxInFlight";
         String DNS_DOH_ENDPOINTS = "app.net.dns.dohEndpoints";
+        String DNS_CACHE_ENABLED = "app.net.dns.cacheEnabled";
         String DNS_CACHE_PREFETCH = "app.net.dns.prefetch";
         String DNS_CACHE_PREFETCH_THRESHOLD_PERCENT = "app.net.dns.prefetchThresholdPercent";
         String DNS_CACHE_SERVE_EXPIRED = "app.net.dns.serveExpired";
@@ -502,6 +503,7 @@ public final class RxConfig {
             HYBRID
         }
 
+        boolean cacheEnabled;
         boolean prefetch;
         int prefetchThresholdPercent = 10;
         boolean serveExpired;
@@ -511,6 +513,10 @@ public final class RxConfig {
         StorageMode storage = StorageMode.HYBRID;
         int maximumSize = 4096;
         long maximumBytes;
+
+        public boolean isResponseCacheEnabled() {
+            return cacheEnabled || prefetch || serveExpired;
+        }
 
         public void normalize() {
             if (prefetchThresholdPercent < 1) {
@@ -897,6 +903,8 @@ public final class RxConfig {
         net.dns.dohTimeoutMillis = SystemPropertyUtil.getInt(ConfigNames.DNS_DOH_TIMEOUT_MILLIS, net.dns.dohTimeoutMillis);
         net.dns.dohMaxInFlight = SystemPropertyUtil.getInt(ConfigNames.DNS_DOH_MAX_IN_FLIGHT, net.dns.dohMaxInFlight);
         reset(net.dns.dohEndpoints, ConfigNames.DNS_DOH_ENDPOINTS);
+        net.dns.cache.cacheEnabled = SystemPropertyUtil.getBoolean(
+                ConfigNames.DNS_CACHE_ENABLED, net.dns.cache.cacheEnabled);
         net.dns.cache.prefetch = SystemPropertyUtil.getBoolean(ConfigNames.DNS_CACHE_PREFETCH, net.dns.cache.prefetch);
         net.dns.cache.prefetchThresholdPercent = SystemPropertyUtil.getInt(
                 ConfigNames.DNS_CACHE_PREFETCH_THRESHOLD_PERCENT, net.dns.cache.prefetchThresholdPercent);

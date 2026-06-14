@@ -202,7 +202,7 @@ abstract class DnsResolverSupport extends Disposable {
                 return newMemoryInterceptorCache(config);
             case PERSISTENT:
                 return (Cache) new H2StoreCache<String, List<InetAddress>>(
-                        EntityDatabase.DEFAULT, 1L, 1);
+                        EntityDatabase.DEFAULT, config.getMaximumSize(), 1);
             case HYBRID:
             default:
                 return (Cache) new H2StoreCache<String, List<InetAddress>>(
@@ -214,12 +214,15 @@ abstract class DnsResolverSupport extends Disposable {
     Cache<String, DnsResponseCacheEntry> newResponseCache() {
         RxConfig.DnsCacheConfig config = RxConfig.INSTANCE.getNet().getDns().getCache();
         config.normalize();
+        if (!config.isResponseCacheEnabled()) {
+            return null;
+        }
         switch (config.getStorage()) {
             case MEMORY:
                 return newMemoryResponseCache(config);
             case PERSISTENT:
                 return (Cache) new H2StoreCache<String, DnsResponseCacheEntry>(
-                        EntityDatabase.DEFAULT, 1L, 1);
+                        EntityDatabase.DEFAULT, config.getMaximumSize(), 1);
             case HYBRID:
             default:
                 return (Cache) new H2StoreCache<String, DnsResponseCacheEntry>(
@@ -270,6 +273,18 @@ abstract class DnsResolverSupport extends Disposable {
         }
         int bytes = value.sizeInBytes(key);
         return bytes <= 0 ? 1 : bytes;
+    }
+
+    public void clearDnsCache() {
+        if (interceptorCache != null) {
+            interceptorCache.clear();
+        }
+        if (responseCache != null) {
+            responseCache.clear();
+        }
+        resolvingPromises.clear();
+        responseRefreshPromises.clear();
+        domainKeyCache.clear();
     }
 
     boolean isInterceptorAvailable(DnsResolveInterceptor interceptor, long nowMillis) {

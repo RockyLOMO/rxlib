@@ -345,10 +345,15 @@ public final class DnsResolveCore {
                                       Promise<DefaultDnsResponse> promise) {
         DefaultDnsQuestion question = query.recordAt(DnsSection.QUESTION);
         String domain = normalizeDomain(question.name());
-        String cacheKey = server.responseCacheKey(domain, question.type(), question.dnsClass());
         RxConfig.DnsCacheConfig config = RxConfig.INSTANCE.getNet().getDns().getCache();
         config.normalize();
+        if (server.responseCache == null) {
+            queryUpstream0(server, upstream, query, isTcp, promise, copyQuestion(question), null, domain,
+                    null, config);
+            return;
+        }
 
+        String cacheKey = server.responseCacheKey(domain, question.type(), question.dnsClass());
         DnsResponseCacheEntry cached = getCachedResponse(server, cacheKey, domain);
         long now = System.currentTimeMillis();
         if (cached != null && cached.isFresh(now)) {
@@ -515,7 +520,7 @@ public final class DnsResolveCore {
 
     static DnsResponseCacheEntry cacheUpstreamResponse(DnsServer server, String cacheKey, DnsResponse response,
                                                        RxConfig.DnsCacheConfig config) {
-        if (server.responseCache == null) {
+        if (server.responseCache == null || cacheKey == null) {
             return null;
         }
         config.normalize();
