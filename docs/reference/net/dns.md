@@ -24,6 +24,7 @@
 | **hosts 权重负载** | 支持 `enableHostsWeight` 模式，相同域名多 IP 时按权重分配，返回 1-2 个 IP |
 | **解析拦截器** | `DnsResolveInterceptor` 接口支持自定义解析逻辑，可对接外部服务（如服务发现） |
 | **防缓存击穿** | `resolvingPromises` 按域名与记录类型合并并发解析，防止缓存穿透（thundering-herd） |
+| **上游响应缓存** | `DnsServer` 对 raw upstream DNS query 增加 response cache，支持 fresh 命中、serve-expired 与 prefetch |
 | **H2 持久缓存** | 使用 `H2StoreCache` 作为 DNS 缓存后端，支持 TTL 和跨进程共享 |
 
 ## 本地解析与缓存配置
@@ -34,6 +35,13 @@
 2. interceptor cache 命中直接返回。
 3. interceptor 未命中时异步解析，并按域名/记录类型合并并发请求。
 4. interceptor 返回 `null` 时继续走上游 DNS。
+
+`DnsServer` 的 upstream query 路径额外有 response cache：
+
+1. cache key 使用标准化域名、记录类型和 record class。
+2. fresh 命中时用缓存快照重新构造 `DnsResponse`，不会复用 Netty `ByteBuf`。
+3. `serveExpired=true` 且存在 stale entry 时，上游失败或超过 `serveExpiredClientTimeoutMillis` 会返回 stale response。
+4. `prefetch=true` 时，fresh 命中进入 TTL 后段会触发单 key 后台刷新，当前请求仍立即返回缓存值。
 
 系统属性配置：
 

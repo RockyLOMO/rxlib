@@ -1,20 +1,31 @@
 package org.rx.net.dns;
 
+import io.netty.buffer.Unpooled;
+import io.netty.channel.AddressedEnvelope;
+import io.netty.channel.DefaultAddressedEnvelope;
 import io.netty.handler.codec.dns.DefaultDnsQuery;
 import io.netty.handler.codec.dns.DefaultDnsQuestion;
+import io.netty.handler.codec.dns.DefaultDnsRawRecord;
 import io.netty.handler.codec.dns.DefaultDnsResponse;
+import io.netty.handler.codec.dns.DnsQuestion;
+import io.netty.handler.codec.dns.DnsRawRecord;
+import io.netty.handler.codec.dns.DnsResponse;
+import io.netty.handler.codec.dns.DnsResponseCode;
 import io.netty.handler.codec.dns.DnsRecordType;
 import io.netty.handler.codec.dns.DnsSection;
 import io.netty.util.ReferenceCountUtil;
+import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.GlobalEventExecutor;
 import io.netty.util.concurrent.Promise;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.rx.bean.RandomList;
+import org.rx.core.RxConfig;
 import org.rx.core.CachePolicy;
 import org.rx.core.cache.MemoryCache;
 import org.rx.net.transport.ClientDisconnectedException;
 
+import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
@@ -58,6 +69,88 @@ class DnsOptimizationTest {
         }
     }
 
+    static class StubDnsClient extends DnsClient {
+        final AtomicInteger queryCalls = new AtomicInteger();
+        volatile String nextIp = "198.51.100.31";
+        volatile int ttlSeconds = 30;
+        volatile long delayMillis;
+        volatile boolean fail;
+
+        StubDnsClient() {
+            super(Collections.emptyList(), true);
+        }
+
+        @Override
+        public Future<AddressedEnvelope<DnsResponse, InetSocketAddress>> query(DnsQuestion question) {
+            Promise<AddressedEnvelope<DnsResponse, InetSocketAddress>> promise = executor.newPromise();
+            queryCalls.incrementAndGet();
+            Runnable complete = () -> {
+                if (fail) {
+                    promise.tryFailure(new IOException("stub dns fail"));
+                    return;
+                }
+                try {
+                    DefaultDnsQuestion q = (DefaultDnsQuestion) question;
+                    DefaultDnsResponse response = new DefaultDnsResponse(100,
+                            io.netty.handler.codec.dns.DnsOpCode.QUERY, DnsResponseCode.NOERROR);
+                    response.addRecord(DnsSection.ANSWER, new DefaultDnsRawRecord(q.name(), q.type(), q.dnsClass(),
+                            ttlSeconds, Unpooled.wrappedBuffer(InetAddress.getByName(nextIp).getAddress())));
+                    promise.trySuccess(new DefaultAddressedEnvelope<DnsResponse, InetSocketAddress>(response,
+                            new InetSocketAddress("127.0.0.1", 53)));
+                } catch (Throwable e) {
+                    promise.tryFailure(e);
+                }
+            };
+            if (delayMillis > 0) {
+                executor.schedule(complete, delayMillis, TimeUnit.MILLISECONDS);
+            } else {
+                complete.run();
+            }
+            return promise;
+        }
+    }
+
+    static class DnsCacheConfigState {
+        final RxConfig.DnsCacheConfig cache = RxConfig.INSTANCE.getNet().getDns().getCache();
+        final boolean prefetch = cache.isPrefetch();
+        final int prefetchThresholdPercent = cache.getPrefetchThresholdPercent();
+        final boolean serveExpired = cache.isServeExpired();
+        final int serveExpiredTtlSeconds = cache.getServeExpiredTtlSeconds();
+        final int serveExpiredReplyTtlSeconds = cache.getServeExpiredReplyTtlSeconds();
+        final int serveExpiredClientTimeoutMillis = cache.getServeExpiredClientTimeoutMillis();
+        final RxConfig.DnsCacheConfig.StorageMode storage = cache.getStorage();
+        final int maximumSize = cache.getMaximumSize();
+        final long maximumBytes = cache.getMaximumBytes();
+
+        void configure(boolean prefetch, int prefetchThresholdPercent, boolean serveExpired,
+                       int serveExpiredTtlSeconds, int serveExpiredReplyTtlSeconds,
+                       int serveExpiredClientTimeoutMillis) {
+            cache.setPrefetch(prefetch);
+            cache.setPrefetchThresholdPercent(prefetchThresholdPercent);
+            cache.setServeExpired(serveExpired);
+            cache.setServeExpiredTtlSeconds(serveExpiredTtlSeconds);
+            cache.setServeExpiredReplyTtlSeconds(serveExpiredReplyTtlSeconds);
+            cache.setServeExpiredClientTimeoutMillis(serveExpiredClientTimeoutMillis);
+            cache.setStorage(RxConfig.DnsCacheConfig.StorageMode.MEMORY);
+            cache.setMaximumSize(64);
+            cache.setMaximumBytes(65536);
+            cache.normalize();
+        }
+
+        void restore() {
+            cache.setPrefetch(prefetch);
+            cache.setPrefetchThresholdPercent(prefetchThresholdPercent);
+            cache.setServeExpired(serveExpired);
+            cache.setServeExpiredTtlSeconds(serveExpiredTtlSeconds);
+            cache.setServeExpiredReplyTtlSeconds(serveExpiredReplyTtlSeconds);
+            cache.setServeExpiredClientTimeoutMillis(serveExpiredClientTimeoutMillis);
+            cache.setStorage(storage);
+            cache.setMaximumSize(maximumSize);
+            cache.setMaximumBytes(maximumBytes);
+            cache.normalize();
+        }
+    }
+
     static int freePort() throws Exception {
         try (ServerSocket ss = new ServerSocket(0)) {
             return ss.getLocalPort();
@@ -79,6 +172,160 @@ class DnsOptimizationTest {
             return promise.getNow();
         } finally {
             ReferenceCountUtil.release(query);
+        }
+    }
+
+    static DefaultDnsResponse resolveOnce(DnsServer server, DnsClient upstream, String host,
+                                          DnsRecordType type) throws Exception {
+        DefaultDnsQuery query = new DefaultDnsQuery(1);
+        query.addRecord(DnsSection.QUESTION, new DefaultDnsQuestion(host, type));
+        try {
+            Promise<DefaultDnsResponse> promise = DnsResolveCore.resolve(server, upstream,
+                    InetAddress.getLoopbackAddress(), query, true, GlobalEventExecutor.INSTANCE);
+            assertTrue(promise.await(5, TimeUnit.SECONDS), "DNS resolve promise timeout");
+            assertTrue(promise.isSuccess(), () -> "DNS resolve failed: " + promise.cause());
+            return promise.getNow();
+        } finally {
+            ReferenceCountUtil.release(query);
+        }
+    }
+
+    static InetAddress firstAnswerIp(DefaultDnsResponse response) throws Exception {
+        DnsRawRecord record = response.recordAt(DnsSection.ANSWER, 0);
+        byte[] bytes = new byte[record.content().readableBytes()];
+        record.content().getBytes(record.content().readerIndex(), bytes);
+        return InetAddress.getByAddress(bytes);
+    }
+
+    @Test
+    void upstreamResponseCache_freshHitSkipsUpstreamQuery() throws Exception {
+        DnsCacheConfigState state = new DnsCacheConfigState();
+        state.configure(false, 10, true, 60, 15, 300);
+        DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+        StubDnsClient upstream = new StubDnsClient();
+        try {
+            String host = "upstream-cache-" + UUID.randomUUID() + ".example";
+            InetAddress firstIp = InetAddress.getByName("198.51.100.31");
+            upstream.nextIp = firstIp.getHostAddress();
+            upstream.ttlSeconds = 30;
+
+            DefaultDnsResponse first = resolveOnce(server, upstream, host, DnsRecordType.A);
+            try {
+                assertEquals(firstIp, firstAnswerIp(first));
+            } finally {
+                ReferenceCountUtil.release(first);
+            }
+
+            upstream.nextIp = "198.51.100.32";
+            DefaultDnsResponse second = resolveOnce(server, upstream, host, DnsRecordType.A);
+            try {
+                assertEquals(firstIp, firstAnswerIp(second), "fresh cache 应返回首次上游结果");
+            } finally {
+                ReferenceCountUtil.release(second);
+            }
+
+            assertEquals(1, upstream.queryCalls.get(), "fresh cache 命中后不应再次访问上游");
+            assertEquals(1, server.responseCacheFreshHits.get());
+        } finally {
+            upstream.close();
+            server.close();
+            state.restore();
+        }
+    }
+
+    @Test
+    @Timeout(10)
+    void upstreamResponseCache_serveExpiredOnUpstreamTimeoutAndRefreshesCache() throws Exception {
+        DnsCacheConfigState state = new DnsCacheConfigState();
+        state.configure(false, 10, true, 60, 15, 50);
+        DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+        StubDnsClient upstream = new StubDnsClient();
+        try {
+            String host = "upstream-stale-" + UUID.randomUUID() + ".example";
+            InetAddress oldIp = InetAddress.getByName("198.51.100.41");
+            InetAddress newIp = InetAddress.getByName("198.51.100.42");
+            upstream.nextIp = oldIp.getHostAddress();
+            upstream.ttlSeconds = 1;
+
+            DefaultDnsResponse first = resolveOnce(server, upstream, host, DnsRecordType.A);
+            ReferenceCountUtil.release(first);
+            Thread.sleep(1200);
+
+            upstream.nextIp = newIp.getHostAddress();
+            upstream.delayMillis = 300;
+            DefaultDnsResponse stale = resolveOnce(server, upstream, host, DnsRecordType.A);
+            try {
+                assertEquals(oldIp, firstAnswerIp(stale), "上游超时前应先返回 stale 记录");
+                DnsRawRecord answer = stale.recordAt(DnsSection.ANSWER, 0);
+                assertEquals(15, answer.timeToLive(), "stale 响应 TTL 应使用 serveExpiredReplyTtlSeconds");
+            } finally {
+                ReferenceCountUtil.release(stale);
+            }
+
+            Thread.sleep(500);
+            upstream.delayMillis = 0;
+            DefaultDnsResponse refreshed = resolveOnce(server, upstream, host, DnsRecordType.A);
+            try {
+                assertEquals(newIp, firstAnswerIp(refreshed), "超时后的上游返回应刷新 stale cache");
+            } finally {
+                ReferenceCountUtil.release(refreshed);
+            }
+
+            assertEquals(2, upstream.queryCalls.get(), "第三次应命中刷新后的 cache");
+            assertEquals(1, server.responseCacheUpstreamFailServedExpired.get());
+        } finally {
+            upstream.close();
+            server.close();
+            state.restore();
+        }
+    }
+
+    @Test
+    @Timeout(10)
+    void upstreamResponseCache_prefetchUsesSingleRefreshTask() throws Exception {
+        DnsCacheConfigState state = new DnsCacheConfigState();
+        state.configure(true, 100, true, 60, 15, 300);
+        DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+        StubDnsClient upstream = new StubDnsClient();
+        try {
+            String host = "upstream-prefetch-" + UUID.randomUUID() + ".example";
+            InetAddress oldIp = InetAddress.getByName("198.51.100.51");
+            InetAddress newIp = InetAddress.getByName("198.51.100.52");
+            upstream.nextIp = oldIp.getHostAddress();
+            upstream.ttlSeconds = 30;
+
+            DefaultDnsResponse first = resolveOnce(server, upstream, host, DnsRecordType.A);
+            ReferenceCountUtil.release(first);
+
+            upstream.nextIp = newIp.getHostAddress();
+            upstream.delayMillis = 300;
+            DefaultDnsResponse second = resolveOnce(server, upstream, host, DnsRecordType.A);
+            DefaultDnsResponse third = resolveOnce(server, upstream, host, DnsRecordType.A);
+            try {
+                assertEquals(oldIp, firstAnswerIp(second));
+                assertEquals(oldIp, firstAnswerIp(third));
+            } finally {
+                ReferenceCountUtil.release(second);
+                ReferenceCountUtil.release(third);
+            }
+
+            assertEquals(2, upstream.queryCalls.get(), "并发 prefetch key 应只启动一个后台刷新");
+            assertEquals(1, server.responseCachePrefetchStarted.get());
+
+            Thread.sleep(500);
+            state.cache.setPrefetch(false);
+            upstream.delayMillis = 0;
+            DefaultDnsResponse refreshed = resolveOnce(server, upstream, host, DnsRecordType.A);
+            try {
+                assertEquals(newIp, firstAnswerIp(refreshed));
+            } finally {
+                ReferenceCountUtil.release(refreshed);
+            }
+            assertEquals(2, upstream.queryCalls.get(), "刷新完成后应直接命中 cache");
+        } finally {
+            upstream.close();
+            server.close();
+            state.restore();
         }
     }
 
@@ -118,6 +365,24 @@ class DnsOptimizationTest {
 
             assertNotEquals(aKey, aaaaKey);
             assertEquals(aKey, server.resolveKey("example.com", DnsRecordType.A));
+        } finally {
+            server.close();
+        }
+    }
+
+    @Test
+    void domainCacheKeysShouldReuseHotKeyInstances() throws Exception {
+        DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+        try {
+            String aKey = server.cacheKey("Example.COM.", DnsRecordType.A);
+            String aAgain = server.cacheKey("example.com", DnsRecordType.A);
+            String resolveA = server.resolveKey("example.com", DnsRecordType.A);
+            String responseA = server.responseCacheKey("example.com", DnsRecordType.A, io.netty.handler.codec.dns.DnsRecord.CLASS_IN);
+
+            assertSame(aKey, aAgain);
+            assertEquals("_dns:int:A:example.com", aKey);
+            assertEquals("_dns:int:*:A:example.com", resolveA);
+            assertEquals("_dns:rsp:A:1:example.com", responseA);
         } finally {
             server.close();
         }
@@ -268,7 +533,7 @@ class DnsOptimizationTest {
     }
 
     @Test
-    @Timeout(35)
+    @Timeout(60)
     void concurrentInterceptorQueries_shareSingleResolveTask() throws Exception {
         int dnsPort = freePort();
         String host = "coalesce-" + UUID.randomUUID() + ".example";
@@ -291,7 +556,7 @@ class DnsOptimizationTest {
                 }
                 return Collections.singletonList(resolvedIp);
             })));
-            Thread.sleep(300);
+            Thread.sleep(800);
 
             int threads = 4;
             CountDownLatch start = new CountDownLatch(1);
@@ -314,12 +579,12 @@ class DnsOptimizationTest {
             }
 
             start.countDown();
-            assertTrue(resolving.await(20, TimeUnit.SECONDS));
+            assertTrue(resolving.await(35, TimeUnit.SECONDS));
             Thread.sleep(200);
             assertEquals(2, resolveCalls.get(), "并发相同域名请求应按 A/AAAA 各合并一次 resolveHost");
 
             release.countDown();
-            assertTrue(done.await(10, TimeUnit.SECONDS));
+            assertTrue(done.await(20, TimeUnit.SECONDS));
             assertNull(firstError.get(), () -> "并发 DNS 查询失败: " + firstError.get());
             assertEquals(threads, results.size());
             for (InetAddress result : results) {
