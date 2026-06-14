@@ -16,6 +16,20 @@
 
 目标是确认 `prefetch` / `serve-expired` / response cache 是否已经真正生效，以及还有哪些实现风险需要继续修。
 
+## 执行结果（2026-06-14）
+
+本次已按 review 建议落地以下修复：
+
+1. 新增 `app.net.dns.cacheEnabled`，库默认不启用普通 upstream response cache；`prefetch=true` 或 `serveExpired=true` 时仍会自动启用 response cache。
+2. `deploy/rss-svr/start.sh` 显式加入 `DNS_CACHE_ENABLED=true`，保持 rss-svr 的生产推荐行为。
+3. `DnsResponseCacheEntry` 不再缓存 TTL<=0 的 positive response，避免把上游明确的 0 TTL 改写为缓存 TTL。
+4. negative response 优先按 SOA negative TTL 计算，无 SOA 时才使用 `negativeTtl` fallback。
+5. `PERSISTENT` 模式下 `H2StoreCache` 的 L1 容量改为 `cacheMaximumSize`，不再固定为 `1`。
+6. `DnsResolverSupport` 增加统一 `clearDnsCache()`；`DnsClient.clearCache()` 与 `DnsServer.clearCache()` 已对齐清理 response cache、refresh promise、interceptor cache 和 domain key cache。
+7. 文档已明确：当前 `prefetch` / `serve-expired` 只覆盖 `DnsServer` upstream DNS query 路径，不覆盖 `DnsClient.resolve*` 的 address-level stale cache。
+
+未在本次实现的项：`DnsClient.resolve*` 的 address-level stale cache、metrics 细分命名、复杂 response cache key 维度扩展。这些属于 P2，需单独评估 Netty resolve cache 双层 TTL 语义与指标兼容性。
+
 ## 总体结论
 
 当前实现已经比最初计划完整很多：

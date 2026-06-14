@@ -112,6 +112,7 @@ class DnsOptimizationTest {
 
     static class DnsCacheConfigState {
         final RxConfig.DnsCacheConfig cache = RxConfig.INSTANCE.getNet().getDns().getCache();
+        final boolean cacheEnabled = cache.isCacheEnabled();
         final boolean prefetch = cache.isPrefetch();
         final int prefetchThresholdPercent = cache.getPrefetchThresholdPercent();
         final boolean serveExpired = cache.isServeExpired();
@@ -125,6 +126,14 @@ class DnsOptimizationTest {
         void configure(boolean prefetch, int prefetchThresholdPercent, boolean serveExpired,
                        int serveExpiredTtlSeconds, int serveExpiredReplyTtlSeconds,
                        int serveExpiredClientTimeoutMillis) {
+            configure(false, prefetch, prefetchThresholdPercent, serveExpired,
+                    serveExpiredTtlSeconds, serveExpiredReplyTtlSeconds, serveExpiredClientTimeoutMillis);
+        }
+
+        void configure(boolean cacheEnabled, boolean prefetch, int prefetchThresholdPercent, boolean serveExpired,
+                       int serveExpiredTtlSeconds, int serveExpiredReplyTtlSeconds,
+                       int serveExpiredClientTimeoutMillis) {
+            cache.setCacheEnabled(cacheEnabled);
             cache.setPrefetch(prefetch);
             cache.setPrefetchThresholdPercent(prefetchThresholdPercent);
             cache.setServeExpired(serveExpired);
@@ -138,6 +147,7 @@ class DnsOptimizationTest {
         }
 
         void restore() {
+            cache.setCacheEnabled(cacheEnabled);
             cache.setPrefetch(prefetch);
             cache.setPrefetchThresholdPercent(prefetchThresholdPercent);
             cache.setServeExpired(serveExpired);
@@ -195,6 +205,149 @@ class DnsOptimizationTest {
         byte[] bytes = new byte[record.content().readableBytes()];
         record.content().getBytes(record.content().readerIndex(), bytes);
         return InetAddress.getByAddress(bytes);
+    }
+
+    @Test
+    void upstreamResponseCache_disabledSwitchSkipsPlainCache() throws Exception {
+        DnsCacheConfigState state = new DnsCacheConfigState();
+        state.configure(false, false, 10, false, 60, 15, 300);
+        DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+        StubDnsClient upstream = new StubDnsClient();
+        try {
+            assertNull(server.responseCache, "prefetch/serveExpired/cacheEnabled 全关闭时不应创建 response cache");
+
+            String host = "cache-disabled-" + UUID.randomUUID() + ".example";
+            InetAddress firstIp = InetAddress.getByName("198.51.100.21");
+            InetAddress secondIp = InetAddress.getByName("198.51.100.22");
+            upstream.nextIp = firstIp.getHostAddress();
+            upstream.ttlSeconds = 30;
+
+            DefaultDnsResponse first = resolveOnce(server, upstream, host, DnsRecordType.A);
+            try {
+                assertEquals(firstIp, firstAnswerIp(first));
+            } finally {
+                ReferenceCountUtil.release(first);
+            }
+
+            upstream.nextIp = secondIp.getHostAddress();
+            DefaultDnsResponse second = resolveOnce(server, upstream, host, DnsRecordType.A);
+            try {
+                assertEquals(secondIp, firstAnswerIp(second), "response cache 禁用时第二次应继续访问上游");
+            } finally {
+                ReferenceCountUtil.release(second);
+            }
+
+            assertEquals(2, upstream.queryCalls.get());
+            assertEquals(0, server.responseCacheFreshHits.get());
+            assertEquals(0, server.responseCacheMisses.get());
+        } finally {
+            upstream.close();
+            server.close();
+            state.restore();
+        }
+    }
+
+    @Test
+    void upstreamResponseCache_enabledSwitchCachesWithoutServeExpired() throws Exception {
+        DnsCacheConfigState state = new DnsCacheConfigState();
+        state.configure(true, false, 10, false, 60, 15, 300);
+        DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+        StubDnsClient upstream = new StubDnsClient();
+        try {
+            assertNotNull(server.responseCache);
+
+            String host = "cache-enabled-" + UUID.randomUUID() + ".example";
+            InetAddress firstIp = InetAddress.getByName("198.51.100.23");
+            upstream.nextIp = firstIp.getHostAddress();
+            upstream.ttlSeconds = 30;
+
+            DefaultDnsResponse first = resolveOnce(server, upstream, host, DnsRecordType.A);
+            ReferenceCountUtil.release(first);
+
+            upstream.nextIp = "198.51.100.24";
+            DefaultDnsResponse second = resolveOnce(server, upstream, host, DnsRecordType.A);
+            try {
+                assertEquals(firstIp, firstAnswerIp(second));
+            } finally {
+                ReferenceCountUtil.release(second);
+            }
+
+            assertEquals(1, upstream.queryCalls.get());
+            assertEquals(1, server.responseCacheFreshHits.get());
+        } finally {
+            upstream.close();
+            server.close();
+            state.restore();
+        }
+    }
+
+    @Test
+    void upstreamResponseCache_positiveZeroTtlIsNotCached() throws Exception {
+        DnsCacheConfigState state = new DnsCacheConfigState();
+        state.configure(true, false, 10, false, 60, 15, 300);
+        DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+        StubDnsClient upstream = new StubDnsClient();
+        try {
+            String host = "zero-ttl-" + UUID.randomUUID() + ".example";
+            InetAddress firstIp = InetAddress.getByName("198.51.100.25");
+            InetAddress secondIp = InetAddress.getByName("198.51.100.26");
+            upstream.nextIp = firstIp.getHostAddress();
+            upstream.ttlSeconds = 0;
+
+            DefaultDnsResponse first = resolveOnce(server, upstream, host, DnsRecordType.A);
+            try {
+                assertEquals(firstIp, firstAnswerIp(first));
+            } finally {
+                ReferenceCountUtil.release(first);
+            }
+
+            upstream.nextIp = secondIp.getHostAddress();
+            DefaultDnsResponse second = resolveOnce(server, upstream, host, DnsRecordType.A);
+            try {
+                assertEquals(secondIp, firstAnswerIp(second), "TTL=0 positive response 不应入 response cache");
+            } finally {
+                ReferenceCountUtil.release(second);
+            }
+
+            assertEquals(2, upstream.queryCalls.get());
+        } finally {
+            upstream.close();
+            server.close();
+            state.restore();
+        }
+    }
+
+    @Test
+    void clearCacheShouldClearResponseCache() throws Exception {
+        DnsCacheConfigState state = new DnsCacheConfigState();
+        state.configure(true, false, 10, false, 60, 15, 300);
+        DnsServer server = new DnsServer(freePort(), Collections.emptyList());
+        StubDnsClient upstream = new StubDnsClient();
+        try {
+            String host = "clear-response-cache-" + UUID.randomUUID() + ".example";
+            InetAddress firstIp = InetAddress.getByName("198.51.100.27");
+            InetAddress secondIp = InetAddress.getByName("198.51.100.28");
+            upstream.nextIp = firstIp.getHostAddress();
+            upstream.ttlSeconds = 30;
+
+            DefaultDnsResponse first = resolveOnce(server, upstream, host, DnsRecordType.A);
+            ReferenceCountUtil.release(first);
+
+            server.clearCache();
+            upstream.nextIp = secondIp.getHostAddress();
+            DefaultDnsResponse second = resolveOnce(server, upstream, host, DnsRecordType.A);
+            try {
+                assertEquals(secondIp, firstAnswerIp(second), "clearCache 后应重新访问上游并刷新 response cache");
+            } finally {
+                ReferenceCountUtil.release(second);
+            }
+
+            assertEquals(2, upstream.queryCalls.get());
+        } finally {
+            upstream.close();
+            server.close();
+            state.restore();
+        }
     }
 
     @Test

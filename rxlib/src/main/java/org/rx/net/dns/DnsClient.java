@@ -286,10 +286,6 @@ public class DnsClient extends DnsResolverSupport {
 
     public void clearCache() {
         nameResolver.resolveCache().clear();
-        if (interceptorCache != null) {
-            interceptorCache.clear();
-        }
-        resolvingPromises.clear();
-        domainKeyCache.clear();
+        clearDnsCache();
     }
 }

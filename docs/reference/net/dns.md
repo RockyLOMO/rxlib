@@ -5,7 +5,7 @@
 ## 核心类介绍
 
 - **`DnsClient`**:
-  高性能非阻塞 DNS 客户端，基于 Netty 提供的 `DnsNameResolver` 构建。支持自定义上游 DNS 服务器配置，并可以配置 DNS 缓存策略。
+  高性能非阻塞 DNS 客户端，基于 Netty 提供的 `DnsNameResolver` 构建。支持自定义上游 DNS 服务器配置，并共用 hosts 与 interceptor 逻辑。
 
 - **`DnsServer`**:
   基于 Netty `DatagramChannel` 构建的 DNS 服务器端。可以接收本地发出的 UDP DNS 查询请求并进行代理转发、本地缓存或劫持拦截。
@@ -42,10 +42,12 @@
 2. fresh 命中时用缓存快照重新构造 `DnsResponse`，不会复用 Netty `ByteBuf`。
 3. `serveExpired=true` 且存在 stale entry 时，上游失败或超过 `serveExpiredClientTimeoutMillis` 会返回 stale response。
 4. `prefetch=true` 时，fresh 命中进入 TTL 后段会触发单 key 后台刷新，当前请求仍立即返回缓存值。
+5. `DnsClient.resolve*` 目前不使用 rxlib response cache；它仍由 Netty `DnsNameResolver` 自身处理 resolve cache。
 
 系统属性配置：
 
 ```properties
+app.net.dns.cacheEnabled=false
 app.net.dns.prefetch=false
 app.net.dns.prefetchThresholdPercent=10
 app.net.dns.serveExpired=false

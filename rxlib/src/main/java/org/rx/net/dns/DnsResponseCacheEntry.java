@@ -79,9 +79,23 @@ final class DnsResponseCacheEntry implements Serializable {
             return null;
         }
 
-        int ttlSeconds = minPositiveTtl(answers, authorities, additionals);
-        if (ttlSeconds <= 0) {
-            ttlSeconds = Math.max(1, fallbackTtlSeconds);
+        int ttlSeconds;
+        if (response.code() == DnsResponseCode.NOERROR && !answers.isEmpty()) {
+            if (hasNonPositiveTtl(answers) || hasNonPositiveTtl(authorities) || hasNonPositiveTtl(additionals)) {
+                return null;
+            }
+            ttlSeconds = minPositiveTtl(answers, authorities, additionals);
+            if (ttlSeconds <= 0) {
+                return null;
+            }
+        } else {
+            if (hasNonPositiveTtl(answers) || hasNonPositiveTtl(authorities) || hasNonPositiveTtl(additionals)) {
+                return null;
+            }
+            ttlSeconds = negativeTtlSeconds(authorities, fallbackTtlSeconds);
+            if (ttlSeconds <= 0) {
+                return null;
+            }
         }
         return new DnsResponseCacheEntry(System.currentTimeMillis(), ttlSeconds, response,
                 answers, authorities, additionals);
@@ -130,6 +144,80 @@ final class DnsResponseCacheEntry implements Serializable {
             }
         }
         return min;
+    }
+
+    static boolean hasNonPositiveTtl(List<RecordEntry> records) {
+        for (int i = 0; i < records.size(); i++) {
+            if (records.get(i).ttl <= 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static int negativeTtlSeconds(List<RecordEntry> authorities, int fallbackTtlSeconds) {
+        long min = Long.MAX_VALUE;
+        boolean hasSoa = false;
+        for (int i = 0; i < authorities.size(); i++) {
+            RecordEntry record = authorities.get(i);
+            if (record.type != DnsRecordType.SOA.intValue()) {
+                continue;
+            }
+
+            hasSoa = true;
+            long ttl = record.ttl;
+            long minimum = readSoaMinimum(record.content);
+            long candidate = minimum >= 0 ? Math.min(ttl, minimum) : ttl;
+            if (candidate < min) {
+                min = candidate;
+            }
+        }
+        if (!hasSoa) {
+            return Math.max(1, fallbackTtlSeconds);
+        }
+        if (min <= 0) {
+            return 0;
+        }
+        return min > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) min;
+    }
+
+    static long readSoaMinimum(byte[] content) {
+        if (content == null) {
+            return -1;
+        }
+        int offset = skipDnsName(content, 0);
+        if (offset < 0) {
+            return -1;
+        }
+        offset = skipDnsName(content, offset);
+        if (offset < 0 || content.length - offset < 20) {
+            return -1;
+        }
+        return readUnsignedInt(content, offset + 16);
+    }
+
+    static int skipDnsName(byte[] content, int offset) {
+        while (offset < content.length) {
+            int len = content[offset++] & 0xff;
+            if (len == 0) {
+                return offset;
+            }
+            if ((len & 0xc0) == 0xc0) {
+                return offset < content.length ? offset + 1 : -1;
+            }
+            if ((len & 0xc0) != 0 || offset + len > content.length) {
+                return -1;
+            }
+            offset += len;
+        }
+        return -1;
+    }
+
+    static long readUnsignedInt(byte[] content, int offset) {
+        return ((long) content[offset] & 0xff) << 24
+                | ((long) content[offset + 1] & 0xff) << 16
+                | ((long) content[offset + 2] & 0xff) << 8
+                | ((long) content[offset + 3] & 0xff);
     }
 
     boolean isFresh(long nowMillis) {

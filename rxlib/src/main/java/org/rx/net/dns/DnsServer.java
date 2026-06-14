@@ -56,6 +56,7 @@ public class DnsServer extends DnsResolverSupport {
 
     @Override
     protected void dispose() {
+        resolvingPromises.clear();
         responseRefreshPromises.clear();
         for (Channel channel : tcpChannels) {
             closeChannel(channel);
@@ -86,4 +87,8 @@ public class DnsServer extends DnsResolverSupport {
         return this;
     }
 
+    public void clearCache() {
+        clearDnsCache();
+        upstreamClient.clearCache();
+    }
 }
