@@ -78,6 +78,7 @@ app:
       dohTimeoutMillis: 5000
       dohMaxInFlight: 64
       dohEndpoints: []
+      interceptorBreakerOpenMillis: 30000
       directServers: []
       remoteServers:
         - "1.1.1.1:53"

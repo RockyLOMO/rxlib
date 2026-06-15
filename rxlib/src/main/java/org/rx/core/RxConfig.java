@@ -176,6 +176,7 @@ public final class RxConfig {
         String DNS_DOH_TIMEOUT_MILLIS = "app.net.dns.dohTimeoutMillis";
         String DNS_DOH_MAX_IN_FLIGHT = "app.net.dns.dohMaxInFlight";
         String DNS_DOH_ENDPOINTS = "app.net.dns.dohEndpoints";
+        String DNS_INTERCEPTOR_BREAKER_OPEN_MILLIS = "app.net.dns.interceptorBreakerOpenMillis";
         String DNS_CACHE_ENABLED = "app.net.dns.cacheEnabled";
         String DNS_CACHE_PREFETCH = "app.net.dns.prefetch";
         String DNS_CACHE_PREFETCH_THRESHOLD_PERCENT = "app.net.dns.prefetchThresholdPercent";
@@ -559,6 +560,7 @@ public final class RxConfig {
         int dohTimeoutMillis = 5000;
         int dohMaxInFlight = 64;
         final List<String> dohEndpoints = newConcurrentList(true);
+        long interceptorBreakerOpenMillis = 30000L;
         DnsCacheConfig cache = new DnsCacheConfig();
     }
 

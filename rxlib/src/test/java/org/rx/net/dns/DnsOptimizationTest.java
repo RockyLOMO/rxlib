@@ -922,4 +922,55 @@ class DnsOptimizationTest {
             server.close();
         }
     }
+
+    @Test
+    @Timeout(10)
+    void interceptorBreakerZeroKeepsTryingResolver() throws Exception {
+        int dnsPort = freePort();
+        String host1 = "failopen-1-" + UUID.randomUUID() + ".example";
+        String host2 = "failopen-2-" + UUID.randomUUID() + ".example";
+        InetAddress resolvedIp = InetAddress.getByName("198.51.100.90");
+        AtomicInteger failedCalls = new AtomicInteger();
+        AtomicInteger healthyCalls = new AtomicInteger();
+        DnsResolveInterceptor failing = (srcIp, lookupHost) -> {
+            failedCalls.incrementAndGet();
+            throw new ClientDisconnectedException("dns-rpc-primary");
+        };
+        DnsResolveInterceptor healthy = (srcIp, lookupHost) -> {
+            healthyCalls.incrementAndGet();
+            return Collections.singletonList(resolvedIp);
+        };
+        RandomList<DnsResolveInterceptor> interceptors =
+                new RandomList<DnsResolveInterceptor>(Arrays.asList(failing, healthy)) {
+                    @Override
+                    public DnsResolveInterceptor next() {
+                        return failing;
+                    }
+                };
+        DnsServer server = new DnsServer(dnsPort, Collections.emptyList());
+        try {
+            server.setInterceptorBreakerOpenMillis(0);
+            server.setInterceptors(interceptors);
+            DefaultDnsResponse first = resolveOnce(server, host1);
+            try {
+                assertEquals(1, first.count(DnsSection.ANSWER));
+            } finally {
+                ReferenceCountUtil.release(first);
+            }
+
+            assertTrue(server.isInterceptorAvailable(failing, System.currentTimeMillis()));
+
+            DefaultDnsResponse second = resolveOnce(server, host2);
+            try {
+                assertEquals(1, second.count(DnsSection.ANSWER));
+            } finally {
+                ReferenceCountUtil.release(second);
+            }
+
+            assertEquals(2, failedCalls.get(), "breaker=0 时失败 interceptor 不应进入冷却");
+            assertEquals(2, healthyCalls.get());
+        } finally {
+            server.close();
+        }
+    }
 }

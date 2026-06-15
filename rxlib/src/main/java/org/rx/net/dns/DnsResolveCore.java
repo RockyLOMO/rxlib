@@ -284,8 +284,7 @@ public final class DnsResolveCore {
                 if (!isRecoverableInterceptorFailure(e)) {
                     throw e;
                 }
-                resolver.markInterceptorFailure(selected);
-                log.warn("dns interceptor temporarily disabled {}+{}: {}", srcIp, domain, e.toString());
+                logInterceptorFailure(srcIp, domain, e, resolver.markInterceptorFailure(selected));
                 return resolveByAlternateInterceptor(resolver, interceptors, selected, srcIp, domain, e);
             }
         }
@@ -311,8 +310,7 @@ public final class DnsResolveCore {
                     throw e;
                 }
                 lastFailure = e;
-                resolver.markInterceptorFailure(candidate);
-                log.warn("dns interceptor temporarily disabled {}+{}: {}", srcIp, domain, e.toString());
+                logInterceptorFailure(srcIp, domain, e, resolver.markInterceptorFailure(candidate));
             }
         }
         if (lastFailure != null) {
@@ -330,6 +328,14 @@ public final class DnsResolveCore {
             cause = cause.getCause();
         }
         return false;
+    }
+
+    static void logInterceptorFailure(InetAddress srcIp, String domain, Throwable e, boolean breakerOpened) {
+        if (breakerOpened) {
+            log.warn("dns interceptor temporarily disabled {}+{}: {}", srcIp, domain, e.toString());
+            return;
+        }
+        log.warn("dns interceptor recoverable failure {}+{}: {}", srcIp, domain, e.toString());
     }
 
     static void logResolveFailure(InetAddress srcIp, String domain, Throwable e, boolean coalescedWaiter) {

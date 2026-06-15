@@ -12,6 +12,7 @@ import org.rx.bean.RandomList;
 import org.rx.codec.CodecUtil;
 import org.rx.core.Linq;
 import org.rx.core.Reflects;
+import org.rx.core.RxConfig;
 import org.rx.core.Strings;
 import org.rx.core.Sys;
 import org.rx.core.Tasks;
@@ -941,6 +942,7 @@ public final class RssClient {
     static void applyDnsConfig(DnsServer dnsServer, RssClientConf conf, RandomList<DnsResolveInterceptor> dnsInterceptors) {
         dnsServer.setTtl(60 * conf.dnsTtlMinutes);
         dnsServer.setNegativeTtl(DnsServer.DEFAULT_NEGATIVE_TTL);
+        dnsServer.setInterceptorBreakerOpenMillis(RxConfig.INSTANCE.getNet().getDns().getInterceptorBreakerOpenMillis());
         dnsServer.setInterceptors(dnsInterceptors);
     }
 

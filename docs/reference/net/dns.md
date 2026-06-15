@@ -55,6 +55,7 @@ app.net.dns.serveExpired=false
 app.net.dns.serveExpiredTtlSeconds=86400
 app.net.dns.serveExpiredReplyTtlSeconds=30
 app.net.dns.serveExpiredClientTimeoutMillis=1800
+app.net.dns.interceptorBreakerOpenMillis=30000
 
 # memory / persistent / hybrid，默认 hybrid
 app.net.dns.cacheStorage=hybrid
@@ -64,6 +65,8 @@ app.net.dns.cacheStorage=hybrid
 app.net.dns.cacheMaximumSize=4096
 app.net.dns.cacheMaximumBytes=0
 ```
+
+`interceptorBreakerOpenMillis` 控制 DNS interceptor 在可恢复异常（连接断开、超时、IO 异常）后的临时冷却时间；设为 `0` 表示不打开该冷却 breaker。
 
 ## 适用场景
 - 在代理服务器或高性能爬虫等需要大量 DNS 解析的场景中，防止 DNS 解析阻塞 Netty 线程池。
