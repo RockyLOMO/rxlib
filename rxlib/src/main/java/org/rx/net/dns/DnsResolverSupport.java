@@ -303,13 +303,14 @@ abstract class DnsResolverSupport extends Disposable {
         interceptorBreakerUntil.remove(interceptor);
     }
 
-    void markInterceptorFailure(DnsResolveInterceptor interceptor) {
+    boolean markInterceptorFailure(DnsResolveInterceptor interceptor) {
         long openMillis = interceptorBreakerOpenMillis;
         if (openMillis <= 0) {
-            return;
+            return false;
         }
         long until = System.currentTimeMillis() + openMillis;
         interceptorBreakerUntil.put(interceptor, until < 0 ? Long.MAX_VALUE : until);
+        return true;
     }
 
     void retainInterceptorBreakerKeys(Collection<DnsResolveInterceptor> aliveInterceptors) {
