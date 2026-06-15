@@ -33,26 +33,48 @@ public class TcpBackpressureHandler extends ChannelInboundHandlerAdapter {
         });
     }
 
+    public static void installPair(Channel left, Channel right) {
+        installIfAbsent(left, right);
+        installIfAbsent(right, left);
+    }
+
+    public static boolean installIfAbsent(Channel inbound, Channel outbound) {
+        return install0(inbound, outbound, (in, out) -> {
+            Sockets.disableAutoRead(in);
+        }, (in, out, e) -> {
+            Sockets.enableAutoRead(in);
+        }, true);
+    }
+
     public static void install(Channel inbound, Channel outbound, TripleAction<Channel, Channel> onBackpressureStart, QuadraAction<Channel, Channel, Throwable> onBackpressureEnd) {
+        install0(inbound, outbound, onBackpressureStart, onBackpressureEnd, false);
+    }
+
+    private static boolean install0(Channel inbound, Channel outbound, TripleAction<Channel, Channel> onBackpressureStart,
+                                    QuadraAction<Channel, Channel, Throwable> onBackpressureEnd, boolean ignoreExisting) {
         if (outbound == null) {
-            return;
+            return false;
         }
         NetworkTrafficConfig config = RxConfig.INSTANCE.getNet().getGlobalTraffic();
         if (config != null && !config.isTcpBackpressureEnabled()) {
-            return;
+            return false;
         }
         WriteBufferWaterMark waterMark = outbound.config().getOption(ChannelOption.WRITE_BUFFER_WATER_MARK);
         if (waterMark == null) {
             log.warn("TcpBackpressureHandler not installed: WriteBufferWaterMark not set");
-            return;
+            return false;
         }
 
         ChannelPipeline p = outbound.pipeline();
         TcpBackpressureHandler handler = p.get(TcpBackpressureHandler.class);
         if (handler != null) {
+            if (ignoreExisting) {
+                return false;
+            }
             throw new IllegalStateException("TcpBackpressureHandler already installed");
         }
         p.addLast(new TcpBackpressureHandler(inbound, onBackpressureStart, onBackpressureEnd));
+        return true;
     }
 
     final AtomicReference<ScheduledFuture<?>> timer = new AtomicReference<>();

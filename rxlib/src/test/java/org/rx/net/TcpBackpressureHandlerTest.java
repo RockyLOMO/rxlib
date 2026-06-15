@@ -37,6 +37,43 @@ public class TcpBackpressureHandlerTest {
 
     @SneakyThrows
     @Test
+    public void testInstallPairControlsBothDirections() {
+        EmbeddedChannel left = new EmbeddedChannel();
+        EmbeddedChannel right = new EmbeddedChannel();
+        left.config().setOption(ChannelOption.WRITE_BUFFER_WATER_MARK, WriteBufferWaterMark.DEFAULT);
+        right.config().setOption(ChannelOption.WRITE_BUFFER_WATER_MARK, WriteBufferWaterMark.DEFAULT);
+
+        try {
+            TcpBackpressureHandler.installPair(left, right);
+
+            TcpBackpressureHandler leftHandler = left.pipeline().get(TcpBackpressureHandler.class);
+            TcpBackpressureHandler rightHandler = right.pipeline().get(TcpBackpressureHandler.class);
+            assertNotNull(leftHandler);
+            assertNotNull(rightHandler);
+
+            right.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
+            right.pipeline().fireChannelWritabilityChanged();
+            assertTrue(rightHandler.isPaused());
+            assertFalse(left.config().isAutoRead());
+
+            Thread.sleep(TcpBackpressureHandler.COOLDOWN_MILLIS + 20);
+            right.unsafe().outboundBuffer().setUserDefinedWritability(1, true);
+            right.pipeline().fireChannelWritabilityChanged();
+            assertFalse(rightHandler.isPaused());
+            assertTrue(left.config().isAutoRead());
+
+            left.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
+            left.pipeline().fireChannelWritabilityChanged();
+            assertTrue(leftHandler.isPaused());
+            assertFalse(right.config().isAutoRead());
+        } finally {
+            right.finishAndReleaseAll();
+            left.finishAndReleaseAll();
+        }
+    }
+
+    @SneakyThrows
+    @Test
     public void testFlow() {
         EmbeddedChannel inbound = new EmbeddedChannel();
         EmbeddedChannel outbound = new EmbeddedChannel();

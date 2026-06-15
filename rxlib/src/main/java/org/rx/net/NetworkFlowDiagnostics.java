@@ -27,21 +27,26 @@ import java.util.concurrent.atomic.LongAdder;
 
 @Slf4j
 public final class NetworkFlowDiagnostics {
-    private static final String PROP_ENABLED = "app.net.flowDebug.enabled";
-    private static final String PROP_INTERVAL_MILLIS = "app.net.flowDebug.intervalMillis";
-    private static final String PROP_TOP_CHANNELS = "app.net.flowDebug.topChannels";
-    private static final String PROP_UDP_DROPS = "app.net.flowDebug.udpDrops";
+    private static final String PROP_FLAGS = "app.net.flowDebug.flags";
     private static final int DEFAULT_INTERVAL_MILLIS = 1000;
-    private static final int MIN_INTERVAL_MILLIS = 200;
-    private static final int DEFAULT_TOP_CHANNELS = 5;
+    private static final int DEFAULT_TOP_CHANNELS = 8;
+    /** 0: 关闭全部 flow debug。 */
+    public static final int FLAGS_OFF = 0;
+    /** 1: 每秒输出 NET_FLOW_DEBUG 聚合日志。 */
+    public static final int FLAG_REPORT = 1 << 0;
+    /** 2: 聚合日志追加 top channel；3 表示 1 + 2，是 Socks 场景 4 TCP/背压排查推荐值。 */
+    public static final int FLAG_TOP_CHANNELS = 1 << 1;
+    /** 4: 输出 UDP backpressure / final egress drop 明细；7 表示 1 + 2 + 4。 */
+    public static final int FLAG_UDP_DROPS = 1 << 2;
 
     static final NetworkFlowDiagnostics INSTANCE = new NetworkFlowDiagnostics();
 
-    private final boolean enabled = readBoolean(PROP_ENABLED, false);
-    private final boolean udpDropDebugEnabled = readBoolean(PROP_UDP_DROPS, false);
-    private final int intervalMillis = Math.max(MIN_INTERVAL_MILLIS,
-            readInt(PROP_INTERVAL_MILLIS, DEFAULT_INTERVAL_MILLIS));
-    private final int topChannels = Math.max(0, readInt(PROP_TOP_CHANNELS, DEFAULT_TOP_CHANNELS));
+    private final int flags = readFlags();
+    private final boolean reportEnabled = hasFlag(flags, FLAG_REPORT);
+    private final boolean topChannelsEnabled = hasFlag(flags, FLAG_TOP_CHANNELS);
+    private final boolean udpDropDebugEnabled = hasFlag(flags, FLAG_UDP_DROPS);
+    private final int intervalMillis = DEFAULT_INTERVAL_MILLIS;
+    private final int topChannels = topChannelsEnabled ? DEFAULT_TOP_CHANNELS : 0;
     private final Set<Channel> channels = Collections.newSetFromMap(new ConcurrentHashMap<Channel, Boolean>());
     private final ConcurrentHashMap<Channel, ChannelTrafficState> trafficStates =
             new ConcurrentHashMap<Channel, ChannelTrafficState>();
@@ -56,7 +61,7 @@ public final class NetworkFlowDiagnostics {
     }
 
     static boolean isEnabled() {
-        return INSTANCE.enabled;
+        return INSTANCE.reportEnabled;
     }
 
     public static boolean isUdpDropDebugEnabled() {
@@ -68,19 +73,19 @@ public final class NetworkFlowDiagnostics {
     }
 
     static void recordTcpBackpressureTimeout() {
-        if (INSTANCE.enabled) {
+        if (INSTANCE.reportEnabled) {
             INSTANCE.tcpBackpressureTimeouts.increment();
         }
     }
 
     static void recordTcpBackpressureStart() {
-        if (INSTANCE.enabled) {
+        if (INSTANCE.reportEnabled) {
             INSTANCE.tcpBackpressureStarts.increment();
         }
     }
 
     static void recordTcpBackpressureEnd(long pauseMillis) {
-        if (INSTANCE.enabled) {
+        if (INSTANCE.reportEnabled) {
             INSTANCE.tcpBackpressureEnds.increment();
             if (pauseMillis > 0L) {
                 INSTANCE.tcpBackpressurePauseMillis.add(pauseMillis);
@@ -89,7 +94,7 @@ public final class NetworkFlowDiagnostics {
     }
 
     private void register0(final Channel channel) {
-        if (!enabled || channel == null) {
+        if (!reportEnabled || channel == null) {
             return;
         }
         channels.add(channel);
@@ -116,7 +121,7 @@ public final class NetworkFlowDiagnostics {
                 }
             }
         }, intervalMillis, intervalMillis, TimeUnit.MILLISECONDS);
-        log.info("NET_FLOW_DEBUG enabled intervalMillis={} topChannels={}", intervalMillis, topChannels);
+        log.info("NET_FLOW_DEBUG enabled flags={} intervalMillis={} topChannels={}", flags, intervalMillis, topChannels);
     }
 
     private void report() {
@@ -324,24 +329,20 @@ public final class NetworkFlowDiagnostics {
         return null;
     }
 
-    private static boolean readBoolean(String key, boolean defaultValue) {
-        String value = System.getProperty(key);
-        if (value == null || value.length() == 0) {
-            return defaultValue;
+    private static int readFlags() {
+        String value = System.getProperty(PROP_FLAGS);
+        if (value != null && value.length() > 0) {
+            try {
+                return Math.max(0, Integer.parseInt(value));
+            } catch (NumberFormatException e) {
+                return FLAGS_OFF;
+            }
         }
-        return "true".equalsIgnoreCase(value) || "1".equals(value) || "yes".equalsIgnoreCase(value);
+        return FLAGS_OFF;
     }
 
-    private static int readInt(String key, int defaultValue) {
-        String value = System.getProperty(key);
-        if (value == null || value.length() == 0) {
-            return defaultValue;
-        }
-        try {
-            return Integer.parseInt(value);
-        } catch (NumberFormatException e) {
-            return defaultValue;
-        }
+    static boolean hasFlag(int flags, int flag) {
+        return (flags & flag) != 0;
     }
 
     private static final class ChannelTrafficState {

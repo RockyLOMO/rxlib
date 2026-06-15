@@ -3,9 +3,9 @@ package org.rx.net.socks;
 import io.netty.channel.*;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
+import org.rx.net.TcpBackpressureHandler;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.EndpointTracer;
-import java.net.InetSocketAddress;
 
 import java.net.InetSocketAddress;
 
@@ -39,7 +39,7 @@ public class SSTcpProxyHandler extends ChannelInboundHandlerAdapter {
                 log.info("SS TCP connect to backend {}[{}]", upDstEp, dstEp);
             }
             Channel outbound = f.channel();
-//            TcpBackpressureHandler.install(inbound, outbound);
+            TcpBackpressureHandler.installPair(inbound, outbound);
             EndpointTracer.TCP.link(Sockets.getOriginRemoteAddress(inbound), outbound);
             outbound.pipeline().addLast(SocksTcpBackendRelayHandler.DEFAULT);
         });

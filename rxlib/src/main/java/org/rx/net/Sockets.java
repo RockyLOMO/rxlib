@@ -222,6 +222,7 @@ public final class Sockets {
     public static final String UDP_FINAL_EGRESS_GUARD = "UDP_FINAL_EGRESS_GUARD";
     public static final LengthFieldPrepender INT_LENGTH_FIELD_ENCODER = new LengthFieldPrepender(4);
     public static final AttributeKey<InetSocketAddress> ATTR_ORIGIN_REMOTE_ADDR = AttributeKey.valueOf("originRemoteAddr");
+    static final AttributeKey<SocketAddress> ATTR_CONNECT_HINT = AttributeKey.valueOf("connectHint");
     public static final AttributeKey<AtomicInteger> ATTR_UDP_PENDING_WRITE_BYTES = AttributeKey.valueOf("udpPendingWriteBytes");
     public static final AttributeKey<AtomicInteger> ATTR_UDP_PENDING_WRITE_PACKETS = AttributeKey.valueOf("udpPendingWritePackets");
     public static final AttributeKey<Integer> ATTR_UDP_WRITE_LIMIT_BYTES = AttributeKey.valueOf("udpWriteLimitBytes");
@@ -824,6 +825,7 @@ public final class Sockets {
         int connectTimeoutMillis = config.getConnectTimeoutMillis();
         Bootstrap b = new Bootstrap().group(eventLoopGroup);
         b.attr(SocketConfig.ATTR_CONF, config);
+        b.attr(ATTR_CONNECT_HINT, connectHint);
         if (localConnect) {
             b.channel(LocalChannel.class)
                     .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMillis);
