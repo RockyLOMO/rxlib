@@ -10,6 +10,10 @@ import org.rx.core.RxConfig;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.udp.UdpBackpressurePolicy;
 
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
+
 @Slf4j
 public final class NetworkFlowControl {
     public static final NetworkFlowControl DEFAULT = new NetworkFlowControl();
@@ -46,9 +50,14 @@ public final class NetworkFlowControl {
     }
 
     public boolean install(Channel channel) {
-        if (channel == null || channel instanceof LocalChannel) {
+        if (channel == null) {
             return false;
         }
+        NetworkFlowDiagnostics.register(channel);
+        if (shouldSkipTrafficShaping(channel)) {
+            return false;
+        }
+
         NetworkTrafficConfig snapshot = config;
         if (!snapshot.isTrafficShapingEnabled()) {
             return false;
@@ -64,6 +73,32 @@ public final class NetworkFlowControl {
         DiagnosticMetrics.record("net.flow.global.traffic.channel.count", 1D,
                 "protocol=" + Sockets.protocolName(channel));
         return true;
+    }
+
+    static boolean shouldSkipTrafficShaping(Channel channel) {
+        if (channel instanceof LocalChannel) {
+            return true;
+        }
+        if (isLoopbackAddress(channel.attr(Sockets.ATTR_CONNECT_HINT).get())) {
+            return true;
+        }
+        return isLoopbackAddress(channel.localAddress()) && isLoopbackAddress(channel.remoteAddress());
+    }
+
+    private static boolean isLoopbackAddress(SocketAddress address) {
+        if (!(address instanceof InetSocketAddress)) {
+            return false;
+        }
+        InetSocketAddress endpoint = (InetSocketAddress) address;
+        InetAddress inetAddress = endpoint.getAddress();
+        if (inetAddress != null) {
+            return inetAddress.isLoopbackAddress();
+        }
+        String host = endpoint.getHostString();
+        return "localhost".equalsIgnoreCase(host)
+                || "127.0.0.1".equals(host)
+                || "::1".equals(host)
+                || "0:0:0:0:0:0:0:1".equals(host);
     }
 
     public UdpBackpressurePolicy udpBackpressurePolicy() {

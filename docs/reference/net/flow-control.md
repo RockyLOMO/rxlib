@@ -72,7 +72,7 @@ app:
 -Dapp.net.globalTraffic.downloadKilobytesPerSecond=10240
 -Dapp.net.globalTraffic.maxDelayMillis=200
 -Dapp.net.globalTraffic.udpMaxPendingBytes=1048576
--Dapp.net.flowDebug.udpDrops=false
+-Dapp.net.flowDebug.flags=0
 ```
 
 如果运行期直接修改 `RxConfig.INSTANCE.getNet().getGlobalTraffic()`，修改后需要刷新：

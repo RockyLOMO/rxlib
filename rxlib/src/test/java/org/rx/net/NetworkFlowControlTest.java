@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.rx.core.RxConfig;
 
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -35,6 +36,43 @@ public class NetworkFlowControlTest {
         NetworkFlowControl.DEFAULT.refresh(config);
 
         EmbeddedChannel channel = new EmbeddedChannel();
+        try {
+            assertFalse(NetworkFlowControl.DEFAULT.install(channel));
+            assertNull(channel.pipeline().get(NetworkFlowControl.GLOBAL_TRAFFIC_HANDLER));
+        } finally {
+            channel.finishAndReleaseAll();
+        }
+    }
+
+    @Test
+    public void testLoopbackTcpDoesNotInstallGlobalTrafficHandler() {
+        NetworkTrafficConfig config = new NetworkTrafficConfig();
+        config.setEnabled(true);
+        config.setUploadKilobytesPerSecond(4L);
+        config.setDownloadKilobytesPerSecond(8L);
+        NetworkFlowControl.DEFAULT.refresh(config);
+
+        EmbeddedChannel channel = new AddressedEmbeddedChannel(
+                new InetSocketAddress("127.0.0.1", 6885),
+                new InetSocketAddress("127.0.0.1", 51386));
+        try {
+            assertFalse(NetworkFlowControl.DEFAULT.install(channel));
+            assertNull(channel.pipeline().get(NetworkFlowControl.GLOBAL_TRAFFIC_HANDLER));
+        } finally {
+            channel.finishAndReleaseAll();
+        }
+    }
+
+    @Test
+    public void testLoopbackConnectHintDoesNotInstallGlobalTrafficHandler() {
+        NetworkTrafficConfig config = new NetworkTrafficConfig();
+        config.setEnabled(true);
+        config.setUploadKilobytesPerSecond(4L);
+        config.setDownloadKilobytesPerSecond(8L);
+        NetworkFlowControl.DEFAULT.refresh(config);
+
+        EmbeddedChannel channel = new EmbeddedChannel();
+        channel.attr(Sockets.ATTR_CONNECT_HINT).set(new InetSocketAddress("localhost", 6885));
         try {
             assertFalse(NetworkFlowControl.DEFAULT.install(channel));
             assertNull(channel.pipeline().get(NetworkFlowControl.GLOBAL_TRAFFIC_HANDLER));
@@ -272,6 +310,26 @@ public class NetworkFlowControlTest {
         } finally {
             outbound.finishAndReleaseAll();
             inbound.finishAndReleaseAll();
+        }
+    }
+
+    private static final class AddressedEmbeddedChannel extends EmbeddedChannel {
+        private final SocketAddress localAddress;
+        private final SocketAddress remoteAddress;
+
+        AddressedEmbeddedChannel(SocketAddress localAddress, SocketAddress remoteAddress) {
+            this.localAddress = localAddress;
+            this.remoteAddress = remoteAddress;
+        }
+
+        @Override
+        public SocketAddress localAddress() {
+            return localAddress;
+        }
+
+        @Override
+        public SocketAddress remoteAddress() {
+            return remoteAddress;
         }
     }
 }
