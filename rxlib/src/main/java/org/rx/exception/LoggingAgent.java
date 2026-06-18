@@ -52,23 +52,30 @@ public class LoggingAgent {
     }
 
     public static synchronized void transform() {
+        if (!Boolean.parseBoolean(System.getProperty("rx.loggingAgent.enabled", "true"))) {
+            return;
+        }
         final byte flag = 2;
         if ((Sys.transformedFlags & flag) == flag) {
             return;
         }
-        Sys.transformedFlags |= flag;
-        new AgentBuilder.Default()
+        try {
+            new AgentBuilder.Default()
 //                .with(AgentBuilder.Listener.StreamWriting.toSystemOut())
-                .with(new ByteBuddy().with(Implementation.Context.Disabled.Factory.INSTANCE))
-                .with(AgentBuilder.InitializationStrategy.NoOp.INSTANCE)
-                .with(AgentBuilder.RedefinitionStrategy.REDEFINITION)
-                .with(AgentBuilder.TypeStrategy.Default.REDEFINE)
-                .ignore(ElementMatchers.none())
-                .type(ElementMatchers.hasSuperType(ElementMatchers.named("org.slf4j.Logger")))
-                .transform((builder, typeDescription, classLoader, javaModule, protectionDomain) -> builder.visit(
-                        Advice.to(LoggerErrorAdvice.class)
-                                .on(ElementMatchers.named("error"))
-                ))
-                .installOn(ByteBuddyAgent.install());
+                    .with(new ByteBuddy().with(Implementation.Context.Disabled.Factory.INSTANCE))
+                    .with(AgentBuilder.InitializationStrategy.NoOp.INSTANCE)
+                    .with(AgentBuilder.RedefinitionStrategy.REDEFINITION)
+                    .with(AgentBuilder.TypeStrategy.Default.REDEFINE)
+                    .ignore(ElementMatchers.none())
+                    .type(ElementMatchers.hasSuperType(ElementMatchers.named("org.slf4j.Logger")))
+                    .transform((builder, typeDescription, classLoader, javaModule, protectionDomain) -> builder.visit(
+                            Advice.to(LoggerErrorAdvice.class)
+                                    .on(ElementMatchers.named("error"))
+                    ))
+                    .installOn(ByteBuddyAgent.install());
+            Sys.transformedFlags |= flag;
+        } catch (Throwable e) {
+            log.warn("LoggingAgent transform skipped: {}", e.getMessage(), e);
+        }
     }
 }
