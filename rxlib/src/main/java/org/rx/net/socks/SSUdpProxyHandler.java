@@ -396,7 +396,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
     private static void writeWhenReady(SocksContext sc, InetSocketAddress dstEp, ByteBuf payload,
             InetSocketAddress srcEp, boolean debug) {
         Channel outbound = sc.outbound.channel();
-        EndpointTracer.UDP.link(srcEp, outbound);
+        EndpointTracer.UDP.linkOnce(srcEp, outbound);
         Upstream upstream = sc.getUpstream();
         if (!outbound.isActive()) {
             int bytes = readableBytesOf(payload);

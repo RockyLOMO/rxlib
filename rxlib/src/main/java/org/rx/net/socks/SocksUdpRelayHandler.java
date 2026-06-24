@@ -796,7 +796,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
         if (udp2rawUpstream != null || socksUpstream != null || udpClientUpstream != null) {
             registerRelayAddressIfMissing(relay, upDstAddr, context);
         }
-        EndpointTracer.UDP.link(clientOriginAddr, relay);
+        EndpointTracer.UDP.linkOnce(clientOriginAddr, relay);
         SocksConfig config = Sockets.getAttr(relay, SocksContext.SOCKS_SVR).config;
         if (udp2rawUpstream != null) {
             if (config.isDebug()) {
