@@ -30,6 +30,7 @@ public final class NameserverClient extends Disposable {
         Nameserver ns;
         Future<?> healthTask;
         volatile Integer dnsPort;
+        volatile int failCount;
     }
 
     static final int DEFAULT_RETRY_PERIOD = 1000;
@@ -124,18 +125,47 @@ public final class NameserverClient extends Disposable {
                         Integer lastDp = tuple.dnsPort;
                         if (eq(tuple.dnsPort = tuple.ns.register(appName, svrEps), lastDp)) {
                             log.debug("nsc: login ns ok {} -> {}", regEp, tuple.dnsPort);
+                            tuple.failCount = 0;
                             return;
                         }
                         log.info("nsc: login ns {} -> {} PREV={}", regEp, tuple.dnsPort, lastDp);
+                        tuple.failCount = 0;
                         registerInstanceAttrs(tuple.ns);
                         reInject();
                     } catch (Throwable e) {
                         log.debug("nsc: login error", e);
-                        Tasks.setTimeout(() -> {
-                            tuple.dnsPort = tuple.ns.register(appName, svrEps);
-                            registerInstanceAttrs(tuple.ns);
+                        if (++tuple.failCount >= 5) {
+                            log.warn("nsc: login ns {} failed {} times, remove from cluster", regEp, tuple.failCount);
+                            svrEps.remove(regEp);
+                            holder.remove(tuple);
+                            if (tuple.healthTask != null) {
+                                tuple.healthTask.cancel(false);
+                            }
+                            tryClose(tuple.ns);
                             reInject();
-                            circuitContinue(false);
+                            return;
+                        }
+                        Tasks.setTimeout(() -> {
+                            try {
+                                tuple.dnsPort = tuple.ns.register(appName, svrEps);
+                                tuple.failCount = 0;
+                                registerInstanceAttrs(tuple.ns);
+                                reInject();
+                                circuitContinue(false);
+                            } catch (Throwable ex) {
+                                log.debug("nsc: retry login error", ex);
+                                if (++tuple.failCount >= 5) {
+                                    log.warn("nsc: login ns {} failed {} times, remove from cluster", regEp, tuple.failCount);
+                                    svrEps.remove(regEp);
+                                    holder.remove(tuple);
+                                    if (tuple.healthTask != null) {
+                                        tuple.healthTask.cancel(false);
+                                    }
+                                    tryClose(tuple.ns);
+                                    reInject();
+                                    circuitContinue(false);
+                                }
+                            }
                         }, DEFAULT_RETRY_PERIOD, tuple, TimeoutFlag.SINGLE.flags(TimeoutFlag.PERIOD));
                     }
                 };
