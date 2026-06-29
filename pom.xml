@@ -13,7 +13,6 @@
     </parent>
     <modules>
 <!--        <module>daemon</module>-->
-<!--        <module>agent</module>-->
         <module>rxlib</module>
         <module>rxlib-x</module>
     </modules>
