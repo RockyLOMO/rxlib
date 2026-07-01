@@ -116,6 +116,12 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         final List<IndexColumnSpec> columns;
     }
 
+    @RequiredArgsConstructor
+    static final class MappingColumnSpec {
+        final String columnName;
+        final String typeSpec;
+    }
+
     static final String SQL_CREATE = "CREATE TABLE IF NOT EXISTS $TABLE\n" +
             "(\n" +
             "$CREATE_COLUMNS" +
@@ -859,6 +865,66 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         return true;
     }
 
+    void reconcileMappingColumns(String tableName, Map<String, MappingColumnSpec> expectedColumns) {
+        invoke(conn -> {
+            Map<String, MappingColumnSpec> expectedByIdentifier = new HashMap<>();
+            for (MappingColumnSpec spec : expectedColumns.values()) {
+                expectedByIdentifier.put(normalizeIdentifier(spec.columnName), spec);
+            }
+
+            Map<String, String> actualColumns = findTableColumns(conn, tableName);
+            if (actualColumns.isEmpty()) {
+                return;
+            }
+
+            try (Statement stmt = conn.createStatement()) {
+                for (MappingColumnSpec spec : expectedColumns.values()) {
+                    if (actualColumns.containsKey(normalizeIdentifier(spec.columnName))) {
+                        continue;
+                    }
+                    String sql = String.format("ALTER TABLE %s ADD COLUMN `%s` %s;", tableName, spec.columnName, spec.typeSpec);
+                    log.debug("alterMapping\n{}", sql);
+                    stmt.executeUpdate(sql);
+                }
+
+                for (Map.Entry<String, String> column : actualColumns.entrySet()) {
+                    if (expectedByIdentifier.containsKey(column.getKey())) {
+                        continue;
+                    }
+                    String sql = String.format("ALTER TABLE %s DROP COLUMN `%s`;", tableName, column.getValue());
+                    log.debug("alterMapping\n{}", sql);
+                    stmt.executeUpdate(sql);
+                }
+            }
+        }, "reconcileMappingColumns", Collections.emptyList());
+    }
+
+    @SneakyThrows
+    Map<String, String> findTableColumns(Connection conn, String tableName) {
+        DatabaseMetaData metaData = conn.getMetaData();
+        Map<String, String> columns = new LinkedHashMap<>();
+        Set<String> visited = new HashSet<>();
+        String[] catalogs = new String[]{conn.getCatalog(), null};
+        String[] tables = new String[]{tableName, tableName.toUpperCase(Locale.ENGLISH), tableName.toLowerCase(Locale.ENGLISH)};
+        for (String catalog : catalogs) {
+            for (String table : tables) {
+                String key = String.valueOf(catalog) + "|" + table;
+                if (!visited.add(key)) {
+                    continue;
+                }
+                try (ResultSet rs = metaData.getColumns(catalog, null, table, null)) {
+                    while (rs.next()) {
+                        String columnName = rs.getString("COLUMN_NAME");
+                        if (columnName != null) {
+                            columns.putIfAbsent(normalizeIdentifier(columnName), columnName);
+                        }
+                    }
+                }
+            }
+        }
+        return columns;
+    }
+
     boolean equalsIdentifier(String a, String b) {
         return normalizeIdentifier(a).equals(normalizeIdentifier(b));
     }
@@ -902,14 +968,17 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
     public void createMapping(Class<?>... entityTypes) {
         StringBuilder createCols = new StringBuilder();
         StringBuilder insert = new StringBuilder();
+        StringBuilder insertCols = new StringBuilder();
+        StringBuilder insertValues = new StringBuilder();
         for (Class<?> entityType : entityTypes) {
             createCols.setLength(0);
+            insertCols.setLength(0);
+            insertValues.setLength(0);
             String tableName = tableName(entityType);
-            // insert.setLength(0).appendFormat("INSERT INTO %s VALUES (", tableName);
-            insert.setLength(0).appendFormat("MERGE INTO %s VALUES (", tableName);
 
             String pkName = null;
             Map<String, Tuple<Field, DbColumn>> columns = new LinkedHashMap<>();
+            Map<String, MappingColumnSpec> mappingColumns = new LinkedHashMap<>();
             Map<String, List<CompositeIndexColumn>> compositeIndexes = new LinkedHashMap<>();
             for (Field field : Reflects.getFieldMap(entityType).values()) {
                 if (Modifier.isStatic(field.getModifiers()) || Modifier.isTransient(field.getModifiers())) {
@@ -944,11 +1013,14 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                                 .add(new CompositeIndexColumn(colName, field.getName(), compositeIndex.order(), compositeIndex.type()));
                     }
                 }
-                createCols.appendLine("\t`%s` %s%s,", colName, h2Type, extra);
+                String typeSpec = h2Type + extra;
+                mappingColumns.put(colName, new MappingColumnSpec(colName, typeSpec));
+                createCols.appendLine("\t`%s` %s,", colName, typeSpec);
+                insertCols.appendFormat("`%s`,", colName);
                 if (dbColumn == null || !dbColumn.autoIncrement()) {
-                    insert.append("?,");
+                    insertValues.append("?,");
                 } else {
-                    insert.append("null,");
+                    insertValues.append("null,");
                 }
             }
             if (pkName == null) {
@@ -958,13 +1030,16 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
                 validateCompositeIndex(entityType, entry.getKey(), entry.getValue());
             }
 
-            insert.setLength(insert.length() - 1).append(")");
+            insertCols.setLength(insertCols.length() - 1);
+            insertValues.setLength(insertValues.length() - 1);
+            insert.setLength(0).appendFormat("MERGE INTO %s (%s) VALUES (%s)", tableName, insertCols, insertValues);
 
             String sql = new StringBuilder(SQL_CREATE).replace($TABLE, tableName)
                     .replace($CREATE_COLUMNS, createCols.toString())
                     .replace($PK, pkName).toString();
             log.debug("createMapping\n{}", sql);
             executeUpdate(sql);
+            reconcileMappingColumns(tableName, mappingColumns);
 
             for (Tuple<Field, DbColumn> value : columns.values()) {
                 DbColumn dbColumn = value.right;
@@ -1066,7 +1141,6 @@ public class EntityDatabaseImpl extends Disposable implements EntityDatabase {
         String tableName = template.getTableName();
         StringBuilder createCols = new StringBuilder();
         StringBuilder insert = new StringBuilder();
-        // insert.appendFormat("INSERT INTO %s VALUES (", tableName);
         insert.appendFormat("MERGE INTO %s VALUES (", tableName);
 
         int len = template.getColumns().size();

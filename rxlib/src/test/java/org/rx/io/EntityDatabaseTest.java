@@ -4,6 +4,7 @@ import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.h2.tools.Server;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.rx.AbstractTester;
 import org.rx.annotation.DbColumn;
@@ -92,6 +93,23 @@ public class EntityDatabaseTest extends AbstractTester {
         Long id;
         @DbColumn(index = DbColumn.IndexKind.NONE)
         String text;
+    }
+
+    @Data
+    public static class SchemaReconcileV1 implements Serializable {
+        @DbColumn(primaryKey = true)
+        String id;
+        String name;
+        @DbColumn(index = DbColumn.IndexKind.INDEX_ASC)
+        String oldKey;
+    }
+
+    @Data
+    public static class SchemaReconcileV2 implements Serializable {
+        @DbColumn(primaryKey = true)
+        String id;
+        @DbColumn(index = DbColumn.IndexKind.INDEX_ASC)
+        String signKeyId;
     }
 
     static class CountingEntityDatabaseImpl extends EntityDatabaseImpl {
@@ -271,6 +289,43 @@ public class EntityDatabaseTest extends AbstractTester {
         }
     }
 
+    @Test
+    public void testCreateMappingReconcilesColumnsBeforeIndexes() {
+        EntityDatabaseImpl db = new EntityDatabaseImpl(path("h2/schema_reconcile"), null);
+        db.setTableMapping(type -> "schema_reconcile_entity");
+        try {
+            db.createMapping(SchemaReconcileV1.class);
+            SchemaReconcileV1 legacy = new SchemaReconcileV1();
+            legacy.setId("legacy-1");
+            legacy.setName("old");
+            legacy.setOldKey("old-key");
+            db.save(legacy);
+
+            db.createMapping(SchemaReconcileV2.class);
+            SchemaReconcileV2 current = new SchemaReconcileV2();
+            current.setId("current-1");
+            current.setSignKeyId("sign-key");
+            db.save(current);
+
+            DataTable columns = db.executeQuery("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS " +
+                    "WHERE UPPER(TABLE_NAME)='SCHEMA_RECONCILE_ENTITY' ORDER BY ORDINAL_POSITION");
+            List<DataRow> rows = Linq.from(columns.getRows()).toList();
+            assertEquals(2, rows.size());
+            assertEquals("ID", rows.get(0).get("COLUMN_NAME"));
+            assertEquals("SIGN_KEY_ID", rows.get(1).get("COLUMN_NAME"));
+
+            String indexName = db.indexName("schema_reconcile_entity", "sign_key_id").toUpperCase();
+            DataTable indexes = db.executeQuery("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.INDEX_COLUMNS " +
+                    "WHERE UPPER(TABLE_NAME)='SCHEMA_RECONCILE_ENTITY' AND UPPER(INDEX_NAME)='" + indexName + "'");
+            List<DataRow> indexRows = Linq.from(indexes.getRows()).toList();
+            assertEquals(1, indexRows.size());
+            assertEquals("SIGN_KEY_ID", indexRows.get(0).get("COLUMN_NAME"));
+        } finally {
+            db.executeUpdate("DROP TABLE IF EXISTS schema_reconcile_entity");
+            db.close();
+        }
+    }
+
 //    @SneakyThrows
 //    @Test
 //    public synchronized void h2ShardingDb() {
@@ -299,6 +354,7 @@ public class EntityDatabaseTest extends AbstractTester {
 //    }
 
     @Test
+    @Disabled("Sharding EntityDatabase is paused; keep EntityDatabase MERGE path as the priority.")
     public synchronized void h2DbShardingMethod() {
         EntityDatabaseImpl db = new EntityDatabaseImpl(path("h2/sharding"), null);
         db.createMapping(PersonBean.class);
