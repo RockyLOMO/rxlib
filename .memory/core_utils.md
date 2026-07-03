@@ -1,3 +1,12 @@
+﻿# 核心基础组件与工具演进
+
+
+<details>
+<summary><b>[2026-05-06] BeanMapper 综合评审与赋值 Bug 修复方案 (BeanMapper Comprehensive Review & Bug Fix)</b></summary>
+
+> **原始文件**: BeanMapper-assignment-bug-review-plan.md (来自 docs/plan)
+> **创建日期**: 2026-05-06
+
 # BeanMapper 综合评审与赋值 Bug 修复方案 (BeanMapper Comprehensive Review & Bug Fix)
 
 # 背景
@@ -110,3 +119,8 @@ mvn test -Dtest="ReflectsCompatibilityTest,BeanMapperAssignmentTest,TestUtil"
 **运行结论**：
 - `ReflectsCompatibilityTest`、`BeanMapperAssignmentTest`、以及基础的 `TestUtil#defineMapBean` & `TestUtil#normalMapBean` 全部通过。
 - **累计运行 13 个关键核心转换与映射用例，100% SUCCESS，无任何异常、缺陷与行为破坏！**
+
+
+</details>
+
+---
