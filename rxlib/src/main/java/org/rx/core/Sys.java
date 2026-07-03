@@ -40,6 +40,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -73,6 +74,9 @@ public final class Sys extends SystemUtils {
         return jsonValueFilter(o, k, v);
     };
     static final String[] seconds = {"ns", "µs", "ms", "s"};
+    static final String DNS_RESOLVE_CALL_LOG_STACKTRACE_EVERY_PROPERTY = "app.net.dns.resolveCallLogStacktraceEvery";
+    static final int DNS_RESOLVE_CALL_LOG_STACKTRACE_EVERY = 100;
+    static final ConcurrentHashMap<String, AtomicInteger> DNS_RESOLVE_CALL_LOG_COUNTS = new ConcurrentHashMap<>();
 
     static {
         ObjectReaderProvider objectReaderProvider = JSONFactory.getDefaultObjectReaderProvider();
@@ -548,7 +552,13 @@ public final class Sys extends SystemUtils {
                         String msg = builder.buildLog(declaringType, displayName, parameters, paramSnapshot, returnValue, error, elapsedNanos);
                         if (msg != null) {
                             if (error != null) {
-                                log.error(msg, error);
+                                CallErrorStackTraceSample sample = sampleCallErrorStackTrace(declaringType, methodName, parameters, error);
+                                if (sample == null || sample.writeStackTrace) {
+                                    log.error(msg, error);
+                                } else {
+                                    log.error("{}StackTrace:\tsuppressed count={} every={} key={}",
+                                            msg, sample.count, sample.every, sample.key);
+                                }
                             } else {
                                 org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(declaringType);
                                 log.info(msg);
@@ -561,6 +571,65 @@ public final class Sys extends SystemUtils {
             } catch (Throwable e) {
                 log.warn("callLog", e);
             }
+        }
+    }
+
+    static CallErrorStackTraceSample sampleCallErrorStackTrace(Class<?> declaringType, String methodName, Object[] parameters, Throwable error) {
+        if (!isDnsResolveHostCall(declaringType, methodName, parameters, error)) {
+            return null;
+        }
+        int every = Integer.getInteger(DNS_RESOLVE_CALL_LOG_STACKTRACE_EVERY_PROPERTY, DNS_RESOLVE_CALL_LOG_STACKTRACE_EVERY);
+        if (every <= 1) {
+            return new CallErrorStackTraceSample(null, 1, 1, true);
+        }
+        String key = dnsResolveHostCallErrorKey(declaringType, parameters, error);
+        AtomicInteger counter = DNS_RESOLVE_CALL_LOG_COUNTS.computeIfAbsent(key, k -> new AtomicInteger());
+        int count = counter.updateAndGet(v -> v == Integer.MAX_VALUE ? 1 : v + 1);
+        return new CallErrorStackTraceSample(key, count, every, count % every == 0);
+    }
+
+    private static boolean isDnsResolveHostCall(Class<?> declaringType, String methodName, Object[] parameters, Throwable error) {
+        return error != null
+                && declaringType != null
+                && "resolveHost".equals(methodName)
+                && "org.rx.net.socks.SocksRpcContract".equals(declaringType.getName())
+                && parameters != null
+                && parameters.length >= 2;
+    }
+
+    private static String dnsResolveHostCallErrorKey(Class<?> declaringType, Object[] parameters, Throwable error) {
+        Throwable cause = rootCause(error);
+        StringBuilder key = new StringBuilder(128);
+        key.append(declaringType.getName()).append("#resolveHost");
+        key.append('|').append(parameters[0]);
+        key.append('|').append(parameters[1]);
+        key.append('|').append(cause.getClass().getName());
+        String message = cause.getMessage();
+        if (message != null) {
+            key.append('|').append(message);
+        }
+        return key.toString();
+    }
+
+    private static Throwable rootCause(Throwable error) {
+        Throwable cause = error;
+        while (cause.getCause() != null && cause.getCause() != cause) {
+            cause = cause.getCause();
+        }
+        return cause;
+    }
+
+    static final class CallErrorStackTraceSample {
+        final String key;
+        final int count;
+        final int every;
+        final boolean writeStackTrace;
+
+        CallErrorStackTraceSample(String key, int count, int every, boolean writeStackTrace) {
+            this.key = key;
+            this.count = count;
+            this.every = every;
+            this.writeStackTrace = writeStackTrace;
         }
     }
 
