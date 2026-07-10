@@ -525,13 +525,15 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
-    public void socksTcpUpstream_FakeEndpointHashIncludesSupportEndpoint() {
+    public void socksTcpUpstream_FakeEndpointHashIncludesSupportEndpoint() throws Exception {
         org.rx.core.Cache.getInstance(org.rx.core.cache.MemoryCache.class);
         final AtomicInteger calls = new AtomicInteger();
+        final CountDownLatch registered = new CountDownLatch(2);
         SocksRpcContract facade = new SocksRpcContract() {
             @Override
             public boolean fakeEndpoint(long hash, String realEndpoint, String token) {
                 calls.incrementAndGet();
+                registered.countDown();
                 return true;
             }
 
@@ -556,17 +558,20 @@ public class RssTest extends AbstractTester {
         assertNotEquals(fakeA.getHostString(), fakeB.getHostString());
         assertTrue(fakeA.getHostString().endsWith(SocksRpcContract.FAKE_HOST_SUFFIX));
         assertTrue(fakeB.getHostString().endsWith(SocksRpcContract.FAKE_HOST_SUFFIX));
+        assertTrue(registered.await(3, TimeUnit.SECONDS));
         assertEquals(2, calls.get());
     }
 
     @Test
-    public void socksTcpUpstream_FakeEndpointUsesParseableHostPortForUnresolvedDomain() {
+    public void socksTcpUpstream_FakeEndpointUsesParseableHostPortForUnresolvedDomain() throws Exception {
         org.rx.core.Cache.getInstance(org.rx.core.cache.MemoryCache.class);
         final String[] capturedEndpoint = new String[1];
+        final CountDownLatch registered = new CountDownLatch(1);
         SocksRpcContract facade = new SocksRpcContract() {
             @Override
             public boolean fakeEndpoint(long hash, String realEndpoint, String token) {
                 capturedEndpoint[0] = realEndpoint;
+                registered.countDown();
                 return true;
             }
 
@@ -587,8 +592,61 @@ public class RssTest extends AbstractTester {
 
         new SocksTcpUpstream(dstEp, config, routed).prepareDestination();
 
+        assertTrue(registered.await(3, TimeUnit.SECONDS));
         assertEquals(dstHost + ":443", capturedEndpoint[0]);
         assertEquals(dstHost, org.rx.net.Sockets.parseEndpoint(capturedEndpoint[0]).getHostString());
+    }
+
+    @Test
+    public void socksTcpUpstream_FakeEndpointRegistrationDoesNotBlockCaller() throws Exception {
+        org.rx.core.Cache.getInstance(org.rx.core.cache.MemoryCache.class);
+        Tasks.runAsync(() -> Boolean.TRUE).get(3, TimeUnit.SECONDS);
+        CountDownLatch registrationStarted = new CountDownLatch(1);
+        CountDownLatch releaseRegistration = new CountDownLatch(1);
+        CountDownLatch registrationFinished = new CountDownLatch(1);
+        SocksRpcContract facade = new SocksRpcContract() {
+            @Override
+            public boolean fakeEndpoint(long hash, String realEndpoint, String token) {
+                registrationStarted.countDown();
+                try {
+                    return releaseRegistration.await(3, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return false;
+                } finally {
+                    registrationFinished.countDown();
+                }
+            }
+
+            @Override
+            public void addWhiteList(InetAddress endpoint, String token) {
+            }
+
+            @Override
+            public List<InetAddress> resolveHost(InetAddress srcIp, String host) {
+                return Collections.emptyList();
+            }
+        };
+        String dstHost = "non-blocking-fake-" + System.nanoTime() + ".example";
+        InetSocketAddress dstEp = org.rx.net.Sockets.newUnresolvedEndpoint(dstHost, 443);
+        UpstreamSupport routed = new UpstreamSupport(
+                new AuthenticEndpoint(new InetSocketAddress("127.0.0.100", 4093)), facade);
+
+        long start = System.nanoTime();
+        InetSocketAddress fakeEp;
+        try {
+            fakeEp = new SocksTcpUpstream(dstEp, new SocksConfig(), routed).prepareDestination();
+            long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+
+            assertTrue(elapsedMillis < 500L, "fake endpoint RPC must not block the caller/EventLoop");
+            assertTrue(registrationStarted.await(3, TimeUnit.SECONDS));
+            Long hash = SocksRpcContract.parseFakeHostHash(fakeEp.getHostString());
+            assertNotNull(hash);
+            assertEquals(dstHost + ":443", SocksTcpUpstream.cachedFakeEndpoint(hash.longValue()));
+        } finally {
+            releaseRegistration.countDown();
+        }
+        assertTrue(registrationFinished.await(3, TimeUnit.SECONDS));
     }
 
     @Test
@@ -700,6 +758,12 @@ public class RssTest extends AbstractTester {
             hash = SocksRpcContract.parseFakeHostHash(fakeEp.getHostString());
             assertNotNull(hash);
             assertEquals(dstHost + ":443", SocksTcpUpstream.cachedFakeEndpoint(hash.longValue()));
+
+            long registrationDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (SocksRpcContract.fakeDict().get(hash) == null && System.nanoTime() < registrationDeadline) {
+                Thread.sleep(10L);
+            }
+            assertNotNull(SocksRpcContract.fakeDict().get(hash));
 
             SocksRpcContract.fakeDict().remove(hash);
             InetSocketAddress recovered = app.recoverFakeEndpoint(hash.longValue(), fakeEp.getHostString());

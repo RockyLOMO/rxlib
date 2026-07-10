@@ -26,8 +26,6 @@ public interface SocksRpcContract extends AutoCloseable, DnsResolveInterceptor, 
     List<String> FAKE_IPS = new CopyOnWriteArrayList<>();  //There is no need to set up '8.8.8.8'
     List<Integer> FAKE_PORTS = new CopyOnWriteArrayList<>(Arrays.toList(80));
     int DNS_PORT = 53;
-    long ASYNC_TIMEOUT = 4 * 1000;
-
     static Cache<Long, InetSocketAddress> fakeDict() {
         return (Cache<Long, InetSocketAddress>) H2StoreCache.DEFAULT;
     }
