@@ -22,7 +22,6 @@ import org.rx.net.support.UpstreamSupport;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
-import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class SocksTcpUpstream extends Upstream {
@@ -84,13 +83,27 @@ public class SocksTcpUpstream extends Upstream {
             try {
                 Tasks.runAsync(() -> {
                     return facade.fakeEndpoint(hash, dstEpStr, SocksRpcContract.rpcToken());
-                }).whenCompleteAsync((r, e) -> {
+                }).whenComplete((r, e) -> {
+                    if (e != null) {
+                        log.warn("Fake endpoint async registration failed hash={} endpoint={} cause={} message={}",
+                                Long.toHexString(hash), dstEpStr, e.getClass().getName(), e.getMessage());
+                        if (log.isDebugEnabled()) {
+                            log.debug("Fake endpoint async registration full failure hash={} endpoint={}",
+                                    Long.toHexString(hash), dstEpStr, e);
+                        }
+                        return;
+                    }
                     if (BooleanUtils.isTrue(r)) {
                         cache.put(cacheKey, dstEpStr, CachePolicy.absolute(SocksRpcContract.FAKE_EXPIRE_SECONDS));
                     }
-                }).get(SocksRpcContract.ASYNC_TIMEOUT, TimeUnit.MILLISECONDS);
+                });
             } catch (Exception e) {
-                log.error("do fake", e);
+                log.warn("Fake endpoint async registration submit failed hash={} endpoint={} cause={} message={}",
+                        Long.toHexString(hash), dstEpStr, e.getClass().getName(), e.getMessage());
+                if (log.isDebugEnabled()) {
+                    log.debug("Fake endpoint async registration submit full failure hash={} endpoint={}",
+                            Long.toHexString(hash), dstEpStr, e);
+                }
             }
         }
         return destination;

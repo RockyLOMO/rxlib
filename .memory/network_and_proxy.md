@@ -1154,6 +1154,35 @@ if (routeMap == null) {
 ---
 
 <details>
+<summary><b>[2026-07-10] FakeEndpoint 注册禁止阻塞 Netty EventLoop</b></summary>
+
+## 现象与根因
+
+RSS client 经 Shadowsocks/SOCKS 链路并行下载时会周期性停顿，Google Play 可能停在 99%。生产线程采样直接捕获到 `epollEventLoopGroup` 阻塞在：
+
+`Socks5CommandRequestHandler.connect -> SocksTcpUpstream.prepareDestination -> CompletableFuture.get(4000ms)`。
+
+`fakeEndpoint` 是控制面 RPC；RPC 抖动或超时时，在 EventLoop 上同步等待会连带暂停该线程承载的其它 TCP 连接，形成 1～4 秒的批量停顿。全局 traffic shaping 队列和 TCP pending 均能自行排空，不是这次永久卡点的主因。
+
+## 决策
+
+- `prepareDestination()` 只负责生成 fake host，并在提交 RPC 前写入 client 本地 `hash -> realEndpoint` 恢复缓存。
+- `fakeEndpoint` 注册改成真正异步，禁止在 EventLoop 或 channel initializer 中调用 `Future.get/await`。
+- RPC 成功后只刷新本地缓存 TTL；失败记录摘要，完整堆栈仅在 DEBUG 输出。
+- server 若在异步注册完成前收到数据连接，继续使用既有 `fakeEndpointRecovery` 事件从 client 本地缓存恢复映射。
+- 该路径只在新目标/cache miss 时提交一个后台任务；数据转发热点不增加锁、对象池或包级日志。
+
+## 验证约束
+
+- 回归测试必须使用一个故意阻塞数秒的 `fakeEndpoint` facade，断言 `prepareDestination()` 快速返回且本地恢复缓存已可见。
+- 保留 fake host 格式、不同 upstream hash 隔离、RPC push 失败后 recovery、SOCKS chained TCP 集成测试。
+- 线上重点监控 EventLoop blocked time、fakeEndpoint RPC 超时、TCP pending bytes、global traffic queue 和堆外内存。
+
+</details>
+
+---
+
+<details>
 <summary><b>[2026-05-04] TCP/UDP 混合传输计划</b></summary>
 
 > **原始文件**: HybridTcpUdpTransport-plan.md (来自 docs/plan/archive)
