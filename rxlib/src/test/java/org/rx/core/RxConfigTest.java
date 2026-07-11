@@ -162,12 +162,16 @@ class RxConfigTest {
         String download = RxConfig.ConfigNames.NET_GLOBAL_TRAFFIC_DOWNLOAD_KILOBYTES_PER_SECOND;
         String checkInterval = RxConfig.ConfigNames.NET_GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS;
         String maxDelay = RxConfig.ConfigNames.NET_GLOBAL_TRAFFIC_MAX_DELAY_MILLIS;
+        String maxWriteQueue = RxConfig.ConfigNames.NET_GLOBAL_TRAFFIC_MAX_WRITE_QUEUE_BYTES;
+        String maxGlobalWriteQueue = RxConfig.ConfigNames.NET_GLOBAL_TRAFFIC_MAX_GLOBAL_WRITE_QUEUE_BYTES;
         String udpPendingPackets = RxConfig.ConfigNames.NET_GLOBAL_TRAFFIC_UDP_MAX_PENDING_PACKETS;
         String oldEnabled = System.getProperty(enabled);
         String oldUpload = System.getProperty(upload);
         String oldDownload = System.getProperty(download);
         String oldCheckInterval = System.getProperty(checkInterval);
         String oldMaxDelay = System.getProperty(maxDelay);
+        String oldMaxWriteQueue = System.getProperty(maxWriteQueue);
+        String oldMaxGlobalWriteQueue = System.getProperty(maxGlobalWriteQueue);
         String oldUdpPendingPackets = System.getProperty(udpPendingPackets);
         try {
             System.setProperty(enabled, "true");
@@ -175,6 +179,8 @@ class RxConfigTest {
             System.setProperty(download, "4096");
             System.setProperty(checkInterval, "50");
             System.setProperty(maxDelay, "150");
+            System.setProperty(maxWriteQueue, "262144");
+            System.setProperty(maxGlobalWriteQueue, "4194304");
             System.setProperty(udpPendingPackets, "16");
 
             conf.refreshFromSystemProperty();
@@ -184,6 +190,8 @@ class RxConfigTest {
             assertEquals(4096L, conf.net.globalTraffic.getDownloadKilobytesPerSecond());
             assertEquals(50L, conf.net.globalTraffic.getCheckIntervalMillis());
             assertEquals(150L, conf.net.globalTraffic.getMaxDelayMillis());
+            assertEquals(262144L, conf.net.globalTraffic.getMaxWriteQueueBytes());
+            assertEquals(4194304L, conf.net.globalTraffic.getMaxGlobalWriteQueueBytes());
             assertEquals(16, conf.net.globalTraffic.getUdpMaxPendingPackets());
         } finally {
             restoreProperty(enabled, oldEnabled);
@@ -191,6 +199,8 @@ class RxConfigTest {
             restoreProperty(download, oldDownload);
             restoreProperty(checkInterval, oldCheckInterval);
             restoreProperty(maxDelay, oldMaxDelay);
+            restoreProperty(maxWriteQueue, oldMaxWriteQueue);
+            restoreProperty(maxGlobalWriteQueue, oldMaxGlobalWriteQueue);
             restoreProperty(udpPendingPackets, oldUdpPendingPackets);
             conf.net.globalTraffic = new NetworkTrafficConfig(oldConfig);
             NetworkFlowControl.DEFAULT.refresh(oldConfig);
