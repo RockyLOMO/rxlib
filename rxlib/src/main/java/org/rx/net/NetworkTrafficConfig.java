@@ -11,12 +11,16 @@ import java.io.Serializable;
 @ToString
 public class NetworkTrafficConfig implements Serializable {
     private static final long serialVersionUID = 5615815740454781434L;
+    static final long DEFAULT_MAX_WRITE_QUEUE_BYTES = 4L * 1024L * 1024L;
+    static final long DEFAULT_MAX_GLOBAL_WRITE_QUEUE_BYTES = 400L * 1024L * 1024L;
 
     private boolean enabled;
     private long uploadKilobytesPerSecond;
     private long downloadKilobytesPerSecond;
     private long checkIntervalMillis = 100L;
     private long maxDelayMillis = 200L;
+    private long maxWriteQueueBytes = DEFAULT_MAX_WRITE_QUEUE_BYTES;
+    private long maxGlobalWriteQueueBytes = DEFAULT_MAX_GLOBAL_WRITE_QUEUE_BYTES;
     private boolean tcpBackpressureEnabled = true;
     private boolean udpBackpressureEnabled = true;
     private int udpMaxPendingBytes;
@@ -32,6 +36,8 @@ public class NetworkTrafficConfig implements Serializable {
             downloadKilobytesPerSecond = source.downloadKilobytesPerSecond;
             checkIntervalMillis = source.checkIntervalMillis;
             maxDelayMillis = source.maxDelayMillis;
+            maxWriteQueueBytes = source.maxWriteQueueBytes;
+            maxGlobalWriteQueueBytes = source.maxGlobalWriteQueueBytes;
             tcpBackpressureEnabled = source.tcpBackpressureEnabled;
             udpBackpressureEnabled = source.udpBackpressureEnabled;
             udpMaxPendingBytes = source.udpMaxPendingBytes;
@@ -65,6 +71,9 @@ public class NetworkTrafficConfig implements Serializable {
         downloadKilobytesPerSecond = Math.max(0L, downloadKilobytesPerSecond);
         checkIntervalMillis = checkIntervalMillis > 0L ? checkIntervalMillis : 100L;
         maxDelayMillis = maxDelayMillis > 0L ? maxDelayMillis : 200L;
+        maxWriteQueueBytes = maxWriteQueueBytes > 0L ? maxWriteQueueBytes : DEFAULT_MAX_WRITE_QUEUE_BYTES;
+        maxGlobalWriteQueueBytes = maxGlobalWriteQueueBytes > 0L
+                ? maxGlobalWriteQueueBytes : DEFAULT_MAX_GLOBAL_WRITE_QUEUE_BYTES;
         udpMaxPendingBytes = Math.max(0, udpMaxPendingBytes);
         udpMaxPendingPackets = Math.max(0, udpMaxPendingPackets);
     }

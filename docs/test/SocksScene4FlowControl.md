@@ -48,6 +48,8 @@ RSS server B 是场景4里的公网出口和回包入口，client A 的限速不
 
 server 默认安装 `GlobalChannelTrafficShapingHandler`，只对聚合 write 方向做约 90% pacing，给 GIA 出口、TCP/IP 开销和突发留余量；read limit 为 `0`，不会限制 Google -> server。
 
+server 额外把 Netty shaper 单 channel 延迟队列限制为 `256KiB`、全局延迟队列限制为 `4MiB`，并保留 `15s` 精确调度上限。队列达到水位会提前把 channel 标为不可写，让既有双向 TCP 背压暂停上游读取；这避免默认 `4MiB/channel + 200ms maxTime` 把多批消息同步释放成大 burst。
+
 RSS server 是 2c / 1.5GiB 小机器，`MaxDirectMemorySize=640m`，所以 UDP pending 比 client 更收敛：
 
 | 参数 | 默认值 | 说明 |
@@ -62,6 +64,9 @@ RSS server 是 2c / 1.5GiB 小机器，`MaxDirectMemorySize=640m`，所以 UDP p
 -Dapp.net.globalTraffic.uploadKilobytesPerSecond=${GLOBAL_TRAFFIC_UPLOAD_KBPS}
 -Dapp.net.globalTraffic.downloadKilobytesPerSecond=${GLOBAL_TRAFFIC_DOWNLOAD_KBPS}
 -Dapp.net.globalTraffic.checkIntervalMillis=${GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS}
+-Dapp.net.globalTraffic.maxDelayMillis=${GLOBAL_TRAFFIC_MAX_DELAY_MILLIS}
+-Dapp.net.globalTraffic.maxWriteQueueBytes=${GLOBAL_TRAFFIC_MAX_WRITE_QUEUE_BYTES}
+-Dapp.net.globalTraffic.maxGlobalWriteQueueBytes=${GLOBAL_TRAFFIC_MAX_GLOBAL_WRITE_QUEUE_BYTES}
 -Dapp.net.globalTraffic.tcpBackpressureEnabled=true
 -Dapp.net.globalTraffic.udpBackpressureEnabled=true
 -Dapp.net.globalTraffic.udpMaxPendingBytes=${GLOBAL_UDP_MAX_PENDING_BYTES}
@@ -122,6 +127,7 @@ RSS server B 额外设置 fake host 控制面恢复等待：
 
 - `checkIntervalMillis=100`，使用 Netty 默认级别的 100ms 调度粒度，减少多连接下载时的秒级批量放行。
 - 全局限速只做粗保护，防止持续打满公网出口导致排队膨胀。
+- server 使用 `maxWriteQueueBytes=262144`、`maxGlobalWriteQueueBytes=4194304` 提前触发背压；这两个限制只影响 shaper 延迟队列，不增加包级热路径判断。
 - RSS 生产脚本关闭诊断框架、诊断 H2 落库、磁盘扫描、NMT 采集和 trace agent，避免诊断线程、JFR sampler、ByteBuddy 动态 agent 在下载压测时抢 CPU / IO。
 - 如果线上 RTT 抖动明显，优先把对应节点降到 95%；如果 RTT 平稳且吞吐不足，再临时调到 99% 或关闭全局限速压测。
 
@@ -134,6 +140,12 @@ RSS server B 额外设置 fake host 控制面恢复等待：
 | RSS client | `rx-diagnostic-h2-writer` 单线程可打满一个 CPU；当前流量很低时 JVM 仍约 49% CPU | 诊断 H2 写入/清理抢占 CPU，影响 EventLoop 和 traffic shaping 定时任务 |
 | RSS server | 2c 小机上 `MVStore`、`H2-serializer`、G1 线程明显抢 CPU；日志有 `diagnostic h2 batch slow` / `queue pressure` | 诊断 H2 在小内存小 CPU 机器上成为热点 |
 | 两侧网卡 | `tc qdisc` backlog 为 0，TCP `Send-Q/Recv-Q` 基本为 0 | 系统网卡队列不是主要瓶颈 |
+
+## 2026-07-11 server 回程 pacing 观测
+
+真实批量下载时，单纯使用 `6592KiB/s + maxDelay=200ms` 仍产生约 `6.8MiB/s` burst，35 秒 `TCPFastRetrans=4100`；只把 `maxDelay` 提到 `1000ms` 会让更多定时写同步释放，峰值达到 `20MiB/s`，35 秒 `TCPFastRetrans=7586`。
+
+改为 `maxDelay=15000ms + 256KiB/channel + 4MiB/global` 有界队列后，完整高负载窗口 server 写速约 `4.4MiB/s`，35 秒 `TCPFastRetrans=674`，较旧方案下降约 91%；client 同窗口 `TCPFastRetrans=1`。server shaper queue 通常为 `0~64KiB`，短时 pending 后能回落到 0。
 | 全局限速 | 两侧实际运行 `checkIntervalMillis=1000` | 1s shaping tick 会造成按秒批量放行，不适合“5 个进度条都流畅”的体验 |
 | fake host 控制面 | server 最近日志仍有大量 `recover dstEp ... fail`，client 只看到少量 `fakeEndpointRecovery` 事件重订阅 | 事件机制存在，但 server 侧 200ms 等待窗口偏窄，RTT/CPU 抖动下容易提前失败 |
 
