@@ -301,15 +301,17 @@ public final class RssClient {
                             if (recovery == null) {
                                 return;
                             }
-                            recovery.setRealEndpoint(SocksTcpUpstream.cachedFakeEndpoint(recovery.getHash()));
+                            // server 主动询问说明其映射已丢失或尚未注册，失效本地 ACK，后续请求重新上报。
+                            SocksTcpUpstream.invalidateFakeEndpointRegistration(recovery.getFakeHost());
+                            recovery.setRealEndpoint(SocksTcpUpstream.cachedFakeEndpoint(recovery.getFakeHost()));
                             e.setValue(recovery);
                         }, false);
             }
         }
 
         @Override
-        public boolean fakeEndpoint(long hash, String realEndpoint, String token) {
-            return delegate.fakeEndpoint(hash, realEndpoint, token);
+        public boolean fakeEndpoint(String fakeHost, String realEndpoint, String token) {
+            return delegate.fakeEndpoint(fakeHost, realEndpoint, token);
         }
 
         @Override

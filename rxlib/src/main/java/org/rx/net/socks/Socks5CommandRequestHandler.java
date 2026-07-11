@@ -5,7 +5,6 @@ import io.netty.channel.local.LocalAddress;
 import io.netty.channel.local.LocalChannel;
 import io.netty.handler.codec.socksx.v5.*;
 import lombok.extern.slf4j.Slf4j;
-import org.rx.core.CachePolicy;
 import org.rx.core.Tasks;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.*;
@@ -18,6 +17,7 @@ import java.net.SocketAddress;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -27,7 +27,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     public static final Socks5CommandRequestHandler DEFAULT = new Socks5CommandRequestHandler();
     static final DefaultSocks5CommandResponse SUCCESS_CONNECT =
             new DefaultSocks5CommandResponse(Socks5CommandStatus.SUCCESS, Socks5AddressType.IPv4);
-    static final ConcurrentMap<Long, CompletableFuture<InetSocketAddress>> FAKE_RECOVERIES = new ConcurrentHashMap<>();
+    static final ConcurrentMap<String, CompletableFuture<InetSocketAddress>> FAKE_RECOVERIES = new ConcurrentHashMap<>();
 
     @Override
     protected void channelRead0(ChannelHandlerContext inbound, DefaultSocks5CommandRequest msg) {
@@ -49,12 +49,12 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         InetSocketAddress dstEp = org.rx.net.Sockets.newUnresolvedEndpoint(msg.dstAddr(), msg.dstPort());
         String dstEpHost = dstEp.getHostString();
         if (dstEpHost.endsWith(SocksRpcContract.FAKE_HOST_SUFFIX)) {
-            Long hash = SocksRpcContract.parseFakeHostHash(dstEpHost);
-            InetSocketAddress realEp = hash == null ? null : SocksRpcContract.fakeDict().get(hash);
+            boolean validFakeHost = SocksRpcContract.isFakeHost(dstEpHost);
+            InetSocketAddress realEp = validFakeHost ? SocksRpcContract.fakeDict().get(dstEpHost) : null;
             if (realEp == null) {
-                if (hash != null && server.getFakeEndpointResolver() != null && commandType == Socks5CommandType.CONNECT) {
+                if (validFakeHost && server.getFakeEndpointResolver() != null && commandType == Socks5CommandType.CONNECT) {
                     log.debug("socks5[{}] recover dstEp {} miss, request client recovery", config.getListenPort(), dstEp);
-                    recoverFakeEndpoint(inbound, server, config, commandType, dstAddrType, dstEp, hash.longValue());
+                    recoverFakeEndpoint(inbound, server, config, commandType, dstAddrType, dstEp);
                     return;
                 }
                 if (commandType != Socks5CommandType.UDP_ASSOCIATE) {
@@ -181,8 +181,8 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
 
     private void recoverFakeEndpoint(ChannelHandlerContext inbound, SocksProxyServer server, SocksConfig config,
                                      Socks5CommandType commandType, Socks5AddressType dstAddrType,
-                                     InetSocketAddress fakeEp, long hash) {
-        CompletableFuture<InetSocketAddress> future = recoverFakeEndpointAsync(server, hash, fakeEp.getHostString());
+                                     InetSocketAddress fakeEp) {
+        CompletableFuture<InetSocketAddress> future = recoverFakeEndpointAsync(server, fakeEp.getHostString());
         AtomicBoolean completed = new AtomicBoolean();
         Channel channel = inbound.channel();
         channel.eventLoop().schedule(() -> {
@@ -208,25 +208,23 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         }));
     }
 
-    private CompletableFuture<InetSocketAddress> recoverFakeEndpointAsync(SocksProxyServer server, long hash, String fakeHost) {
-        Long key = Long.valueOf(hash);
-        CompletableFuture<InetSocketAddress> current = FAKE_RECOVERIES.get(key);
+    private CompletableFuture<InetSocketAddress> recoverFakeEndpointAsync(SocksProxyServer server, String fakeHost) {
+        CompletableFuture<InetSocketAddress> current = FAKE_RECOVERIES.get(fakeHost);
         if (current != null) {
             return current;
         }
         CompletableFuture<InetSocketAddress> created = Tasks.runAsync(() -> {
-            InetSocketAddress recovered = server.recoverFakeEndpoint(hash, fakeHost);
+            InetSocketAddress recovered = server.recoverFakeEndpoint(fakeHost);
             if (recovered != null) {
-                SocksRpcContract.fakeDict().put(key, recovered, CachePolicy.absolute(SocksRpcContract.FAKE_EXPIRE_SECONDS));
                 DiagnosticMetrics.record("socks.fake.endpoint.recover.success.count", 1D, "port=" + server.getConfig().getListenPort());
             }
             return recovered;
         });
-        CompletableFuture<InetSocketAddress> previous = FAKE_RECOVERIES.putIfAbsent(key, created);
+        CompletableFuture<InetSocketAddress> previous = FAKE_RECOVERIES.putIfAbsent(fakeHost, created);
         if (previous != null) {
             return previous;
         }
-        created.whenComplete((r, e) -> FAKE_RECOVERIES.remove(key, created));
+        created.whenComplete((r, e) -> FAKE_RECOVERIES.remove(fakeHost, created));
         return created;
     }
 
@@ -295,13 +293,86 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     }
 
     private void connect(Channel inbound, Socks5AddressType dstAddrType, SocksContext e, short[] reconnectionAttempts) {
-        SocksProxyServer server = Sockets.getAttr(inbound, SocksContext.SOCKS_SVR);
-        SocksConfig config = server.config;
         if (e.getUpstream() instanceof SocksTcpUpstream) {
-            ((SocksTcpUpstream) e.getUpstream()).prepareDestination();
-            if (reconnectionAttempts == null && tryWarmConnect(inbound, dstAddrType, e)) {
+            CompletableFuture<Boolean> registration =
+                    ((SocksTcpUpstream) e.getUpstream()).prepareDestinationRegistration();
+            if (!registration.isDone()) {
+                awaitFakeEndpointRegistration(inbound, dstAddrType, e, reconnectionAttempts, registration);
                 return;
             }
+            try {
+                if (!Boolean.TRUE.equals(registration.getNow(Boolean.FALSE))) {
+                    failFakeEndpointRegistration(inbound, dstAddrType, e);
+                    return;
+                }
+            } catch (RuntimeException error) {
+                failFakeEndpointRegistration(inbound, dstAddrType, e);
+                return;
+            }
+        }
+        connectPrepared(inbound, dstAddrType, e, reconnectionAttempts);
+    }
+
+    private void awaitFakeEndpointRegistration(Channel inbound, Socks5AddressType dstAddrType, SocksContext e,
+            short[] reconnectionAttempts, CompletableFuture<Boolean> registration) {
+        AtomicBoolean resumed = new AtomicBoolean();
+        Sockets.disableAutoRead(inbound);
+        ScheduledFuture<?> timeoutTask = inbound.eventLoop().schedule(() -> {
+            if (!resumed.compareAndSet(false, true)) {
+                return;
+            }
+            if (DiagnosticMetrics.isEnabled()) {
+                DiagnosticMetrics.record("socks.fake.endpoint.register.wait.timeout.count", 1D,
+                        "port=" + Sockets.getAttr(inbound, SocksContext.SOCKS_SVR).getConfig().getListenPort());
+            }
+            log.debug("Fake endpoint registration wait timeout dst={}", e.getFirstDestination());
+            failFakeEndpointRegistration(inbound, dstAddrType, e);
+        }, SocksRpcContract.fakeRegisterWaitMillis(), TimeUnit.MILLISECONDS);
+
+        registration.whenComplete((registered, error) -> inbound.eventLoop().execute(() -> {
+            if (!resumed.compareAndSet(false, true)) {
+                return;
+            }
+            timeoutTask.cancel(false);
+            if (error != null || !Boolean.TRUE.equals(registered)) {
+                failFakeEndpointRegistration(inbound, dstAddrType, e);
+                return;
+            }
+            resumePreparedConnect(inbound, dstAddrType, e, reconnectionAttempts);
+        }));
+    }
+
+    private void failFakeEndpointRegistration(Channel inbound, Socks5AddressType dstAddrType, SocksContext e) {
+        log.warn("Fake endpoint registration failed dst={}", e.getFirstDestination());
+        if (!inbound.isOpen()) {
+            return;
+        }
+        inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FAILURE, dstAddrType))
+                .addListener(ChannelFutureListener.CLOSE);
+    }
+
+    private void resumePreparedConnect(Channel inbound, Socks5AddressType dstAddrType, SocksContext e,
+            short[] reconnectionAttempts) {
+        if (!inbound.isOpen()) {
+            return;
+        }
+        try {
+            connectPrepared(inbound, dstAddrType, e, reconnectionAttempts);
+        } catch (Throwable error) {
+            log.warn("Resume fake endpoint connect failed dst={}", e.getFirstDestination(), error);
+            Sockets.closeOnFlushed(inbound);
+        } finally {
+            if (inbound.isOpen()) {
+                Sockets.enableAutoRead(inbound);
+            }
+        }
+    }
+
+    private void connectPrepared(Channel inbound, Socks5AddressType dstAddrType, SocksContext e,
+            short[] reconnectionAttempts) {
+        if (e.getUpstream() instanceof SocksTcpUpstream
+                && reconnectionAttempts == null && tryWarmConnect(inbound, dstAddrType, e)) {
+            return;
         }
         connectSlow(inbound, dstAddrType, e, reconnectionAttempts);
     }

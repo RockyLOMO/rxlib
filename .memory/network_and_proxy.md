@@ -1166,16 +1166,21 @@ RSS client 经 Shadowsocks/SOCKS 链路并行下载时会周期性停顿，Googl
 
 ## 决策
 
-- `prepareDestination()` 只负责生成 fake host，并在提交 RPC 前写入 client 本地 `hash -> realEndpoint` 恢复缓存。
-- `fakeEndpoint` 注册改成真正异步，禁止在 EventLoop 或 channel initializer 中调用 `Future.get/await`。
-- RPC 成功后只刷新本地缓存 TTL；失败记录摘要，完整堆栈仅在 DEBUG 输出。
-- server 若在异步注册完成前收到数据连接，继续使用既有 `fakeEndpointRecovery` 事件从 client 本地缓存恢复映射。
-- 该路径只在新目标/cache miss 时提交一个后台任务；数据转发热点不增加锁、对象池或包级日志。
+- `prepareDestination()` 生成固定 16 字符的 80-bit base36 token，并在提交 RPC 前写入 client 本地 `fakeHost -> realEndpoint` 恢复缓存；SOCKS5 只携带短 fake host，不暴露原目标。
+- `fakeEndpoint` 注册改成异步门闩，禁止在 EventLoop 或 channel initializer 中调用 `Future.get/await`；当前连接仍等待远端 ACK，默认上限保持 4 秒，但等待期间 EventLoop 可继续处理其它连接。
+- client 本地恢复映射与 server ACK 状态分开缓存：恢复映射保留 600 秒，ACK 保留 270 秒，早于 server 300 秒 TTL 到期，从而在后续请求中提前刷新远端映射。
+- 同一 token 的并发注册通过 in-flight promise 合并为一次 RPC；失败状态短暂缓存 5 秒，避免 server 异常时形成注册风暴。
+- server 注册与 recovery 写回均使用固定条带锁做原子 compare/register：同 token 指向不同 endpoint 时返回 collision，绝不覆盖；client 换 token 后最多重试 3 次。
+- server 若丢失映射，继续使用既有 `fakeEndpointRecovery` 事件从 client 本地缓存恢复；client 收到 recovery 请求时立即失效 ACK，使下一次请求重新主动注册。
+- 只有 ACK 成功才发起数据连接；RPC 失败、碰撞重试耗尽或异步等待 4 秒超时均 fail-closed 返回 SOCKS failure，避免把 token 错路由到已有碰撞映射。
+- recovery 只用于“曾经 ACK、后来 server 映射丢失”的情况，不作为首次注册竞态的常规路径。
+- 该路径只在新目标/ACK cache miss 时提交一个后台任务；数据转发热点不增加锁、对象池或包级日志。
 
 ## 验证约束
 
-- 回归测试必须使用一个故意阻塞数秒的 `fakeEndpoint` facade，断言 `prepareDestination()` 快速返回且本地恢复缓存已可见。
-- 保留 fake host 格式、不同 upstream hash 隔离、RPC push 失败后 recovery、SOCKS chained TCP 集成测试。
+- 回归测试必须使用一个故意阻塞数秒的 `fakeEndpoint` facade，断言 `prepareDestination()` 快速返回、注册 future 仍 pending 且本地恢复缓存已可见。
+- 必须覆盖 ACK 命中不重复注册、server recovery 失效 ACK 后重新注册、并发 cache miss 合并，以及强制 token 碰撞后换 token 且不覆盖旧映射。
+- 保留短 fake host 格式、不同 upstream token 隔离、RPC push 失败 fail-closed、server 映射丢失 recovery、SOCKS chained TCP 集成测试。
 - 线上重点监控 EventLoop blocked time、fakeEndpoint RPC 超时、TCP pending bytes、global traffic queue 和堆外内存。
 
 </details>

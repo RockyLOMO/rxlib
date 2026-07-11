@@ -19,20 +19,41 @@ import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.socks.TcpWarmPoolKey;
 import org.rx.net.support.UpstreamSupport;
 
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 @Slf4j
 public class SocksTcpUpstream extends Upstream {
-    private static final long HASH_OFFSET = 0xcbf29ce484222325L;
-    private static final long HASH_PRIME = 0x100000001b3L;
     private static final String FAKE_ENDPOINT_CACHE_PREFIX = "socks.fakeEndpoint.";
+    private static final String FAKE_ENDPOINT_ROUTE_CACHE_PREFIX = "socks.fakeEndpointRoute.";
+    private static final String FAKE_ENDPOINT_ACK_CACHE_PREFIX = "socks.fakeEndpointAck.";
+    private static final int FAKE_ENDPOINT_LOCAL_CACHE_SECONDS = SocksRpcContract.FAKE_EXPIRE_SECONDS * 2;
+    private static final int FAKE_ENDPOINT_ACK_CACHE_SECONDS = SocksRpcContract.FAKE_EXPIRE_SECONDS - 30;
+    private static final int FAKE_ENDPOINT_RETRY_SECONDS = 5;
+    private static final int FAKE_ENDPOINT_COLLISION_RETRIES = 3;
+    private static final Object[] FAKE_ENDPOINT_LOCKS = new Object[64];
+    private static final CompletableFuture<Boolean> REGISTERED = CompletableFuture.completedFuture(Boolean.TRUE);
+    private static final CompletableFuture<Boolean> NOT_REGISTERED = CompletableFuture.completedFuture(Boolean.FALSE);
+    private static final CompletableFuture<RegistrationOutcome> REGISTERED_OUTCOME =
+            CompletableFuture.completedFuture(RegistrationOutcome.REGISTERED);
+    private static final CompletableFuture<RegistrationOutcome> FAILED_OUTCOME =
+            CompletableFuture.completedFuture(RegistrationOutcome.FAILED);
+    private static final ConcurrentMap<String, CompletableFuture<RegistrationOutcome>> REGISTRATIONS = new ConcurrentHashMap<>();
     private static final AttributeKey<UpstreamSupport> ATTR_ACTIVE_SUPPORT =
             AttributeKey.valueOf("socksTcpUpstreamActiveSupport");
 
     private UpstreamSupport next;
     private boolean destinationPrepared;
+    private CompletableFuture<Boolean> registrationFuture = REGISTERED;
+
+    static {
+        for (int i = 0; i < FAKE_ENDPOINT_LOCKS.length; i++) {
+            FAKE_ENDPOINT_LOCKS[i] = new Object();
+        }
+    }
 
     public SocksTcpUpstream(InetSocketAddress dstEp, @NonNull SocksConfig config, @NonNull UpstreamSupport next) {
         super(dstEp, config);
@@ -42,6 +63,8 @@ public class SocksTcpUpstream extends Upstream {
     public void reuse(InetSocketAddress dstEp, @NonNull SocksConfig config, @NonNull UpstreamSupport next) {
         super.reuse(dstEp, config);
         this.next = next;
+        destinationPrepared = false;
+        registrationFuture = REGISTERED;
     }
 
     @Override
@@ -72,96 +95,192 @@ public class SocksTcpUpstream extends Upstream {
         }
 
         InetSocketAddress realDestination = destination;
-        long hash = fakeEndpointHash(next, realDestination);
-        destination = org.rx.net.Sockets.newUnresolvedEndpoint(SocksRpcContract.fakeHost(hash), Arrays.randomNext(SocksRpcContract.FAKE_PORT_OBFS));
-
-        Cache<String, String> cache = fakeEndpointCache();
-        String cacheKey = fakeEndpointCacheKey(hash);
-        if (!cache.containsKey(cacheKey)) {
-            String dstEpStr = Sockets.toString(realDestination);
-            cache.put(cacheKey, dstEpStr, CachePolicy.absolute(SocksRpcContract.FAKE_EXPIRE_SECONDS));
-            try {
-                Tasks.runAsync(() -> {
-                    return facade.fakeEndpoint(hash, dstEpStr, SocksRpcContract.rpcToken());
-                }).whenComplete((r, e) -> {
-                    if (e != null) {
-                        log.warn("Fake endpoint async registration failed hash={} endpoint={} cause={} message={}",
-                                Long.toHexString(hash), dstEpStr, e.getClass().getName(), e.getMessage());
-                        if (log.isDebugEnabled()) {
-                            log.debug("Fake endpoint async registration full failure hash={} endpoint={}",
-                                    Long.toHexString(hash), dstEpStr, e);
-                        }
-                        return;
-                    }
-                    if (BooleanUtils.isTrue(r)) {
-                        cache.put(cacheKey, dstEpStr, CachePolicy.absolute(SocksRpcContract.FAKE_EXPIRE_SECONDS));
-                    }
-                });
-            } catch (Exception e) {
-                log.warn("Fake endpoint async registration submit failed hash={} endpoint={} cause={} message={}",
-                        Long.toHexString(hash), dstEpStr, e.getClass().getName(), e.getMessage());
-                if (log.isDebugEnabled()) {
-                    log.debug("Fake endpoint async registration submit full failure hash={} endpoint={}",
-                            Long.toHexString(hash), dstEpStr, e);
-                }
-            }
-        }
+        String dstEpStr = Sockets.toString(realDestination);
+        String routeCacheKey = fakeEndpointRouteCacheKey(next, dstEpStr);
+        String fakeHost = selectFakeHost(routeCacheKey, dstEpStr);
+        setFakeDestination(fakeHost);
+        Boolean acknowledged = fakeEndpointAckCache().get(fakeEndpointAckCacheKey(fakeHost));
+        registrationFuture = acknowledged == null
+                ? ensureFakeEndpointRegistered(facade, routeCacheKey, fakeHost, dstEpStr, 0)
+                : acknowledged.booleanValue() ? REGISTERED : NOT_REGISTERED;
         return destination;
     }
 
-    public static String cachedFakeEndpoint(long hash) {
-        return fakeEndpointCache().get(fakeEndpointCacheKey(hash));
+    public CompletableFuture<Boolean> prepareDestinationRegistration() {
+        prepareDestination();
+        return registrationFuture;
+    }
+
+    public static String cachedFakeEndpoint(String fakeHost) {
+        return fakeEndpointCache().get(fakeEndpointCacheKey(fakeHost));
+    }
+
+    public static void invalidateFakeEndpointRegistration(String fakeHost) {
+        fakeEndpointAckCache().remove(fakeEndpointAckCacheKey(fakeHost));
     }
 
     static Cache<String, String> fakeEndpointCache() {
         return Cache.getInstance(MemoryCache.class);
     }
 
-    private static String fakeEndpointCacheKey(long hash) {
-        return FAKE_ENDPOINT_CACHE_PREFIX + Long.toHexString(hash);
+    static Cache<String, Boolean> fakeEndpointAckCache() {
+        return Cache.getInstance(MemoryCache.class);
     }
 
-    static long fakeEndpointHash(UpstreamSupport support, InetSocketAddress dstEp) {
-        long hash = mixEndpoint(HASH_OFFSET, support == null ? null : support.getEndpoint());
-        hash = mixString(hash, dstEp == null ? null : dstEp.getHostString());
-        hash = mixInt(hash, dstEp == null ? 0 : dstEp.getPort());
-        return hash;
+    private static String fakeEndpointCacheKey(String fakeHost) {
+        return FAKE_ENDPOINT_CACHE_PREFIX + fakeHost;
     }
 
-    private static long mixEndpoint(long hash, AuthenticEndpoint endpoint) {
-        InetSocketAddress inetEndpoint = endpoint == null ? null : endpoint.getInetEndpoint();
-        if (inetEndpoint == null) {
-            SocketAddress address = endpoint == null ? null : endpoint.getEndpoint();
-            return mixInt(hash, address == null ? 0 : address.hashCode());
+    private static String fakeEndpointAckCacheKey(String fakeHost) {
+        return FAKE_ENDPOINT_ACK_CACHE_PREFIX + fakeHost;
+    }
+
+    private static String fakeEndpointRouteCacheKey(UpstreamSupport support, String endpoint) {
+        AuthenticEndpoint server = support == null ? null : support.getEndpoint();
+        return FAKE_ENDPOINT_ROUTE_CACHE_PREFIX + String.valueOf(server == null ? null : server.getEndpoint())
+                + '|' + endpoint;
+    }
+
+    private static String selectFakeHost(String routeCacheKey, String endpoint) {
+        Cache<String, String> cache = fakeEndpointCache();
+        Object lock = FAKE_ENDPOINT_LOCKS[routeCacheKey.hashCode() & (FAKE_ENDPOINT_LOCKS.length - 1)];
+        synchronized (lock) {
+            String fakeHost = cache.get(routeCacheKey);
+            if (SocksRpcContract.isFakeHost(fakeHost) && claimLocalMapping(fakeHost, endpoint)) {
+                return fakeHost;
+            }
+            do {
+                fakeHost = SocksRpcContract.newFakeHost();
+            } while (!claimLocalMapping(fakeHost, endpoint));
+            cache.put(routeCacheKey, fakeHost, CachePolicy.absolute(FAKE_ENDPOINT_LOCAL_CACHE_SECONDS));
+            return fakeHost;
         }
-        InetAddress address = inetEndpoint.getAddress();
-        hash = address == null ? mixString(hash, inetEndpoint.getHostString()) : mixInt(hash, address.hashCode());
-        return mixInt(hash, inetEndpoint.getPort());
     }
 
-    private static long mixString(long hash, String value) {
-        if (value == null || value.length() == 0) {
-            return mixInt(hash, 0);
+    private static boolean claimLocalMapping(String fakeHost, String endpoint) {
+        Cache<String, String> cache = fakeEndpointCache();
+        String key = fakeEndpointCacheKey(fakeHost);
+        Object lock = FAKE_ENDPOINT_LOCKS[key.hashCode() & (FAKE_ENDPOINT_LOCKS.length - 1)];
+        synchronized (lock) {
+            String existing = cache.get(key);
+            if (existing != null && !existing.equals(endpoint)) {
+                return false;
+            }
+            cache.put(key, endpoint, CachePolicy.absolute(FAKE_ENDPOINT_LOCAL_CACHE_SECONDS));
+            return true;
         }
-        for (int i = 0; i < value.length(); i++) {
-            char c = value.charAt(i);
-            hash ^= c & 0xFF;
-            hash *= HASH_PRIME;
-            hash ^= c >>> 8;
-            hash *= HASH_PRIME;
-        }
-        return hash;
     }
 
-    private static long mixInt(long hash, int value) {
-        hash ^= value & 0xFF;
-        hash *= HASH_PRIME;
-        hash ^= (value >>> 8) & 0xFF;
-        hash *= HASH_PRIME;
-        hash ^= (value >>> 16) & 0xFF;
-        hash *= HASH_PRIME;
-        hash ^= (value >>> 24) & 0xFF;
-        return hash * HASH_PRIME;
+    private void setFakeDestination(String fakeHost) {
+        destination = org.rx.net.Sockets.newUnresolvedEndpoint(fakeHost,
+                Arrays.randomNext(SocksRpcContract.FAKE_PORT_OBFS));
+    }
+
+    private CompletableFuture<Boolean> ensureFakeEndpointRegistered(SocksRpcContract facade, String routeCacheKey,
+            String fakeHost, String endpoint, int collisionAttempt) {
+        CompletableFuture<Boolean> result = new CompletableFuture<>();
+        registerFakeEndpointCandidate(facade, fakeHost, endpoint).whenComplete((outcome, error) -> {
+            if (error != null || outcome == RegistrationOutcome.FAILED) {
+                result.complete(Boolean.FALSE);
+                return;
+            }
+            if (outcome == RegistrationOutcome.REGISTERED) {
+                setFakeDestination(fakeHost);
+                result.complete(Boolean.TRUE);
+                return;
+            }
+            releaseCollidingLocalMapping(routeCacheKey, fakeHost, endpoint);
+            if (collisionAttempt >= FAKE_ENDPOINT_COLLISION_RETRIES) {
+                log.warn("Fake endpoint token collision retries exhausted endpoint={}", endpoint);
+                result.complete(Boolean.FALSE);
+                return;
+            }
+            String nextFakeHost = selectFakeHost(routeCacheKey, endpoint);
+            setFakeDestination(nextFakeHost);
+            ensureFakeEndpointRegistered(facade, routeCacheKey, nextFakeHost, endpoint, collisionAttempt + 1)
+                    .whenComplete((registered, retryError) -> {
+                        if (retryError != null) {
+                            result.completeExceptionally(retryError);
+                        } else {
+                            result.complete(registered);
+                        }
+                    });
+        });
+        return result;
+    }
+
+    private static void releaseCollidingLocalMapping(String routeCacheKey, String fakeHost, String endpoint) {
+        Cache<String, String> cache = fakeEndpointCache();
+        String endpointCacheKey = fakeEndpointCacheKey(fakeHost);
+        Object lock = FAKE_ENDPOINT_LOCKS[endpointCacheKey.hashCode() & (FAKE_ENDPOINT_LOCKS.length - 1)];
+        synchronized (lock) {
+            if (endpoint.equals(cache.get(endpointCacheKey))) {
+                cache.remove(endpointCacheKey);
+            }
+        }
+        if (fakeHost.equals(cache.get(routeCacheKey))) {
+            cache.remove(routeCacheKey);
+        }
+        fakeEndpointAckCache().remove(fakeEndpointAckCacheKey(fakeHost));
+    }
+
+    private static CompletableFuture<RegistrationOutcome> registerFakeEndpointCandidate(SocksRpcContract facade,
+            String fakeHost, String endpoint) {
+        String ackCacheKey = fakeEndpointAckCacheKey(fakeHost);
+        Cache<String, Boolean> ackCache = fakeEndpointAckCache();
+        Boolean acknowledged = ackCache.get(ackCacheKey);
+        if (acknowledged != null) {
+            return acknowledged.booleanValue() ? REGISTERED_OUTCOME : FAILED_OUTCOME;
+        }
+
+        CompletableFuture<RegistrationOutcome> promise = new CompletableFuture<>();
+        CompletableFuture<RegistrationOutcome> existing = REGISTRATIONS.putIfAbsent(ackCacheKey, promise);
+        if (existing != null) {
+            return existing;
+        }
+
+        try {
+            Tasks.runAsync(() -> facade.fakeEndpoint(fakeHost, endpoint, SocksRpcContract.rpcToken()))
+                    .whenComplete((result, error) -> {
+                        RegistrationOutcome outcome;
+                        if (error != null) {
+                            outcome = RegistrationOutcome.FAILED;
+                            ackCache.put(ackCacheKey, Boolean.FALSE,
+                                    CachePolicy.absolute(FAKE_ENDPOINT_RETRY_SECONDS));
+                            logFakeEndpointRegistrationFailure(fakeHost, endpoint, error);
+                        } else if (BooleanUtils.isTrue(result)) {
+                            outcome = RegistrationOutcome.REGISTERED;
+                            ackCache.put(ackCacheKey, Boolean.TRUE,
+                                    CachePolicy.absolute(FAKE_ENDPOINT_ACK_CACHE_SECONDS));
+                        } else {
+                            outcome = RegistrationOutcome.COLLISION;
+                            log.warn("Fake endpoint token collision fakeHost={} endpoint={}", fakeHost, endpoint);
+                        }
+                        REGISTRATIONS.remove(ackCacheKey, promise);
+                        promise.complete(outcome);
+                    });
+        } catch (Exception error) {
+            ackCache.put(ackCacheKey, Boolean.FALSE, CachePolicy.absolute(FAKE_ENDPOINT_RETRY_SECONDS));
+            logFakeEndpointRegistrationFailure(fakeHost, endpoint, error);
+            REGISTRATIONS.remove(ackCacheKey, promise);
+            promise.complete(RegistrationOutcome.FAILED);
+        }
+        return promise;
+    }
+
+    private static void logFakeEndpointRegistrationFailure(String fakeHost, String endpoint, Throwable error) {
+        log.warn("Fake endpoint async registration failed fakeHost={} endpoint={} cause={} message={}",
+                fakeHost, endpoint, error.getClass().getName(), error.getMessage());
+        if (log.isDebugEnabled()) {
+            log.debug("Fake endpoint async registration full failure fakeHost={} endpoint={}",
+                    fakeHost, endpoint, error);
+        }
+    }
+
+    private enum RegistrationOutcome {
+        REGISTERED,
+        COLLISION,
+        FAILED
     }
 
     public void initTransport(Channel channel) {

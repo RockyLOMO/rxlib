@@ -14,12 +14,10 @@ import java.io.Serializable;
 public final class FakeEndpointRecovery implements Serializable {
     private static final long serialVersionUID = 1L;
 
-    private long hash;
     private String fakeHost;
     private String realEndpoint;
 
-    public FakeEndpointRecovery(long hash, String fakeHost) {
-        this.hash = hash;
+    public FakeEndpointRecovery(String fakeHost) {
         this.fakeHost = fakeHost;
     }
 }

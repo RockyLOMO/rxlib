@@ -46,9 +46,9 @@ class SocksProxyServerIntegrationTest {
         }
 
         @Override
-        public boolean fakeEndpoint(long hash, String realEndpoint, String token) {
+        public boolean fakeEndpoint(String fakeHost, String realEndpoint, String token) {
             SocksRpcContract.requireValidRpcToken(token);
-            SocksRpcContract.fakeDict().putIfAbsent(hash, org.rx.net.Sockets.parseEndpoint(realEndpoint));
+            SocksRpcContract.fakeDict().putIfAbsent(fakeHost, org.rx.net.Sockets.parseEndpoint(realEndpoint));
             return true;
         }
 
@@ -415,7 +415,7 @@ class SocksProxyServerIntegrationTest {
                 out.flush();
                 assertArrayEquals(new byte[]{0x05, 0x00}, readExact(in, 2, 4000));
 
-                byte[] host = SocksRpcContract.fakeHost(0x12345678L).getBytes(StandardCharsets.US_ASCII);
+                byte[] host = SocksRpcContract.newFakeHost().getBytes(StandardCharsets.US_ASCII);
                 ByteBuf req = Unpooled.buffer(7 + host.length);
                 req.writeByte(0x05);
                 req.writeByte(0x03);
