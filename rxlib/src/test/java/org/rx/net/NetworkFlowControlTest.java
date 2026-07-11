@@ -106,6 +106,29 @@ public class NetworkFlowControlTest {
     }
 
     @Test
+    public void testWriteOnlyGlobalTrafficLeavesReadUnlimited() {
+        NetworkTrafficConfig config = new NetworkTrafficConfig();
+        config.setEnabled(true);
+        config.setUploadKilobytesPerSecond(6592L);
+        config.setDownloadKilobytesPerSecond(0L);
+        config.setCheckIntervalMillis(100L);
+        NetworkFlowControl.DEFAULT.refresh(config);
+
+        EmbeddedChannel channel = new EmbeddedChannel();
+        try {
+            assertTrue(NetworkFlowControl.DEFAULT.install(channel));
+            GlobalChannelTrafficShapingHandler handler = (GlobalChannelTrafficShapingHandler) channel.pipeline()
+                    .get(NetworkFlowControl.GLOBAL_TRAFFIC_HANDLER);
+            assertNotNull(handler);
+            assertEquals(6592L * 1024L, handler.getWriteLimit());
+            assertEquals(0L, handler.getReadLimit());
+            assertEquals(100L, handler.getCheckInterval());
+        } finally {
+            channel.finishAndReleaseAll();
+        }
+    }
+
+    @Test
     public void testRefreshUpdatesExistingGlobalTrafficHandler() {
         NetworkTrafficConfig config = new NetworkTrafficConfig();
         config.setEnabled(true);

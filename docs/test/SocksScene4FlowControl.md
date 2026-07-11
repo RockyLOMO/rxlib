@@ -19,13 +19,13 @@ RSS client 入口配置来自 `/home/rss/conf.yml`。进程级网络控流参数
 
 RSS server 的 `deploy/rss-svr/rollback.sh` 也会独立启动 JVM，因此需要与 `start.sh` 保持同一组控流参数，避免回滚后丢失限速和 UDP pending 保护。
 
-全局控流一键开关是 `GLOBAL_TRAFFIC_ENABLED`，映射到 `-Dapp.net.globalTraffic.enabled`。RSS client 默认 `true`；RSS server 当前默认 `false`，先关闭全局 shaping，只保留 TCP / UDP 背压。需要临时验证 server 全局 shaping 时，可在启动前显式设置 `GLOBAL_TRAFFIC_ENABLED=true`。
+全局控流一键开关是 `GLOBAL_TRAFFIC_ENABLED`，映射到 `-Dapp.net.globalTraffic.enabled`。RSS client 与 RSS server 默认均为 `true`；server 只限制 write/upload，read/download 保持不限速。
 
 ## RSS Client 启动控流
 
 `deploy/rss/start.sh` 当前按运营商常用 Mbps 口径换算，`Mb/s` 表示 bit/s，不是 Byte/s。
 
-| 标称带宽 | 计算 | 98% 目标 | 启动参数 |
+| 标称带宽 | 计算 | 当前目标 | 启动参数 |
 | --- | --- | --- | --- |
 | 上行 40Mb/s | `40,000,000 / 8 / 1024` | `4785 KiB/s` | `GLOBAL_TRAFFIC_UPLOAD_KBPS=4785` |
 | 下行 200Mb/s | `200,000,000 / 8 / 1024` | `23926 KiB/s` | `GLOBAL_TRAFFIC_DOWNLOAD_KBPS=23926` |
@@ -39,14 +39,14 @@ RSS client 的 UDP pending 上限：
 
 ## RSS Server 启动控流
 
-`deploy/rss-svr/start.sh` 保留控流参数，但当前默认关闭全局 shaping。RSS server B 是场景4里的公网出口和回包入口，client A 的限速不能控制 B -> dest 或 B -> A 方向；如果后续需要限制 B 侧出口，可一键打开 `GLOBAL_TRAFFIC_ENABLED=true`。
+RSS server B 是场景4里的公网出口和回包入口，client A 的限速不能控制 B -> A 回程。现场观测到 server 不限速时，Google 数据会突发写入 `3..9MiB/s`，`9900 -> A` 单连接 pending 最高约 `1.6MiB`，并在 15 秒内出现 688 次 TCP fast retrans，因此 server 默认启用单向回程 pacing。
 
 | 标称带宽 | 计算 | 98% 目标 | 启动参数 |
 | --- | --- | --- | --- |
-| 上行 60Mb/s | `60,000,000 / 8 / 1024` | `7178 KiB/s` | `GLOBAL_TRAFFIC_UPLOAD_KBPS=7178` |
-| 下行 60Mb/s | `60,000,000 / 8 / 1024` | `7178 KiB/s` | `GLOBAL_TRAFFIC_DOWNLOAD_KBPS=7178` |
+| 回程上行 60Mb/s | `60,000,000 / 8 / 1024 * 0.90` | `6592 KiB/s` | `GLOBAL_TRAFFIC_UPLOAD_KBPS=6592` |
+| Google 入站 | 不限制 | `0` | `GLOBAL_TRAFFIC_DOWNLOAD_KBPS=0` |
 
-上述 60Mb/s 参数只有在 server 启动时设置 `GLOBAL_TRAFFIC_ENABLED=true` 才参与 Netty `GlobalChannelTrafficShapingHandler`；当前默认不安装 server 侧全局 shaping。
+server 默认安装 `GlobalChannelTrafficShapingHandler`，只对聚合 write 方向做约 90% pacing，给 GIA 出口、TCP/IP 开销和突发留余量；read limit 为 `0`，不会限制 Google -> server。
 
 RSS server 是 2c / 1.5GiB 小机器，`MaxDirectMemorySize=640m`，所以 UDP pending 比 client 更收敛：
 
@@ -167,7 +167,7 @@ RSS server B 额外设置 fake host 控制面恢复等待：
 | RSS client | 新进程参数 | `Xms1g/Xmx2g`、`reactorThreadAmount=8`、全局限速 `4785/23926 KiB/s`、UDP pending `256KiB/512` 生效 |
 | RSS client | drain | 旧进程进入 180s drain，新进程 slot `b` 已绑定端口；上一轮旧进程已按 drain 退出 |
 | RSS client | 23:33 后日志 | `recover dstEp=0`、`COMPUTE_ARGS=0`、`NativeIoException=0`、`decompress=0`、`slowSql=0`、`expected close/write=0` |
-| RSS server | 新进程参数 | `Xms256m/Xmx256m`、`reactorThreadAmount=2`、全局限速参数保留为 `7178/7178 KiB/s` 但当前 `enabled=false`、UDP pending `128KiB/256`、fake recover `1200ms` 生效 |
+| RSS server | 新进程参数 | `Xms256m/Xmx256m`、`reactorThreadAmount=2`、单向回程 pacing `6592/0 KiB/s` 且 `enabled=true`、UDP pending `128KiB/256`、fake recover `1200ms` 生效 |
 | RSS server | 23:32 后日志 | `recover dstEp=0`、`COMPUTE_ARGS=0`、`NativeIoException=0`、`decompress=0`、`slowSql=0`、`expected close/write=0` |
 | socks5h 连通性 | client 本机 `curl --socks5-hostname 127.0.0.1:6885` | `example.com=200`、`google generate_204=204`、`cloudflare trace=200`，域名型 CONNECT 已通 |
 | 5 并发下载 | 5 路 `https://speed.cloudflare.com/__down?bytes=10485760` | 全部 HTTP 200，10MiB 完整下载，耗时 `8.37s..8.74s`，未见 4 路长时间 0 进度 |
@@ -275,12 +275,12 @@ RSS client 的端口跳跃配置写在 `RssClient.configureOutboundConfig(...)`�
 
 ### 4. SocksProxyServer B -> dest
 
-该段在 RSS server 侧执行，当前默认只受 `deploy/rss-svr/start.sh` 的 UDP/TCP 背压控制；server 全局 shaping 保留参数但默认关闭。
+该段在 RSS server 侧执行，默认同时受 UDP/TCP 背压与单向 write pacing 控制；Google -> server 的 read 方向不限速。
 
 | 能力 | 生效点 | 当前语义 |
 | --- | --- | --- |
-| 全局上传限速 | Socks B 到 dest 的网络 channel | 仅 `GLOBAL_TRAFFIC_ENABLED=true` 时受 B 侧 `GLOBAL_TRAFFIC_UPLOAD_KBPS=7178` 粗限速；当前默认关闭 |
-| 全局下载限速 | dest 到 Socks B 的网络 channel | 仅 `GLOBAL_TRAFFIC_ENABLED=true` 时受 B 侧 `GLOBAL_TRAFFIC_DOWNLOAD_KBPS=7178` 粗限速；当前默认关闭 |
+| 全局 write pacing | Socks B 的所有公网写 channel，主要是 B -> A 回程 | 默认 `GLOBAL_TRAFFIC_UPLOAD_KBPS=6592`，抑制超过 60Mbps 物理出口的突发与 fast retrans |
+| 全局 read 限速 | dest -> B | 默认 `GLOBAL_TRAFFIC_DOWNLOAD_KBPS=0`，不限制 Google 入站读取 |
 | UDP relay | Socks B UDP outbound | `RssServer.configureOutboundConfig` 设置 MTU、压缩、多倍发送、端口跳跃 |
 | 压缩/多倍发送 | A/B 协商链路上的 SOCKS UDP handler | A 发出的 RDNT / UCMP 在 B 侧解码后再转发到真实 dest；B 回 A 时也可按配置编码 |
 | UDP 背压 | B 侧 `Sockets.writeUdp(...)` | pending bytes 上限 `128KiB`，pending packets 上限 `256` |
@@ -300,8 +300,8 @@ dest
 
 | 链路 | 控流/背压 | 压缩/多倍发送 |
 | --- | --- | --- |
-| dest -> B | server 全局 shaping 当前默认关闭；B 侧 UDP pending cap 为 `128KiB / 256 packets` | B 按 SOCKS UDP 配置处理后回 A |
-| B -> A | server 全局 shaping 当前默认关闭；RSS client A 的入站 read limit 会参与；A 的 UDP write back to SS client 走 pending cap | Socks A 回包先经 RDNT / UCMP decoder 去重、解压 |
+| dest -> B | server read limit 为 `0`；B 侧 UDP pending cap 为 `128KiB / 256 packets` | B 按 SOCKS UDP 配置处理后回 A |
+| B -> A | server write pacing 为 `6592KiB/s`；RSS client A 的入站 read limit 也会参与；A 的 UDP write back to SS client 走 pending cap | Socks A 回包先经 RDNT / UCMP decoder 去重、解压 |
 | Socks A -> ShadowsocksServer A | LocalChannel 不做全局 shaping；真实本机 UDP 则会进 shaping | 只解码，不在本地跳新增 encoder |
 | ShadowsocksServer A -> Client C | RSS client 上传 write limit 生效；另有 per-source pending bytes `256KiB` | 还原 Shadowsocks UDP address header 后发给客户端 |
 
