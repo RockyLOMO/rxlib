@@ -20,15 +20,12 @@ PORT=${PORT:-9900}
 UDP2RAW_PORT=${UDP2RAW_PORT:-9910}
 HTTP_SERVER_PORT=${HTTP_SERVER_PORT:-8082}
 REQUIRED_TCP_PORTS=("${PORT}" "${HTTP_SERVER_PORT}")
-# RSS server 回程出口标称 60Mbps。现场观测到不限速会突发到 9MiB/s 并触发大量 TCP fast retrans，
-# 默认只对 write/upload 方向按 90% 做 pacing；read/download=0 保持 Google -> server 不限速，并用有界延迟队列提前触发 TCP 背压。
-GLOBAL_TRAFFIC_ENABLED=${GLOBAL_TRAFFIC_ENABLED:-true}
+# 延迟优先：默认关闭 JVM 全局 shaping，避免小文件/尾包进入应用层延迟队列。
+# Linux BBR + fq 负责 pacing/fairness；TCP/UDP 背压仍独立开启。
+GLOBAL_TRAFFIC_ENABLED=${GLOBAL_TRAFFIC_ENABLED:-false}
 GLOBAL_TRAFFIC_UPLOAD_KBPS=${GLOBAL_TRAFFIC_UPLOAD_KBPS:-6592}
 GLOBAL_TRAFFIC_DOWNLOAD_KBPS=${GLOBAL_TRAFFIC_DOWNLOAD_KBPS:-0}
 GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS=${GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS:-100}
-GLOBAL_TRAFFIC_MAX_DELAY_MILLIS=${GLOBAL_TRAFFIC_MAX_DELAY_MILLIS:-15000}
-GLOBAL_TRAFFIC_MAX_WRITE_QUEUE_BYTES=${GLOBAL_TRAFFIC_MAX_WRITE_QUEUE_BYTES:-262144}
-GLOBAL_TRAFFIC_MAX_GLOBAL_WRITE_QUEUE_BYTES=${GLOBAL_TRAFFIC_MAX_GLOBAL_WRITE_QUEUE_BYTES:-4194304}
 FAKE_ENDPOINT_RECOVER_WAIT_MILLIS=${FAKE_ENDPOINT_RECOVER_WAIT_MILLIS:-1200}
 GLOBAL_UDP_MAX_PENDING_BYTES=${GLOBAL_UDP_MAX_PENDING_BYTES:-131072}
 GLOBAL_UDP_MAX_PENDING_PACKETS=${GLOBAL_UDP_MAX_PENDING_PACKETS:-256}
@@ -46,7 +43,7 @@ DNS_CACHE_PREFETCH_THRESHOLD_PERCENT=${DNS_CACHE_PREFETCH_THRESHOLD_PERCENT:-10}
 MEM_OPTIONS="-Xms256m -Xmx256m -Xss256k -XX:MaxMetaspaceSize=96m -XX:ReservedCodeCacheSize=96m -XX:MaxDirectMemorySize=640m -XX:+UseCompressedClassPointers"
 GC_OPTIONS="-XX:+UseG1GC -XX:MaxGCPauseMillis=30 -XX:ParallelGCThreads=2 -XX:ConcGCThreads=1 -XX:G1ReservePercent=20 -XX:InitiatingHeapOccupancyPercent=30 -XX:+ParallelRefProcEnabled -XX:+AlwaysPreTouch -XX:+ExplicitGCInvokesConcurrent -XX:-OmitStackTraceInFastThrow"
 DIAGNOSTIC_OPTIONS="-Dapp.diagnostic.enabled=false -Dapp.diagnostic.h2.enabled=false -Dapp.diagnostic.disk.scan.enabled=false -Dapp.diagnostic.nmt.enabled=false -Dapp.trace.keepDays=0"
-FLOW_DEBUG_OPTIONS="-Dapp.net.flowDebug.flags=${FLOW_DEBUG_FLAGS} -Dapp.net.globalTraffic.maxDelayMillis=${GLOBAL_TRAFFIC_MAX_DELAY_MILLIS} -Dapp.net.globalTraffic.maxWriteQueueBytes=${GLOBAL_TRAFFIC_MAX_WRITE_QUEUE_BYTES} -Dapp.net.globalTraffic.maxGlobalWriteQueueBytes=${GLOBAL_TRAFFIC_MAX_GLOBAL_WRITE_QUEUE_BYTES}"
+FLOW_DEBUG_OPTIONS="-Dapp.net.flowDebug.flags=${FLOW_DEBUG_FLAGS}"
 DNS_CACHE_OPTIONS="-Dapp.net.dns.cacheEnabled=${DNS_CACHE_ENABLED} -Dapp.net.dns.prefetch=${DNS_CACHE_PREFETCH} -Dapp.net.dns.serveExpired=${DNS_CACHE_SERVE_EXPIRED} -Dapp.net.dns.cacheStorage=${DNS_CACHE_STORAGE} -Dapp.net.dns.cacheMaximumSize=${DNS_CACHE_MAXIMUM_SIZE} -Dapp.net.dns.cacheMaximumBytes=${DNS_CACHE_MAXIMUM_BYTES} -Dapp.net.dns.serveExpiredTtlSeconds=${DNS_CACHE_SERVE_EXPIRED_TTL_SECONDS} -Dapp.net.dns.serveExpiredReplyTtlSeconds=${DNS_CACHE_SERVE_EXPIRED_REPLY_TTL_SECONDS} -Dapp.net.dns.serveExpiredClientTimeoutMillis=${DNS_CACHE_SERVE_EXPIRED_CLIENT_TIMEOUT_MILLIS} -Dapp.net.dns.prefetchThresholdPercent=${DNS_CACHE_PREFETCH_THRESHOLD_PERCENT}"
 APP_OPTIONS="-Dapp.net.reactorThreadAmount=2 -Dapp.net.connectTimeoutMillis=8000 -Dapp.net.http.serverPort=${HTTP_SERVER_PORT} -Dapp.net.http.serverTls=true -Dapp.net.socks.fakeEndpointRecoverWaitMillis=${FAKE_ENDPOINT_RECOVER_WAIT_MILLIS} -Dapp.net.globalTraffic.enabled=${GLOBAL_TRAFFIC_ENABLED} -Dapp.net.globalTraffic.uploadKilobytesPerSecond=${GLOBAL_TRAFFIC_UPLOAD_KBPS} -Dapp.net.globalTraffic.downloadKilobytesPerSecond=${GLOBAL_TRAFFIC_DOWNLOAD_KBPS} -Dapp.net.globalTraffic.checkIntervalMillis=${GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS} -Dapp.net.globalTraffic.tcpBackpressureEnabled=true -Dapp.net.globalTraffic.udpBackpressureEnabled=true -Dapp.net.globalTraffic.udpMaxPendingBytes=${GLOBAL_UDP_MAX_PENDING_BYTES} -Dapp.net.globalTraffic.udpMaxPendingPackets=${GLOBAL_UDP_MAX_PENDING_PACKETS} ${FLOW_DEBUG_OPTIONS} ${DNS_CACHE_OPTIONS} ${DIAGNOSTIC_OPTIONS} -Dio.netty.allocator.type=pooled -Dio.netty.allocator.maxOrder=9 -Dio.netty.tryReflectionSetAccessible=true"
 JDK21_MODULE_OPTS="--add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.net=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.util.concurrent=ALL-UNNAMED --add-opens java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED --add-opens java.base/jdk.internal.misc=ALL-UNNAMED"

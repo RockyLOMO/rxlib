@@ -106,15 +106,12 @@ public class NetworkFlowControlTest {
     }
 
     @Test
-    public void testWriteOnlyGlobalTrafficLeavesReadUnlimitedAndUsesBoundedShaperQueues() {
+    public void testWriteOnlyGlobalTrafficLeavesReadUnlimited() {
         NetworkTrafficConfig config = new NetworkTrafficConfig();
         config.setEnabled(true);
         config.setUploadKilobytesPerSecond(6592L);
         config.setDownloadKilobytesPerSecond(0L);
         config.setCheckIntervalMillis(100L);
-        config.setMaxDelayMillis(15000L);
-        config.setMaxWriteQueueBytes(256L * 1024L);
-        config.setMaxGlobalWriteQueueBytes(4L * 1024L * 1024L);
         NetworkFlowControl.DEFAULT.refresh(config);
 
         EmbeddedChannel channel = new EmbeddedChannel();
@@ -126,9 +123,6 @@ public class NetworkFlowControlTest {
             assertEquals(6592L * 1024L, handler.getWriteLimit());
             assertEquals(0L, handler.getReadLimit());
             assertEquals(100L, handler.getCheckInterval());
-            assertEquals(15000L, handler.getMaxTimeWait());
-            assertEquals(256L * 1024L, handler.getMaxWriteSize());
-            assertEquals(4L * 1024L * 1024L, handler.getMaxGlobalWriteSize());
         } finally {
             channel.finishAndReleaseAll();
         }
@@ -155,16 +149,12 @@ public class NetworkFlowControlTest {
             next.setDownloadKilobytesPerSecond(32L);
             next.setCheckIntervalMillis(25L);
             next.setMaxDelayMillis(75L);
-            next.setMaxWriteQueueBytes(128L * 1024L);
-            next.setMaxGlobalWriteQueueBytes(2L * 1024L * 1024L);
             NetworkFlowControl.DEFAULT.refresh(next);
 
             assertEquals(16384L, handler.getWriteLimit());
             assertEquals(32768L, handler.getReadLimit());
             assertEquals(25L, handler.getCheckInterval());
             assertEquals(75L, handler.getMaxTimeWait());
-            assertEquals(128L * 1024L, handler.getMaxWriteSize());
-            assertEquals(2L * 1024L * 1024L, handler.getMaxGlobalWriteSize());
         } finally {
             channel.finishAndReleaseAll();
         }
