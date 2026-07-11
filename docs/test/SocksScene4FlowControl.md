@@ -141,7 +141,10 @@ RSS server B 额外设置 fake host 控制面恢复等待：
 
 - `deploy/rss/start.sh`、`deploy/rss-svr/start.sh`、`deploy/rss-svr/rollback.sh` 默认 `GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS=100`。
 - `deploy/rss-svr/start.sh`、`deploy/rss-svr/rollback.sh` 默认 `FAKE_ENDPOINT_RECOVER_WAIT_MILLIS=1200`，避免 server 缓存 miss 后 RPC 事件还没回包就返回 SOCKS failure。
-- `SocksTcpUpstream.prepareDestination()` 在 client 本地先写入 fake host 映射，再异步推送给 server；即使初始 `fakeEndpoint` RPC push 慢或失败，server 后续 `fakeEndpointRecovery` 事件也能从 client cache 找到真实 endpoint。
+- `deploy/rss/start.sh` 默认 `FAKE_ENDPOINT_REGISTER_WAIT_MILLIS=4000`。当前 TCP 连接异步等待 server 保存 fake host 映射的 ACK，等待期间不会阻塞 Netty EventLoop；只有 ACK 成功才继续连接，4 秒超时或 RPC 失败会返回 SOCKS failure。
+- SOCKS5 目标使用固定 16 字符的 80-bit base36 token 加 `.f-li.cn` 后缀，不携带原目标；长度与原 64-bit hex token 的最坏长度相同。server 原子检测 token 冲突，冲突时绝不覆盖旧映射，client 换 token 后重试。
+- client 本地恢复映射保留 600 秒，server ACK 缓存保留 270 秒，早于 server 300 秒映射 TTL 到期；同一 token 的并发注册合并为一次 RPC。server 触发 `fakeEndpointRecovery` 时 client 会失效 ACK，使下一次请求主动重新注册。
+- 正常路径严格保持“映射先到、fake host 数据后到”；`fakeEndpointRecovery` 只用于曾经 ACK 后 server 映射丢失，不用于首次注册超时兜底。
 - 启动脚本默认追加 `-Dapp.diagnostic.enabled=false -Dapp.diagnostic.h2.enabled=false -Dapp.diagnostic.disk.scan.enabled=false -Dapp.diagnostic.nmt.enabled=false -Dapp.trace.keepDays=0`。
 - 这次调整优先消除本机诊断 CPU/IO 抖动，再提升全局控流调度平滑度；暂不继续放大 TCP/UDP pending 队列，避免游戏低延迟场景下排队变深。
 

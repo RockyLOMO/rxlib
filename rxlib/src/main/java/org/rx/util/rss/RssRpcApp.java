@@ -23,6 +23,14 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 
 public final class RssRpcApp implements SocksRpcContract {
+    private static final Object[] FAKE_ENDPOINT_LOCKS = new Object[64];
+
+    static {
+        for (int i = 0; i < FAKE_ENDPOINT_LOCKS.length; i++) {
+            FAKE_ENDPOINT_LOCKS[i] = new Object();
+        }
+    }
+
     private final AtomicReference<SocksProxyServer> svrSide;
     private final AtomicReference<SocksProxyServer> udp2rawSvrSide;
 
@@ -49,15 +57,16 @@ public final class RssRpcApp implements SocksRpcContract {
     }
 
     @Override
-    public boolean fakeEndpoint(long hash, String endpoint, String token) {
+    public boolean fakeEndpoint(String fakeHost, String endpoint, String token) {
         SocksRpcContract.requireValidRpcToken(token);
-        SocksRpcContract.fakeDict().put(hash, Sockets.parseEndpoint(endpoint),
-                CachePolicy.absolute(SocksRpcContract.FAKE_EXPIRE_SECONDS));
-        return true;
+        if (!SocksRpcContract.isFakeHost(fakeHost)) {
+            throw new IllegalArgumentException("invalid fake host");
+        }
+        return registerFakeEndpoint(fakeHost, Sockets.parseEndpoint(endpoint));
     }
 
-    public InetSocketAddress recoverFakeEndpoint(long hash, String fakeHost) {
-        FakeEndpointRecovery recovery = new FakeEndpointRecovery(hash, fakeHost);
+    public InetSocketAddress recoverFakeEndpoint(String fakeHost) {
+        FakeEndpointRecovery recovery = new FakeEndpointRecovery(fakeHost);
         RemotingEventArgs<FakeEndpointRecovery> args = RemotingEventArgs.compute(recovery);
         try {
             publishEvent(SocksRpcContract.EVENT_FAKE_ENDPOINT_RECOVERY, args);
@@ -70,8 +79,20 @@ public final class RssRpcApp implements SocksRpcContract {
             return null;
         }
         InetSocketAddress endpoint = Sockets.parseEndpoint(value.getRealEndpoint());
-        SocksRpcContract.fakeDict().put(hash, endpoint, CachePolicy.absolute(SocksRpcContract.FAKE_EXPIRE_SECONDS));
-        return endpoint;
+        return registerFakeEndpoint(fakeHost, endpoint) ? endpoint : null;
+    }
+
+    private static boolean registerFakeEndpoint(String fakeHost, InetSocketAddress endpoint) {
+        Object lock = FAKE_ENDPOINT_LOCKS[fakeHost.hashCode() & (FAKE_ENDPOINT_LOCKS.length - 1)];
+        synchronized (lock) {
+            InetSocketAddress existing = SocksRpcContract.fakeDict().get(fakeHost);
+            if (existing != null && !existing.equals(endpoint)) {
+                return false;
+            }
+            SocksRpcContract.fakeDict().put(fakeHost, endpoint,
+                    CachePolicy.absolute(SocksRpcContract.FAKE_EXPIRE_SECONDS));
+            return true;
+        }
     }
 
     @SneakyThrows

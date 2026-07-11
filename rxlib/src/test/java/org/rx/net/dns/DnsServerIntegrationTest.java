@@ -54,7 +54,7 @@ public class DnsServerIntegrationTest extends AbstractTester {
         }
 
         @Override
-        public boolean fakeEndpoint(long hash, String realEndpoint, String token) {
+        public boolean fakeEndpoint(String fakeHost, String realEndpoint, String token) {
             return true;
         }
 
