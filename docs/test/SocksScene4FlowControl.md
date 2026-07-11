@@ -19,7 +19,7 @@ RSS client 入口配置来自 `/home/rss/conf.yml`。进程级网络控流参数
 
 RSS server 的 `deploy/rss-svr/rollback.sh` 也会独立启动 JVM，因此需要与 `start.sh` 保持同一组控流参数，避免回滚后丢失限速和 UDP pending 保护。
 
-全局控流一键开关是 `GLOBAL_TRAFFIC_ENABLED`，映射到 `-Dapp.net.globalTraffic.enabled`。RSS client 与 RSS server 默认均为 `true`；server 只限制 write/upload，read/download 保持不限速。
+全局控流一键开关是 `GLOBAL_TRAFFIC_ENABLED`，映射到 `-Dapp.net.globalTraffic.enabled`。RSS client 与 RSS server 生产默认均为 `false`；仅在短时带宽压测时显式开启。
 
 ## RSS Client 启动控流
 
@@ -39,16 +39,14 @@ RSS client 的 UDP pending 上限：
 
 ## RSS Server 启动控流
 
-RSS server B 是场景4里的公网出口和回包入口，client A 的限速不能控制 B -> A 回程。现场观测到 server 不限速时，Google 数据会突发写入 `3..9MiB/s`，`9900 -> A` 单连接 pending 最高约 `1.6MiB`，并在 15 秒内出现 688 次 TCP fast retrans，因此 server 默认启用单向回程 pacing。
+RSS server B 是场景4里的公网出口和回包入口。生产默认关闭 JVM 全局 shaping：延迟和功能完整性优先，避免小文件尾包、新连接和控制请求进入应用层延迟队列。Linux `BBR + fq` 负责 pacing/fairness，TCP 双向背压与 UDP pending 保护继续启用。
 
 | 标称带宽 | 计算 | 98% 目标 | 启动参数 |
 | --- | --- | --- | --- |
 | 回程上行 60Mb/s | `60,000,000 / 8 / 1024 * 0.90` | `6592 KiB/s` | `GLOBAL_TRAFFIC_UPLOAD_KBPS=6592` |
 | Google 入站 | 不限制 | `0` | `GLOBAL_TRAFFIC_DOWNLOAD_KBPS=0` |
 
-server 默认安装 `GlobalChannelTrafficShapingHandler`，只对聚合 write 方向做约 90% pacing，给 GIA 出口、TCP/IP 开销和突发留余量；read limit 为 `0`，不会限制 Google -> server。
-
-server 额外把 Netty shaper 单 channel 延迟队列限制为 `256KiB`、全局延迟队列限制为 `4MiB`，并保留 `15s` 精确调度上限。队列达到水位会提前把 channel 标为不可写，让既有双向 TCP 背压暂停上游读取；这避免默认 `4MiB/channel + 200ms maxTime` 把多批消息同步释放成大 burst。
+上述速率只作为显式压测参数保留。只有设置 `GLOBAL_TRAFFIC_ENABLED=true` 才安装 `GlobalChannelTrafficShapingHandler`；正常生产路径不维护全局发送债务。
 
 RSS server 是 2c / 1.5GiB 小机器，`MaxDirectMemorySize=640m`，所以 UDP pending 比 client 更收敛：
 
@@ -64,9 +62,6 @@ RSS server 是 2c / 1.5GiB 小机器，`MaxDirectMemorySize=640m`，所以 UDP p
 -Dapp.net.globalTraffic.uploadKilobytesPerSecond=${GLOBAL_TRAFFIC_UPLOAD_KBPS}
 -Dapp.net.globalTraffic.downloadKilobytesPerSecond=${GLOBAL_TRAFFIC_DOWNLOAD_KBPS}
 -Dapp.net.globalTraffic.checkIntervalMillis=${GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS}
--Dapp.net.globalTraffic.maxDelayMillis=${GLOBAL_TRAFFIC_MAX_DELAY_MILLIS}
--Dapp.net.globalTraffic.maxWriteQueueBytes=${GLOBAL_TRAFFIC_MAX_WRITE_QUEUE_BYTES}
--Dapp.net.globalTraffic.maxGlobalWriteQueueBytes=${GLOBAL_TRAFFIC_MAX_GLOBAL_WRITE_QUEUE_BYTES}
 -Dapp.net.globalTraffic.tcpBackpressureEnabled=true
 -Dapp.net.globalTraffic.udpBackpressureEnabled=true
 -Dapp.net.globalTraffic.udpMaxPendingBytes=${GLOBAL_UDP_MAX_PENDING_BYTES}
@@ -125,9 +120,8 @@ RSS server B 额外设置 fake host 控制面恢复等待：
 
 性能优先策略：
 
-- `checkIntervalMillis=100`，使用 Netty 默认级别的 100ms 调度粒度，减少多连接下载时的秒级批量放行。
-- 全局限速只做粗保护，防止持续打满公网出口导致排队膨胀。
-- server 使用 `maxWriteQueueBytes=262144`、`maxGlobalWriteQueueBytes=4194304` 提前触发背压；这两个限制只影响 shaper 延迟队列，不增加包级热路径判断。
+- client/server 默认关闭 JVM shaping；TCP 背压只在真实 channel 不可写时暂停对端读取，不主动延迟正常流量。
+- `GLOBAL_TRAFFIC_ENABLED` 仅作为短时压测开关保留，不作为生产默认路径。
 - RSS 生产脚本关闭诊断框架、诊断 H2 落库、磁盘扫描、NMT 采集和 trace agent，避免诊断线程、JFR sampler、ByteBuddy 动态 agent 在下载压测时抢 CPU / IO。
 - 如果线上 RTT 抖动明显，优先把对应节点降到 95%；如果 RTT 平稳且吞吐不足，再临时调到 99% 或关闭全局限速压测。
 
@@ -145,13 +139,13 @@ RSS server B 额外设置 fake host 控制面恢复等待：
 
 真实批量下载时，单纯使用 `6592KiB/s + maxDelay=200ms` 仍产生约 `6.8MiB/s` burst，35 秒 `TCPFastRetrans=4100`；只把 `maxDelay` 提到 `1000ms` 会让更多定时写同步释放，峰值达到 `20MiB/s`，35 秒 `TCPFastRetrans=7586`。
 
-改为 `maxDelay=15000ms + 256KiB/channel + 4MiB/global` 有界队列后，完整高负载窗口 server 写速约 `4.4MiB/s`，35 秒 `TCPFastRetrans=674`，较旧方案下降约 91%；client 同窗口 `TCPFastRetrans=1`。server shaper queue 通常为 `0~64KiB`，短时 pending 后能回落到 0。
+曾尝试 `maxDelay=15000ms + 256KiB/channel + 4MiB/global` 有界队列，虽然 35 秒 `TCPFastRetrans` 从 `7586` 降到 `674`，但全局发送债务会让后续低流量请求、小文件尾包出现长等待。该方案已放弃：生产默认关闭 JVM shaping，只保留内核 `BBR + fq` 和真实写水位背压。
 | 全局限速 | 两侧实际运行 `checkIntervalMillis=1000` | 1s shaping tick 会造成按秒批量放行，不适合“5 个进度条都流畅”的体验 |
 | fake host 控制面 | server 最近日志仍有大量 `recover dstEp ... fail`，client 只看到少量 `fakeEndpointRecovery` 事件重订阅 | 事件机制存在，但 server 侧 200ms 等待窗口偏窄，RTT/CPU 抖动下容易提前失败 |
 
 处理结论：
 
-- `deploy/rss/start.sh`、`deploy/rss-svr/start.sh`、`deploy/rss-svr/rollback.sh` 默认 `GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS=100`。
+- `deploy/rss/start.sh`、`deploy/rss-svr/start.sh`、`deploy/rss-svr/rollback.sh` 默认 `GLOBAL_TRAFFIC_ENABLED=false`；需要短时压测才显式开启。
 - `deploy/rss-svr/start.sh`、`deploy/rss-svr/rollback.sh` 默认 `FAKE_ENDPOINT_RECOVER_WAIT_MILLIS=1200`，避免 server 缓存 miss 后 RPC 事件还没回包就返回 SOCKS failure。
 - `deploy/rss/start.sh` 默认 `FAKE_ENDPOINT_REGISTER_WAIT_MILLIS=4000`。当前 TCP 连接异步等待 server 保存 fake host 映射的 ACK，等待期间不会阻塞 Netty EventLoop；只有 ACK 成功才继续连接，4 秒超时或 RPC 失败会返回 SOCKS failure。
 - SOCKS5 目标使用固定 16 字符的 80-bit base36 token 加 `.f-li.cn` 后缀，不携带原目标；长度与原 64-bit hex token 的最坏长度相同。server 原子检测 token 冲突，冲突时绝不覆盖旧映射，client 换 token 后重试。

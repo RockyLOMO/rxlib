@@ -46,7 +46,6 @@ public final class NetworkFlowControl {
                     enabled ? snapshot.downloadBytesPerSecond() : 0L,
                     snapshot.getCheckIntervalMillis());
             handler.setMaxTimeWait(snapshot.getMaxDelayMillis());
-            configureWriteQueueLimits(handler, snapshot);
         }
     }
 
@@ -125,19 +124,11 @@ public final class NetworkFlowControl {
             handler = new GlobalChannelTrafficShapingHandler(executor,
                     snapshot.uploadBytesPerSecond(), snapshot.downloadBytesPerSecond(),
                     0L, 0L, snapshot.getCheckIntervalMillis(), snapshot.getMaxDelayMillis());
-            configureWriteQueueLimits(handler, snapshot);
             globalTrafficHandler = handler;
-            log.info("Network global traffic shaping enabled uploadKilobytesPerSecond={} downloadKilobytesPerSecond={} checkIntervalMillis={} maxDelayMillis={} maxWriteQueueBytes={} maxGlobalWriteQueueBytes={}",
+            log.info("Network global traffic shaping enabled uploadKilobytesPerSecond={} downloadKilobytesPerSecond={} checkIntervalMillis={} maxDelayMillis={}",
                     snapshot.getUploadKilobytesPerSecond(), snapshot.getDownloadKilobytesPerSecond(),
-                    snapshot.getCheckIntervalMillis(), snapshot.getMaxDelayMillis(),
-                    snapshot.getMaxWriteQueueBytes(), snapshot.getMaxGlobalWriteQueueBytes());
+                    snapshot.getCheckIntervalMillis(), snapshot.getMaxDelayMillis());
             return handler;
         }
-    }
-
-    private static void configureWriteQueueLimits(GlobalChannelTrafficShapingHandler handler,
-                                                  NetworkTrafficConfig snapshot) {
-        handler.setMaxWriteSize(snapshot.getMaxWriteQueueBytes());
-        handler.setMaxGlobalWriteSize(snapshot.getMaxGlobalWriteQueueBytes());
     }
 }
