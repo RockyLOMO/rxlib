@@ -43,6 +43,8 @@ FLOW_DEBUG_FLAGS=${FLOW_DEBUG_FLAGS:-3}
 FAKE_ENDPOINT_REGISTER_WAIT_MILLIS=${FAKE_ENDPOINT_REGISTER_WAIT_MILLIS:-4000}
 # RSS client DNS 必须持续走 RPC interceptor；0 表示关闭可恢复异常后的临时冷却。
 DNS_INTERCEPTOR_BREAKER_OPEN_MILLIS=${DNS_INTERCEPTOR_BREAKER_OPEN_MILLIS:-0}
+# RRP 反向代理服务默认关闭；仅显式设置为 true 时启动。
+RRP_SERVER_ENABLED=${RRP_SERVER_ENABLED:-false}
 DEPLOY_SLOTS=(a b)
 if ! [[ "${MAX_LIVE_PROCESSES}" =~ ^[0-9]+$ ]] || [ "${MAX_LIVE_PROCESSES}" -lt 1 ]; then
     MAX_LIVE_PROCESSES=2
@@ -52,6 +54,7 @@ MEM_OPTIONS="-Xms1g -Xmx2g -Xss512k -XX:MaxMetaspaceSize=192m -XX:ReservedCodeCa
 GC_OPTIONS="-XX:+UseG1GC -XX:MaxGCPauseMillis=30 -XX:ParallelGCThreads=4 -XX:ConcGCThreads=2 -XX:G1ReservePercent=20 -XX:InitiatingHeapOccupancyPercent=30 -XX:+ParallelRefProcEnabled -XX:+AlwaysPreTouch -XX:+ExplicitGCInvokesConcurrent -XX:-OmitStackTraceInFastThrow"
 DIAGNOSTIC_OPTIONS="-Dapp.diagnostic.enabled=false -Dapp.diagnostic.h2.enabled=false -Dapp.diagnostic.disk.scan.enabled=false -Dapp.diagnostic.nmt.enabled=false -Dapp.trace.keepDays=0"
 FLOW_DEBUG_OPTIONS="-Dapp.net.flowDebug.flags=${FLOW_DEBUG_FLAGS}"
+RRP_SERVER_OPTIONS="-Dapp.rss.rrpServerEnabled=${RRP_SERVER_ENABLED}"
 APP_OPTIONS="-Dapp.net.reactorThreadAmount=${REACTOR_THREAD_AMOUNT} -Dapp.net.reusePortBindCount=${REUSE_PORT_BIND_COUNT} -Dapp.rss.drainMaxWaitMillis=$((DRAIN_TIMEOUT_SECONDS * 1000)) -Dapp.rss.drainTokenDir=${DRAIN_TOKEN_DIR} -Dapp.rss.drainTokenTtlMillis=${DRAIN_TOKEN_TTL_MILLIS} -Dapp.net.connectTimeoutMillis=10000 -Dapp.net.socks.fakeEndpointRegisterWaitMillis=${FAKE_ENDPOINT_REGISTER_WAIT_MILLIS} -Dapp.net.dns.directServers=192.168.31.1:53 -Dapp.net.dns.interceptorBreakerOpenMillis=${DNS_INTERCEPTOR_BREAKER_OPEN_MILLIS} -Dapp.net.http.serverPort=${HTTP_SERVER_PORT} -Dapp.net.http.serverTls=false -Dapp.net.globalTraffic.enabled=${GLOBAL_TRAFFIC_ENABLED} -Dapp.net.globalTraffic.uploadKilobytesPerSecond=${GLOBAL_TRAFFIC_UPLOAD_KBPS} -Dapp.net.globalTraffic.downloadKilobytesPerSecond=${GLOBAL_TRAFFIC_DOWNLOAD_KBPS} -Dapp.net.globalTraffic.checkIntervalMillis=${GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS} -Dapp.net.globalTraffic.tcpBackpressureEnabled=true -Dapp.net.globalTraffic.udpBackpressureEnabled=true -Dapp.net.globalTraffic.udpMaxPendingBytes=${GLOBAL_UDP_MAX_PENDING_BYTES} -Dapp.net.globalTraffic.udpMaxPendingPackets=${GLOBAL_UDP_MAX_PENDING_PACKETS} -Dapp.storage.h2Settings=CACHE_SIZE=16384;MAX_MEMORY_ROWS=4096;MAX_OPERATION_MEMORY=16384;WRITE_DELAY=200;AUTO_SERVER=TRUE -Dapp.storage.h2MaxConnections=6 ${FLOW_DEBUG_OPTIONS} ${DIAGNOSTIC_OPTIONS} -Dio.netty.allocator.type=pooled -Dio.netty.allocator.maxOrder=9 -Dio.netty.tryReflectionSetAccessible=true"
 JDK21_MODULE_OPTS="--add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.net=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.util.concurrent=ALL-UNNAMED --add-opens java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED --add-opens java.base/jdk.internal.misc=ALL-UNNAMED"
 BACKUP_PREFIX="app.jar.backup."
@@ -570,7 +573,7 @@ start_new_process() {
     logback_opts=$(build_logback_opts "${slot}")
     mkdir -p logs >/dev/null 2>&1 || true
     echo "${YELLOW}[${LOCAL_TIME}] 正在启动新进程 deployId=${DEPLOY_ID}, slot=${slot}, stdout=${log_file}${NC}"
-    nohup java ${MEM_OPTIONS} ${GC_OPTIONS} ${APP_OPTIONS} ${dump_opts} ${logback_opts} -Dapp.deploy.id="${DEPLOY_ID}" -Dapp.deploy.slot="${slot}" -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} >"${log_file}" 2>&1 &
+    nohup java ${MEM_OPTIONS} ${GC_OPTIONS} ${APP_OPTIONS} ${RRP_SERVER_OPTIONS} ${dump_opts} ${logback_opts} -Dapp.deploy.id="${DEPLOY_ID}" -Dapp.deploy.slot="${slot}" -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} >"${log_file}" 2>&1 &
     STARTED_PID=$!
 }
 

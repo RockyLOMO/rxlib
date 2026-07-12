@@ -92,6 +92,30 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.rx.core.Sys.toJsonString;
 
 public class RssTest extends AbstractTester {
+    @Test
+    public void rrpServer_IsDisabledByDefaultAndRequiresExplicitEnable() {
+        String oldValue = System.getProperty(RssClient.RRP_SERVER_ENABLED_PROPERTY);
+        try {
+            System.clearProperty(RssClient.RRP_SERVER_ENABLED_PROPERTY);
+            assertFalse(RssClient.isRrpServerEnabled());
+
+            RssClientConf conf = new RssClientConf();
+            conf.rrpToken = "token";
+            conf.rrpPort = 18888;
+            assertFalse(RssClient.shouldEnableRrpServer(conf));
+
+            System.setProperty(RssClient.RRP_SERVER_ENABLED_PROPERTY, "true");
+            assertTrue(RssClient.isRrpServerEnabled());
+            assertTrue(RssClient.shouldEnableRrpServer(conf));
+        } finally {
+            if (oldValue == null) {
+                System.clearProperty(RssClient.RRP_SERVER_ENABLED_PROPERTY);
+            } else {
+                System.setProperty(RssClient.RRP_SERVER_ENABLED_PROPERTY, oldValue);
+            }
+        }
+    }
+
     final int connectTimeoutMillis = 30000;
     final String socks5Usr = "rocky";
     final String socks5Pwd = "123456";

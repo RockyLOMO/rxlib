@@ -105,6 +105,7 @@ public final class RssClient {
     static final String PROCESS_DRAIN_MAX_WAIT_PROPERTY = "app.rss.drainMaxWaitMillis";
     static final String PROCESS_DRAIN_TOKEN_DIR_PROPERTY = "app.rss.drainTokenDir";
     static final String PROCESS_DRAIN_TOKEN_TTL_PROPERTY = "app.rss.drainTokenTtlMillis";
+    static final String RRP_SERVER_ENABLED_PROPERTY = "app.rss.rrpServerEnabled";
 
     static volatile RssClientConf rssConf;
     static volatile RssRuntime runtime;
@@ -445,7 +446,7 @@ public final class RssClient {
         if (!normalizeAndValidateDefaultRoute(conf)) {
             return false;
         }
-        if (conf.rrpPort != null && conf.rrpPort <= 0) {
+        if (isRrpServerEnabled() && conf.rrpPort != null && conf.rrpPort <= 0) {
             return false;
         }
         Set<String> usernames = new LinkedHashSet<>();
@@ -1066,7 +1067,7 @@ public final class RssClient {
     }
 
     static RssRuntime.RrpServerPlan prepareRrpServerPlan(RssClientConf conf) {
-        boolean enabled = conf != null && !Strings.isEmpty(conf.rrpToken) && conf.rrpPort != null;
+        boolean enabled = shouldEnableRrpServer(conf);
         String nextToken = enabled ? conf.rrpToken : null;
         Integer nextPort = enabled ? conf.rrpPort : null;
         boolean changed = !(Strings.hashEquals(rrpToken, nextToken)
@@ -1077,6 +1078,15 @@ public final class RssClient {
             plan.newServer = createRrpServer(nextToken, nextPort);
         }
         return plan;
+    }
+
+    static boolean isRrpServerEnabled() {
+        return Boolean.parseBoolean(System.getProperty(RRP_SERVER_ENABLED_PROPERTY, "false"));
+    }
+
+    static boolean shouldEnableRrpServer(RssClientConf conf) {
+        return isRrpServerEnabled() && conf != null
+                && !Strings.isEmpty(conf.rrpToken) && conf.rrpPort != null;
     }
 
     static void materializePortExclusiveRrpPlan(RssRuntime.RrpServerPlan plan) {
