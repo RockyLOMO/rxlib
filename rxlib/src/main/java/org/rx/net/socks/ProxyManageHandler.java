@@ -123,7 +123,7 @@ public class ProxyManageHandler extends ChannelTrafficShapingHandler {
             DiagnosticMetrics.record("socks.session.inbound.bytes", readBytes, tags);
             DiagnosticMetrics.record("socks.session.outbound.bytes", writeBytes, tags);
         }
-        log.info("usr={} <-> {} elapsed={} readBytes={} writeBytes={}",
+        log.debug("usr={} <-> {} elapsed={} readBytes={} writeBytes={}",
                 tagsUser, remoteAddress, Sys.formatNanosElapsed(elapsed),
                 Bytes.readableByteSize(readBytes), Bytes.readableByteSize(writeBytes));
         super.channelInactive(ctx);

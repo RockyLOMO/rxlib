@@ -605,7 +605,7 @@ final class RssRuntime implements AutoCloseable {
             RouteAction userRuleAction = matchRoute(matcher, dstEp.getHostString(), dstEp.getPort(), e.getSource());
             if (userRuleAction == RouteAction.BLOCK) {
                 if (routeLog) {
-                    log.info("SS TCP route {} BLOCK <- {} {}",
+                    log.debug("SS TCP route {} BLOCK <- {} {}",
                             dstEp, userRoute ? "user:route" : "defaultRoute",
                             org.rx.core.Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
                 }
@@ -614,7 +614,7 @@ final class RssRuntime implements AutoCloseable {
             }
             if (userRuleAction == RouteAction.DIRECT) {
                 if (routeLog) {
-                    log.info("SS TCP route {} DIRECT <- {} {}",
+                    log.debug("SS TCP route {} DIRECT <- {} {}",
                             dstEp, userRoute ? "user:route" : "defaultRoute",
                             org.rx.core.Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
                 }
@@ -622,13 +622,13 @@ final class RssRuntime implements AutoCloseable {
                 return;
             }
             if (userRuleAction == RouteAction.PROXY && routeLog) {
-                log.info("SS TCP route {} PROXY <- {} {}",
+                log.debug("SS TCP route {} PROXY <- {} {}",
                         dstEp, userRoute ? "user:route" : "defaultRoute",
                         org.rx.core.Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
             }
             UpstreamSupport svrSupport = routePlan.nextSupport(sourceAddress(e.getSource()), dstEp, ref.srcSteeringTTL);
             if (currentConf != null && currentConf.hasDebugFlag()) {
-                log.info("SS TCP route {} => {}[{}]", e.getSource(), svrSupport.getEndpoint(), dstEp);
+                log.debug("SS TCP route {} => {}[{}]", e.getSource(), svrSupport.getEndpoint(), dstEp);
             }
             e.setUpstream(new SocksTcpUpstream(dstEp, toInConf, svrSupport));
         });
@@ -642,7 +642,7 @@ final class RssRuntime implements AutoCloseable {
             RouteAction userRuleAction = matchRoute(matcher, dstEp.getHostString(), dstEp.getPort(), e.getSource());
             if (userRuleAction == RouteAction.BLOCK) {
                 if (routeLog) {
-                    log.info("SS UDP route {} BLOCK <- {} {}",
+                    log.debug("SS UDP route {} BLOCK <- {} {}",
                             dstEp, userRoute ? "user:route" : "defaultRoute",
                             org.rx.core.Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
                 }
@@ -651,7 +651,7 @@ final class RssRuntime implements AutoCloseable {
             }
             if (userRuleAction == RouteAction.DIRECT) {
                 if (routeLog) {
-                    log.info("SS UDP route {} DIRECT <- {} {}",
+                    log.debug("SS UDP route {} DIRECT <- {} {}",
                             dstEp, userRoute ? "user:route" : "defaultRoute",
                             org.rx.core.Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
                 }
@@ -659,13 +659,13 @@ final class RssRuntime implements AutoCloseable {
                 return;
             }
             if (userRuleAction == RouteAction.PROXY && routeLog) {
-                log.info("SS UDP route {} PROXY <- {} {}",
+                log.debug("SS UDP route {} PROXY <- {} {}",
                         dstEp, userRoute ? "user:route" : "defaultRoute",
                         org.rx.core.Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
             }
             UpstreamSupport svrSupport = routePlan.nextSupport(sourceAddress(e.getSource()), dstEp, ref.srcSteeringTTL);
             if (currentConf != null && currentConf.hasDebugFlag()) {
-                log.info("SS UDP route {} => {}[{}]", e.getSource(), svrSupport.getEndpoint(), dstEp);
+                log.debug("SS UDP route {} => {}[{}]", e.getSource(), svrSupport.getEndpoint(), dstEp);
             }
             e.setUpstream(createUdpRouteUpstream(dstEp, toInConf, svrSupport));
         });
