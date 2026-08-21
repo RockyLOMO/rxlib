@@ -69,7 +69,7 @@ public class GlobalChannelHandler extends ChannelDuplexHandler {
                     log.error("Channel[{}] {} connect to {} fail", ch.id(), pn, remoteAddress, cause);
                     return;
                 }
-                log.info("Channel[{}] {} connected to {}", ch.id(), pn, remoteAddress);
+                log.debug("Channel[{}] {} connected to {}", ch.id(), pn, remoteAddress);
             });
         }
     }

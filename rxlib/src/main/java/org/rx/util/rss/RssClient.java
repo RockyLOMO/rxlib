@@ -328,7 +328,7 @@ public final class RssClient {
             }
             RssClientConf conf = rssConf;
             if (conf != null && conf.hasRouteFlag()) {
-                log.info("route dns {}+{} {} <- {}", srcIp, host, action, ext);
+                log.debug("route dns {}+{} {} <- {}", srcIp, host, action, ext);
             }
             if (action == RouteAction.BLOCK) {
                 return Collections.emptyList();
@@ -1462,7 +1462,7 @@ public final class RssClient {
                 throw new InvalidException("No socks upstream user={} src={} dst={}", username, srcHost, dstEp, ex);
             }
             if (rssConf.hasDebugFlag()) {
-                log.info("route upSvr src {} dst {} -> {}", srcHost, dstEp, next.getEndpoint());
+                log.debug("route upSvr src {} dst {} -> {}", srcHost, dstEp, next.getEndpoint());
             }
             return next;
         };
@@ -1479,7 +1479,7 @@ public final class RssClient {
             RouteAction userRuleAction = matchUserRoute(e.getUser(), dstEp.getHostString(), dstEp.getPort(), e.getSource());
             if (userRuleAction == RouteAction.BLOCK) {
                 if (routeLog) {
-                    log.info("route dst TCP {} BLOCK <- {} {}",
+                    log.debug("route dst TCP {} BLOCK <- {} {}",
                             dstEp.getHostString(), userRoute ? "user:route" : "defaultRoute",
                             Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
                 }
@@ -1488,7 +1488,7 @@ public final class RssClient {
             }
             if (userRuleAction == RouteAction.DIRECT) {
                 if (routeLog) {
-                    log.info("route dst TCP {} DIRECT <- {} {}",
+                    log.debug("route dst TCP {} DIRECT <- {} {}",
                             dstEp.getHostString(), userRoute ? "user:route" : "defaultRoute",
                             Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
                 }
@@ -1496,7 +1496,7 @@ public final class RssClient {
                 return;
             }
             if (routeLog) {
-                log.info("route dst TCP {} PROXY <- {} {}",
+                log.debug("route dst TCP {} PROXY <- {} {}",
                         dstEp.getHostString(),
                         userRoute ? "user:route" : "defaultRoute",
                         Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
@@ -1517,7 +1517,7 @@ public final class RssClient {
             RouteAction userRuleAction = matchUserRoute(e.getUser(), dstEp.getHostString(), dstEp.getPort(), e.getSource());
             if (userRuleAction == RouteAction.BLOCK) {
                 if (routeLog) {
-                    log.info("route dst UDP {} BLOCK <- {} {}",
+                    log.debug("route dst UDP {} BLOCK <- {} {}",
                             dstEp.getHostString(), userRoute ? "user:route" : "defaultRoute",
                             Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
                 }
@@ -1526,7 +1526,7 @@ public final class RssClient {
             }
             if (userRuleAction == RouteAction.DIRECT) {
                 if (routeLog) {
-                    log.info("route dst UDP {} DIRECT <- {} {}",
+                    log.debug("route dst UDP {} DIRECT <- {} {}",
                             dstEp.getHostString(), userRoute ? "user:route" : "defaultRoute",
                             Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
                 }
@@ -1534,7 +1534,7 @@ public final class RssClient {
                 return;
             }
             if (routeLog) {
-                log.info("route dst UDP {} PROXY <- {} {}",
+                log.debug("route dst UDP {} PROXY <- {} {}",
                         dstEp.getHostString(),
                         userRoute ? "user:route" : "defaultRoute",
                         Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));

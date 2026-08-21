@@ -505,7 +505,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 }
             }
             maybeBypassTcpCompression(inbound, outbound, e, config);
-            log.info("socks5[{}] TCP {} => {} connected, dstEp={}[{}]", config.getListenPort(), inbound.localAddress(), outbound.remoteAddress(), dstEp, e.getFirstDestination());
+            log.debug("socks5[{}] TCP {} => {} connected, dstEp={}[{}]", config.getListenPort(), inbound.localAddress(), outbound.remoteAddress(), dstEp, e.getFirstDestination());
         });
     }
 
