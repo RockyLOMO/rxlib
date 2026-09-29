@@ -5,6 +5,7 @@ import org.rx.core.CachePolicy;
 import org.rx.core.Strings;
 import org.rx.net.Sockets;
 import org.rx.net.dns.DnsClient;
+import org.rx.net.rpc.RemotingContext;
 import org.rx.net.rpc.RemotingEventArgs;
 import org.rx.net.socks.FakeEndpointRecovery;
 import org.rx.net.socks.SocksProxyServer;
@@ -104,10 +105,18 @@ public final class RssRpcApp implements SocksRpcContract {
     @Override
     public void addWhiteList(InetAddress endpoint, String token) {
         SocksRpcContract.requireValidRpcToken(token);
+        InetSocketAddress rpcPeer = RemotingContext.context().getClient().tcpRemoteEndpoint();
+        InetAddress peerAddress = rpcPeer == null ? null : rpcPeer.getAddress();
         svrSide.get().getConfig().allowWhiteList(endpoint);
+        if (peerAddress != null && !peerAddress.equals(endpoint)) {
+            svrSide.get().getConfig().allowWhiteList(peerAddress);
+        }
         SocksProxyServer udp2rawServer = udp2rawSvrSide.get();
         if (udp2rawServer != null && udp2rawServer != svrSide.get()) {
             udp2rawServer.getConfig().allowWhiteList(endpoint);
+            if (peerAddress != null && !peerAddress.equals(endpoint)) {
+                udp2rawServer.getConfig().allowWhiteList(peerAddress);
+            }
         }
     }
 

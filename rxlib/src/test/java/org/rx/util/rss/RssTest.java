@@ -1758,6 +1758,58 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
+    public void addWhiteList_IncludesRpcPeerWhenReportedPublicIpDiffers() throws Exception {
+        int rpcPort = freePort();
+        CopyOnWriteArraySet<InetAddress> primaryAllowed = new CopyOnWriteArraySet<>();
+        CopyOnWriteArraySet<InetAddress> udp2rawAllowed = new CopyOnWriteArraySet<>();
+        SocksConfig primaryConfig = new SocksConfig(new LocalAddress("RSS_WHITELIST_PRIMARY")) {
+            @Override
+            public void allowWhiteList(InetAddress endpoint) {
+                primaryAllowed.add(endpoint);
+            }
+        };
+        SocksConfig udp2rawConfig = new SocksConfig(new LocalAddress("RSS_WHITELIST_UDP2RAW")) {
+            @Override
+            public void allowWhiteList(InetAddress endpoint) {
+                udp2rawAllowed.add(endpoint);
+            }
+        };
+        SocksProxyServer primary = new SocksProxyServer(primaryConfig);
+        SocksProxyServer udp2raw = new SocksProxyServer(udp2rawConfig);
+        TcpServer rpcServer = null;
+        SocksRpcContract facade = null;
+        try {
+            RpcServerConfig serverConfig = new RpcServerConfig(new TcpServerConfig(rpcPort));
+            serverConfig.getHybridConfig().setEnableUdpDirect(false);
+            serverConfig.getHybridConfig().setEnableUdpHolePunch(false);
+            rpcServer = Remoting.register(new RssRpcApp(primary, udp2raw), serverConfig);
+
+            RpcClientConfig<SocksRpcContract> clientConfig = RpcClientConfig.poolMode(
+                    new InetSocketAddress("127.0.0.1", rpcPort), 1, 1);
+            clientConfig.getHybridConfig().setEnableUdpDirect(false);
+            clientConfig.getHybridConfig().setEnableUdpHolePunch(false);
+            facade = Remoting.createFacade(SocksRpcContract.class, clientConfig);
+
+            InetAddress reportedAddress = InetAddress.getByName("192.0.2.1");
+            facade.addWhiteList(reportedAddress, SocksRpcContract.rpcToken());
+
+            assertTrue(primaryAllowed.contains(reportedAddress));
+            assertTrue(primaryAllowed.stream().anyMatch(InetAddress::isLoopbackAddress));
+            assertTrue(udp2rawAllowed.contains(reportedAddress));
+            assertTrue(udp2rawAllowed.stream().anyMatch(InetAddress::isLoopbackAddress));
+        } finally {
+            if (facade != null) {
+                facade.close();
+            }
+            if (rpcServer != null) {
+                rpcServer.close();
+            }
+            udp2raw.close();
+            primary.close();
+        }
+    }
+
+    @Test
     public void configureInboundConfig_AppliesUdp2rawFlag() {
         RssClientConf conf = new RssClientConf();
         SocksConfig normal = new SocksConfig(new LocalAddress("RSS_IN_NORMAL_CONF"));
