@@ -4059,3 +4059,11 @@ test_classes=Aes256GcmByteBufCryptoTest,CipherCodecTest,SSProtocolCodecTest,Shad
 </details>
 
 ---
+
+## 2026-09-29 RSS Server 白名单按实际 RPC 来源补齐
+
+- 现象：RSS Client 到 RSS Server 的 SOCKS/RPC TCP 端口可达，RPC 会话已建立，但服务端持续记录 `Socks5InitialRequestHandler access blocked`，代理请求失败。
+- 根因：客户端 `RssRuntime.addPublicIpWhiteList()` 上报的是 `Sockets.getPublicIp()` 的结果；多出口或不同目标的 NAT 路由会让该地址与服务端看到的 SOCKS/RPC 源地址不同。该结果还会缓存两小时，不能作为特定上游连接的唯一来源地址。
+- 决策：`RssRpcApp.addWhiteList()` 在验证 RPC 令牌后，同时登记客户端上报的地址和当前 RPC 会话的 TCP 对端地址，并同步到普通 SOCKS 与 udp2raw 配置。保持原 RPC 接口兼容，避免用公网 IP 查询结果替代连接观测值。
+- 验证：新增本地 RPC 集成测试，模拟上报地址与实际对端不同，验证两个 SOCKS 配置均登记两者；Java 8 与 `rss-21` 的 Java 21 定向测试通过。现网临时通过原 RPC 接口登记实际来源后，客户端 SOCKS 请求返回 HTTP 204；部署修复包后同一请求再次返回 HTTP 204。
+- 边界：若 RPC 和 SOCKS 分别走不同出口，仍须取得 SOCKS 路径的实际源地址；监控应覆盖白名单拒绝数、连接数、吞吐/延迟、RPC 失败率和 Netty 堆外内存占用。
