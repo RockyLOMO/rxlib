@@ -230,7 +230,7 @@ public final class Sockets {
     static final int DEFAULT_UDP_WRITE_LIMIT_BYTES = 256 * 1024;
     static final Set<Integer> TCP_COMPRESS_BYPASS_PORTS = Collections.unmodifiableSet(new HashSet<>(java.util.Arrays.asList(
             22, 443, 465, 587, 636, 853, 989, 990, 993, 995, 3389, 8443, 9443)));
-    static final long CACHE_PUBLIC_IP_NANOS = TimeUnit.MINUTES.toNanos(5);
+    static final long CACHE_PUBLIC_IP_NANOS = TimeUnit.SECONDS.toNanos(120);
     static final String[] DEFAULT_PUBLIC_IP_SERVICES = new String[]{"https://checkip.amazonaws.com", "https://api.seeip.org"};
     static final String M_0 = "lookupAllHostAddr";
     static final String M_1 = "lookupByName";
