@@ -40,6 +40,8 @@ BACKUP_PREFIX="app.jar.backup."
 MAX_BACKUP_COUNT=5
 JAVA_PROCESS_KEYWORD="app.jar -port=${PORT}"
 APP_LOG_FILE="${APP_LOG_FILE:-./app.out}"
+APP_LOG_MAX_BYTES=${APP_LOG_MAX_BYTES:-33554432}
+APP_LOG_DISCARD_BYTES=${APP_LOG_DISCARD_BYTES:-536870912}
 
 # 生成不会冲突的历史 jar 名称。
 next_backup_file() {
@@ -236,6 +238,13 @@ stop_old_process || exit 1
 restore_latest_jar || exit 1
 
 echo "${YELLOW}[${LOCAL_TIME}] 正在启动 ${PORT}/tcp 的进程，HttpServer 端口 ${HTTP_SERVER_PORT}/tcp..."
+if [ -f "${APP_LOG_FILE}" ]; then
+    size=$(stat -c%s "${APP_LOG_FILE}" 2>/dev/null || echo 0)
+    if [[ "${size}" =~ ^[0-9]+$ ]] && [ "${size}" -ge "${APP_LOG_MAX_BYTES}" ]; then
+        echo "${YELLOW}[${LOCAL_TIME}] 截断 ${APP_LOG_FILE} (${size} bytes)"
+        : > "${APP_LOG_FILE}"
+    fi
+fi
 UDP2RAW_ARG=""
 if [ -n "${UDP2RAW_PORT}" ]; then
   UDP2RAW_ARG="-udp2rawPort=${UDP2RAW_PORT}"

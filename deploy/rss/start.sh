@@ -38,7 +38,8 @@ GLOBAL_TRAFFIC_DOWNLOAD_KBPS=${GLOBAL_TRAFFIC_DOWNLOAD_KBPS:-23926}
 GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS=${GLOBAL_TRAFFIC_CHECK_INTERVAL_MILLIS:-100}
 GLOBAL_UDP_MAX_PENDING_BYTES=${GLOBAL_UDP_MAX_PENDING_BYTES:-262144}
 GLOBAL_UDP_MAX_PENDING_PACKETS=${GLOBAL_UDP_MAX_PENDING_PACKETS:-512}
-FLOW_DEBUG_FLAGS=${FLOW_DEBUG_FLAGS:-3}
+# 0=关闭 NET_FLOW_DEBUG；3=每秒聚合+top channel，仅背压排查时显式打开。
+FLOW_DEBUG_FLAGS=${FLOW_DEBUG_FLAGS:-0}
 # fake host 数据连接最多异步等待 server 映射 ACK 4 秒；不会阻塞 Netty EventLoop。
 FAKE_ENDPOINT_REGISTER_WAIT_MILLIS=${FAKE_ENDPOINT_REGISTER_WAIT_MILLIS:-4000}
 # RSS client DNS 必须持续走 RPC interceptor；0 表示关闭可恢复异常后的临时冷却。
@@ -60,6 +61,7 @@ JDK21_MODULE_OPTS="--add-opens java.base/java.io=ALL-UNNAMED --add-opens java.ba
 BACKUP_PREFIX="app.jar.backup."
 MAX_BACKUP_COUNT=5
 JAVA_PROCESS_KEYWORD="app.jar -port=${PORT}"
+LOG_RETENTION_DAYS=${LOG_RETENTION_DAYS:-2}
 
 normalize_deploy_mode() {
     case "${1:-replace}" in
@@ -564,6 +566,43 @@ prepare_capacity_for_new_process() {
     done
 }
 
+cleanup_stale_rss_logs() {
+    local retention="${LOG_RETENTION_DAYS}"
+    mkdir -p logs >/dev/null 2>&1 || true
+    if ! [[ "${retention}" =~ ^[0-9]+$ ]]; then
+        retention=2
+    fi
+    echo "${YELLOW}[${LOCAL_TIME}] 清理 logs/ 中超过 ${retention} 天的滚动日志${NC}"
+    find logs -maxdepth 1 -type f \( -name 'rss-*_info.*.log' -o -name 'rss-*_error.*.log' -o -name 'rss-*_info.*.log.gz' -o -name 'rss-*_error.*.log.gz' \) -mtime "+${retention}" -print -delete 2>/dev/null || true
+    if command -v gzip >/dev/null 2>&1; then
+        find logs -maxdepth 1 -type f \( -name 'rss-*_info.*.log' -o -name 'rss-*_error.*.log' \) -mtime +0 -print0 2>/dev/null | xargs -0 -r gzip -f
+    fi
+}
+
+gzip_inactive_slot_logs() {
+    local live_slots="" slot
+    while IFS= read -r pid; do
+        [ -z "${pid}" ] && continue
+        slot=$(pid_slot "${pid}")
+        [ -n "${slot}" ] && live_slots="${live_slots} ${slot} "
+    done <<EOF
+$(process_pids)
+EOF
+    for slot in "${DEPLOY_SLOTS[@]}"; do
+        case "${live_slots}" in
+            *" ${slot} "*) continue ;;
+        esac
+        if command -v gzip >/dev/null 2>&1; then
+            for f in "logs/rss-${slot}_info.log" "logs/rss-${slot}_error.log"; do
+                if [ -f "${f}" ] && [ -s "${f}" ]; then
+                    echo "${YELLOW}[${LOCAL_TIME}] 压缩空闲 slot 日志 ${f}${NC}"
+                    gzip -f "${f}"
+                fi
+            done
+        fi
+    done
+}
+
 start_new_process() {
     local slot="$1"
     local log_file dump_opts logback_opts
@@ -662,6 +701,8 @@ start_release() {
     if [ "${mode}" = "replace" ]; then
         signal_drain_old_processes "${old_pids}" "${new_pid}"
         echo "${GREEN}[${LOCAL_TIME}] ${label}完成：replace，新进程 PID=${new_pid}, slot=${start_slot}${NC}"
+        gzip_inactive_slot_logs
+        cleanup_stale_rss_logs
     else
         echo "${GREEN}[${LOCAL_TIME}] ${label}完成：coexist，新进程 PID=${new_pid}, slot=${start_slot}；旧进程保留用于人工验证${NC}"
     fi
@@ -725,12 +766,13 @@ rollback_release() {
 }
 
 usage() {
-    echo "用法: $0 [publish|start|rollback|status] [replace|coexist]"
+    echo "用法: $0 [publish|start|rollback|status|cleanup-logs] [replace|coexist]"
     echo "  publish [replace] : 发布并替换旧进程；新进程端口确认失败时不动旧进程"
     echo "  publish coexist   : 发布并保留旧进程；最多保留 ${MAX_LIVE_PROCESSES} 个进程，满员先替换最旧进程"
     echo "  start             : 不存在匹配进程时启动"
     echo "  rollback          : 回滚到 app.jar.latest，并按 replace 策略切换"
     echo "  status            : 查看当前进程与端口状态"
+    echo "  cleanup-logs      : 压缩空闲 slot 日志，删除超过 ${LOG_RETENTION_DAYS} 天的滚动日志"
     exit 1
 }
 
@@ -766,6 +808,10 @@ case "${ACTION}" in
     status)
         print_required_port_status
         print_process_status
+        ;;
+    cleanup-logs)
+        gzip_inactive_slot_logs
+        cleanup_stale_rss_logs
         ;;
     *)
         echo "错误：无效参数 '${ACTION}'"

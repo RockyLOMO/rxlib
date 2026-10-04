@@ -52,6 +52,10 @@ BACKUP_PREFIX="app.jar.backup."
 MAX_BACKUP_COUNT=5
 JAVA_PROCESS_KEYWORD="app.jar -port=${PORT}"
 APP_LOG_FILE="${APP_LOG_FILE:-./app.out}"
+# stdout 只收 JVM/Fury 启动噪音；logback 已写 logs/rss-*_*.log。超限就地截断，避免 app.out 无限增长。
+APP_LOG_MAX_BYTES=${APP_LOG_MAX_BYTES:-33554432}
+APP_LOG_KEEP=${APP_LOG_KEEP:-3}
+APP_LOG_DISCARD_BYTES=${APP_LOG_DISCARD_BYTES:-536870912}
 
 # 生成不会冲突的历史 jar 名称。
 next_backup_file() {
@@ -86,6 +90,85 @@ cleanup_backup_jars() {
     printf '%s\n' "${backup_files[@]}" | sort | head -n "${remove_count}" | while IFS= read -r old_file; do
         rm -f "${old_file}"
     done
+}
+
+next_app_log_archive() {
+    local ts index dest
+    ts=$(date +%Y%m%d_%H%M%S)
+    index=0
+    while true; do
+        dest="${APP_LOG_FILE}.${ts}"
+        if [ ${index} -gt 0 ]; then
+            dest="${dest}_${index}"
+        fi
+        dest="${dest}.gz"
+        if [ ! -e "${dest}" ]; then
+            echo "${dest}"
+            return 0
+        fi
+        index=$((index + 1))
+    done
+}
+
+cleanup_app_log_archives() {
+    local files remove_count
+    shopt -s nullglob
+    files=( ${APP_LOG_FILE}.*.gz )
+    shopt -u nullglob
+    if [ ${#files[@]} -le ${APP_LOG_KEEP} ]; then
+        return 0
+    fi
+    remove_count=$((${#files[@]} - APP_LOG_KEEP))
+    printf '%s\n' "${files[@]}" | sort | head -n "${remove_count}" | while IFS= read -r old_file; do
+        rm -f "${old_file}"
+    done
+}
+
+# copytruncate：截断同一 inode，正在 append 的 JVM 不会丢 fd。
+# 超过 APP_LOG_DISCARD_BYTES 的 stdout 当垃圾丢弃，不归档。
+rotate_app_out() {
+    local size dest force="${1:-}"
+    [ -f "${APP_LOG_FILE}" ] || return 0
+    size=$(stat -c%s "${APP_LOG_FILE}" 2>/dev/null || echo 0)
+    if ! [[ "${size}" =~ ^[0-9]+$ ]]; then
+        size=0
+    fi
+    if [ "${size}" -eq 0 ]; then
+        return 0
+    fi
+    if [ "${force}" != "force" ] && [ "${size}" -lt "${APP_LOG_MAX_BYTES}" ]; then
+        return 0
+    fi
+    if [ "${size}" -ge "${APP_LOG_DISCARD_BYTES}" ]; then
+        echo "${YELLOW}[${LOCAL_TIME}] ${APP_LOG_FILE} 已 ${size} bytes，超过丢弃阈值，直接截断不归档"
+        : > "${APP_LOG_FILE}"
+        return 0
+    fi
+    dest=$(next_app_log_archive)
+    echo "${YELLOW}[${LOCAL_TIME}] 轮转 ${APP_LOG_FILE} (${size} bytes) -> ${dest}"
+    if command -v gzip >/dev/null 2>&1; then
+        gzip -c "${APP_LOG_FILE}" > "${dest}" || return 1
+    else
+        dest="${dest%.gz}"
+        cp -f "${APP_LOG_FILE}" "${dest}" || return 1
+    fi
+    : > "${APP_LOG_FILE}"
+    cleanup_app_log_archives
+}
+
+install_app_log_cron() {
+    local cron_file="/etc/cron.d/rss-svr-app-out"
+    local cron_body
+    cron_body="0 3 * * * root cd ${SCRIPT_DIR} && /bin/bash ${SCRIPT_DIR}/start.sh rotate-logs >/dev/null 2>&1"
+    if [ "$(id -u)" -ne 0 ]; then
+        return 0
+    fi
+    if [ -f "${cron_file}" ] && grep -Fq "start.sh rotate-logs" "${cron_file}"; then
+        return 0
+    fi
+    printf '%s\n' "${cron_body}" > "${cron_file}"
+    chmod 644 "${cron_file}" 2>/dev/null || true
+    echo "${YELLOW}[${LOCAL_TIME}] 已安装 ${cron_file}，每天 03:00 轮转 ${APP_LOG_FILE}"
 }
 
 # 发布前先把旧的 latest 归档，再保留当前包为 latest。
@@ -234,9 +317,10 @@ wait_for_startup() {
 
 # 用法提示
 usage() {
-    echo "用法: $0 [publish|start]"
+    echo "用法: $0 [publish|start|rotate-logs]"
     echo "  publish : 发布模式（会先终止端口 ${PORT} 的旧进程，然后启动）"
     echo "  start   : 启动模式（不终止端口 ${PORT} 的进程，不存在则启动）"
+    echo "  rotate-logs : 按大小轮转/截断 ${APP_LOG_FILE}，不重启进程"
     exit 1
 }
 # 检查是否提供参数
@@ -244,6 +328,12 @@ if [ $# -ne 1 ]; then
     usage
 fi
 ACTION="$1"
+
+if [ "$ACTION" = "rotate-logs" ]; then
+    rotate_app_out force
+    install_app_log_cron
+    exit 0
+fi
 
 # 根据参数决定是否 kill 端口
 if [ "$ACTION" = "publish" ]; then
@@ -275,6 +365,8 @@ else
 fi
 
 echo "${YELLOW}[${LOCAL_TIME}] 正在启动 ${PORT}/tcp 的进程，HttpServer 端口 ${HTTP_SERVER_PORT}/tcp..."
+rotate_app_out
+install_app_log_cron
 UDP2RAW_ARG=""
 if [ -n "${UDP2RAW_PORT}" ]; then
   UDP2RAW_ARG="-udp2rawPort=${UDP2RAW_PORT}"

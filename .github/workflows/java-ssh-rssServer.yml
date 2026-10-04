@@ -3,14 +3,13 @@ on:
   workflow_dispatch:    # 支持手动触发
     inputs:
       servers:
-        description: "部署目标"
+        description: "部署目标。new104 灰度机已于 2026-09-08 彻底关闭，默认只打 main。"
         required: true
         type: choice
-        default: "all"
+        default: "main"
         options:
-          - all
           - main
-          - new104
+          - all
 
 jobs:
   build-and-push:
@@ -142,11 +141,20 @@ jobs:
               print("Error: SSH_RSS_SVR_CONF list is empty", file=sys.stderr)
               sys.exit(1)
 
-          deploy_servers = "".join(deploy_servers.split()) or "all"
+          deploy_servers = "".join(deploy_servers.split()) or "main"
+          decommissioned_ids = {"new104"}
           if deploy_servers == "all":
-              selected_ids = list(by_id.keys())
+              selected_ids = [server_id for server_id in by_id if server_id not in decommissioned_ids]
           else:
               selected_ids = [x for x in deploy_servers.split(",") if x]
+
+          skipped = [x for x in selected_ids if x in decommissioned_ids]
+          if skipped:
+              print("Skip decommissioned rss server id(s) since 2026-09-08: %s" % ",".join(skipped))
+              selected_ids = [x for x in selected_ids if x not in decommissioned_ids]
+          if not selected_ids:
+              print("Error: no deploy targets left after skipping decommissioned servers", file=sys.stderr)
+              sys.exit(1)
 
           unknown_ids = [x for x in selected_ids if x not in by_id]
           if unknown_ids:
