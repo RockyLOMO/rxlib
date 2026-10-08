@@ -52,6 +52,7 @@ public class RssClientConf {
     public boolean socksBindPort;
     public String socksPwd;
     public int connectTimeoutSeconds = 10;
+    // Close TCP relays only when neither direction has made progress.
     public int tcpTimeoutSeconds = 60 * 2;
     public int udpTimeoutSeconds = 60 * 10;
     public int rpcMinSize = 2;

@@ -989,14 +989,18 @@ public final class RssClient {
         config.setOptimalSettings(RssSupport.IN_OPS);
         // config.setUdpMtu(UDP2RAW_MTU);
         config.setConnectTimeoutMillis(conf.connectTimeoutSeconds * 1000);
-        config.setReadTimeoutSeconds(conf.tcpTimeoutSeconds);
+        config.setReadTimeoutSeconds(0);
+        config.setWriteTimeoutSeconds(0);
+        config.setTcpIdleTimeoutSeconds(conf.tcpTimeoutSeconds);
         config.setUdpReadTimeoutSeconds(conf.udpTimeoutSeconds);
     }
 
     static void configureOutboundConfig(RssClientConf conf, SocksConfig config) {
         config.setDebug(conf.hasDebugFlag());
         config.setConnectTimeoutMillis(conf.connectTimeoutSeconds * 1000);
-        config.setReadTimeoutSeconds(conf.tcpTimeoutSeconds);
+        config.setReadTimeoutSeconds(0);
+        config.setWriteTimeoutSeconds(0);
+        config.setTcpIdleTimeoutSeconds(conf.tcpTimeoutSeconds);
         config.setUdpReadTimeoutSeconds(conf.udpTimeoutSeconds);
 
         config.setUdpMtu(UDP2RAW_MTU);

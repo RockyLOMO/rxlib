@@ -186,8 +186,9 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             // Traffic statistics
             pipeline.addLast(ProxyManageHandler.class.getSimpleName(), new ProxyManageHandler(config.getTrafficShapingInterval()));
         }
-        if (config.getReadTimeoutSeconds() > 0 || config.getWriteTimeoutSeconds() > 0) {
-            pipeline.addLast(ProxyChannelIdleHandler.class.getSimpleName(), new ProxyChannelIdleHandler(config.getReadTimeoutSeconds(), config.getWriteTimeoutSeconds()));
+        if (config.getReadTimeoutSeconds() > 0 || config.getWriteTimeoutSeconds() > 0 || config.getTcpIdleTimeoutSeconds() > 0) {
+            pipeline.addLast(ProxyChannelIdleHandler.class.getSimpleName(), new ProxyChannelIdleHandler(
+                    config.getReadTimeoutSeconds(), config.getWriteTimeoutSeconds(), config.getTcpIdleTimeoutSeconds()));
         }
         // SocksPortUnificationServerHandler
         Sockets.addTcpServerHandler(channel, config);

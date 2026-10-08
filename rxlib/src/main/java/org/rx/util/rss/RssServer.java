@@ -78,6 +78,9 @@ public final class RssServer {
 
     static void configureOutboundConfig(SocksConfig config, boolean debugFlag) {
         config.setDebug(debugFlag);
+        config.setReadTimeoutSeconds(0);
+        config.setWriteTimeoutSeconds(0);
+        config.setTcpIdleTimeoutSeconds(SocksConfig.DEF_READ_TIMEOUT_SECONDS);
         config.setWhiteListEnabled(true);
         config.setTcpAsyncDnsMode(SocksConfig.TcpAsyncDnsMode.REMOTE);
         config.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
