@@ -1822,6 +1822,11 @@ public class RssTest extends AbstractTester {
         assertEquals(0, normal.getUdpMtu());
         assertTrue(tunnel.isEnableUdp2raw());
         assertEquals(0, tunnel.getUdpMtu());
+        assertEquals(0, normal.getReadTimeoutSeconds());
+        assertEquals(0, normal.getWriteTimeoutSeconds());
+        assertEquals(conf.tcpTimeoutSeconds, normal.getTcpIdleTimeoutSeconds());
+        assertEquals(conf.tcpTimeoutSeconds, tunnel.getTcpIdleTimeoutSeconds());
+        assertEquals(conf.udpTimeoutSeconds, tunnel.getUdpReadTimeoutSeconds());
     }
 
     @Test
@@ -1831,6 +1836,10 @@ public class RssTest extends AbstractTester {
         RssServer.configureOutboundConfig(config, true);
 
         assertTrue(config.isDebug());
+        assertEquals(0, config.getReadTimeoutSeconds());
+        assertEquals(0, config.getWriteTimeoutSeconds());
+        assertEquals(240, config.getTcpIdleTimeoutSeconds());
+        assertEquals(SocksConfig.DEF_UDP_READ_TIMEOUT_SECONDS, config.getUdpReadTimeoutSeconds());
         assertEquals(1300, config.getUdpMtu());
         assertFalse(config.isEnableUdp2raw());
         assertEquals(UdpRedundantMode.BIDIRECTIONAL, config.getSocksUdpRedundantMode());
@@ -2001,11 +2010,31 @@ public class RssTest extends AbstractTester {
         RssClient.configureOutboundConfig(conf, config);
 
         assertEquals(2000, config.getConnectTimeoutMillis());
-        assertEquals(3, config.getReadTimeoutSeconds());
+        assertEquals(0, config.getReadTimeoutSeconds());
+        assertEquals(0, config.getWriteTimeoutSeconds());
+        assertEquals(3, config.getTcpIdleTimeoutSeconds());
         assertEquals(4, config.getUdpReadTimeoutSeconds());
         assertEquals(1300, config.getUdpMtu());
         assertTrue(config.isUdpLeasePoolEnabled());
         assertEquals(5, config.getUdpLeasePoolMaxSize());
+    }
+
+    @Test
+    public void rssTcpIdleConfig_ClonesAndCanBeDisabled() {
+        RssClientConf conf = new RssClientConf();
+        SocksConfig inbound = new SocksConfig();
+        RssClient.configureInboundConfig(conf, inbound, false);
+        SocksConfig outbound = RssClient.createOutboundConfig(conf, inbound);
+        assertEquals(120, outbound.getTcpIdleTimeoutSeconds());
+        assertEquals(0, outbound.getReadTimeoutSeconds());
+        assertEquals(0, outbound.getWriteTimeoutSeconds());
+
+        conf.tcpTimeoutSeconds = 0;
+        RssClient.configureInboundConfig(conf, inbound, false);
+        RssClient.configureOutboundConfig(conf, outbound);
+        assertEquals(0, inbound.getTcpIdleTimeoutSeconds());
+        assertEquals(0, outbound.getTcpIdleTimeoutSeconds());
+        assertEquals(conf.udpTimeoutSeconds, outbound.getUdpReadTimeoutSeconds());
     }
 
     @Test

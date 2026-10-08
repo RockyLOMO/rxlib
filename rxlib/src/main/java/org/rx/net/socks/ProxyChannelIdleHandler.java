@@ -7,10 +7,17 @@ import io.netty.handler.timeout.IdleStateHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
 
+import java.util.concurrent.TimeUnit;
+
 @Slf4j
 public class ProxyChannelIdleHandler extends IdleStateHandler {
     public ProxyChannelIdleHandler(int readerIdleTimeSeconds, int writerIdleTimeSeconds) {
         super(readerIdleTimeSeconds, writerIdleTimeSeconds, 0);
+    }
+
+    public ProxyChannelIdleHandler(int readerIdleTimeSeconds, int writerIdleTimeSeconds, int allIdleTimeSeconds) {
+        // Observe pending output for TCP relay idle checks; keep directional callers unchanged.
+        super(allIdleTimeSeconds > 0, readerIdleTimeSeconds, writerIdleTimeSeconds, allIdleTimeSeconds, TimeUnit.SECONDS);
     }
 
     //userEventTriggered not fire

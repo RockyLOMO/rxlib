@@ -38,6 +38,8 @@ public class SocksConfig extends SocketConfig {
     private int trafficShapingInterval = 10000;
     private int readTimeoutSeconds = DEF_READ_TIMEOUT_SECONDS;
     private int writeTimeoutSeconds;
+    /** TCP relay idle timeout across both directions; zero disables it. */
+    private int tcpIdleTimeoutSeconds;
     private int udpReadTimeoutSeconds = DEF_UDP_READ_TIMEOUT_SECONDS;
     private int udpWriteTimeoutSeconds;
     /**
