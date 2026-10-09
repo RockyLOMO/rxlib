@@ -26,6 +26,12 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
     protected void encode(ChannelHandlerContext ctx, Object msg, List<Object> out) throws Exception {
         ByteBuf inBuf = Sockets.getMessageBuf(msg);
 
+        // TCP empty writes are flush barriers, not Shadowsocks records.
+        if (!(msg instanceof DatagramPacket) && !inBuf.isReadable()) {
+            out.add(ReferenceCountUtil.retain(msg));
+            return;
+        }
+
         ICrypto crypt = ctx.channel().attr(ShadowsocksConfig.CIPHER).get();
         if (crypt == null) {
             out.add(ReferenceCountUtil.retain(msg));
