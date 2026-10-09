@@ -16,6 +16,31 @@ import static org.junit.jupiter.api.Assertions.*;
 class SSProtocolCodecTest {
 
     @Test
+    void decode_preservesShortTcpPayloadsAfterAddress() {
+        EmbeddedChannel channel = new EmbeddedChannel(new SSProtocolCodec());
+        ByteBuf address = Unpooled.buffer();
+        UdpManager.encode(address, "1.2.3.4", 443);
+        try {
+            assertTrue(channel.writeInbound(address));
+            ((ByteBuf) channel.readInbound()).release();
+            for (int size = 1; size <= 3; size++) {
+                ByteBuf payload = Unpooled.buffer(size).writeZero(size);
+                assertTrue(channel.writeInbound(payload), "TCP payload of " + size + " bytes must be forwarded");
+                ByteBuf forwarded = channel.readInbound();
+                try {
+                    assertSame(payload, forwarded);
+                    assertEquals(size, forwarded.readableBytes());
+                } finally {
+                    forwarded.release();
+                }
+                assertEquals(0, payload.refCnt());
+            }
+        } finally {
+            channel.finishAndReleaseAll();
+        }
+    }
+
+    @Test
     void decode_storesInetSocketAddressAttr() {
         EmbeddedChannel channel = new EmbeddedChannel(new SSProtocolCodec());
         ByteBuf packet = Unpooled.buffer();
