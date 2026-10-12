@@ -1735,26 +1735,29 @@ public final class Sockets {
     }
 
     public static String getPublicIp() {
+        return getPublicIp(true);
+    }
+
+    public static String getPublicIp(boolean useCache) {
         PublicIpSnapshot snapshot = publicIpSnapshot;
         long now = System.nanoTime();
-        if (snapshot.isFresh(now)) {
+        if (useCache && snapshot.isFresh(now)) {
             return snapshot.ip;
         }
 
-        try (HttpClient client = new HttpClient(new HttpClientConfig().setTimeoutMillis(5000))) {
-            for (String service : publicIpServices()) {
-                try {
-                    String ip = trimAscii(queryPublicIp(client, service));
-                    if (isValidIp(ip)) {
-                        publicIpSnapshot = new PublicIpSnapshot(ip, System.nanoTime());
-                        return ip;
-                    }
-                } catch (Exception e) {
-                    log.warn("getPublicIp retry service={}", service, e);
-                }
-            }
-        }
-        throw new InvalidException("getPublicIp fail");
+        String ip = PublicIpObserver.observe(RxConfig.INSTANCE.getNet().getPublicIpEndpoints());
+        publicIpSnapshot = new PublicIpSnapshot(ip, System.nanoTime());
+        return ip;
+    }
+
+    public static boolean isGlobalIpv4(InetAddress address) {
+        if (!(address instanceof java.net.Inet4Address)) return false;
+        byte[] ip = address.getAddress();
+        int a = ip[0] & 255, b = ip[1] & 255, c = ip[2] & 255;
+        return !(a == 0 || a == 10 || a == 127 || a >= 224 || a == 100 && b >= 64 && b <= 127
+                || a == 169 && b == 254 || a == 172 && b >= 16 && b <= 31 || a == 192 && b == 168
+                || a == 192 && b == 0 && (c == 0 || c == 2) || a == 198 && (b == 18 || b == 19)
+                || a == 198 && b == 51 && c == 100 || a == 203 && b == 0 && c == 113);
     }
 
     private static String[] publicIpServices() {

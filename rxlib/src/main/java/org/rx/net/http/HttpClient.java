@@ -100,6 +100,7 @@ public class HttpClient implements AutoCloseable {
     private static volatile HttpClient DEFAULT;
 
     final Map<PoolKey, FixedChannelPool> pools = new ConcurrentHashMap<>();
+    private final io.netty.resolver.AddressResolverGroup<InetSocketAddress> ipv4Resolver;
     private volatile Metrics metrics;
     private volatile long metricRequests;
     private volatile long metricSuccess;
@@ -137,6 +138,10 @@ public class HttpClient implements AutoCloseable {
 
     public HttpClient(HttpClientConfig config) {
         this.config = config != null ? config : new HttpClientConfig();
+        ipv4Resolver = this.config.isIpv4Only() ? new io.netty.resolver.dns.DnsAddressResolverGroup(
+                new io.netty.resolver.dns.DnsNameResolverBuilder().channelType(Sockets.udpChannelClass())
+                        .socketChannelType(Sockets.tcpChannelClass()).queryTimeoutMillis(3000)
+                        .resolvedAddressTypes(io.netty.resolver.ResolvedAddressTypes.IPV4_ONLY)) : null;
     }
 
     public HttpClientConfig config() {
@@ -416,6 +421,7 @@ public class HttpClient implements AutoCloseable {
             pool.close();
         }
         pools.clear();
+        if (ipv4Resolver != null) ipv4Resolver.close();
     }
 
     public static final class Metrics {
@@ -1881,6 +1887,8 @@ public class HttpClient implements AutoCloseable {
         if (key.proxyType != Proxy.Type.DIRECT) {
             // 保持目标地址 unresolved，让 HTTP CONNECT / SOCKS 交给代理端解析。
             bootstrap.resolver(NoopAddressResolverGroup.INSTANCE);
+        } else if (ipv4Resolver != null) {
+            bootstrap.resolver(ipv4Resolver);
         }
         return new FixedChannelPool(bootstrap, new AbstractChannelPoolHandler() {
             @Override
@@ -1899,7 +1907,13 @@ public class HttpClient implements AutoCloseable {
             p.addLast(proxyHandler);
         }
         if (key.isHttps()) {
-            p.addLast(cfg.getSslContext().newHandler(ch.alloc(), key.host, key.port));
+            io.netty.handler.ssl.SslHandler ssl = cfg.getSslContext().newHandler(ch.alloc(), key.host, key.port);
+            if (cfg.isVerifyHostname()) {
+                javax.net.ssl.SSLParameters parameters = ssl.engine().getSSLParameters();
+                parameters.setEndpointIdentificationAlgorithm("HTTPS");
+                ssl.engine().setSSLParameters(parameters);
+            }
+            p.addLast(ssl);
         }
         DiagnosticMetrics.installNetIoHandler(p, DiagnosticMetrics.NET_HTTP_CLIENT);
         p.addLast(new ReadTimeoutHandler(cfg.getReadWriteTimeoutMillis(), TimeUnit.MILLISECONDS),

@@ -1,4 +1,25 @@
 #!/bin/bash
+# Optional private WoW endpoint capability environment; no file keeps previous behavior.
+WOW_ENDPOINT_ENV_FILE=/home/rss-svr/wow-endpoint.env
+if [[ -e "${WOW_ENDPOINT_ENV_FILE}" ]]; then
+  if [[ ! -f "${WOW_ENDPOINT_ENV_FILE}" || -L "${WOW_ENDPOINT_ENV_FILE}" || "$(stat -c '%u:%a' "${WOW_ENDPOINT_ENV_FILE}")" != "0:600" ]]; then
+    echo "WoW endpoint environment must be a root-owned regular file with mode 600" >&2
+    exit 1
+  fi
+  set -a
+  # shellcheck source=/dev/null
+  source "${WOW_ENDPOINT_ENV_FILE}" || exit 1
+  set +a
+fi
+if [[ -n "${RSS_WOW_HTTP_CERTIFICATE_PATH:-}" ]]; then
+  if [[ ! -f "${RSS_WOW_HTTP_CERTIFICATE_PATH}" || "${RSS_WOW_HTTP_CERTIFICATE_PATH}" == *'"'* || "${RSS_WOW_HTTP_CERTIFICATE_PATH}" == *$'\n'* || "${RSS_WOW_HTTP_CERTIFICATE_PATH}" == *$'\r'* ]]; then
+    echo "Configured WoW endpoint TLS certificate path is invalid" >&2
+    exit 1
+  fi
+  # Java 21 launcher parses quoted options directly; no shell command concatenation.
+  export JDK_JAVA_OPTIONS="${JDK_JAVA_OPTIONS:+${JDK_JAVA_OPTIONS} }-Dapp.net.http.serverCertificatePath=\"${RSS_WOW_HTTP_CERTIFICATE_PATH}\""
+fi
+
 # 颜色输出
 if [[ -t 1 ]]; then
   RED='\033[0;31m'

@@ -8,6 +8,8 @@ import org.rx.net.transport.hybrid.HybridConfig;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.Collections;
 import java.util.concurrent.Executor;
 
 @Getter
@@ -24,6 +26,7 @@ public class RpcServerConfig {
     private RemotingCodecFactory codecFactory = FuryRemotingCodecFactory.createDefault();
     private Executor executor;
     private boolean executorForPing;
+    private Set<String> sensitiveMethods = Collections.emptySet();
 
     public RpcServerConfig(TcpServerConfig tcpConfig) {
         this(new HybridConfig());
