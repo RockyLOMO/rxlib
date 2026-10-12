@@ -47,14 +47,13 @@ public class SSProtocolCodec extends MessageToMessageCodec<Object, Object> {
     @Override
     protected void decode(ChannelHandlerContext ctx, Object msg, List<Object> out) throws Exception {
         ByteBuf buf = Sockets.getMessageBuf(msg);
-        if (buf.readableBytes() < 1 + 1 + 2) {// [1-byte type][variable-length host][2-byte port]
-            return;
-        }
-
         Channel inbound = ctx.channel();
         boolean isUdp = inbound instanceof DatagramChannel;
 
         if (isUdp || !tcpAddressed) {
+            if (buf.readableBytes() < 1 + 1 + 2) {// [1-byte type][variable-length host][2-byte port]
+                return;
+            }
             InetSocketAddress addrRequest;
             try {
                 addrRequest = UdpManager.decode(buf);
