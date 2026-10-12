@@ -67,9 +67,8 @@ public final class RssServer {
         rpcConf.getTcpConfig().setConnectTimeoutMillis(SocksRpcContract.FAKE_RECOVER_RPC_TIMEOUT_MILLIS);
         rpcConf.setEventComputeVersion(RpcServerConfig.EVENT_LATEST_COMPUTE);
         rpcConf.getEventBroadcastVersions().add(SocksRpcContract.RPC_EVENT_VERSION);
-        RssRpcApp app = new RssRpcApp(outSvr, outUdp2rawSvr);
         WowEndpointRegistry wowEndpoints = WowEndpointRegistry.fromEnvironment();
-        app.setWowEndpoints(wowEndpoints);
+        RssRpcApp app = new RssRpcApp(outSvr, outUdp2rawSvr, wowEndpoints);
         rpcConf.setSensitiveMethods(WowEndpointRegistry.SENSITIVE_METHODS);
         outSvr.setFakeEndpointResolver(app::recoverFakeEndpoint);
         if (outUdp2rawSvr != null) {
