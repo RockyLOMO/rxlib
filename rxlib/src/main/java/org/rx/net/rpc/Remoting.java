@@ -357,7 +357,7 @@ public final class Remoting {
                     return Sys.callLog(contract, methodMessage.methodName,
                             () -> String.format("Client %s.%s [%s -> %s]", contract.getSimpleName(), methodMessage.methodName,
                                     currentLocalEndpoint(client), Sockets.toString(currentRemoteEndpoint(client))),
-                            methodMessage.parameters, () -> {
+                            config.getSensitiveMethods().contains(methodMessage.methodName) ? null : methodMessage.parameters, () -> {
                                 HybridSession requestSession = resolveSession(client, session);
                                 Map<Integer, ClientBean> waitMap = getClientBeans(client);
                                 waitMap.put(clientBean.pack.id, clientBean);
@@ -986,9 +986,9 @@ public final class Remoting {
             return;
         }
         if (executor == null) {
-            invokeAndReply(contractInstance, s, session, pack);
+            invokeAndReply(contractInstance, bean.config, s, session, pack);
         } else {
-            executor.execute(() -> invokeAndReply(contractInstance, s, session, pack));
+            executor.execute(() -> invokeAndReply(contractInstance, bean.config, s, session, pack));
         }
     }
 
@@ -997,12 +997,12 @@ public final class Remoting {
         session.send(pack, RemotingHybridOptions.response(pack));
     }
 
-    private static void invokeAndReply(Object contractInstance, HybridServer s, HybridSession session, MethodMessage pack) {
+    private static void invokeAndReply(Object contractInstance, RpcServerConfig config, HybridServer s, HybridSession session, MethodMessage pack) {
         try {
             pack.returnValue = Sys.callLog(contractInstance.getClass(), pack.methodName,
                     () -> String.format("Server %s.%s [%s -> %s]", contractInstance.getClass().getSimpleName(), pack.methodName,
                             s.getConfig().getTcpServerConfig().getListenPort(), Sockets.toString(session.tcpRemoteEndpoint())),
-                    pack.parameters, () -> RemotingContext.invoke(() -> {
+                    config.getSensitiveMethods().contains(pack.methodName) ? null : pack.parameters, () -> RemotingContext.invoke(() -> {
                         String traceName = RxConfig.INSTANCE.getThreadPool().getTraceName();
                         if (traceName != null) {
                             ThreadPool.startTrace(pack.traceId, true);

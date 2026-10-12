@@ -21,6 +21,7 @@ import org.rx.net.udp.UdpRedundantMode;
 import org.rx.net.transport.TcpServerConfig;
 
 import java.util.Map;
+import java.util.Collections;
 
 import static org.rx.core.Extends.eq;
 
@@ -66,13 +67,16 @@ public final class RssServer {
         rpcConf.getTcpConfig().setConnectTimeoutMillis(SocksRpcContract.FAKE_RECOVER_RPC_TIMEOUT_MILLIS);
         rpcConf.setEventComputeVersion(RpcServerConfig.EVENT_LATEST_COMPUTE);
         rpcConf.getEventBroadcastVersions().add(SocksRpcContract.RPC_EVENT_VERSION);
-        RssRpcApp app = new RssRpcApp(outSvr, outUdp2rawSvr);
+        WowEndpointRegistry wowEndpoints = WowEndpointRegistry.fromEnvironment();
+        RssRpcApp app = new RssRpcApp(outSvr, outUdp2rawSvr, wowEndpoints);
+        rpcConf.setSensitiveMethods(WowEndpointRegistry.SENSITIVE_METHODS);
         outSvr.setFakeEndpointResolver(app::recoverFakeEndpoint);
         if (outUdp2rawSvr != null) {
             outUdp2rawSvr.setFakeEndpointResolver(app::recoverFakeEndpoint);
         }
         Remoting.register(app, rpcConf);
         serverInit();
+        httpServer.requestAsync("/api/wow/endpoint", wowEndpoints);
         app.await();
     }
 

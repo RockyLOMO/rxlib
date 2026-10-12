@@ -119,6 +119,7 @@ public final class RssClient {
     static int ddnsTaskPeriodSeconds;
     static ScheduledFuture<?> autoWhiteListTask;
     static int autoWhiteListTaskPeriodSeconds;
+    static final DdnsJob ddnsJob = DdnsJob.production();
 
     private RssClient() {}
 
@@ -126,7 +127,9 @@ public final class RssClient {
     public static void launch(Map<String, String> options, int port) {
         YamlConfigSource<RssClientConf> source = new YamlConfigSource<RssClientConf>("rss", RssClientConf.class, "conf.yml")
                 .setValidator(RssClient::normalizeAndValidateRssConfig)
-                .setChangeDetector((oldConfig, newConfig) -> !Strings.hashEquals(toJsonString(oldConfig), toJsonString(newConfig)))
+                .setChangeDetector((oldConfig, newConfig) -> !Strings.hashEquals(toJsonString(oldConfig), toJsonString(newConfig))
+                        || !Strings.hashEquals(oldConfig == null ? null : oldConfig.wowEndpointWriterKey, newConfig.wowEndpointWriterKey)
+                        || !java.util.Arrays.equals(oldConfig == null ? null : oldConfig.ddnsLocalCommand, newConfig.ddnsLocalCommand))
                 .setDebounceMillis(RSS_RELOAD_DEBOUNCE_MILLIS);
         RssRuntime rt = null;
         try {
@@ -287,6 +290,7 @@ public final class RssClient {
     static final class ForwardingSocksRpcContract implements SocksRpcContract {
         final SocksRpcContract delegate;
         final SocksRpcContract eventDelegate;
+        WowEndpointPublisher wowPublisher;
 
         ForwardingSocksRpcContract(SocksRpcContract delegate) {
             this(delegate, null);
@@ -402,6 +406,7 @@ public final class RssClient {
 
         @Override
         public void close() {
+            tryClose(wowPublisher);
             tryClose(delegate);
             tryClose(eventDelegate);
         }
@@ -429,6 +434,7 @@ public final class RssClient {
         }
         conf.rpcRequestTimeoutMillis = Math.max(0, conf.rpcRequestTimeoutMillis);
         conf.rpcAutoWhiteListSeconds = Math.max(0, conf.rpcAutoWhiteListSeconds);
+        conf.ddnsLocalCommandTimeoutSeconds = Math.max(1, Math.min(60, conf.ddnsLocalCommandTimeoutSeconds));
         conf.shadowDnsPort = Math.max(1, conf.shadowDnsPort);
         conf.dnsTtlMinutes = Math.max(1, conf.dnsTtlMinutes);
         resolveNameserverConfig(conf);
@@ -856,8 +862,10 @@ public final class RssClient {
         RpcClientConfig<SocksRpcContract> eventRpcConf = RpcClientConfig.statefulMode(rpcEndpoint, SocksRpcContract.RPC_EVENT_VERSION);
         eventRpcConf.setRequestTimeoutMillis(resolveRpcRequestTimeoutMillis(conf));
         eventRpcConf.getTcpConfig().setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CIPHER_BOTH).flags());
+        WowEndpointPublisher wowPublisher = WowEndpointPublisher.configure(conf, eventRpcConf);
         SocksRpcContract eventDelegate = Remoting.createFacade(SocksRpcContract.class, eventRpcConf);
         facade = new ForwardingSocksRpcContract(delegate, eventDelegate);
+        ((ForwardingSocksRpcContract) facade).wowPublisher = wowPublisher;
         facadeByRpcEndpoint.put(rpcKey, facade);
         createdFacades.add(facade);
         return facade;
@@ -1816,7 +1824,8 @@ public final class RssClient {
     }
 
     static boolean shouldScheduleDdns(RssClientConf conf) {
-        return conf != null && conf.ddnsJobSeconds > 0 && !CollectionUtils.isEmpty(conf.ddnsDomains);
+        return conf != null && conf.ddnsJobSeconds > 0 && (!CollectionUtils.isEmpty(conf.ddnsDomains)
+                || conf.ddnsLocalCommand != null && conf.ddnsLocalCommand.length > 0);
     }
 
     static synchronized boolean configureDdnsSchedule(RssClientConf conf) {
@@ -1843,17 +1852,27 @@ public final class RssClient {
             return;
         }
 
-        InetAddress wanIp = Sockets.parseIpAddress(Sockets.getPublicIp());
-        List<String> subDomains = Linq.from(conf.ddnsDomains)
-                .where(sd -> !DnsClient.directClient().resolveAll(sd).contains(wanIp))
-                .select(sd -> sd.substring(0, sd.indexOf("."))).toList();
-        if (subDomains.isEmpty()) {
-            return;
+        ddnsJob.run(conf);
+    }
+
+    static String observedWowPublicIp() {
+        RssRuntime rt = runtime;
+        RssRuntime.UpstreamSnapshot snapshot = rt == null ? null : rt.upstreamSnapshot;
+        if (snapshot == null) return null;
+        for (RandomList<UpstreamSupport> group : java.util.Arrays.asList(snapshot.socksServers, snapshot.udp2rawSocksServers)) {
+            if (group == null) continue;
+            for (UpstreamSupport support : group) {
+                SocksRpcContract rpc = support.getFacade();
+                if (rpc instanceof ForwardingSocksRpcContract) {
+                    WowEndpointPublisher publisher = ((ForwardingSocksRpcContract) rpc).wowPublisher;
+                    if (publisher != null) {
+                        String ip = publisher.observedPublicIp();
+                        if (ip != null) return ip;
+                    }
+                }
+            }
         }
-        String oneSd = conf.ddnsDomains.get(0);
-        String domain = oneSd.substring(oneSd.indexOf(".") + 1);
-        String res = setDDns(conf.ddnsApiKey, domain, subDomains, wanIp.getHostAddress());
-        log.info("ddns set {} + {} @ {} -> {}", domain, subDomains, wanIp.getHostAddress(), res);
+        return null;
     }
 
     static void enableShadowIngressReusePort(ShadowsocksConfig config) {
@@ -1874,7 +1893,6 @@ public final class RssClient {
     @SneakyThrows
     static String setDDns(String apiKey, String domain, List<String> subDomains, String ip) {
         JSONObject curDns = getDDns(apiKey, domain);
-        log.info("ddns curDns {}", curDns);
         JSONArray mDomains = Sys.readJsonValue(curDns, "data.name_server_settings.main_domains");
         JSONArray sDomains = Sys.readJsonValue(curDns, "data.name_server_settings.sub_domains");
 
@@ -1913,7 +1931,6 @@ public final class RssClient {
             sDomains.add(sd);
         }
         requestBody.put("sub_list", sDomains);
-        log.info("ddns update all {}", requestBody);
 
         String body = requestBody.toString();
         HttpClient.Request req = HttpClient.request(HttpMethod.POST, url)
@@ -1921,8 +1938,12 @@ public final class RssClient {
                 .header(HttpHeaderNames.AUTHORIZATION, "Bearer " + apiKey)
                 .header("X-Signature", dynadotSign(apiKey, url, body))
                 .bytes(body.getBytes(StandardCharsets.UTF_8), "application/json");
-        try (HttpClient.Response response = RssSupport.MAIN_HTTP_CLIENT.execute(req)) {
-            return response.bodyAsString();
+        req.timeoutMillis(5000);
+        try (HttpClient.Response response = RssSupport.DdnsHttp.CLIENT.execute(req)) {
+            JSONObject result = response.bodyAsJson();
+            if (response.code() < 200 || response.code() >= 300 || result == null || result.getIntValue("code") != 200)
+                throw new IllegalStateException("DDNS provider did not confirm success");
+            return result.toString();
         }
 
 //        URL u = new URL(url);
@@ -1949,8 +1970,12 @@ public final class RssClient {
                 .header(HttpHeaderNames.ACCEPT, "application/json")
                 .header(HttpHeaderNames.AUTHORIZATION, "Bearer " + apiKey)
                 .header("X-Signature", dynadotSign(apiKey, url, ""));
-        try (HttpClient.Response response = RssSupport.MAIN_HTTP_CLIENT.execute(req)) {
-            return response.bodyAsJson();
+        req.timeoutMillis(5000);
+        try (HttpClient.Response response = RssSupport.DdnsHttp.CLIENT.execute(req)) {
+            JSONObject result = response.bodyAsJson();
+            if (response.code() < 200 || response.code() >= 300 || result == null || result.getIntValue("code") != 200)
+                throw new IllegalStateException("DDNS provider did not confirm records");
+            return result;
         }
     }
 

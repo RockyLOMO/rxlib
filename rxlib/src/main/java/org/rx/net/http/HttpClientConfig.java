@@ -29,6 +29,10 @@ public final class HttpClientConfig {
     @Setter
     private boolean enableLog;
     @Setter
+    private boolean verifyHostname;
+    @Setter
+    private boolean ipv4Only;
+    @Setter
     private Proxy proxy;
     private SslContext sslContext;
     private HttpClientCookieJar cookieJar;
@@ -65,6 +69,8 @@ public final class HttpClientConfig {
         maxRedirects = src.maxRedirects;
         followRedirects = src.followRedirects;
         enableLog = src.enableLog;
+        verifyHostname = src.verifyHostname;
+        ipv4Only = src.ipv4Only;
         proxy = src.proxy;
         sslContext = src.sslContext;
         cookieJar = src.cookieJar;

@@ -10,6 +10,8 @@ import org.rx.net.transport.hybrid.HybridConfig;
 import org.rx.util.function.TripleAction;
 
 import java.net.InetSocketAddress;
+import java.util.Collections;
+import java.util.Set;
 
 @Getter
 @Setter
@@ -53,6 +55,8 @@ public class RpcClientConfig<T> {
     private int requestTimeoutMillis = -1;
     private TripleAction<T, HybridClient> initHandler;
     private RemotingCodecFactory codecFactory = FuryRemotingCodecFactory.createDefault();
+    /** Method arguments omitted from call logs and trace snapshots (credentials). */
+    private Set<String> sensitiveMethods = Collections.emptySet();
 
     public RpcClientConfig(TcpClientConfig tcpConfig) {
         this(new HybridConfig());

@@ -64,6 +64,14 @@ public class RssClientConf {
     public int upstreamHealthFailureThreshold = RssClient.DEFAULT_UPSTREAM_HEALTH_FAILURE_THRESHOLD;
     public boolean upstreamFailOpenWhenAllDown = true;
     public int rpcAutoWhiteListSeconds = 120;
+    // Optional single game-host identity. The read-only HTTPS query key is never sent here.
+    public String wowEndpointClientId;
+    @com.alibaba.fastjson2.annotation.JSONField(serialize = false)
+    @ToString.Exclude
+    public String wowEndpointWriterKey;
+    public String wowEndpointReadyFile;
+    public String wowEndpointRpcEndpoint;
+    public String[] publicIpEndpoints;
     public boolean udpLeasePoolEnabled = true;
     public int udpLeasePoolMinSize = 2;
     public int udpLeasePoolMaxSize = 32;
@@ -85,6 +93,10 @@ public class RssClientConf {
     public List<String> ddnsDomains;
     public String ddnsApiKey;
     public String ddnsApiProxy;
+    @JSONField(serialize = false)
+    @ToString.Exclude
+    public String[] ddnsLocalCommand;
+    public int ddnsLocalCommandTimeoutSeconds = 10;
 
     public boolean hasRouteFlag() {
         return (logFlags & 1) == 1;

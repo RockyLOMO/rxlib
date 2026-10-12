@@ -34,14 +34,42 @@ public final class RssRpcApp implements SocksRpcContract {
 
     private final AtomicReference<SocksProxyServer> svrSide;
     private final AtomicReference<SocksProxyServer> udp2rawSvrSide;
+    private final WowEndpointRegistry wowEndpoints;
+
+    @Override
+    public boolean observeWowEndpoint(org.rx.net.socks.WowEndpointObservation observation) {
+        if (observation == null) return false;
+        SocksRpcContract.requireValidRpcToken(observation.rpcToken);
+        org.rx.net.transport.hybrid.HybridSession session = RemotingContext.context().getClient();
+        org.rx.net.rpc.protocol.MetadataMessage metadata = session.attr("HandshakeMeta");
+        WowEndpointRegistry registry = wowEndpoints;
+        return metadata != null && metadata.getEventVersion() == SocksRpcContract.RPC_EVENT_VERSION
+                && registry != null && registry.observe(observation.clientId, observation.writerKey, session, observation.readyIp, observation.ready);
+    }
+
+    @Override
+    public String getObservedPublicIp(org.rx.net.socks.WowEndpointObservation observation) {
+        if (observation == null) return null;
+        SocksRpcContract.requireValidRpcToken(observation.rpcToken);
+        org.rx.net.transport.hybrid.HybridSession session = RemotingContext.context().getClient();
+        org.rx.net.rpc.protocol.MetadataMessage metadata = session.attr("HandshakeMeta");
+        WowEndpointRegistry registry = wowEndpoints;
+        return metadata != null && metadata.getEventVersion() == SocksRpcContract.RPC_EVENT_VERSION && registry != null
+                ? registry.observePeer(observation.clientId, observation.writerKey, session) : null;
+    }
 
     public RssRpcApp(SocksProxyServer svrSide) {
         this(svrSide, null);
     }
 
     public RssRpcApp(SocksProxyServer svrSide, SocksProxyServer udp2rawSvrSide) {
+        this(svrSide, udp2rawSvrSide, null);
+    }
+
+    public RssRpcApp(SocksProxyServer svrSide, SocksProxyServer udp2rawSvrSide, WowEndpointRegistry wowEndpoints) {
         this.svrSide = new AtomicReference<>(Objects.requireNonNull(svrSide, "svrSide"));
         this.udp2rawSvrSide = new AtomicReference<>(udp2rawSvrSide);
+        this.wowEndpoints = wowEndpoints;
     }
 
     public void setServer(SocksProxyServer svrSide) {

@@ -98,6 +98,12 @@ public interface SocksRpcContract extends AutoCloseable, DnsResolveInterceptor, 
 
     void addWhiteList(InetAddress endpoint, String token);
 
+    /** Advertise this authenticated stateful session's actual TCP peer, never a self-reported IP. */
+    default boolean observeWowEndpoint(WowEndpointObservation observation) {
+        return false;
+    }
+    default String getObservedPublicIp(WowEndpointObservation observation) { return null; }
+
     default SocksRpcCapabilities capabilities(String token) {
         return SocksRpcCapabilities.EMPTY;
     }
