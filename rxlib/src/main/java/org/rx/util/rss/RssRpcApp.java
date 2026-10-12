@@ -34,9 +34,7 @@ public final class RssRpcApp implements SocksRpcContract {
 
     private final AtomicReference<SocksProxyServer> svrSide;
     private final AtomicReference<SocksProxyServer> udp2rawSvrSide;
-    private volatile WowEndpointRegistry wowEndpoints;
-
-    public void setWowEndpoints(WowEndpointRegistry registry) { wowEndpoints = registry; }
+    private final WowEndpointRegistry wowEndpoints;
 
     @Override
     public boolean observeWowEndpoint(org.rx.net.socks.WowEndpointObservation observation) {
@@ -65,8 +63,13 @@ public final class RssRpcApp implements SocksRpcContract {
     }
 
     public RssRpcApp(SocksProxyServer svrSide, SocksProxyServer udp2rawSvrSide) {
+        this(svrSide, udp2rawSvrSide, null);
+    }
+
+    public RssRpcApp(SocksProxyServer svrSide, SocksProxyServer udp2rawSvrSide, WowEndpointRegistry wowEndpoints) {
         this.svrSide = new AtomicReference<>(Objects.requireNonNull(svrSide, "svrSide"));
         this.udp2rawSvrSide = new AtomicReference<>(udp2rawSvrSide);
+        this.wowEndpoints = wowEndpoints;
     }
 
     public void setServer(SocksProxyServer svrSide) {

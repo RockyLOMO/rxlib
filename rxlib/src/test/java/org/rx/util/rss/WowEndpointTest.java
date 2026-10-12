@@ -168,7 +168,7 @@ class WowEndpointTest {
     @Test void realStatefulRpcAuthenticatesActualPeerAndReconnectsPublisher() throws Exception {
         String oldToken = RxConfig.INSTANCE.getRtoken(); RxConfig.INSTANCE.setRtoken("endpoint-test-rpc-token");
         WowEndpointRegistry registry = spy(new WowEndpointRegistry(ID, WRITER, QUERY, 45000));
-        RssRpcApp app = new RssRpcApp(mock(SocksProxyServer.class)); app.setWowEndpoints(registry);
+        RssRpcApp app = new RssRpcApp(mock(SocksProxyServer.class), null, registry);
         RpcServerConfig serverConfig = new RpcServerConfig(new TcpServerConfig(freePort()));
         serverConfig.setSensitiveMethods(Collections.singleton(WowEndpointRegistry.RPC_METHOD));
         TcpServer server = Remoting.register(app, serverConfig);
