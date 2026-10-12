@@ -94,6 +94,7 @@ final class RssRuntime implements AutoCloseable {
 
         activeConf = conf;
         rssConf = conf;
+        org.rx.core.RxConfig.INSTANCE.getNet().setPublicIpEndpoints(conf.publicIpEndpoints);
         applyShadowServersPlan(buildShadowServers(conf, inServer, inUdp2rawServer, true));
         clientInit(authenticator);
         addPublicIpWhiteList();
@@ -455,6 +456,7 @@ final class RssRuntime implements AutoCloseable {
     }
 
     private void applyLiveConfig(RssClientConf conf) {
+        org.rx.core.RxConfig.INSTANCE.getNet().setPublicIpEndpoints(conf.publicIpEndpoints);
         applyInServerConfig(conf, inServer);
         applyInServerConfig(conf, inUdp2rawServer);
     }

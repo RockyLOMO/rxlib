@@ -19,6 +19,19 @@ public final class RssSupport {
     /** Dynadot、/hf 等复用，避免每次 new HttpClient */
     static final HttpClient MAIN_HTTP_CLIENT = new HttpClient();
 
+    static final class DdnsHttp {
+        static final HttpClient CLIENT = create();
+        @lombok.SneakyThrows
+        private static HttpClient create() {
+            org.rx.net.http.HttpClientConfig config = new org.rx.net.http.HttpClientConfig().setTimeoutMillis(5000)
+                    .setSslContext(io.netty.handler.ssl.SslContextBuilder.forClient()
+                            .sslProvider(io.netty.handler.ssl.SslProvider.JDK).build());
+            config.setVerifyHostname(true);
+            config.setEnableLog(false); config.setFollowRedirects(false);
+            return new HttpClient(config);
+        }
+    }
+
     private RssSupport() {
     }
 

@@ -451,6 +451,12 @@ public final class RxConfig {
     @ToString
     public static class NetConfig {
         boolean enableLog;
+        @Getter(lombok.AccessLevel.NONE)
+        @Setter(lombok.AccessLevel.NONE)
+        private volatile String[] publicIpEndpoints = new String[]{"https://myip.ipip.net/json", "https://ip.3322.net/", "https://api.ipify.org/", "https://checkip.amazonaws.com/"};
+        public String[] getPublicIpEndpoints() { return publicIpEndpoints.clone(); }
+        public void setPublicIpEndpoints(String[] value) { publicIpEndpoints = value == null || value.length == 0
+                ? new String[]{"https://myip.ipip.net/json", "https://ip.3322.net/", "https://api.ipify.org/", "https://checkip.amazonaws.com/"} : value.clone(); }
         int reactorThreadAmount;
         int connectTimeoutMillis;
         int readWriteTimeoutMillis;
