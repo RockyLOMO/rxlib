@@ -34,22 +34,60 @@ public class ServerResponse {
         headers.set(HttpHeaderNames.CONTENT_TYPE, contentType);
     }
 
-    @Setter
     private ByteBuf content;
 
+    /**
+     * Transfers ownership of one buffer reference to this response. The caller must not
+     * release it after this call; replacing the content releases the previous reference.
+     * Passing the currently owned instance does not retain or release it.
+     */
+    public void setContent(ByteBuf content) {
+        if (this.content == content) {
+            return;
+        }
+        releaseContent();
+        this.content = content;
+    }
+
+    // Transfers ownership to the outbound response without changing the reference count.
+    ByteBuf takeContent() {
+        ByteBuf value = content;
+        content = null;
+        return value;
+    }
+
+    void releaseContent() {
+        ByteBuf value = takeContent();
+        if (value != null) {
+            value.release();
+        }
+    }
+
     public void jsonBody(Object json) {
-        setContentType(APPLICATION_JSON.toString());
-        content = Bytes.directBuffer();
-        content.writeCharSequence(toJsonString(json), CharsetUtil.UTF_8);
+        writeBody(toJsonString(json), APPLICATION_JSON);
     }
 
     public void htmlBody(String html) {
-        setContentType(TEXT_HTML.toString());
-        content = Bytes.directBuffer();
-        content.writeCharSequence(html, CharsetUtil.UTF_8);
+        writeBody(html, TEXT_HTML);
+    }
+
+    private void writeBody(String text, AsciiString contentType) {
+        ByteBuf buffer = Bytes.directBuffer();
+        try {
+            buffer.writeCharSequence(text, CharsetUtil.UTF_8);
+            setContentType(contentType.toString());
+            setContent(buffer);
+            buffer = null;
+        } finally {
+            if (buffer != null) {
+                buffer.release();
+            }
+        }
     }
 
     public void redirect(String newUri) {
         headers.set(HttpHeaderNames.LOCATION, newUri);
+        status = HttpResponseStatus.FOUND;
+        releaseContent();
     }
 }
