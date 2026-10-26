@@ -4075,3 +4075,13 @@ test_classes=Aes256GcmByteBufCryptoTest,CipherCodecTest,SSProtocolCodecTest,Shad
 - 提前响应是连接污染的关键场景：上传未完整写完时不复用连接，worker 读/写前及 EventLoop 实际写入前均核对 RequestState；旧 worker 失败仅能处理其自身请求。
 - 落盘回归发现 FileStream 的 FileChannel 访问绕过 BufferedRandomAccessFile 缓存与 diskPos。每次 channel 访问前 flush 并失效缓存/位置，后续缓冲读取必须重新定位；否则已知大响应 bodyAsString 可能为空。
 - HTTP/上传/内存/混合 I/O 共 61 项定向测试在 Java 8u504 与 Java 21.0.12.1 通过。完整基准、100 MiB/1 GiB 矩阵及 HC-04～06 仍待完成，详见 docs/http-client-performance-p1-validation-20261026.md。
+
+## 2026-10-26 HttpServer 请求状态与资源治理
+
+- 请求状态必须保留至响应 flush，`autoRead(false)` 无法撤回同批已解码的 pipelining；本实现对重叠请求关闭连接，不引入无界请求队列。提前拒绝同样关闭，避免未消费 body 串到下一请求。
+- cleanup 使用静态 AtomicIntegerFieldUpdater，避免每请求额外分配原子对象。worker queued→running 与 queued→cancelled 互斥；断线可立即清理未运行任务，正在运行的 handler 返回后才清理，避免 use-after-free。
+- 精确版本 Netty 4.2.12.Final：next 返回 borrowed part，destroy 清理 factory 和 bodyList。完成项 removeHttpDataFromClean 后由 decoder bodyList 持有唯一 owner，支持业务显式 retain；partial 仍由 factory 管理。不能盲目 next 后手工 release。
+- ServerResponse 明确 buffer 转移，替换/异常/redirect 释放旧引用；HEAD/204/205/304 过滤正文；业务 1xx 不作为最终响应。请求头未完整时 408 必须绕过依赖请求状态的 compressor。
+- HttpServerConfig 提供正文、Multipart、单文件/字段、连接/上传/异步配额以及头/body/idle 期限。默认独立有界 async executor，避免全局 Tasks 池提交等待占用 EventLoop；自定义 executor 由调用方管理。读进展更新 deadline，而非每 chunk 分配 timer。
+- 停服使用 stayClosed ChannelGroup，覆盖已经 accept 但迟到的 child；连接计数须在 add 之前登记，防止 add 同步关闭 child 导致计数泄漏。
+- 新增生命周期、限额、协议和所有权回归，其中 1000 次真实落盘 multipart 中断逐轮检查文件/引用和活动计数。证书按用户要求不改，完整性能基准/流式 Server API 未实施；验证记录见 docs/httpserver-fixes-validation-20261026.md。
