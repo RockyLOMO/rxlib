@@ -154,6 +154,16 @@ public class BufferedRandomAccessFile extends RandomAccessFile {
         this.curr_ = pos;
     }
 
+    // FileStream also accesses the underlying channel. Flush buffered writes and
+    // invalidate both cached bytes and disk position before handing it out.
+    void prepareChannelAccess() throws IOException {
+        flush();
+        lo_ = hi_ = curr_;
+        maxHi_ = curr_ + buff_.length;
+        diskPos_ = -1;
+        hitEOF_ = false;
+    }
+
     /* Flush any dirty bytes in the buffer to disk. */
     public void flush() throws IOException {
         if (this.dirty_) {
