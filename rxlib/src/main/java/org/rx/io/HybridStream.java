@@ -94,13 +94,18 @@ public final class HybridStream extends DuplexStream implements Serializable {
     }
 
     public HybridStream(int maxMemorySize, boolean directMemory, String tempFilePath) {
+        this(maxMemorySize, directMemory, tempFilePath, maxMemorySize);
+    }
+
+    /** Keeps the memory/file boundary independent of the initial buffer allocation. */
+    public HybridStream(int maxMemorySize, boolean directMemory, String tempFilePath, int initialCapacity) {
         this.maxMemorySize = maxMemorySize <= NON_MEMORY_SIZE ? NON_MEMORY_SIZE : Math.min(maxMemorySize, Constants.MAX_HEAP_BUF_SIZE);
         this.tempFilePath = tempFilePath;
         if (this.maxMemorySize == NON_MEMORY_SIZE) {
             fileStream = newFileStream();
             length = fileStream.getLength();
         } else {
-            memoryStream = new MemoryStream(this.maxMemorySize, directMemory);
+            memoryStream = new MemoryStream(Math.max(0, Math.min(initialCapacity, this.maxMemorySize)), directMemory);
         }
     }
 

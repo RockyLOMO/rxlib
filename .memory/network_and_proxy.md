@@ -4067,3 +4067,11 @@ test_classes=Aes256GcmByteBufCryptoTest,CipherCodecTest,SSProtocolCodecTest,Shad
 - 决策：`RssRpcApp.addWhiteList()` 在验证 RPC 令牌后，同时登记客户端上报的地址和当前 RPC 会话的 TCP 对端地址，并同步到普通 SOCKS 与 udp2raw 配置。保持原 RPC 接口兼容，避免用公网 IP 查询结果替代连接观测值。
 - 验证：新增本地 RPC 集成测试，模拟上报地址与实际对端不同，验证两个 SOCKS 配置均登记两者；Java 8 与 `rss-21` 的 Java 21 定向测试通过。现网临时通过原 RPC 接口登记实际来源后，客户端 SOCKS 请求返回 HTTP 204；部署修复包后同一请求再次返回 HTTP 204。
 - 边界：若 RPC 和 SOCKS 分别走不同出口，仍须取得 SOCKS 路径的实际源地址；监控应覆盖白名单拒绝数、连接数、吞吐/延迟、RPC 失败率和 Netty 堆外内存占用。
+
+## 2026-10-26 HttpClient P1 分配与上传生命周期
+
+- 响应内存上限与初始分配解耦：HTTP 使用四参数 HybridStream（默认初始 4 KiB），旧构造不变；已知超阈值响应直接文件承载。
+- 文件 Multipart 总长度与 streaming 独立，已知长度仍用 Content-Length；冻结文本/Header，逐文件及整体核对长度。默认上传 16 KiB、128 KiB/8 块 flush，候选默认值尚未做完整性能调优。
+- 提前响应是连接污染的关键场景：上传未完整写完时不复用连接，worker 读/写前及 EventLoop 实际写入前均核对 RequestState；旧 worker 失败仅能处理其自身请求。
+- 落盘回归发现 FileStream 的 FileChannel 访问绕过 BufferedRandomAccessFile 缓存与 diskPos。每次 channel 访问前 flush 并失效缓存/位置，后续缓冲读取必须重新定位；否则已知大响应 bodyAsString 可能为空。
+- HTTP/上传/内存/混合 I/O 共 61 项定向测试在 Java 8u504 与 Java 21.0.12.1 通过。完整基准、100 MiB/1 GiB 矩阵及 HC-04～06 仍待完成，详见 docs/http-client-performance-p1-validation-20261026.md。

@@ -30,6 +30,39 @@
 
 ## 使用示例
 
+### HttpClient 响应缓冲与上传
+
+```java
+HttpClientConfig config = new HttpClientConfig()
+        .setResponseInitialBufferBytes(4096)
+        .setResponseOffloadThreshold(16 * 1024 * 1024)
+        .setUploadChunkBytes(16 * 1024)
+        .setUploadFlushBytes(128 * 1024)
+        .setUploadFlushChunks(8);
+try (HttpClient client = new HttpClient(config);
+     HttpClient.Response response = client.get("http://127.0.0.1:8080/file")) {
+    response.bodyAsFile("download.bin");
+}
+```
+
+以上是默认值。响应初始容量与内存保留阈值独立，实际初始容量不超过阈值；
+阈值为零时直接使用临时文件。已知响应长度超过阈值时也直接使用文件。
+旧 `HybridStream` 构造函数保持原有分配行为，只有新的四参数构造函数支持独立初始容量。
+`Response` 仍在完整接收后交付，支持重复读取，由调用方关闭；`bodyAsFile()` 仍从响应存储复制到目标文件。
+
+Multipart 带文件时通过 worker 分块读取和发送；已知长度使用 `Content-Length`，未知长度使用 chunked。
+字段文本及文件 Header 在构造时固定；文件内容在发送时读取，期间不能修改文件。
+每个已知长度的文件和整个请求均检查发送字节数，长度变化会使请求失败并关闭连接。
+Multipart 完成或失败后关闭其文件流；普通 `InputStream` 请求体沿用调用方关闭流的约定。
+
+上传达到字节数、块数阈值或 channel 不可写时 flush 并等待写完成，因此发送队列保持有界。
+取消、超时或提前响应后停止后续读取；尚未完整发送请求体的连接不复用。
+调用方提供的阻塞读取只能在该次读取返回后检查取消，需自行确保流可及时返回。
+同步 API 禁止从 Netty EventLoop 调用。分块默认值尚未经过完整吞吐矩阵调优，可按负载配置。
+
+建议同时监测连接数、池等待、吞吐、p95/p99、Heap/GC、临时文件及文件描述符数量，
+以及 `client.getMetrics().usedDirectMemory()`（JVM 全局 Netty 堆外内存，非客户端独占用量）。
+
 ### RestClient
 
 类似 FeignClient、连接池化的 Client。
