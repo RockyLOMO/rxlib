@@ -613,6 +613,10 @@ public class HttpClient implements AutoCloseable {
             return false;
         }
 
+        default long contentLength() {
+            return -1L;
+        }
+
         default ByteBuf toFullContent(Channel channel) {
             return channel.alloc().buffer(0, 0);
         }
@@ -699,18 +703,23 @@ public class HttpClient implements AutoCloseable {
         @Override
         public void writeStreaming(Channel channel, RequestState state) throws Exception {
             UploadWriter writer = new UploadWriter(channel, state);
-            int read;
             while (true) {
-                if (!channel.isActive()) {
-                    throw new IllegalStateException("Channel closed");
+                writer.checkActive();
+                ByteBuf buf = channel.alloc().ioBuffer(state.uploadChunkBytes, state.uploadChunkBytes);
+                try {
+                    int read = buf.writeBytes(in, state.uploadChunkBytes);
+                    if (read == Constants.IO_EOF) {
+                        break;
+                    }
+                    if (read == 0) {
+                        throw new IllegalStateException("Input stream made no progress");
+                    }
+                    ByteBuf owned = buf;
+                    buf = null;
+                    writer.write(owned, read);
+                } finally {
+                    ReferenceCountUtil.release(buf);
                 }
-                ByteBuf buf = channel.alloc().ioBuffer(Constants.HEAP_BUF_SIZE, Constants.HEAP_BUF_SIZE);
-                read = buf.writeBytes(in, Constants.HEAP_BUF_SIZE);
-                if (read == Constants.IO_EOF) {
-                    buf.release();
-                    break;
-                }
-                writer.write(buf, read);
             }
             writer.finish();
         }
@@ -743,6 +752,8 @@ public class HttpClient implements AutoCloseable {
 
         final Map<String, Object> forms;
         final Map<String, DuplexStream> files;
+        final Map<String, Long> fileLengths = new HashMap<>();
+        final Map<String, String> filePrefixes = new HashMap<>();
         final String boundary;
         final String contentType;
         final StringBuilder partPrefixBuilder = new StringBuilder(128);
@@ -750,8 +761,15 @@ public class HttpClient implements AutoCloseable {
         final long totalLength;
 
         MultipartContent(Map<String, Object> forms, Map<String, DuplexStream> files) {
-            this.forms = forms != null ? forms : Collections.emptyMap();
-            this.files = files != null ? files : Collections.emptyMap();
+            this.forms = new LinkedHashMap<>();
+            if (forms != null) {
+                for (Map.Entry<String, Object> entry : forms.entrySet()) {
+                    if (entry.getValue() != null) {
+                        this.forms.put(entry.getKey(), entry.getValue().toString());
+                    }
+                }
+            }
+            this.files = files != null ? new LinkedHashMap<>(files) : Collections.emptyMap();
             boundary = "----RxNettyBoundary" + Long.toHexString(System.nanoTime()) + Long.toHexString(ThreadLocalRandom.current().nextLong());
             contentType = "multipart/form-data; boundary=" + boundary;
             totalLength = computeTotalLength();
@@ -768,29 +786,41 @@ public class HttpClient implements AutoCloseable {
                 if (value == null) {
                     continue;
                 }
-                total += partPrefix(entry.getKey(), null, null).getBytes(StandardCharsets.UTF_8).length;
-                total += value.toString().getBytes(StandardCharsets.UTF_8).length;
-                total += 2;
+                total = Math.addExact(total, partPrefix(entry.getKey(), null, null).getBytes(StandardCharsets.UTF_8).length);
+                total = Math.addExact(total, value.toString().getBytes(StandardCharsets.UTF_8).length);
+                total = Math.addExact(total, 2);
             }
             for (Map.Entry<String, DuplexStream> entry : files.entrySet()) {
                 DuplexStream stream = entry.getValue();
                 if (stream == null) {
                     continue;
                 }
+                String fileName = Strings.isEmpty(stream.getName()) ? entry.getKey() : stream.getName();
+                filePrefixes.put(entry.getKey(), partPrefix(entry.getKey(), fileName, Files.getMediaTypeFromName(fileName)));
                 try {
                     long fileLen = stream.getLength();
+                    fileLengths.put(entry.getKey(), fileLen);
                     if (fileLen < 0) {
-                        return -1;
+                        total = -1;
+                        continue;
                     }
-                    String fileName = Strings.isEmpty(stream.getName()) ? entry.getKey() : stream.getName();
-                    total += partPrefix(entry.getKey(), fileName, Files.getMediaTypeFromName(fileName)).getBytes(StandardCharsets.UTF_8).length;
-                    total += fileLen;
-                    total += 2;
+                    if (total < 0) {
+                        continue;
+                    }
+                    total = Math.addExact(total, filePrefixes.get(entry.getKey()).getBytes(StandardCharsets.UTF_8).length);
+                    total = Math.addExact(total, fileLen);
+                    total = Math.addExact(total, 2);
+                } catch (ArithmeticException e) {
+                    throw new IllegalArgumentException("Multipart length overflow", e);
                 } catch (Exception e) {
-                    return -1;
+                    fileLengths.put(entry.getKey(), -1L);
+                    total = -1;
                 }
             }
-            total += ("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8).length;
+            if (total < 0) {
+                return -1;
+            }
+            total = Math.addExact(total, ("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8).length);
             return total;
         }
 
@@ -801,15 +831,20 @@ public class HttpClient implements AutoCloseable {
 
         @Override
         public boolean streaming() {
-            return totalLength < 0;
+            return !files.isEmpty() || totalLength < 0 || totalLength > 16 * 1024;
+        }
+
+        @Override
+        public long contentLength() {
+            return totalLength;
         }
 
         @Override
         public ByteBuf toFullContent(Channel channel) {
-            if (totalLength < 0) {
+            if (totalLength < 0 || totalLength > Integer.MAX_VALUE) {
                 throw new UnsupportedOperationException();
             }
-            int len = (int) Math.min(totalLength, Integer.MAX_VALUE);
+            int len = (int) totalLength;
             ByteBuf buf = channel.alloc().ioBuffer(len);
             try {
                 for (Map.Entry<String, Object> entry : forms.entrySet()) {
@@ -861,9 +896,8 @@ public class HttpClient implements AutoCloseable {
                 if (stream == null) {
                     continue;
                 }
-                String fileName = Strings.isEmpty(stream.getName()) ? entry.getKey() : stream.getName();
-                writeAscii(writer, partPrefix(entry.getKey(), fileName, Files.getMediaTypeFromName(fileName)));
-                writeStream(writer, stream.rewind());
+                writeAscii(writer, filePrefixes.get(entry.getKey()));
+                writeStream(writer, stream.rewind(), fileLengths.get(entry.getKey()));
                 writeBytes(writer, CRLF);
             }
             writeAscii(writer, "--" + boundary + "--\r\n");
@@ -903,19 +937,33 @@ public class HttpClient implements AutoCloseable {
             writer.write(buf, buf.readableBytes());
         }
 
-        private void writeStream(UploadWriter writer, DuplexStream in) throws Exception {
-            int read;
+        private void writeStream(UploadWriter writer, DuplexStream in, long expectedLength) throws Exception {
+            long written = 0;
             while (true) {
-                if (!writer.channel.isActive()) {
-                    throw new IllegalStateException("Channel closed");
+                writer.checkActive();
+                int chunkBytes = writer.state.uploadChunkBytes;
+                ByteBuf buf = writer.channel.alloc().ioBuffer(chunkBytes, chunkBytes);
+                try {
+                    int read = in.read(buf, chunkBytes);
+                    if (read == Constants.IO_EOF) {
+                        if (expectedLength >= 0 && written != expectedLength) {
+                            throw new IllegalStateException("Multipart file shorter than declared length");
+                        }
+                        break;
+                    }
+                    if (read == 0) {
+                        throw new IllegalStateException("Input stream made no progress");
+                    }
+                    if (expectedLength >= 0 && read > expectedLength - written) {
+                        throw new IllegalStateException("Multipart file exceeds declared length");
+                    }
+                    written += read;
+                    ByteBuf owned = buf;
+                    buf = null;
+                    writer.write(owned, read);
+                } finally {
+                    ReferenceCountUtil.release(buf);
                 }
-                ByteBuf buf = writer.channel.alloc().ioBuffer(Constants.HEAP_BUF_SIZE, Constants.HEAP_BUF_SIZE);
-                read = in.read(buf, Constants.HEAP_BUF_SIZE);
-                if (read == Constants.IO_EOF) {
-                    buf.release();
-                    break;
-                }
-                writer.write(buf, read);
             }
         }
 
@@ -932,6 +980,8 @@ public class HttpClient implements AutoCloseable {
         int pendingBytes;
         int pendingChunks;
         ChannelFuture lastFuture;
+        long writtenBytes;
+        final long expectedBytes;
 
         UploadWriter(Channel channel, RequestState state) {
             if (channel.eventLoop().inEventLoop()) {
@@ -939,19 +989,46 @@ public class HttpClient implements AutoCloseable {
             }
             this.channel = channel;
             this.state = state;
+            expectedBytes = state.content.contentLength();
+        }
+
+        void checkActive() {
+            if (!channel.isActive() || state.completed.get() || state.future.isDone()
+                    || channel.attr(STATE_KEY).get() != state) {
+                throw new IllegalStateException("HTTP upload no longer active");
+            }
         }
 
         void write(ByteBuf buf, int bytes) throws Exception {
-            if (!channel.isActive()) {
-                ReferenceCountUtil.release(buf);
-                throw new IllegalStateException("Channel closed");
-            }
             try {
-                lastFuture = channel.write(new DefaultHttpContent(buf));
+                checkActive();
+                if (expectedBytes >= 0 && bytes > expectedBytes - writtenBytes) {
+                    throw new IllegalStateException("HTTP upload exceeds Content-Length");
+                }
+                // Validate ownership on the EventLoop too: a response may finish while
+                // this worker is reading. Never enqueue old body bytes on a reused channel.
+                io.netty.channel.ChannelPromise promise = channel.newPromise();
+                channel.eventLoop().execute(() -> {
+                    try {
+                        checkActive();
+                    } catch (Throwable e) {
+                        ReferenceCountUtil.release(buf);
+                        promise.tryFailure(e);
+                        return;
+                    }
+                    channel.write(new DefaultHttpContent(buf), promise);
+                    promise.addListener(f -> {
+                        if (!f.isSuccess() && channel.attr(STATE_KEY).get() == state) {
+                            fail(channel, f.cause());
+                        }
+                    });
+                });
+                lastFuture = promise;
             } catch (Throwable e) {
                 ReferenceCountUtil.release(buf);
                 throw e;
             }
+            writtenBytes += bytes;
             if (bytes > 0L) {
                 UPLOAD_BYTES_UPDATER.addAndGet(state.client, bytes);
             }
@@ -973,7 +1050,24 @@ public class HttpClient implements AutoCloseable {
         }
 
         void finish() throws Exception {
-            ChannelFuture future = channel.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT);
+            checkActive();
+            if (expectedBytes >= 0 && writtenBytes != expectedBytes) {
+                throw new IllegalStateException("HTTP upload shorter than Content-Length");
+            }
+            io.netty.channel.ChannelPromise future = channel.newPromise();
+            channel.eventLoop().execute(() -> {
+                try {
+                    checkActive();
+                    channel.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT, future);
+                    future.addListener(f -> {
+                        if (f.isSuccess()) {
+                            state.uploadComplete = true;
+                        }
+                    });
+                } catch (Throwable e) {
+                    future.tryFailure(e);
+                }
+            });
             pendingBytes = 0;
             pendingChunks = 0;
             awaitWrite(future, state.readWriteTimeoutMillis);
@@ -1088,6 +1182,7 @@ public class HttpClient implements AutoCloseable {
         final int readWriteTimeoutMillis;
         final int responseOffloadThreshold;
         final int uploadFlushBytes;
+        final int uploadChunkBytes;
         final int uploadFlushChunks;
         final HttpHeaders requestHeaders;
         final RequestContent content;
@@ -1110,6 +1205,7 @@ public class HttpClient implements AutoCloseable {
         ScheduledFuture<?> timeoutFuture;
         long responseBytes;
         boolean responseOffloaded;
+        volatile boolean uploadComplete;
 
         RequestState(Request request, Request currentRequest, URI uri, PoolKey key, FixedChannelPool pool, CompletableFuture<Response> future, HttpClientConfig config,
                      HttpClientCookieJar cookieJar, HttpClientCache cache, HttpClientCache.CacheEntry cacheEntry,
@@ -1128,6 +1224,8 @@ public class HttpClient implements AutoCloseable {
             this.readWriteTimeoutMillis = readWriteTimeoutMillis;
             this.responseOffloadThreshold = responseOffloadThreshold;
             this.uploadFlushBytes = uploadFlushBytes;
+            this.uploadChunkBytes = config.getUploadChunkBytes();
+            this.uploadComplete = !content.streaming();
             this.uploadFlushChunks = uploadFlushChunks;
             this.requestHeaders = requestHeaders != null ? requestHeaders : EmptyHttpHeaders.INSTANCE;
             this.content = content;
@@ -1253,7 +1351,7 @@ public class HttpClient implements AutoCloseable {
             if (len != null && memoryLimit > HybridStream.NON_MEMORY_SIZE && len > memoryLimit) {
                 memoryLimit = HybridStream.NON_MEMORY_SIZE;
             }
-            return new HybridStream(memoryLimit, false);
+            return new HybridStream(memoryLimit, false, null, state.config.getResponseInitialBufferBytes());
         }
 
         private void completeAfterWrites(Channel channel, RequestState state) {
@@ -1294,7 +1392,7 @@ public class HttpClient implements AutoCloseable {
             state.cancelTimeout();
             state.closeContent();
             HttpResponse response = state.response;
-            boolean keepAlive = response != null && HttpUtil.isKeepAlive(response) && channel.isActive();
+            boolean keepAlive = state.uploadComplete && response != null && HttpUtil.isKeepAlive(response) && channel.isActive();
             if (channel.isActive()) {
                 channel.config().setAutoRead(true);
             }
@@ -1986,7 +2084,15 @@ public class HttpClient implements AutoCloseable {
 
         DefaultHttpRequest request = new DefaultHttpRequest(HttpVersion.HTTP_1_1, method, requestUri);
         request.headers().set(headers);
-        HttpUtil.setTransferEncodingChunked(request, true);
+        long contentLength = content.contentLength();
+        if (contentLength >= 0) {
+            HttpUtil.setTransferEncodingChunked(request, false);
+            HttpUtil.setContentLength(request, contentLength);
+        } else {
+            headers.remove(HttpHeaderNames.CONTENT_LENGTH);
+            request.headers().remove(HttpHeaderNames.CONTENT_LENGTH);
+            HttpUtil.setTransferEncodingChunked(request, true);
+        }
         channel.writeAndFlush(request).addListener(f -> {
             if (!f.isSuccess()) {
                 state.closeContent();
@@ -1997,7 +2103,11 @@ public class HttpClient implements AutoCloseable {
                 try {
                     content.writeStreaming(channel, state);
                 } catch (Throwable e) {
-                    fail(channel, e);
+                    channel.eventLoop().execute(() -> {
+                        if (channel.attr(STATE_KEY).get() == state) {
+                            fail(channel, e);
+                        }
+                    });
                 } finally {
                     state.closeContent();
                 }

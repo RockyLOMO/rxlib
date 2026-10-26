@@ -30,6 +30,39 @@
 
 ## 使用示例
 
+### HttpClient 响应缓冲与上传
+
+```java
+HttpClientConfig config = new HttpClientConfig()
+        .setResponseInitialBufferBytes(4096)
+        .setResponseOffloadThreshold(16 * 1024 * 1024)
+        .setUploadChunkBytes(16 * 1024)
+        .setUploadFlushBytes(128 * 1024)
+        .setUploadFlushChunks(8);
+try (HttpClient client = new HttpClient(config);
+     HttpClient.Response response = client.get("http://127.0.0.1:8080/file")) {
+    response.bodyAsFile("download.bin");
+}
+```
+
+以上是默认值。响应初始容量与内存保留阈值独立，实际初始容量不超过阈值；
+阈值为零时直接使用临时文件。已知响应长度超过阈值时也直接使用文件。
+旧 `HybridStream` 构造函数保持原有分配行为，只有新的四参数构造函数支持独立初始容量。
+`Response` 仍在完整接收后交付，支持重复读取，由调用方关闭；`bodyAsFile()` 仍从响应存储复制到目标文件。
+
+Multipart 带文件时通过 worker 分块读取和发送；已知长度使用 `Content-Length`，未知长度使用 chunked。
+字段文本及文件 Header 在构造时固定；文件内容在发送时读取，期间不能修改文件。
+每个已知长度的文件和整个请求均检查发送字节数，长度变化会使请求失败并关闭连接。
+Multipart 完成或失败后关闭其文件流；普通 `InputStream` 请求体沿用调用方关闭流的约定。
+
+上传达到字节数、块数阈值或 channel 不可写时 flush 并等待写完成，因此发送队列保持有界。
+取消、超时或提前响应后停止后续读取；尚未完整发送请求体的连接不复用。
+调用方提供的阻塞读取只能在该次读取返回后检查取消，需自行确保流可及时返回。
+同步 API 禁止从 Netty EventLoop 调用。分块默认值尚未经过完整吞吐矩阵调优，可按负载配置。
+
+建议同时监测连接数、池等待、吞吐、p95/p99、Heap/GC、临时文件及文件描述符数量，
+以及 `client.getMetrics().usedDirectMemory()`（JVM 全局 Netty 堆外内存，非客户端独占用量）。
+
 ### RestClient
 
 类似 FeignClient、连接池化的 Client。
@@ -115,6 +148,59 @@ app:
 ### HttpServer
 
 基于 Netty 实现的轻量级 Server。
+
+#### 限额、线程和所有权
+
+原有 `new HttpServer(port, tls)` 使用默认限额，也可传入独立配置（构造时复制）：
+
+```java
+HttpServerConfig config = new HttpServerConfig()
+        .setMaxRequestBodyBytes(8L * 1024 * 1024)
+        .setMaxMultipartBytes(64L * 1024 * 1024)
+        .setMaxFileBytes(32L * 1024 * 1024)
+        .setMaxAsyncRequests(64);
+HttpServer server = new HttpServer(8080, false, config);
+server.requestAsync("/work", (request, response) -> response.jsonBody("ok"));
+```
+
+| 配置 | 默认值 |
+| --- | ---: |
+| 普通正文 / Multipart 总正文 / 单文件 | 8 MiB / 64 MiB / 32 MiB |
+| 表单项（含文件项）/ 单字段值 | 128 / 64 KiB |
+| URI / 请求头 | 4 KiB / 8 KiB |
+| 请求头读取期限 / 正文无进展期限 | 10 s / 30 s |
+| Keep-Alive 空闲期限 | 60 s |
+| 活动连接 / 并发 Multipart / 异步任务 | 1024 / 32 / 64 |
+
+这些是资源治理初始值，不是吞吐调优结果；大上传场景应按业务配置。
+普通正文使用有界 ByteBuf 聚合，因此 `maxRequestBodyBytes` 不超过 `Integer.MAX_VALUE`。
+Multipart 总量与并发上传共同约束临时磁盘占用，单字段/文件在解码后检查，最多存在一个解码块的短暂超额。
+限额超出返回 413/414/431，异步或上传配额耗尽返回 503。
+请求头/正文读取超时返回 408；空闲 Keep-Alive 和连接数超限直接关闭连接。
+早期错误响应关闭连接，不继续读取未消费的正文；100 Continue 仅在头部校验通过后发送。
+
+`requestMapping` 在 EventLoop 执行，只用于非阻塞逻辑；阻塞处理用 `requestAsync`。
+默认异步执行器由服务端拥有：最多 `maxAsyncRequests` 个线程，无等待队列，提交不会等待空位，关闭服务时中断其任务。
+`setBusinessExecutor` 可以注入调用方管理的执行器，其 `execute` 必须及时返回并切到 worker，不能使用直接执行或 CallerRunsPolicy；服务端同时限制排队和运行任务总数。
+排队任务在断线时取消资源所有权；已运行的 handler 在返回前继续拥有请求资源，断线不提前释放。
+
+同一 HTTP/1.1 连接在完整请求至响应 flush 期间只处理一个请求；检测到重叠 pipelining 时关闭连接。
+普通 Keep-Alive 顺序请求继续支持。查询路径与注册路径都做尾斜线规范化，路径区分大小写。
+
+`ServerRequest.getContent()` 和 `getFiles()` 中的数据在 handler 调用期间借用，返回后由框架清理。
+如需保留 ByteBuf/FileUpload，必须显式 retain 并最终 release。
+`ServerResponse.setContent` 接收一份引用的所有权，调用后不再由调用方释放；替换正文释放旧引用。
+把请求正文转作响应时应传 `request.getContent().retainedDuplicate()`。
+`redirect` 默认 302 并释放此前正文；HEAD/204/205/304 不发送正文，HEAD 保留对应表示长度。
+不允许把 1xx 作为 handler 的最终响应（返回 500），100 Continue 由框架管理。
+
+`getMetrics()` 提供活动连接/请求、Multipart/异步任务、请求量、成功写出响应量、正文收发字节、拒绝/超时/写失败及累计/最大延迟。
+请求量从完成路由匹配并建立请求状态开始计数；延迟从建立状态到响应 flush 完成，正文输出字节为压缩前尝试写出的值。
+累计/最大延迟不能用于计算 p95/p99，分位数应由外部采样统计；没有动态 URL 标签。
+`usedDirectMemory()` 是 JVM 全局 Netty pooled 堆外内存，非该 Server 独占。
+建议同时观察吞吐、p95/p99、Heap/GC、临时磁盘、FD 与 EventLoop 延迟。
+
+传统 API 仍完整聚合正文；这次整改没有引入新的流式 Server API，也没有改变证书策略。
 
 ```java
 @SneakyThrows

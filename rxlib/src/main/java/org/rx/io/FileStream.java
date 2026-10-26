@@ -238,6 +238,7 @@ public class FileStream extends DuplexStream implements Serializable {
         }
 
         long pos = getPosition();
+        randomAccessFile.prepareChannelAccess();
         FileChannel ch = randomAccessFile.getChannel();
         ch.position(pos);
 
@@ -294,6 +295,7 @@ public class FileStream extends DuplexStream implements Serializable {
         }
 
         long pos = getPosition();
+        randomAccessFile.prepareChannelAccess();
         FileChannel ch = randomAccessFile.getChannel();
         ch.position(pos);
 
