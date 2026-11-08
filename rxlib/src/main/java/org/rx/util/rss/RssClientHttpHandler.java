@@ -199,7 +199,7 @@ public class RssClientHttpHandler implements HttpServer.Handler {
         Collections.sort(protocolSummaries, PROTOCOL_SUMMARY_COMPARATOR);
         Collections.sort(historyIps, LOGIN_IP_SUMMARY_COMPARATOR);
 
-        List<Map<String, Object>> userRows = buildHistoryUserRows(historyUsers, shadowStore);
+        List<Map<String, Object>> userRows = buildHistoryUserRows(historyUsers, protocolSummaries, shadowStore);
         List<Map<String, Object>> protocolRows = buildProtocolRows(protocolSummaries, shadowStore);
         List<Map<String, Object>> loginIpRows = buildHistoryLoginIpRows(historyIps, shadowStore);
         List<Map<String, Object>> liveIpRows = buildLiveLoginIpRows(shadowStore);
@@ -214,6 +214,50 @@ public class RssClientHttpHandler implements HttpServer.Handler {
         vars.put("h2RetentionDays", effectiveRetentionDays);
         vars.put("memoryRetentionHours", effectiveMemoryRetentionHours);
         vars.put("memoryResetPolicy", "用户开始有连接后按 " + effectiveMemoryRetentionHours + " 小时窗口保留登录 IP；无连接用户不更新内存统计窗口。");
+
+        long allTotalRead = 0L;
+        long allTotalWrite = 0L;
+        long allTotalActive = 0L;
+        long allTotalSessions = 0L;
+        for (UserTrafficSummary row : historyUsers) {
+            allTotalRead += row.getReadBytes();
+            allTotalWrite += row.getWriteBytes();
+            allTotalActive += row.getActiveSeconds();
+            allTotalSessions += row.getSessionCount();
+        }
+        long allTotal = allTotalRead + allTotalWrite;
+
+        long tcpRead = 0L, tcpWrite = 0L, udpRead = 0L, udpWrite = 0L;
+        for (ProtocolTrafficSummary row : protocolSummaries) {
+            if (SocksUserTraffic.PROTOCOL_TCP.equals(normalizeProtocol(row.getProtocol()))) {
+                tcpRead += row.getReadBytes();
+                tcpWrite += row.getWriteBytes();
+            } else {
+                udpRead += row.getReadBytes();
+                udpWrite += row.getWriteBytes();
+            }
+        }
+        long tcpTotal = tcpRead + tcpWrite;
+        long udpTotal = udpRead + udpWrite;
+
+        vars.put("totalTrafficText", Bytes.readableByteSize(allTotal));
+        vars.put("totalReadBytesText", Bytes.readableByteSize(allTotalRead));
+        vars.put("totalWriteBytesText", Bytes.readableByteSize(allTotalWrite));
+        vars.put("totalReadPercent", allTotal > 0 ? String.format(Locale.ENGLISH, "%.1f", allTotalRead * 100.0 / allTotal) : "0.0");
+        vars.put("totalWritePercent", allTotal > 0 ? String.format(Locale.ENGLISH, "%.1f", allTotalWrite * 100.0 / allTotal) : "0.0");
+        vars.put("tcpTotalText", Bytes.readableByteSize(tcpTotal));
+        vars.put("tcpReadText", Bytes.readableByteSize(tcpRead));
+        vars.put("tcpWriteText", Bytes.readableByteSize(tcpWrite));
+        vars.put("udpTotalText", Bytes.readableByteSize(udpTotal));
+        vars.put("udpReadText", Bytes.readableByteSize(udpRead));
+        vars.put("udpWriteText", Bytes.readableByteSize(udpWrite));
+        vars.put("userCount", userRows.size());
+        vars.put("protocolRowCount", protocolRows.size());
+        vars.put("historyIpCount", loginIpRows.size());
+        vars.put("liveIpCount", liveIpRows.size());
+        vars.put("totalSessions", allTotalSessions);
+        vars.put("totalActiveDuration", formatDurationSeconds(allTotalActive));
+
         vars.put("stats", buildStats(userRows.size(), protocolRows.size(), loginIpRows.size(), liveIpRows.size(),
                 historyUsers, protocolSummaries, query, trafficStore, effectiveMemoryRetentionHours, upstreamRows));
         vars.put("hasUpstreams", !upstreamRows.isEmpty());
@@ -452,10 +496,44 @@ public class RssClientHttpHandler implements HttpServer.Handler {
         return row;
     }
 
-    private static List<Map<String, Object>> buildHistoryUserRows(List<UserTrafficSummary> summaries, Map<String, ShadowUser> shadowStore) {
+    private static List<Map<String, Object>> buildHistoryUserRows(List<UserTrafficSummary> summaries,
+                                                                  List<ProtocolTrafficSummary> protocolSummaries,
+                                                                  Map<String, ShadowUser> shadowStore) {
+        Map<String, ProtocolTrafficSummary> tcpByUser = new LinkedHashMap<String, ProtocolTrafficSummary>();
+        Map<String, ProtocolTrafficSummary> udpByUser = new LinkedHashMap<String, ProtocolTrafficSummary>();
+        if (protocolSummaries != null) {
+            for (ProtocolTrafficSummary summary : protocolSummaries) {
+                if (summary == null || summary.getUsername() == null) {
+                    continue;
+                }
+                String proto = normalizeProtocol(summary.getProtocol());
+                if (SocksUserTraffic.PROTOCOL_TCP.equals(proto)) {
+                    tcpByUser.put(summary.getUsername(), summary);
+                } else {
+                    udpByUser.put(summary.getUsername(), summary);
+                }
+            }
+        }
+
         List<Map<String, Object>> rows = new ArrayList<Map<String, Object> >(summaries.size());
         for (UserTrafficSummary summary : summaries) {
             ShadowUser shadowUser = shadowStore == null ? null : shadowStore.get(summary.getUsername());
+            long readBytes = summary.getReadBytes();
+            long writeBytes = summary.getWriteBytes();
+            long totalBytes = readBytes + writeBytes;
+            double readPct = totalBytes > 0 ? (readBytes * 100.0 / totalBytes) : 0.0;
+            double writePct = totalBytes > 0 ? (writeBytes * 100.0 / totalBytes) : 0.0;
+
+            ProtocolTrafficSummary tcp = tcpByUser.get(summary.getUsername());
+            long tcpRead = tcp == null ? 0L : tcp.getReadBytes();
+            long tcpWrite = tcp == null ? 0L : tcp.getWriteBytes();
+            long tcpTotal = tcpRead + tcpWrite;
+
+            ProtocolTrafficSummary udp = udpByUser.get(summary.getUsername());
+            long udpRead = udp == null ? 0L : udp.getReadBytes();
+            long udpWrite = udp == null ? 0L : udp.getWriteBytes();
+            long udpTotal = udpRead + udpWrite;
+
             LinkedHashMap<String, Object> row = new LinkedHashMap<String, Object>();
             row.put("username", summary.getUsername());
             row.put("socksUser", shadowUser == null || Strings.isEmpty(shadowUser.getSocksUser()) ? "-" : shadowUser.getSocksUser());
@@ -463,11 +541,35 @@ public class RssClientHttpHandler implements HttpServer.Handler {
             row.put("ipLimit", shadowUser == null ? "-" : (shadowUser.getIpLimit() < 0 ? "不限" : String.valueOf(shadowUser.getIpLimit())));
             row.put("lastResetTime", shadowUser == null ? "-" : formatDateTime(shadowUser.getLastResetTime()));
             row.put("latestTime", formatDateTime(summary.getLatestTime()));
+            row.put("rawLatestTime", summary.getLatestTime() == null ? 0L : summary.getLatestTime().getTime());
             row.put("activeDuration", formatDurationSeconds(summary.getActiveSeconds()));
-            row.put("avgReadSpeed", formatSpeed(summary.getReadBytes(), summary.getActiveSeconds()));
-            row.put("avgWriteSpeed", formatSpeed(summary.getWriteBytes(), summary.getActiveSeconds()));
-            row.put("totalReadBytes", Bytes.readableByteSize(summary.getReadBytes()));
-            row.put("totalWriteBytes", Bytes.readableByteSize(summary.getWriteBytes()));
+            row.put("rawActiveSeconds", summary.getActiveSeconds());
+            row.put("avgReadSpeed", formatSpeed(readBytes, summary.getActiveSeconds()));
+            row.put("avgWriteSpeed", formatSpeed(writeBytes, summary.getActiveSeconds()));
+
+            // 核心突出：总量与上下行数据
+            row.put("totalBytes", totalBytes);
+            row.put("totalBytesText", Bytes.readableByteSize(totalBytes));
+            row.put("rawReadBytes", readBytes);
+            row.put("rawWriteBytes", writeBytes);
+            row.put("totalReadBytes", Bytes.readableByteSize(readBytes));
+            row.put("totalWriteBytes", Bytes.readableByteSize(writeBytes));
+            row.put("readPercent", String.format(Locale.ENGLISH, "%.1f", readPct));
+            row.put("writePercent", String.format(Locale.ENGLISH, "%.1f", writePct));
+
+            // TCP / UDP 拆分明细
+            row.put("hasTcp", tcpTotal > 0);
+            row.put("tcpTotalBytes", tcpTotal);
+            row.put("tcpTotalText", Bytes.readableByteSize(tcpTotal));
+            row.put("tcpReadText", Bytes.readableByteSize(tcpRead));
+            row.put("tcpWriteText", Bytes.readableByteSize(tcpWrite));
+
+            row.put("hasUdp", udpTotal > 0);
+            row.put("udpTotalBytes", udpTotal);
+            row.put("udpTotalText", Bytes.readableByteSize(udpTotal));
+            row.put("udpReadText", Bytes.readableByteSize(udpRead));
+            row.put("udpWriteText", Bytes.readableByteSize(udpWrite));
+
             row.put("sessionCount", summary.getSessionCount());
             rows.add(row);
         }
@@ -479,20 +581,38 @@ public class RssClientHttpHandler implements HttpServer.Handler {
         for (ProtocolTrafficSummary summary : summaries) {
             ShadowUser shadowUser = shadowStore == null ? null : shadowStore.get(summary.getUsername());
             String protocol = normalizeProtocol(summary.getProtocol());
+            long readBytes = summary.getReadBytes();
+            long writeBytes = summary.getWriteBytes();
+            long totalBytes = readBytes + writeBytes;
+            double readPct = totalBytes > 0 ? (readBytes * 100.0 / totalBytes) : 0.0;
+            double writePct = totalBytes > 0 ? (writeBytes * 100.0 / totalBytes) : 0.0;
+
             LinkedHashMap<String, Object> row = new LinkedHashMap<String, Object>();
             row.put("username", summary.getUsername());
             row.put("protocol", protocol.toUpperCase(Locale.ENGLISH));
+            row.put("isTcp", SocksUserTraffic.PROTOCOL_TCP.equals(protocol));
             row.put("socksUser", shadowUser == null || Strings.isEmpty(shadowUser.getSocksUser()) ? "-" : shadowUser.getSocksUser());
             row.put("ssPort", shadowUser == null ? "-" : shadowUser.getSsPort());
             row.put("channelMetricLabel", SocksUserTraffic.PROTOCOL_TCP.equals(protocol) ? "TCP 通道数" : "UDP 活跃来源数");
             row.put("channelMetricValue", SocksUserTraffic.PROTOCOL_TCP.equals(protocol) ? summary.getSessionCount() : summary.getActiveIpCount());
             row.put("sessionCount", summary.getSessionCount());
             row.put("activeDuration", formatDurationSeconds(summary.getActiveSeconds()));
-            row.put("avgReadSpeed", formatSpeed(summary.getReadBytes(), summary.getActiveSeconds()));
-            row.put("avgWriteSpeed", formatSpeed(summary.getWriteBytes(), summary.getActiveSeconds()));
-            row.put("totalReadBytes", Bytes.readableByteSize(summary.getReadBytes()));
-            row.put("totalWriteBytes", Bytes.readableByteSize(summary.getWriteBytes()));
+            row.put("rawActiveSeconds", summary.getActiveSeconds());
+            row.put("avgReadSpeed", formatSpeed(readBytes, summary.getActiveSeconds()));
+            row.put("avgWriteSpeed", formatSpeed(writeBytes, summary.getActiveSeconds()));
+
+            // 核心突出
+            row.put("totalBytes", totalBytes);
+            row.put("totalBytesText", Bytes.readableByteSize(totalBytes));
+            row.put("rawReadBytes", readBytes);
+            row.put("rawWriteBytes", writeBytes);
+            row.put("totalReadBytes", Bytes.readableByteSize(readBytes));
+            row.put("totalWriteBytes", Bytes.readableByteSize(writeBytes));
+            row.put("readPercent", String.format(Locale.ENGLISH, "%.1f", readPct));
+            row.put("writePercent", String.format(Locale.ENGLISH, "%.1f", writePct));
+
             row.put("latestTime", formatDateTime(summary.getLatestTime()));
+            row.put("rawLatestTime", summary.getLatestTime() == null ? 0L : summary.getLatestTime().getTime());
             rows.add(row);
         }
         return rows;
@@ -502,20 +622,39 @@ public class RssClientHttpHandler implements HttpServer.Handler {
         List<Map<String, Object>> rows = new ArrayList<Map<String, Object> >(summaries.size());
         for (LoginIpTrafficSummary summary : summaries) {
             ShadowUser shadowUser = shadowStore == null ? null : shadowStore.get(summary.getUsername());
+            String proto = normalizeProtocol(summary.getProtocol());
+            long readBytes = summary.getReadBytes();
+            long writeBytes = summary.getWriteBytes();
+            long totalBytes = readBytes + writeBytes;
+            double readPct = totalBytes > 0 ? (readBytes * 100.0 / totalBytes) : 0.0;
+            double writePct = totalBytes > 0 ? (writeBytes * 100.0 / totalBytes) : 0.0;
+
             LinkedHashMap<String, Object> row = new LinkedHashMap<String, Object>();
             row.put("username", summary.getUsername());
-            row.put("protocol", normalizeProtocol(summary.getProtocol()).toUpperCase(Locale.ENGLISH));
+            row.put("protocol", proto.toUpperCase(Locale.ENGLISH));
+            row.put("isTcp", SocksUserTraffic.PROTOCOL_TCP.equals(proto));
             row.put("socksUser", shadowUser == null || Strings.isEmpty(shadowUser.getSocksUser()) ? "-" : shadowUser.getSocksUser());
             row.put("ssPort", shadowUser == null ? "-" : shadowUser.getSsPort());
             row.put("ip", summary.getRemoteIp());
             row.put("geo", formatGeo(summary.getRemoteIp()));
             row.put("latestTime", formatDateTime(summary.getLatestTime()));
+            row.put("rawLatestTime", summary.getLatestTime() == null ? 0L : summary.getLatestTime().getTime());
             row.put("activeDuration", formatDurationSeconds(summary.getActiveSeconds()));
-            row.put("avgReadSpeed", formatSpeed(summary.getReadBytes(), summary.getActiveSeconds()));
-            row.put("avgWriteSpeed", formatSpeed(summary.getWriteBytes(), summary.getActiveSeconds()));
+            row.put("rawActiveSeconds", summary.getActiveSeconds());
+            row.put("avgReadSpeed", formatSpeed(readBytes, summary.getActiveSeconds()));
+            row.put("avgWriteSpeed", formatSpeed(writeBytes, summary.getActiveSeconds()));
             row.put("sessionCount", summary.getSessionCount());
-            row.put("totalReadBytes", Bytes.readableByteSize(summary.getReadBytes()));
-            row.put("totalWriteBytes", Bytes.readableByteSize(summary.getWriteBytes()));
+
+            // 核心突出
+            row.put("totalBytes", totalBytes);
+            row.put("totalBytesText", Bytes.readableByteSize(totalBytes));
+            row.put("rawReadBytes", readBytes);
+            row.put("rawWriteBytes", writeBytes);
+            row.put("totalReadBytes", Bytes.readableByteSize(readBytes));
+            row.put("totalWriteBytes", Bytes.readableByteSize(writeBytes));
+            row.put("readPercent", String.format(Locale.ENGLISH, "%.1f", readPct));
+            row.put("writePercent", String.format(Locale.ENGLISH, "%.1f", writePct));
+
             rows.add(row);
         }
         return rows;
@@ -543,6 +682,9 @@ public class RssClientHttpHandler implements HttpServer.Handler {
                 long activeSeconds = liveActiveSeconds(info, now);
                 long readBytes = info == null ? 0L : info.getTotalReadBytes().get();
                 long writeBytes = info == null ? 0L : info.getTotalWriteBytes().get();
+                long totalBytes = readBytes + writeBytes;
+                int connCount = info == null ? 0 : info.getRefCnt().get();
+
                 LinkedHashMap<String, Object> row = new LinkedHashMap<String, Object>();
                 row.put("username", user.getUsername());
                 row.put("protocol", "LIVE");
@@ -551,12 +693,22 @@ public class RssClientHttpHandler implements HttpServer.Handler {
                 row.put("ip", entry.getKey() == null ? "" : entry.getKey().getHostAddress());
                 row.put("geo", formatGeo(entry.getKey() == null ? null : entry.getKey().getHostAddress()));
                 row.put("latestTime", formatDateTime(info == null ? null : info.getLatestTime()));
-                row.put("currentConnections", info == null ? 0 : info.getRefCnt().get());
+                row.put("rawLatestTime", info == null || info.getLatestTime() == null ? 0L : info.getLatestTime().getTime());
+                row.put("currentConnections", connCount);
+                row.put("isLiveActive", connCount > 0);
                 row.put("activeDuration", formatDurationSeconds(activeSeconds));
+                row.put("rawActiveSeconds", activeSeconds);
                 row.put("avgReadSpeed", formatSpeed(readBytes, activeSeconds));
                 row.put("avgWriteSpeed", formatSpeed(writeBytes, activeSeconds));
+
+                // 核心突出
+                row.put("totalBytes", totalBytes);
+                row.put("totalBytesText", Bytes.readableByteSize(totalBytes));
+                row.put("rawReadBytes", readBytes);
+                row.put("rawWriteBytes", writeBytes);
                 row.put("totalReadBytes", Bytes.readableByteSize(readBytes));
                 row.put("totalWriteBytes", Bytes.readableByteSize(writeBytes));
+
                 rows.add(row);
             }
         }
