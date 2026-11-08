@@ -18,6 +18,30 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class HybridStreamTest {
     @Test
+    public void channelWritesAndBufferedReadsRemainCoherent() {
+        byte[] data = range(24);
+        ByteBuf src = Bytes.directBuffer(data.length);
+        ByteBuf dst = Bytes.directBuffer(data.length);
+        try (HybridStream stream = new HybridStream(0, false)) {
+            src.writeBytes(data);
+            stream.write(src, data.length);
+            stream.rewind();
+            byte[] actual = new byte[data.length];
+            assertEquals(data.length, stream.read(actual));
+            assertArrayEquals(data, actual);
+            stream.rewind();
+            stream.write(new byte[]{99, 98});
+            stream.rewind();
+            assertEquals(2, stream.read(dst, 2));
+            assertEquals(99, dst.readUnsignedByte());
+            assertEquals(98, dst.readUnsignedByte());
+        } finally {
+            Bytes.release(src);
+            Bytes.release(dst);
+        }
+    }
+
+    @Test
     public void largeSingleWriteKeepsMemoryPrefixAndSpillsSuffix() {
         byte[] data = range(24);
         try (HybridStream stream = new HybridStream(8, false)) {

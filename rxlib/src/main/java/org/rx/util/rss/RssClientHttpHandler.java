@@ -215,7 +215,7 @@ public class RssClientHttpHandler implements HttpServer.Handler {
         vars.put("memoryRetentionHours", effectiveMemoryRetentionHours);
         vars.put("memoryResetPolicy", "用户开始有连接后按 " + effectiveMemoryRetentionHours + " 小时窗口保留登录 IP；无连接用户不更新内存统计窗口。");
         vars.put("stats", buildStats(userRows.size(), protocolRows.size(), loginIpRows.size(), liveIpRows.size(),
-                historyUsers, query, trafficStore, effectiveMemoryRetentionHours, upstreamRows));
+                historyUsers, protocolSummaries, query, trafficStore, effectiveMemoryRetentionHours, upstreamRows));
         vars.put("hasUpstreams", !upstreamRows.isEmpty());
         vars.put("upstreams", upstreamRows);
         vars.put("hasHistoryUsers", !userRows.isEmpty());
@@ -235,7 +235,8 @@ public class RssClientHttpHandler implements HttpServer.Handler {
     }
 
     private static List<Map<String, Object>> buildStats(int userCount, int protocolRowCount, int historyIpCount, int liveIpCount,
-                                                        List<UserTrafficSummary> historyUsers, Query query, RssUserTrafficStore trafficStore,
+                                                        List<UserTrafficSummary> historyUsers, List<ProtocolTrafficSummary> protocolSummaries,
+                                                        Query query, RssUserTrafficStore trafficStore,
                                                         int memoryRetentionHours, List<Map<String, Object>> upstreamRows) {
         long totalReadBytes = 0L;
         long totalWriteBytes = 0L;
@@ -246,6 +247,17 @@ public class RssClientHttpHandler implements HttpServer.Handler {
             totalWriteBytes += row.getWriteBytes();
             totalActiveSeconds += row.getActiveSeconds();
             totalSessions += row.getSessionCount();
+        }
+
+        long tcpRead = 0L, tcpWrite = 0L, udpRead = 0L, udpWrite = 0L;
+        for (ProtocolTrafficSummary row : protocolSummaries) {
+            if (SocksUserTraffic.PROTOCOL_TCP.equals(normalizeProtocol(row.getProtocol()))) {
+                tcpRead += row.getReadBytes();
+                tcpWrite += row.getWriteBytes();
+            } else {
+                udpRead += row.getReadBytes();
+                udpWrite += row.getWriteBytes();
+            }
         }
 
         long healthyUpstreams = 0L;
@@ -275,6 +287,10 @@ public class RssClientHttpHandler implements HttpServer.Handler {
         stats.add(summaryItem("历史用户数", userCount, "H2 中命中的用户聚合数量。"));
         stats.add(summaryItem("历史下行/上行", Bytes.readableByteSize(totalReadBytes) + " / " + Bytes.readableByteSize(totalWriteBytes),
                 "按所选时间范围聚合的总流量。"));
+        stats.add(summaryItem("TCP 下行/上行", Bytes.readableByteSize(tcpRead) + " / " + Bytes.readableByteSize(tcpWrite),
+                "所选时间范围内所有 SS 用户的 TCP 总流量。"));
+        stats.add(summaryItem("UDP 下行/上行", Bytes.readableByteSize(udpRead) + " / " + Bytes.readableByteSize(udpWrite),
+                "所选时间范围内所有 SS 用户的 UDP 总流量。"));
         stats.add(summaryItem("历史活跃时长/会话数", formatDurationSeconds(totalActiveSeconds) + " / " + totalSessions,
                 "基于已结束连接累计的活跃时长与会话数。协议与 IP 明细见下方表格。"));
         stats.add(summaryItem("协议/IP/实时行数", protocolRowCount + " / " + historyIpCount + " / " + liveIpCount,

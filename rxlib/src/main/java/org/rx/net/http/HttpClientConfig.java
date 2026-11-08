@@ -21,6 +21,8 @@ public final class HttpClientConfig {
     private int maxConnectionsPerHost;
     private int maxPendingAcquires;
     private int responseOffloadThreshold;
+    private int responseInitialBufferBytes;
+    private int uploadChunkBytes;
     private int uploadFlushBytes;
     private int uploadFlushChunks;
     private int maxRedirects;
@@ -46,8 +48,10 @@ public final class HttpClientConfig {
         maxConnectionsPerHost = Math.max(1, conf.getPoolMaxSize());
         maxPendingAcquires = Math.max(16, maxConnectionsPerHost << 2);
         responseOffloadThreshold = Constants.MAX_HEAP_BUF_SIZE;
-        uploadFlushBytes = Constants.HEAP_BUF_SIZE << 4;
-        uploadFlushChunks = 16;
+        responseInitialBufferBytes = 4096;
+        uploadChunkBytes = 16 * 1024;
+        uploadFlushBytes = 128 * 1024;
+        uploadFlushChunks = 8;
         maxRedirects = 10;
         followRedirects = true;
         enableLog = conf.isEnableLog();
@@ -64,6 +68,8 @@ public final class HttpClientConfig {
         maxConnectionsPerHost = src.maxConnectionsPerHost;
         maxPendingAcquires = src.maxPendingAcquires;
         responseOffloadThreshold = src.responseOffloadThreshold;
+        responseInitialBufferBytes = src.responseInitialBufferBytes;
+        uploadChunkBytes = src.uploadChunkBytes;
         uploadFlushBytes = src.uploadFlushBytes;
         uploadFlushChunks = src.uploadFlushChunks;
         maxRedirects = src.maxRedirects;
@@ -133,6 +139,16 @@ public final class HttpClientConfig {
 
     public HttpClientConfig setUploadFlushBytes(int uploadFlushBytes) {
         this.uploadFlushBytes = Math.max(1, uploadFlushBytes);
+        return this;
+    }
+
+    public HttpClientConfig setResponseInitialBufferBytes(int responseInitialBufferBytes) {
+        this.responseInitialBufferBytes = Math.max(1, Math.min(responseInitialBufferBytes, Constants.MAX_HEAP_BUF_SIZE));
+        return this;
+    }
+
+    public HttpClientConfig setUploadChunkBytes(int uploadChunkBytes) {
+        this.uploadChunkBytes = Math.max(1, Math.min(uploadChunkBytes, Constants.MAX_HEAP_BUF_SIZE));
         return this;
     }
 
