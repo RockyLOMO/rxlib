@@ -574,45 +574,69 @@
     }
 
     /* 用户名与元信息胶囊 */
+    /* 彻底解决第一列用户名被外层全局 word-break: break-word 强行压碎折行的问题 */
+    .rss-container .rss-modern-table th:first-child,
+    .rss-container .rss-modern-table td:first-child,
+    .rss-col-user {
+        min-width: 200px !important;
+        max-width: 280px !important;
+        white-space: nowrap !important;
+        word-break: keep-all !important;
+        overflow-wrap: normal !important;
+        padding-right: 18px !important;
+    }
     .user-primary {
         font-weight: 700;
-        font-size: 14px;
+        font-size: 15px;
         color: #0f172a;
-        margin-bottom: 2px;
-        display: flex;
+        margin-bottom: 4px;
+        display: inline-flex;
         align-items: center;
-        gap: 6px;
+        gap: 8px;
+        white-space: nowrap !important;
+        word-break: keep-all !important;
     }
     .btn-user-chart {
-        background: #e0f2fe;
-        border: 1px solid #bae6fd;
-        color: #0284c7;
+        background: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        color: #15803d;
         font-size: 11px;
         font-weight: 600;
-        padding: 1px 5px;
-        border-radius: 4px;
+        padding: 2px 7px;
+        border-radius: 9999px;
         cursor: pointer;
         text-decoration: none;
+        white-space: nowrap !important;
+        word-break: keep-all !important;
+        transition: all 0.15s ease;
     }
     .btn-user-chart:hover {
-        background: #0284c7;
+        background: #0f766e;
+        border-color: #0f766e;
         color: #ffffff;
     }
     .user-tags {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px;
+        display: inline-flex;
+        align-items: center;
+        flex-wrap: nowrap;
+        gap: 5px;
         font-size: 11px;
+        white-space: nowrap !important;
+        word-break: keep-all !important;
     }
     .user-tag {
         background: #f1f5f9;
+        border: 1px solid #e2e8f0;
         color: #475569;
         padding: 1px 6px;
         border-radius: 4px;
-        font-family: ui-monospace, monospace;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        white-space: nowrap !important;
+        word-break: keep-all !important;
     }
     .user-tag.port {
         background: #e0f2fe;
+        border-color: #bae6fd;
         color: #0369a1;
         font-weight: 600;
     }
@@ -854,7 +878,7 @@
                 <table class="rss-modern-table" data-filterable="true">
                     <thead>
                     <tr>
-                        <th class="sortable" onclick="rssSortTable(this)">用户名<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable rss-col-user" onclick="rssSortTable(this)">用户名<span class="sort-icon">▲▼</span></th>
                         <th class="sortable text-right" onclick="rssSortTable(this)" style="background: #ecfdf5; color: #0f766e;">
                             🌟 总流量<span class="sort-icon">▲▼</span>
                         </th>
@@ -870,13 +894,13 @@
                         <th class="sortable text-right" onclick="rssSortTable(this)">累计时长<span class="sort-icon">▲▼</span></th>
                         <th class="sortable text-right" onclick="rssSortTable(this)">平均速度 (下/上)<span class="sort-icon">▲▼</span></th>
                         <th class="sortable" onclick="rssSortTable(this)">最近活跃<span class="sort-icon">▲▼</span></th>
-                        <th>配置与限制</th>
+                        <th class="nowrap">内存重置起点</th>
                     </tr>
                     </thead>
                     <tbody>
                     {{#each historyUsers}}
                     <tr>
-                        <td>
+                        <td class="rss-col-user">
                             <div class="user-primary">
                                 <span>{{username}}</span>
                                 <button type="button" class="btn-user-chart" title="在上方图表中查看该用户走势" onclick="rssFocusUserTrend('{{username}}')">📈 走势</button>
@@ -884,6 +908,7 @@
                             <div class="user-tags">
                                 <span class="user-tag port" title="SS 端口">端口: {{ssPort}}</span>
                                 <span class="user-tag" title="内部 Socks 用户">{{socksUser}}</span>
+                                <span class="user-tag" title="IP 限制">限: {{ipLimit}}</span>
                             </div>
                         </td>
 
@@ -957,9 +982,8 @@
                             {{latestTime}}
                         </td>
 
-                        <td class="nowrap text-muted" style="font-size: 11px;">
-                            <span>IP限制: {{ipLimit}}</span><br>
-                            <span>重置起点: {{lastResetTime}}</span>
+                        <td class="nowrap text-muted font-mono" style="font-size: 12px;">
+                            {{lastResetTime}}
                         </td>
                     </tr>
                     {{/each}}
@@ -997,8 +1021,11 @@
                     <tbody>
                     {{#each protocolRows}}
                     <tr>
-                        <td>
-                            <div class="user-primary">{{username}}</div>
+                        <td class="rss-col-user">
+                            <div class="user-primary">
+                                <span>{{username}}</span>
+                                <button type="button" class="btn-user-chart" title="在上方图表中查看该用户走势" onclick="rssFocusUserTrend('{{username}}')">📈 走势</button>
+                            </div>
                             <div class="user-tags">
                                 <span class="user-tag port">端口: {{ssPort}}</span>
                                 <span class="user-tag">{{socksUser}}</span>
@@ -1068,8 +1095,11 @@
                     <tbody>
                     {{#each historyIps}}
                     <tr>
-                        <td>
-                            <div class="user-primary">{{username}}</div>
+                        <td class="rss-col-user">
+                            <div class="user-primary">
+                                <span>{{username}}</span>
+                                <button type="button" class="btn-user-chart" title="在上方图表中查看该用户走势" onclick="rssFocusUserTrend('{{username}}')">📈 走势</button>
+                            </div>
                             <div class="user-tags">
                                 <span class="user-tag port">端口: {{ssPort}}</span>
                                 <span class="user-tag">{{socksUser}}</span>
@@ -1138,8 +1168,11 @@
                     <tbody>
                     {{#each liveIps}}
                     <tr>
-                        <td>
-                            <div class="user-primary">{{username}}</div>
+                        <td class="rss-col-user">
+                            <div class="user-primary">
+                                <span>{{username}}</span>
+                                <button type="button" class="btn-user-chart" title="在上方图表中查看该用户走势" onclick="rssFocusUserTrend('{{username}}')">📈 走势</button>
+                            </div>
                             <div class="user-tags">
                                 <span class="user-tag port">端口: {{ssPort}}</span>
                                 <span class="user-tag">{{socksUser}}</span>
