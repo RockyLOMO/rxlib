@@ -49,6 +49,13 @@ public class RssUserTrafficStoreTest extends AbstractTester {
             assertEquals(160L, entity.getWriteBytes());
             assertEquals(3L, entity.getReadPackets());
             assertEquals(4L, entity.getWritePackets());
+
+            long now = System.currentTimeMillis();
+            java.util.List<RssUserTrafficStore.TrafficTrendPoint> trends = store.queryTrafficTrends(now - 3600000L, now + 3600000L);
+            assertTrue(!trends.isEmpty());
+            assertEquals("rocky", trends.get(0).getUsername());
+            assertEquals(80L, trends.get(0).getReadBytes());
+            assertEquals(160L, trends.get(0).getWriteBytes());
         } finally {
             db.dropMapping(RssUserTrafficStore.HourlyTrafficEntity.class);
             db.close();

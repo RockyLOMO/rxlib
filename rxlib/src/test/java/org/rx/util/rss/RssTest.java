@@ -446,6 +446,7 @@ public class RssTest extends AbstractTester {
             String html = RssClientHttpHandler.renderShadowUsersPage(Collections.singletonMap(user.getUsername(), user), store, query);
 
             assertTrue(html.contains("用户历史概览"));
+            assertTrue(html.contains("上下行流量走势图"));
             assertTrue(html.contains("协议历史明细"));
             assertTrue(html.contains("实时内存快照"));
             assertTrue(html.contains("TCP"));
