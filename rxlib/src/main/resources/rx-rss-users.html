@@ -1,5 +1,5 @@
 <style>
-    /* ================= RSS SS 用户管理与流量监控控制台现代化样式 ================= */
+    /* ================= RSS SS 用户与流量监控控制台现代化样式 ================= */
     .rss-container {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
         color: #1e293b;
@@ -17,10 +17,10 @@
         color: #ffffff;
         border-radius: 16px;
         box-shadow: 0 10px 25px -5px rgba(15, 118, 110, 0.25);
-        margin-bottom: 20px;
+        margin-bottom: 16px;
     }
     .rss-hero h1 {
-        font-size: 26px;
+        font-size: 24px;
         font-weight: 700;
         margin: 0 0 6px 0;
         letter-spacing: -0.02em;
@@ -45,23 +45,23 @@
     /* 核心流量 KPI 大看板 */
     .rss-kpi-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-        gap: 16px;
-        margin-bottom: 20px;
+        grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+        gap: 14px;
+        margin-bottom: 14px;
     }
     .rss-kpi-card {
         background: #ffffff;
         border: 1px solid #e2e8f0;
-        border-radius: 16px;
-        padding: 18px 20px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+        border-radius: 14px;
+        padding: 16px 18px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
         position: relative;
         overflow: hidden;
         transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
     .rss-kpi-card:hover {
         transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.05);
     }
     .rss-kpi-card.hero-total {
         background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
@@ -83,11 +83,11 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 8px;
+        margin-bottom: 6px;
     }
     .rss-kpi-label {
-        font-size: 13px;
-        font-weight: 600;
+        font-size: 12px;
+        font-weight: 700;
         color: #475569;
         text-transform: uppercase;
         letter-spacing: 0.04em;
@@ -95,7 +95,7 @@
     .rss-kpi-badge {
         font-size: 11px;
         font-weight: 700;
-        padding: 3px 8px;
+        padding: 2px 7px;
         border-radius: 9999px;
     }
     .badge-total { background: #0f766e; color: #ffffff; }
@@ -104,17 +104,17 @@
     .badge-proto { background: #7c3aed; color: #ffffff; }
 
     .rss-kpi-val {
-        font-size: 28px;
+        font-size: 26px;
         font-weight: 800;
         line-height: 1.15;
         letter-spacing: -0.03em;
-        margin-bottom: 6px;
+        margin-bottom: 4px;
         font-variant-numeric: tabular-nums;
     }
     .val-total { color: #0f766e; }
     .val-down { color: #0284c7; }
     .val-up { color: #c2410c; }
-    .val-proto { color: #6b21a8; font-size: 22px; }
+    .val-proto { color: #6b21a8; font-size: 20px; }
 
     .rss-kpi-sub {
         font-size: 12px;
@@ -126,35 +126,62 @@
     .proto-split-row {
         display: flex;
         justify-content: space-between;
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 600;
         color: #475569;
-        margin-top: 4px;
+        margin-top: 3px;
+    }
+
+    /* 精简状态条（消除原重复 stats 的笨重网格） */
+    .rss-status-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 8px 14px;
+        font-size: 12px;
+        color: #475569;
+        margin-bottom: 16px;
+    }
+    .rss-status-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        padding: 3px 8px;
+        border-radius: 6px;
+    }
+    .rss-status-chip strong {
+        color: #0f172a;
     }
 
     /* 工具栏：快捷范围 + 查询表单 + 实时过滤 */
     .rss-toolbar {
         background: #ffffff;
         border: 1px solid #e2e8f0;
-        border-radius: 16px;
-        padding: 16px 20px;
+        border-radius: 14px;
+        padding: 14px 18px;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
-        margin-bottom: 20px;
+        margin-bottom: 18px;
     }
     .rss-quick-ranges {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
         gap: 8px;
-        margin-bottom: 12px;
-        padding-bottom: 12px;
+        margin-bottom: 10px;
+        padding-bottom: 10px;
         border-bottom: 1px dashed #e2e8f0;
     }
     .quick-range-title {
         font-size: 12px;
         font-weight: 700;
         color: #64748b;
-        margin-right: 4px;
+        margin-right: 2px;
     }
     .btn-quick-range {
         background: #f1f5f9;
@@ -162,7 +189,7 @@
         color: #334155;
         font-size: 12px;
         font-weight: 600;
-        padding: 5px 12px;
+        padding: 4px 11px;
         border-radius: 9999px;
         cursor: pointer;
         transition: all 0.15s ease;
@@ -176,18 +203,18 @@
         display: flex;
         flex-wrap: wrap;
         align-items: center;
-        gap: 14px;
+        gap: 12px;
     }
     .rss-form-group {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 6px;
         font-size: 13px;
         font-weight: 600;
         color: #475569;
     }
     .rss-form-group input[type="datetime-local"] {
-        padding: 7px 10px;
+        padding: 6px 10px;
         font-size: 13px;
         border: 1px solid #cbd5e1;
         border-radius: 8px;
@@ -204,7 +231,7 @@
         color: #ffffff;
         font-size: 13px;
         font-weight: 700;
-        padding: 8px 18px;
+        padding: 7px 16px;
         border-radius: 8px;
         border: none;
         cursor: pointer;
@@ -222,7 +249,7 @@
     }
     .rss-search-input {
         width: 100%;
-        padding: 8px 12px 8px 34px;
+        padding: 7px 12px 7px 32px;
         font-size: 13px;
         border: 1px solid #cbd5e1;
         border-radius: 8px;
@@ -239,67 +266,197 @@
     .rss-search-icon {
         position: absolute;
         left: 10px;
-        font-size: 14px;
+        font-size: 13px;
         color: #94a3b8;
         pointer-events: none;
     }
     .rss-toolbar-hint {
         font-size: 12px;
         color: #64748b;
-        margin-top: 10px;
+        margin-top: 8px;
         line-height: 1.4;
     }
 
-    /* 快捷锚点导航 */
-    .rss-nav-pills {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-bottom: 20px;
-    }
-    .nav-pill-item {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        color: #475569;
-        font-size: 12px;
-        font-weight: 600;
-        padding: 6px 14px;
-        border-radius: 9999px;
-        text-decoration: none;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-        transition: all 0.15s ease;
-    }
-    .nav-pill-item:hover {
-        background: #0f766e;
-        color: #ffffff;
-        border-color: #0f766e;
-    }
-
-    /* 数据表格与卡片统一美化 */
-    .rss-card-box {
+    /* 🌟 上下行流量走势图卡片组件 */
+    .rss-chart-card {
         background: #ffffff;
         border: 1px solid #e2e8f0;
         border-radius: 16px;
-        padding: 20px;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
-        margin-bottom: 24px;
+        padding: 18px 20px;
+        box-shadow: 0 3px 12px rgba(0, 0, 0, 0.03);
+        margin-bottom: 20px;
+        position: relative;
     }
-    .rss-card-box h2 {
-        font-size: 17px;
+    .rss-chart-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 12px;
+    }
+    .rss-chart-title {
+        font-size: 16px;
         font-weight: 700;
         color: #0f172a;
-        margin: 0 0 16px 0;
         display: flex;
         align-items: center;
         gap: 8px;
     }
-    .rss-badge-count {
+    .rss-chart-controls {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+    .rss-user-select {
         font-size: 12px;
-        background: #f1f5f9;
-        color: #475569;
-        padding: 2px 8px;
-        border-radius: 9999px;
+        padding: 5px 10px;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #1e293b;
         font-weight: 600;
+        outline: none;
+        cursor: pointer;
+    }
+    .rss-user-select:focus {
+        border-color: #0f766e;
+    }
+    .rss-chart-legend {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .legend-color-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+    }
+    .rss-chart-wrapper {
+        position: relative;
+        width: 100%;
+        height: 240px;
+    }
+    #rssTrendCanvas {
+        display: block;
+        width: 100%;
+        height: 240px;
+    }
+    .chart-tooltip {
+        position: absolute;
+        display: none;
+        background: rgba(15, 23, 42, 0.92);
+        color: #ffffff;
+        padding: 8px 12px;
+        border-radius: 8px;
+        font-size: 12px;
+        pointer-events: none;
+        z-index: 10;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+        white-space: nowrap;
+        backdrop-filter: blur(4px);
+    }
+    .chart-tooltip .tt-time { color: #94a3b8; font-size: 11px; margin-bottom: 4px; }
+    .chart-tooltip .tt-row { display: flex; justify-content: space-between; gap: 14px; font-variant-numeric: tabular-nums; }
+    .chart-empty-hint {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 200px;
+        color: #64748b;
+        font-size: 13px;
+    }
+
+    /* 🌟 Tab 导航条（彻底解决上下垂直平铺重复罗列的问题） */
+    .rss-tabs-nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        border-bottom: 2px solid #e2e8f0;
+        margin-bottom: 16px;
+        padding-bottom: 2px;
+    }
+    .rss-tab-btn {
+        background: transparent;
+        border: none;
+        outline: none;
+        padding: 8px 16px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #64748b;
+        border-radius: 8px 8px 0 0;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        position: relative;
+        transition: all 0.15s ease;
+    }
+    .rss-tab-btn:hover {
+        color: #0f766e;
+        background: #f1f5f9;
+    }
+    .rss-tab-btn.active {
+        color: #0f766e;
+        background: #f0fdf4;
+        font-weight: 700;
+    }
+    .rss-tab-btn.active::after {
+        content: "";
+        position: absolute;
+        bottom: -4px;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: #0f766e;
+        border-radius: 9999px;
+    }
+    .rss-tab-badge {
+        font-size: 11px;
+        background: #e2e8f0;
+        color: #475569;
+        padding: 1px 6px;
+        border-radius: 9999px;
+    }
+    .rss-tab-btn.active .rss-tab-badge {
+        background: #ccfbf1;
+        color: #0f766e;
+    }
+
+    /* Tab 内容面板 */
+    .rss-tab-pane {
+        display: none;
+    }
+    .rss-tab-pane.active {
+        display: block;
+    }
+
+    /* 卡片式数据容器 */
+    .rss-card-box {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 18px 20px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+        margin-bottom: 20px;
+    }
+    .rss-card-box h2 {
+        font-size: 16px;
+        font-weight: 700;
+        color: #0f172a;
+        margin: 0 0 14px 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
     }
 
     /* 现代化表格样式 */
@@ -322,13 +479,10 @@
         font-size: 12px;
         text-transform: uppercase;
         letter-spacing: 0.03em;
-        padding: 10px 12px;
+        padding: 9px 12px;
         border-top: 1px solid #e2e8f0;
         border-bottom: 2px solid #cbd5e1;
         white-space: nowrap;
-        position: sticky;
-        top: 0;
-        z-index: 1;
         user-select: none;
     }
     .rss-modern-table th.sortable {
@@ -350,7 +504,7 @@
         color: #0f766e;
     }
     .rss-modern-table td {
-        padding: 11px 12px;
+        padding: 10px 12px;
         border-bottom: 1px solid #f1f5f9;
         color: #1e293b;
         vertical-align: middle;
@@ -367,18 +521,18 @@
         background: #f0fdf4;
         border: 1px solid #bbf7d0;
         color: #15803d;
-        font-size: 14px;
+        font-size: 13px;
         font-weight: 800;
-        padding: 4px 10px;
-        border-radius: 8px;
+        padding: 3px 9px;
+        border-radius: 7px;
         white-space: nowrap;
         font-variant-numeric: tabular-nums;
-        box-shadow: 0 1px 2px rgba(21, 128, 61, 0.08);
+        box-shadow: 0 1px 2px rgba(21, 128, 61, 0.06);
     }
     .traffic-metric-cell {
         display: flex;
         flex-direction: column;
-        gap: 2px;
+        gap: 1px;
         white-space: nowrap;
     }
     .traffic-val {
@@ -387,26 +541,18 @@
         font-variant-numeric: tabular-nums;
         display: inline-flex;
         align-items: center;
-        gap: 3px;
+        gap: 2px;
     }
-    .traffic-val.traffic-down {
-        color: #0284c7;
-    }
-    .traffic-val.traffic-up {
-        color: #ea580c;
-    }
-    .traffic-sub-speed {
-        font-size: 11px;
-        color: #64748b;
-        font-variant-numeric: tabular-nums;
-    }
+    .traffic-val.traffic-down { color: #0284c7; }
+    .traffic-val.traffic-up { color: #ea580c; }
+    .traffic-sub-speed { font-size: 11px; color: #64748b; font-variant-numeric: tabular-nums; }
 
-    /* 比例进度条（下行 vs 上行） */
+    /* 比例进度条 */
     .traffic-ratio-container {
         display: flex;
         flex-direction: column;
-        gap: 3px;
-        width: 90px;
+        gap: 2px;
+        width: 80px;
     }
     .traffic-ratio-bar {
         display: flex;
@@ -416,14 +562,8 @@
         border-radius: 9999px;
         overflow: hidden;
     }
-    .bar-down {
-        background: #0284c7;
-        height: 100%;
-    }
-    .bar-up {
-        background: #ea580c;
-        height: 100%;
-    }
+    .bar-down { background: #0284c7; height: 100%; }
+    .bar-up { background: #ea580c; height: 100%; }
     .traffic-ratio-text {
         font-size: 10px;
         font-weight: 600;
@@ -439,6 +579,24 @@
         font-size: 14px;
         color: #0f172a;
         margin-bottom: 2px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .btn-user-chart {
+        background: #e0f2fe;
+        border: 1px solid #bae6fd;
+        color: #0284c7;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 1px 5px;
+        border-radius: 4px;
+        cursor: pointer;
+        text-decoration: none;
+    }
+    .btn-user-chart:hover {
+        background: #0284c7;
+        color: #ffffff;
     }
     .user-tags {
         display: flex;
@@ -462,21 +620,20 @@
     /* 协议徽章 */
     .proto-badge {
         display: inline-block;
-        padding: 3px 8px;
-        border-radius: 6px;
+        padding: 2px 7px;
+        border-radius: 5px;
         font-size: 11px;
         font-weight: 700;
         font-family: ui-monospace, monospace;
     }
     .proto-tcp { background: #eef2ff; color: #4338ca; border: 1px solid #c7d2fe; }
     .proto-udp { background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; }
-    .proto-live { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
 
     /* 协议微标签条 */
     .user-proto-chips {
         display: flex;
         flex-direction: column;
-        gap: 3px;
+        gap: 2px;
         font-size: 11px;
         white-space: nowrap;
     }
@@ -486,10 +643,11 @@
         gap: 4px;
         padding: 1px 5px;
         border-radius: 4px;
+        background: #f8fafc;
+        color: #334155;
+        border: 1px solid #e2e8f0;
         font-variant-numeric: tabular-nums;
     }
-    .proto-chip.tcp { background: #f8fafc; color: #334155; border: 1px solid #e2e8f0; }
-    .proto-chip.udp { background: #f8fafc; color: #334155; border: 1px solid #e2e8f0; }
 
     /* 呼吸灯状态指示 */
     .live-dot {
@@ -499,26 +657,20 @@
         border-radius: 50%;
         margin-right: 4px;
     }
-    .dot-active {
-        background-color: #22c55e;
-        box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2);
-    }
-    .dot-idle {
-        background-color: #94a3b8;
-    }
+    .dot-active { background-color: #22c55e; box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2); }
+    .dot-idle { background-color: #94a3b8; }
 
-    /* 杂项微调 */
     .text-right { text-align: right; }
     .text-center { text-align: center; }
     .text-muted { color: #64748b; font-size: 12px; }
     .nowrap { white-space: nowrap; }
     .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 
-    /* 适配移动端 */
     @media (max-width: 768px) {
         .rss-kpi-grid { grid-template-columns: 1fr; }
         .rss-query-row { flex-direction: column; align-items: stretch; }
         .rss-search-group { width: 100%; }
+        .rss-chart-header { flex-direction: column; align-items: flex-start; }
     }
 </style>
 
@@ -532,7 +684,7 @@
         <div class="pill">GET {{path}}</div>
     </header>
 
-    <!-- 🌟 核心宏观流量 KPI 看板（突出总流量、上下行及协议分布） -->
+    <!-- 🌟 核心流量大看板（突出全网总流量、下行、上行、TCP/UDP分流） -->
     <section class="rss-kpi-grid">
         <!-- 卡片 1：总流量 -->
         <article class="rss-kpi-card hero-total">
@@ -549,7 +701,7 @@
         <!-- 卡片 2：总下行 -->
         <article class="rss-kpi-card hero-down">
             <div class="rss-kpi-header">
-                <span class="rss-kpi-label">历史总下行 (Download)</span>
+                <span class="rss-kpi-label">总下行 (Download)</span>
                 <span class="rss-kpi-badge badge-down">占比 {{totalReadPercent}}%</span>
             </div>
             <div class="rss-kpi-val val-down">↓ {{totalReadBytesText}}</div>
@@ -561,7 +713,7 @@
         <!-- 卡片 3：总上行 -->
         <article class="rss-kpi-card hero-up">
             <div class="rss-kpi-header">
-                <span class="rss-kpi-label">历史总上行 (Upload)</span>
+                <span class="rss-kpi-label">总上行 (Upload)</span>
                 <span class="rss-kpi-badge badge-up">占比 {{totalWritePercent}}%</span>
             </div>
             <div class="rss-kpi-val val-up">↑ {{totalWriteBytesText}}</div>
@@ -570,10 +722,10 @@
             </div>
         </article>
 
-        <!-- 卡片 4：协议分布概览 -->
+        <!-- 卡片 4：协议分布 -->
         <article class="rss-kpi-card hero-proto">
             <div class="rss-kpi-header">
-                <span class="rss-kpi-label">协议分布总览</span>
+                <span class="rss-kpi-label">协议流量拆分</span>
                 <span class="rss-kpi-badge badge-proto">TCP / UDP</span>
             </div>
             <div class="proto-split-row">
@@ -584,13 +736,22 @@
                 <span>UDP 总量: <strong style="color: #6d28d9;">{{udpTotalText}}</strong></span>
                 <span class="text-muted">↓{{udpReadText}} / ↑{{udpWriteText}}</span>
             </div>
-            <div class="rss-kpi-sub" style="margin-top: 8px;">
-                <span>总用户数: {{userCount}} &nbsp;·&nbsp; 总会话数: {{totalSessions}}</span>
+            <div class="rss-kpi-sub" style="margin-top: 6px;">
+                <span>SS用户: {{userCount}} &nbsp;·&nbsp; 总会话: {{totalSessions}}</span>
             </div>
         </article>
     </section>
 
-    <!-- 工具栏：快捷范围 + 时间过滤 + 实时模糊搜索 -->
+    <!-- 紧凑状态条：取代原重复的 10 个灰色大方块，消除重复堆砌 -->
+    <div class="rss-status-bar">
+        <span class="rss-status-chip">📅 查询范围: <strong>{{selectedRange}}</strong></span>
+        <span class="rss-status-chip">💾 H2 保留期: <strong>{{h2RetentionDays}} 天</strong></span>
+        <span class="rss-status-chip">⚡ 内存保留期: <strong>{{memoryRetentionHours}} 小时</strong></span>
+        <span class="rss-status-chip">⏱️ 历史活跃时长: <strong>{{totalActiveDuration}}</strong></span>
+        <span class="rss-status-chip">🔌 上游服务健康度: <strong>{{#if hasUpstreams}}已接入{{else}}无单独上游{{/if}}</strong></span>
+    </div>
+
+    <!-- 查询工具栏：快捷时间 + 实时搜索 -->
     <section class="rss-toolbar">
         <div class="rss-quick-ranges">
             <span class="quick-range-title">快捷时间:</span>
@@ -613,69 +774,43 @@
                 <button type="submit" class="btn-submit-query">查询</button>
                 <div class="rss-search-group">
                     <span class="rss-search-icon">🔍</span>
-                    <input type="text" id="rssTableFilter" class="rss-search-input" placeholder="输入用户名、Socks名、端口、IP、归属地即时过滤表格..." oninput="rssFilterTables(this.value)">
+                    <input type="text" id="rssTableFilter" class="rss-search-input" placeholder="输入用户名、端口、IP、归属地即时搜索过滤表格..." oninput="rssFilterTables(this.value)">
                 </div>
             </div>
         </form>
         <p class="rss-toolbar-hint">H2 仅保留近 {{h2RetentionDays}} 天；默认查询近 1 个月，超出保留期不会返回数据。{{memoryResetPolicy}}</p>
     </section>
 
-    <!-- 快捷分类锚点导航 -->
-    <nav class="rss-nav-pills">
-        <a class="nav-pill-item" href="#section-users">👥 用户历史概览 ({{userCount}})</a>
-        <a class="nav-pill-item" href="#section-protocols">🌐 协议历史明细 ({{protocolRowCount}})</a>
-        <a class="nav-pill-item" href="#section-ips">📍 登录 IP 历史明细 ({{historyIpCount}})</a>
-        <a class="nav-pill-item" href="#section-live">⚡ 实时内存快照 ({{liveIpCount}})</a>
-        {{#if hasUpstreams}}
-        <a class="nav-pill-item" href="#section-upstreams">🔌 Socks Servers</a>
-        {{/if}}
-        <a class="nav-pill-item" href="#section-stats">ℹ️ 运行与配置指标</a>
-    </nav>
-
-    <!-- 上游服务器 (Socks Servers) -->
-    {{#if hasUpstreams}}
-    <section id="section-upstreams" class="rss-card-box">
-        <h2>Socks Servers</h2>
-        <div class="table-responsive">
-            <table class="rss-modern-table" data-filterable="true">
-                <thead>
-                <tr>
-                    <th class="sortable" onclick="rssSortTable(this)">类型<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable" onclick="rssSortTable(this)">ID<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable" onclick="rssSortTable(this)">配置状态<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable" onclick="rssSortTable(this)">Endpoint<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable" onclick="rssSortTable(this)">Ping 健康状态<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">配置权重<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">当前权重<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">活跃连接<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable" onclick="rssSortTable(this)">释放等待<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-center" onclick="rssSortTable(this)">RPC<span class="sort-icon">▲▼</span></th>
-                </tr>
-                </thead>
-                <tbody>
-                {{#each upstreams}}
-                <tr>
-                    <td class="nowrap"><span class="user-tag">{{type}}</span></td>
-                    <td class="font-mono">{{id}}</td>
-                    <td>{{state}}</td>
-                    <td class="font-mono">{{endpoint}}</td>
-                    <td>
-                        <span class="user-tag" style="font-weight: 700; color: #047857;">{{health}}</span>
-                    </td>
-                    <td class="text-right font-mono">{{configuredWeight}}</td>
-                    <td class="text-right font-mono">{{currentWeight}}</td>
-                    <td class="text-right font-mono"><strong>{{activeConnections}}</strong></td>
-                    <td class="nowrap text-muted">{{releaseWait}}</td>
-                    <td class="text-center font-mono">{{rpc}}</td>
-                </tr>
-                {{/each}}
-                </tbody>
-            </table>
+    <!-- 🌟 新功能：上下行流量走势图（交互式图表，支持按全网或按单用户查看） -->
+    <section id="chart-section" class="rss-chart-card">
+        <div class="rss-chart-header">
+            <div class="rss-chart-title">
+                <span>📈 上下行流量走势图</span>
+                <span id="chartCurrentUserName" class="rss-badge-count">全网汇总</span>
+            </div>
+            <div class="rss-chart-controls">
+                <label style="font-size: 12px; font-weight: 600; color: #475569;">
+                    查看用户:
+                    <select id="trendUserSelect" class="rss-user-select" onchange="rssSwitchChartUser(this.value)">
+                        <option value="__ALL__">🌐 全部用户 (全网汇总走势)</option>
+                    </select>
+                </label>
+                <div class="rss-chart-legend">
+                    <span class="legend-item"><span class="legend-color-dot" style="background: #0284c7;"></span> 下行 (↓)</span>
+                    <span class="legend-item"><span class="legend-color-dot" style="background: #ea580c;"></span> 上行 (↑)</span>
+                </div>
+            </div>
+        </div>
+        <div class="rss-chart-wrapper" id="chartWrapper">
+            <canvas id="rssTrendCanvas"></canvas>
+            <div id="chartTooltip" class="chart-tooltip"></div>
+            <div id="chartEmptyHint" class="chart-empty-hint" style="display: none;">
+                <span>所选时间范围内暂无趋势历史数据采样点（用户连接产生流量后自动按小时聚合落库）</span>
+            </div>
         </div>
     </section>
-    {{/if}}
 
-    <!-- 空状态 -->
+    <!-- 空状态提示 -->
     {{#unless hasAnyUsers}}
     <section class="rss-card-box" style="border-left: 4px solid #f59e0b;">
         <h2>暂无 SS 用户</h2>
@@ -683,354 +818,717 @@
     </section>
     {{/unless}}
 
-    <!-- 🌟 核心表格：用户历史概览（突出总流量、上下行数据量与协议细分） -->
-    {{#if hasHistoryUsers}}
-    <section id="section-users" class="rss-card-box">
-        <h2>
-            <span>用户历史概览</span>
-            <span class="rss-badge-count">{{userCount}} 个用户</span>
-        </h2>
-        <div class="table-responsive">
-            <table class="rss-modern-table" data-filterable="true">
-                <thead>
-                <tr>
-                    <th class="sortable" onclick="rssSortTable(this)">用户名<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)" style="background: #ecfdf5; color: #0f766e;">
-                        🌟 总流量<span class="sort-icon">▲▼</span>
-                    </th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">
-                        ↓ 下行流量<span class="sort-icon">▲▼</span>
-                    </th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">
-                        ↑ 上行流量<span class="sort-icon">▲▼</span>
-                    </th>
-                    <th class="text-center">下/上比例</th>
-                    <th>协议流量 (TCP / UDP)</th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">会话数<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">累计会话时长<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">平均速度 (下/上)<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable" onclick="rssSortTable(this)">最近活跃<span class="sort-icon">▲▼</span></th>
-                    <th>配置与限制</th>
-                </tr>
-                </thead>
-                <tbody>
-                {{#each historyUsers}}
-                <tr>
-                    <!-- 用户名与基础标识 -->
-                    <td>
-                        <div class="user-primary">{{username}}</div>
-                        <div class="user-tags">
-                            <span class="user-tag port" title="SS 端口">端口: {{ssPort}}</span>
-                            <span class="user-tag" title="内部 Socks 用户">{{socksUser}}</span>
-                        </div>
-                    </td>
+    <!-- 🌟 Tab 导航栏：消灭长页面垂直平铺造成的重复罗列与滚屏疲劳 -->
+    <nav class="rss-tabs-nav">
+        <button type="button" class="rss-tab-btn active" data-tab-target="tab-users" onclick="rssSwitchTab('tab-users')">
+            👥 用户历史概览 <span class="rss-tab-badge">{{userCount}}</span>
+        </button>
+        <button type="button" class="rss-tab-btn" data-tab-target="tab-protocols" onclick="rssSwitchTab('tab-protocols')">
+            🌐 协议历史明细 <span class="rss-tab-badge">{{protocolRowCount}}</span>
+        </button>
+        <button type="button" class="rss-tab-btn" data-tab-target="tab-ips" onclick="rssSwitchTab('tab-ips')">
+            📍 登录 IP 历史明细 <span class="rss-tab-badge">{{historyIpCount}}</span>
+        </button>
+        <button type="button" class="rss-tab-btn" data-tab-target="tab-live" onclick="rssSwitchTab('tab-live')">
+            ⚡ 实时内存快照 <span class="rss-tab-badge">{{liveIpCount}}</span>
+        </button>
+        {{#if hasUpstreams}}
+        <button type="button" class="rss-tab-btn" data-tab-target="tab-upstreams" onclick="rssSwitchTab('tab-upstreams')">
+            🔌 Socks Servers
+        </button>
+        {{/if}}
+        <button type="button" class="rss-tab-btn" data-tab-target="tab-stats" onclick="rssSwitchTab('tab-stats')">
+            ⚙️ 系统运行指标
+        </button>
+    </nav>
 
-                    <!-- 🌟 核心突出：总流量 -->
-                    <td class="text-right" data-sort-val="{{totalBytes}}">
-                        <div class="traffic-total-pill">
-                            <span>{{totalBytesText}}</span>
-                        </div>
-                    </td>
+    <!-- Tab 1: 核心表格：用户历史概览（按 SS 用户突出上下行与总流量） -->
+    <div id="tab-users" class="rss-tab-pane active">
+        {{#if hasHistoryUsers}}
+        <section class="rss-card-box">
+            <h2>
+                <span>用户历史概览</span>
+                <span class="rss-badge-count">{{userCount}} 个用户</span>
+            </h2>
+            <div class="table-responsive">
+                <table class="rss-modern-table" data-filterable="true">
+                    <thead>
+                    <tr>
+                        <th class="sortable" onclick="rssSortTable(this)">用户名<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)" style="background: #ecfdf5; color: #0f766e;">
+                            🌟 总流量<span class="sort-icon">▲▼</span>
+                        </th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">
+                            ↓ 下行流量<span class="sort-icon">▲▼</span>
+                        </th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">
+                            ↑ 上行流量<span class="sort-icon">▲▼</span>
+                        </th>
+                        <th class="text-center">下/上比例</th>
+                        <th>协议分流 (TCP / UDP)</th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">会话数<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">累计时长<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">平均速度 (下/上)<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable" onclick="rssSortTable(this)">最近活跃<span class="sort-icon">▲▼</span></th>
+                        <th>配置与限制</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {{#each historyUsers}}
+                    <tr>
+                        <td>
+                            <div class="user-primary">
+                                <span>{{username}}</span>
+                                <button type="button" class="btn-user-chart" title="在上方图表中查看该用户走势" onclick="rssFocusUserTrend('{{username}}')">📈 走势</button>
+                            </div>
+                            <div class="user-tags">
+                                <span class="user-tag port" title="SS 端口">端口: {{ssPort}}</span>
+                                <span class="user-tag" title="内部 Socks 用户">{{socksUser}}</span>
+                            </div>
+                        </td>
 
-                    <!-- 📥 核心突出：下行流量 -->
-                    <td class="text-right" data-sort-val="{{rawReadBytes}}">
-                        <div class="traffic-metric-cell">
+                        <!-- 🌟 总量突出 -->
+                        <td class="text-right" data-sort-val="{{totalBytes}}">
+                            <div class="traffic-total-pill">
+                                <span>{{totalBytesText}}</span>
+                            </div>
+                        </td>
+
+                        <!-- 📥 下行突出 -->
+                        <td class="text-right" data-sort-val="{{rawReadBytes}}">
+                            <div class="traffic-metric-cell">
+                                <span class="traffic-val traffic-down">↓ {{totalReadBytes}}</span>
+                                <span class="traffic-sub-speed">{{readPercent}}%</span>
+                            </div>
+                        </td>
+
+                        <!-- 📤 上行突出 -->
+                        <td class="text-right" data-sort-val="{{rawWriteBytes}}">
+                            <div class="traffic-metric-cell">
+                                <span class="traffic-val traffic-up">↑ {{totalWriteBytes}}</span>
+                                <span class="traffic-sub-speed">{{writePercent}}%</span>
+                            </div>
+                        </td>
+
+                        <!-- 比例条 -->
+                        <td class="text-center">
+                            <div class="traffic-ratio-container" title="下行 {{readPercent}}% : 上行 {{writePercent}}%">
+                                <div class="traffic-ratio-bar">
+                                    <div class="bar-down" style="width: {{readPercent}}%;"></div>
+                                    <div class="bar-up" style="width: {{writePercent}}%;"></div>
+                                </div>
+                                <div class="traffic-ratio-text">
+                                    <span style="color: #0284c7;">{{readPercent}}%</span>
+                                    <span style="color: #ea580c;">{{writePercent}}%</span>
+                                </div>
+                            </div>
+                        </td>
+
+                        <!-- TCP / UDP 拆分标签 -->
+                        <td>
+                            <div class="user-proto-chips">
+                                {{#if hasTcp}}
+                                <span class="proto-chip" title="TCP 下行: {{tcpReadText}}, 上行: {{tcpWriteText}}">
+                                    <strong style="color: #4338ca;">TCP</strong>: ↓{{tcpReadText}} ↑{{tcpWriteText}}
+                                </span>
+                                {{/if}}
+                                {{#if hasUdp}}
+                                <span class="proto-chip" title="UDP 下行: {{udpReadText}}, 上行: {{udpWriteText}}">
+                                    <strong style="color: #6d28d9;">UDP</strong>: ↓{{udpReadText}} ↑{{udpWriteText}}
+                                </span>
+                                {{/if}}
+                            </div>
+                        </td>
+
+                        <td class="text-right font-mono" data-sort-val="{{sessionCount}}">
+                            <strong>{{sessionCount}}</strong>
+                        </td>
+
+                        <td class="text-right nowrap" data-sort-val="{{rawActiveSeconds}}">
+                            {{activeDuration}}
+                        </td>
+
+                        <td class="text-right nowrap font-mono">
+                            <span style="color: #0284c7;">↓{{avgReadSpeed}}</span><br>
+                            <span style="color: #ea580c;">↑{{avgWriteSpeed}}</span>
+                        </td>
+
+                        <td class="nowrap font-mono text-muted" data-sort-val="{{rawLatestTime}}">
+                            {{latestTime}}
+                        </td>
+
+                        <td class="nowrap text-muted" style="font-size: 11px;">
+                            <span>IP限制: {{ipLimit}}</span><br>
+                            <span>重置起点: {{lastResetTime}}</span>
+                        </td>
+                    </tr>
+                    {{/each}}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        {{/if}}
+    </div>
+
+    <!-- Tab 2: 协议历史明细 -->
+    <div id="tab-protocols" class="rss-tab-pane">
+        {{#if hasProtocolRows}}
+        <section class="rss-card-box">
+            <h2>
+                <span>协议历史明细</span>
+                <span class="rss-badge-count">{{protocolRowCount}} 条</span>
+            </h2>
+            <div class="table-responsive">
+                <table class="rss-modern-table" data-filterable="true">
+                    <thead>
+                    <tr>
+                        <th class="sortable" onclick="rssSortTable(this)">用户名<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-center" onclick="rssSortTable(this)">协议<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">🌟 总流量<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">↓ 下行流量<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">↑ 上行流量<span class="sort-icon">▲▼</span></th>
+                        <th>连接/来源指标</th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">会话数<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">累计时长<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">平均速度<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable" onclick="rssSortTable(this)">最近活跃<span class="sort-icon">▲▼</span></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {{#each protocolRows}}
+                    <tr>
+                        <td>
+                            <div class="user-primary">{{username}}</div>
+                            <div class="user-tags">
+                                <span class="user-tag port">端口: {{ssPort}}</span>
+                                <span class="user-tag">{{socksUser}}</span>
+                            </div>
+                        </td>
+                        <td class="text-center nowrap">
+                            <span class="proto-badge {{#if isTcp}}proto-tcp{{else}}proto-udp{{/if}}">{{protocol}}</span>
+                        </td>
+                        <td class="text-right" data-sort-val="{{totalBytes}}">
+                            <span class="traffic-total-pill">{{totalBytesText}}</span>
+                        </td>
+                        <td class="text-right" data-sort-val="{{rawReadBytes}}">
                             <span class="traffic-val traffic-down">↓ {{totalReadBytes}}</span>
-                            <span class="traffic-sub-speed">{{readPercent}}%</span>
-                        </div>
-                    </td>
-
-                    <!-- 📤 核心突出：上行流量 -->
-                    <td class="text-right" data-sort-val="{{rawWriteBytes}}">
-                        <div class="traffic-metric-cell">
+                        </td>
+                        <td class="text-right" data-sort-val="{{rawWriteBytes}}">
                             <span class="traffic-val traffic-up">↑ {{totalWriteBytes}}</span>
-                            <span class="traffic-sub-speed">{{writePercent}}%</span>
-                        </div>
-                    </td>
+                        </td>
+                        <td class="nowrap">
+                            <span class="user-tag">{{channelMetricLabel}}: <strong>{{channelMetricValue}}</strong></span>
+                        </td>
+                        <td class="text-right font-mono" data-sort-val="{{sessionCount}}">
+                            <strong>{{sessionCount}}</strong>
+                        </td>
+                        <td class="text-right nowrap" data-sort-val="{{rawActiveSeconds}}">
+                            {{activeDuration}}
+                        </td>
+                        <td class="text-right nowrap font-mono">
+                            <span style="color: #0284c7;">↓{{avgReadSpeed}}</span> / <span style="color: #ea580c;">↑{{avgWriteSpeed}}</span>
+                        </td>
+                        <td class="nowrap font-mono text-muted" data-sort-val="{{rawLatestTime}}">
+                            {{latestTime}}
+                        </td>
+                    </tr>
+                    {{/each}}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        {{/if}}
+    </div>
 
-                    <!-- 比例进度条 -->
-                    <td class="text-center">
-                        <div class="traffic-ratio-container" title="下行 {{readPercent}}% : 上行 {{writePercent}}%">
-                            <div class="traffic-ratio-bar">
-                                <div class="bar-down" style="width: {{readPercent}}%;"></div>
-                                <div class="bar-up" style="width: {{writePercent}}%;"></div>
+    <!-- Tab 3: 登录 IP 历史明细 -->
+    <div id="tab-ips" class="rss-tab-pane">
+        {{#if hasHistoryIps}}
+        <section class="rss-card-box">
+            <h2>
+                <span>登录 IP 历史明细</span>
+                <span class="rss-badge-count">{{historyIpCount}} 条</span>
+            </h2>
+            <div class="table-responsive">
+                <table class="rss-modern-table" data-filterable="true">
+                    <thead>
+                    <tr>
+                        <th class="sortable" onclick="rssSortTable(this)">用户名<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-center" onclick="rssSortTable(this)">协议<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable" onclick="rssSortTable(this)">来源 IP<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable" onclick="rssSortTable(this)">归属地<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">🌟 总流量<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">↓ 下行流量<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">↑ 上行流量<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">会话数<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">累计时长<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">平均速度<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable" onclick="rssSortTable(this)">最近活跃<span class="sort-icon">▲▼</span></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {{#each historyIps}}
+                    <tr>
+                        <td>
+                            <div class="user-primary">{{username}}</div>
+                            <div class="user-tags">
+                                <span class="user-tag port">端口: {{ssPort}}</span>
+                                <span class="user-tag">{{socksUser}}</span>
                             </div>
-                            <div class="traffic-ratio-text">
-                                <span style="color: #0284c7;">{{readPercent}}%</span>
-                                <span style="color: #ea580c;">{{writePercent}}%</span>
+                        </td>
+                        <td class="text-center nowrap">
+                            <span class="proto-badge {{#if isTcp}}proto-tcp{{else}}proto-udp{{/if}}">{{protocol}}</span>
+                        </td>
+                        <td class="font-mono nowrap">{{ip}}</td>
+                        <td><span class="user-tag">{{geo}}</span></td>
+                        <td class="text-right" data-sort-val="{{totalBytes}}">
+                            <span class="traffic-total-pill">{{totalBytesText}}</span>
+                        </td>
+                        <td class="text-right" data-sort-val="{{rawReadBytes}}">
+                            <span class="traffic-val traffic-down">↓ {{totalReadBytes}}</span>
+                        </td>
+                        <td class="text-right" data-sort-val="{{rawWriteBytes}}">
+                            <span class="traffic-val traffic-up">↑ {{totalWriteBytes}}</span>
+                        </td>
+                        <td class="text-right font-mono" data-sort-val="{{sessionCount}}">
+                            <strong>{{sessionCount}}</strong>
+                        </td>
+                        <td class="text-right nowrap" data-sort-val="{{rawActiveSeconds}}">
+                            {{activeDuration}}
+                        </td>
+                        <td class="text-right nowrap font-mono">
+                            <span style="color: #0284c7;">↓{{avgReadSpeed}}</span> / <span style="color: #ea580c;">↑{{avgWriteSpeed}}</span>
+                        </td>
+                        <td class="nowrap font-mono text-muted" data-sort-val="{{rawLatestTime}}">
+                            {{latestTime}}
+                        </td>
+                    </tr>
+                    {{/each}}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        {{/if}}
+    </div>
+
+    <!-- Tab 4: 实时内存快照 -->
+    <div id="tab-live" class="rss-tab-pane">
+        {{#if hasLiveIps}}
+        <section class="rss-card-box">
+            <h2>
+                <span>实时内存快照</span>
+                <span class="rss-badge-count">{{liveIpCount}} 条</span>
+            </h2>
+            <p class="text-muted" style="margin: -6px 0 14px 0;">当前连接数来自内存实时状态，不落 H2；在线时长按该 IP 当前连续有连接的墙钟时间计算。</p>
+            <div class="table-responsive">
+                <table class="rss-modern-table" data-filterable="true">
+                    <thead>
+                    <tr>
+                        <th class="sortable" onclick="rssSortTable(this)">用户名<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable" onclick="rssSortTable(this)">来源 IP<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable" onclick="rssSortTable(this)">归属地<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-center" onclick="rssSortTable(this)">连接状态<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">在线时长<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">🌟 总流量<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">↓ 下行流量<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">↑ 上行流量<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">平均速度<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable" onclick="rssSortTable(this)">最近活跃<span class="sort-icon">▲▼</span></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {{#each liveIps}}
+                    <tr>
+                        <td>
+                            <div class="user-primary">{{username}}</div>
+                            <div class="user-tags">
+                                <span class="user-tag port">端口: {{ssPort}}</span>
+                                <span class="user-tag">{{socksUser}}</span>
                             </div>
-                        </div>
-                    </td>
+                        </td>
+                        <td class="font-mono nowrap">{{ip}}</td>
+                        <td><span class="user-tag">{{geo}}</span></td>
+                        <td class="text-center nowrap font-mono" data-sort-val="{{currentConnections}}">
+                            <span class="live-dot {{#if isLiveActive}}dot-active{{else}}dot-idle{{/if}}"></span>
+                            <strong>{{currentConnections}}</strong> 连接
+                        </td>
+                        <td class="text-right nowrap" data-sort-val="{{rawActiveSeconds}}">
+                            {{activeDuration}}
+                        </td>
+                        <td class="text-right" data-sort-val="{{totalBytes}}">
+                            <span class="traffic-total-pill">{{totalBytesText}}</span>
+                        </td>
+                        <td class="text-right" data-sort-val="{{rawReadBytes}}">
+                            <span class="traffic-val traffic-down">↓ {{totalReadBytes}}</span>
+                        </td>
+                        <td class="text-right" data-sort-val="{{rawWriteBytes}}">
+                            <span class="traffic-val traffic-up">↑ {{totalWriteBytes}}</span>
+                        </td>
+                        <td class="text-right nowrap font-mono">
+                            <span style="color: #0284c7;">↓{{avgReadSpeed}}</span> / <span style="color: #ea580c;">↑{{avgWriteSpeed}}</span>
+                        </td>
+                        <td class="nowrap font-mono text-muted" data-sort-val="{{rawLatestTime}}">
+                            {{latestTime}}
+                        </td>
+                    </tr>
+                    {{/each}}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        {{/if}}
+    </div>
 
-                    <!-- 协议流量拆分微标签 (TCP / UDP) -->
-                    <td>
-                        <div class="user-proto-chips">
-                            {{#if hasTcp}}
-                            <span class="proto-chip tcp" title="TCP 下行: {{tcpReadText}}, 上行: {{tcpWriteText}}">
-                                <strong style="color: #4338ca;">TCP</strong>: ↓{{tcpReadText}} ↑{{tcpWriteText}}
-                            </span>
-                            {{/if}}
-                            {{#if hasUdp}}
-                            <span class="proto-chip udp" title="UDP 下行: {{udpReadText}}, 上行: {{udpWriteText}}">
-                                <strong style="color: #6d28d9;">UDP</strong>: ↓{{udpReadText}} ↑{{udpWriteText}}
-                            </span>
-                            {{/if}}
-                        </div>
-                    </td>
-
-                    <!-- 会话数 -->
-                    <td class="text-right font-mono" data-sort-val="{{sessionCount}}">
-                        <strong>{{sessionCount}}</strong>
-                    </td>
-
-                    <!-- 累计时长 -->
-                    <td class="text-right nowrap" data-sort-val="{{rawActiveSeconds}}">
-                        {{activeDuration}}
-                    </td>
-
-                    <!-- 平均下行/上行速度 -->
-                    <td class="text-right nowrap font-mono">
-                        <span style="color: #0284c7;">↓{{avgReadSpeed}}</span><br>
-                        <span style="color: #ea580c;">↑{{avgWriteSpeed}}</span>
-                    </td>
-
-                    <!-- 最近活跃 -->
-                    <td class="nowrap font-mono text-muted" data-sort-val="{{rawLatestTime}}">
-                        {{latestTime}}
-                    </td>
-
-                    <!-- 配置限制详情 -->
-                    <td class="nowrap text-muted" style="font-size: 11px;">
-                        <span>IP限制: {{ipLimit}}</span><br>
-                        <span>重置起点: {{lastResetTime}}</span>
-                    </td>
-                </tr>
-                {{/each}}
-                </tbody>
-            </table>
-        </div>
-    </section>
+    <!-- Tab 5: Socks Servers 上游 -->
+    {{#if hasUpstreams}}
+    <div id="tab-upstreams" class="rss-tab-pane">
+        <section class="rss-card-box">
+            <h2>Socks Servers</h2>
+            <div class="table-responsive">
+                <table class="rss-modern-table" data-filterable="true">
+                    <thead>
+                    <tr>
+                        <th class="sortable" onclick="rssSortTable(this)">类型<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable" onclick="rssSortTable(this)">ID<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable" onclick="rssSortTable(this)">配置状态<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable" onclick="rssSortTable(this)">Endpoint<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable" onclick="rssSortTable(this)">Ping 健康状态<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">配置权重<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">当前权重<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-right" onclick="rssSortTable(this)">活跃连接<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable" onclick="rssSortTable(this)">释放等待<span class="sort-icon">▲▼</span></th>
+                        <th class="sortable text-center" onclick="rssSortTable(this)">RPC<span class="sort-icon">▲▼</span></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {{#each upstreams}}
+                    <tr>
+                        <td class="nowrap"><span class="user-tag">{{type}}</span></td>
+                        <td class="font-mono">{{id}}</td>
+                        <td>{{state}}</td>
+                        <td class="font-mono">{{endpoint}}</td>
+                        <td><span class="user-tag" style="font-weight: 700; color: #047857;">{{health}}</span></td>
+                        <td class="text-right font-mono">{{configuredWeight}}</td>
+                        <td class="text-right font-mono">{{currentWeight}}</td>
+                        <td class="text-right font-mono"><strong>{{activeConnections}}</strong></td>
+                        <td class="nowrap text-muted">{{releaseWait}}</td>
+                        <td class="text-center font-mono">{{rpc}}</td>
+                    </tr>
+                    {{/each}}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
     {{/if}}
 
-    <!-- 协议历史明细 -->
-    {{#if hasProtocolRows}}
-    <section id="section-protocols" class="rss-card-box">
-        <h2>
-            <span>协议历史明细</span>
-            <span class="rss-badge-count">{{protocolRowCount}} 条</span>
-        </h2>
-        <div class="table-responsive">
-            <table class="rss-modern-table" data-filterable="true">
-                <thead>
-                <tr>
-                    <th class="sortable" onclick="rssSortTable(this)">用户名<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-center" onclick="rssSortTable(this)">协议<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">🌟 总流量<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">↓ 下行流量<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">↑ 上行流量<span class="sort-icon">▲▼</span></th>
-                    <th>连接/来源指标</th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">会话数<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">累计时长<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">平均速度 (下/上)<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable" onclick="rssSortTable(this)">最近活跃<span class="sort-icon">▲▼</span></th>
-                </tr>
-                </thead>
-                <tbody>
-                {{#each protocolRows}}
-                <tr>
-                    <td>
-                        <div class="user-primary">{{username}}</div>
-                        <div class="user-tags">
-                            <span class="user-tag port">端口: {{ssPort}}</span>
-                            <span class="user-tag">{{socksUser}}</span>
-                        </div>
-                    </td>
-                    <td class="text-center nowrap">
-                        <span class="proto-badge {{#if isTcp}}proto-tcp{{else}}proto-udp{{/if}}">{{protocol}}</span>
-                    </td>
-                    <td class="text-right" data-sort-val="{{totalBytes}}">
-                        <span class="traffic-total-pill">{{totalBytesText}}</span>
-                    </td>
-                    <td class="text-right" data-sort-val="{{rawReadBytes}}">
-                        <span class="traffic-val traffic-down">↓ {{totalReadBytes}}</span>
-                    </td>
-                    <td class="text-right" data-sort-val="{{rawWriteBytes}}">
-                        <span class="traffic-val traffic-up">↑ {{totalWriteBytes}}</span>
-                    </td>
-                    <td class="nowrap">
-                        <span class="user-tag">{{channelMetricLabel}}: <strong>{{channelMetricValue}}</strong></span>
-                    </td>
-                    <td class="text-right font-mono" data-sort-val="{{sessionCount}}">
-                        <strong>{{sessionCount}}</strong>
-                    </td>
-                    <td class="text-right nowrap" data-sort-val="{{rawActiveSeconds}}">
-                        {{activeDuration}}
-                    </td>
-                    <td class="text-right nowrap font-mono">
-                        <span style="color: #0284c7;">↓{{avgReadSpeed}}</span> / <span style="color: #ea580c;">↑{{avgWriteSpeed}}</span>
-                    </td>
-                    <td class="nowrap font-mono text-muted" data-sort-val="{{rawLatestTime}}">
-                        {{latestTime}}
-                    </td>
-                </tr>
+    <!-- Tab 6: 系统运行配置指标 -->
+    <div id="tab-stats" class="rss-tab-pane">
+        <section class="rss-card-box">
+            <h2>系统与运行配置指标</h2>
+            <div class="grid">
+                {{#each stats}}
+                <article class="item" style="border-radius: 12px; padding: 12px 14px; background: #f8fafc; border: 1px solid #e2e8f0;">
+                    <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">{{label}}</span>
+                    <strong style="font-size: 16px; color: #0f172a; margin: 3px 0 1px 0;">{{value}}</strong>
+                    <span style="font-size: 11px; color: #94a3b8;">{{meta}}</span>
+                </article>
                 {{/each}}
-                </tbody>
-            </table>
-        </div>
-    </section>
-    {{/if}}
-
-    <!-- 登录 IP 历史明细 -->
-    {{#if hasHistoryIps}}
-    <section id="section-ips" class="rss-card-box">
-        <h2>
-            <span>登录 IP 历史明细</span>
-            <span class="rss-badge-count">{{historyIpCount}} 条</span>
-        </h2>
-        <div class="table-responsive">
-            <table class="rss-modern-table" data-filterable="true">
-                <thead>
-                <tr>
-                    <th class="sortable" onclick="rssSortTable(this)">用户名<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-center" onclick="rssSortTable(this)">协议<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable" onclick="rssSortTable(this)">来源 IP<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable" onclick="rssSortTable(this)">归属地<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">🌟 总流量<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">↓ 下行流量<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">↑ 上行流量<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">会话数<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">累计时长<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">平均速度<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable" onclick="rssSortTable(this)">最近活跃<span class="sort-icon">▲▼</span></th>
-                </tr>
-                </thead>
-                <tbody>
-                {{#each historyIps}}
-                <tr>
-                    <td>
-                        <div class="user-primary">{{username}}</div>
-                        <div class="user-tags">
-                            <span class="user-tag port">端口: {{ssPort}}</span>
-                            <span class="user-tag">{{socksUser}}</span>
-                        </div>
-                    </td>
-                    <td class="text-center nowrap">
-                        <span class="proto-badge {{#if isTcp}}proto-tcp{{else}}proto-udp{{/if}}">{{protocol}}</span>
-                    </td>
-                    <td class="font-mono nowrap">{{ip}}</td>
-                    <td><span class="user-tag">{{geo}}</span></td>
-                    <td class="text-right" data-sort-val="{{totalBytes}}">
-                        <span class="traffic-total-pill">{{totalBytesText}}</span>
-                    </td>
-                    <td class="text-right" data-sort-val="{{rawReadBytes}}">
-                        <span class="traffic-val traffic-down">↓ {{totalReadBytes}}</span>
-                    </td>
-                    <td class="text-right" data-sort-val="{{rawWriteBytes}}">
-                        <span class="traffic-val traffic-up">↑ {{totalWriteBytes}}</span>
-                    </td>
-                    <td class="text-right font-mono" data-sort-val="{{sessionCount}}">
-                        <strong>{{sessionCount}}</strong>
-                    </td>
-                    <td class="text-right nowrap" data-sort-val="{{rawActiveSeconds}}">
-                        {{activeDuration}}
-                    </td>
-                    <td class="text-right nowrap font-mono">
-                        <span style="color: #0284c7;">↓{{avgReadSpeed}}</span> / <span style="color: #ea580c;">↑{{avgWriteSpeed}}</span>
-                    </td>
-                    <td class="nowrap font-mono text-muted" data-sort-val="{{rawLatestTime}}">
-                        {{latestTime}}
-                    </td>
-                </tr>
-                {{/each}}
-                </tbody>
-            </table>
-        </div>
-    </section>
-    {{/if}}
-
-    <!-- 实时内存快照 -->
-    {{#if hasLiveIps}}
-    <section id="section-live" class="rss-card-box">
-        <h2>
-            <span>实时内存快照</span>
-            <span class="rss-badge-count">{{liveIpCount}} 条</span>
-        </h2>
-        <p class="text-muted" style="margin: -8px 0 16px 0;">当前连接数来自内存实时状态，不落 H2；在线时长按该 IP 当前连续有连接的墙钟时间计算。</p>
-        <div class="table-responsive">
-            <table class="rss-modern-table" data-filterable="true">
-                <thead>
-                <tr>
-                    <th class="sortable" onclick="rssSortTable(this)">用户名<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable" onclick="rssSortTable(this)">来源 IP<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable" onclick="rssSortTable(this)">归属地<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-center" onclick="rssSortTable(this)">连接状态<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">在线时长<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">🌟 总流量<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">↓ 下行流量<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">↑ 上行流量<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable text-right" onclick="rssSortTable(this)">平均速度<span class="sort-icon">▲▼</span></th>
-                    <th class="sortable" onclick="rssSortTable(this)">最近活跃<span class="sort-icon">▲▼</span></th>
-                </tr>
-                </thead>
-                <tbody>
-                {{#each liveIps}}
-                <tr>
-                    <td>
-                        <div class="user-primary">{{username}}</div>
-                        <div class="user-tags">
-                            <span class="user-tag port">端口: {{ssPort}}</span>
-                            <span class="user-tag">{{socksUser}}</span>
-                        </div>
-                    </td>
-                    <td class="font-mono nowrap">{{ip}}</td>
-                    <td><span class="user-tag">{{geo}}</span></td>
-                    <td class="text-center nowrap font-mono" data-sort-val="{{currentConnections}}">
-                        <span class="live-dot {{#if isLiveActive}}dot-active{{else}}dot-idle{{/if}}"></span>
-                        <strong>{{currentConnections}}</strong> 连接
-                    </td>
-                    <td class="text-right nowrap" data-sort-val="{{rawActiveSeconds}}">
-                        {{activeDuration}}
-                    </td>
-                    <td class="text-right" data-sort-val="{{totalBytes}}">
-                        <span class="traffic-total-pill">{{totalBytesText}}</span>
-                    </td>
-                    <td class="text-right" data-sort-val="{{rawReadBytes}}">
-                        <span class="traffic-val traffic-down">↓ {{totalReadBytes}}</span>
-                    </td>
-                    <td class="text-right" data-sort-val="{{rawWriteBytes}}">
-                        <span class="traffic-val traffic-up">↑ {{totalWriteBytes}}</span>
-                    </td>
-                    <td class="text-right nowrap font-mono">
-                        <span style="color: #0284c7;">↓{{avgReadSpeed}}</span> / <span style="color: #ea580c;">↑{{avgWriteSpeed}}</span>
-                    </td>
-                    <td class="nowrap font-mono text-muted" data-sort-val="{{rawLatestTime}}">
-                        {{latestTime}}
-                    </td>
-                </tr>
-                {{/each}}
-                </tbody>
-            </table>
-        </div>
-    </section>
-    {{/if}}
-
-    <!-- 运行与配置指标（系统状态网格） -->
-    <section id="section-stats" class="rss-card-box">
-        <h2>系统与运行配置指标</h2>
-        <div class="grid">
-            {{#each stats}}
-            <article class="item" style="border-radius: 12px; padding: 14px; background: #f8fafc; border: 1px solid #e2e8f0;">
-                <span style="font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase;">{{label}}</span>
-                <strong style="font-size: 17px; color: #0f172a; margin: 4px 0 2px 0;">{{value}}</strong>
-                <span style="font-size: 11px; color: #94a3b8;">{{meta}}</span>
-            </article>
-            {{/each}}
-        </div>
-    </section>
+            </div>
+        </section>
+    </div>
 </div>
 
-<!-- 客户端即时交互逻辑（无外部依赖） -->
+<!-- 走势图与交互脚本（纯原生离线 JavaScript） -->
 <script>
+    // 原始时间序列数据（由后端按小时聚合注入）
+    var rawTrendData = {{{trendJson}}};
+    if (!Array.isArray(rawTrendData)) {
+        rawTrendData = [];
+    }
+
+    // 初始化用户下拉选择框
+    (function initTrendUsers() {
+        var userSelect = document.getElementById('trendUserSelect');
+        if (!userSelect) return;
+        var userMap = {};
+        for (var i = 0; i < rawTrendData.length; i++) {
+            var u = rawTrendData[i].username;
+            if (u && !userMap[u]) {
+                userMap[u] = true;
+                var opt = document.createElement('option');
+                opt.value = u;
+                opt.textContent = '👤 ' + u;
+                userSelect.appendChild(opt);
+            }
+        }
+    })();
+
+    // 绘制走势图
+    var chartState = {
+        selectedUser: '__ALL__',
+        dataPoints: []
+    };
+
+    function rssSwitchChartUser(username) {
+        chartState.selectedUser = username || '__ALL__';
+        var nameSpan = document.getElementById('chartCurrentUserName');
+        if (nameSpan) {
+            nameSpan.textContent = chartState.selectedUser === '__ALL__' ? '全网汇总' : chartState.selectedUser;
+        }
+        rssRenderTrendChart();
+    }
+
+    function rssFocusUserTrend(username) {
+        var userSelect = document.getElementById('trendUserSelect');
+        if (userSelect) {
+            userSelect.value = username;
+        }
+        rssSwitchChartUser(username);
+        var chartSec = document.getElementById('chart-section');
+        if (chartSec && chartSec.scrollIntoView) {
+            chartSec.scrollIntoView({ behavior: 'smooth' });
+        }
+    }
+
+    function rssFormatBytes(bytes) {
+        if (!bytes || bytes <= 0) return '0 B';
+        var k = 1024;
+        var sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+        var i = Math.floor(Math.log(bytes) / Math.log(k));
+        if (i >= sizes.length) i = sizes.length - 1;
+        var v = bytes / Math.pow(k, i);
+        return (v >= 10 || i === 0 ? Math.round(v) : v.toFixed(1)) + ' ' + sizes[i];
+    }
+
+    function rssRenderTrendChart() {
+        var canvas = document.getElementById('rssTrendCanvas');
+        var emptyHint = document.getElementById('chartEmptyHint');
+        if (!canvas) return;
+
+        // 筛选数据
+        var pointsMap = {};
+        for (var i = 0; i < rawTrendData.length; i++) {
+            var item = rawTrendData[i];
+            if (chartState.selectedUser !== '__ALL__' && item.username !== chartState.selectedUser) {
+                continue;
+            }
+            var t = item.timeMillis || (item.hourEpoch * 3600000);
+            if (!pointsMap[t]) {
+                pointsMap[t] = { time: t, read: 0, write: 0 };
+            }
+            pointsMap[t].read += (item.readBytes || 0);
+            pointsMap[t].write += (item.writeBytes || 0);
+        }
+
+        var sortedTimes = Object.keys(pointsMap).map(Number).sort(function (a, b) { return a - b; });
+        var points = [];
+        for (var j = 0; j < sortedTimes.length; j++) {
+            points.push(pointsMap[sortedTimes[j]]);
+        }
+        chartState.dataPoints = points;
+
+        if (points.length === 0) {
+            canvas.style.display = 'none';
+            if (emptyHint) emptyHint.style.display = 'flex';
+            return;
+        } else {
+            canvas.style.display = 'block';
+            if (emptyHint) emptyHint.style.display = 'none';
+        }
+
+        // 高清自适应尺寸
+        var dpr = window.devicePixelRatio || 1;
+        var rect = canvas.getBoundingClientRect();
+        var width = rect.width;
+        var height = 240;
+        canvas.width = width * dpr;
+        canvas.height = height * dpr;
+
+        var ctx = canvas.getContext('2d');
+        ctx.scale(dpr, dpr);
+
+        var padLeft = 65;
+        var padRight = 20;
+        var padTop = 25;
+        var padBottom = 35;
+        var plotW = width - padLeft - padRight;
+        var plotH = height - padTop - padBottom;
+
+        // 计算最大值
+        var maxBytes = 0;
+        for (var p = 0; p < points.length; p++) {
+            if (points[p].read > maxBytes) maxBytes = points[p].read;
+            if (points[p].write > maxBytes) maxBytes = points[p].write;
+        }
+        if (maxBytes === 0) maxBytes = 1024 * 1024; // 默认 1MB
+
+        // 绘制 Y 轴网格线与文字
+        ctx.clearRect(0, 0, width, height);
+        ctx.strokeStyle = '#f1f5f9';
+        ctx.lineWidth = 1;
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '11px -apple-system, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+
+        var ySteps = 4;
+        for (var s = 0; s <= ySteps; s++) {
+            var yVal = (maxBytes / ySteps) * s;
+            var yPos = padTop + plotH - (plotH * (s / ySteps));
+            ctx.beginPath();
+            ctx.moveTo(padLeft, yPos);
+            ctx.lineTo(width - padRight, yPos);
+            ctx.stroke();
+            ctx.fillText(rssFormatBytes(yVal), padLeft - 8, yPos);
+        }
+
+        // 绘制 X 轴时间标签
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        var xLabelCount = Math.min(points.length, Math.floor(plotW / 90));
+        if (xLabelCount < 2) xLabelCount = 2;
+        var stepIndex = Math.max(1, Math.floor(points.length / xLabelCount));
+
+        for (var k = 0; k < points.length; k += stepIndex) {
+            var pt = points[k];
+            var xPos = padLeft + (points.length === 1 ? plotW / 2 : (plotW * (k / (points.length - 1))));
+            var d = new Date(pt.time);
+            var m = (d.getMonth() + 1);
+            var day = d.getDate();
+            var h = d.getHours();
+            var min = d.getMinutes();
+            var label = (m < 10 ? '0' + m : m) + '-' + (day < 10 ? '0' + day : day) + ' '
+                + (h < 10 ? '0' + h : h) + ':' + (min < 10 ? '0' + min : min);
+            ctx.fillText(label, xPos, padTop + plotH + 8);
+        }
+
+        // 辅助绘线函数
+        function drawSeries(key, strokeColor, fillColor) {
+            if (points.length === 0) return;
+            ctx.beginPath();
+            for (var i = 0; i < points.length; i++) {
+                var x = padLeft + (points.length === 1 ? plotW / 2 : (plotW * (i / (points.length - 1))));
+                var y = padTop + plotH - (plotH * (points[i][key] / maxBytes));
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+
+            // 面积填充
+            ctx.lineTo(padLeft + (points.length === 1 ? plotW / 2 : plotW), padTop + plotH);
+            ctx.lineTo(padLeft + (points.length === 1 ? plotW / 2 : 0), padTop + plotH);
+            ctx.closePath();
+            var grad = ctx.createLinearGradient(0, padTop, 0, padTop + plotH);
+            grad.addColorStop(0, fillColor);
+            grad.addColorStop(1, 'rgba(255, 255, 255, 0.0)');
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            // 绘制数据圆点（点少时展示）
+            if (points.length <= 48) {
+                ctx.fillStyle = '#ffffff';
+                ctx.strokeStyle = strokeColor;
+                ctx.lineWidth = 2;
+                for (var pi = 0; pi < points.length; pi++) {
+                    var px = padLeft + (points.length === 1 ? plotW / 2 : (plotW * (pi / (points.length - 1))));
+                    var py = padTop + plotH - (plotH * (points[pi][key] / maxBytes));
+                    ctx.beginPath();
+                    ctx.arc(px, py, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                }
+            }
+        }
+
+        // 分别绘制下行 (宝蓝) 与上行 (暖橙)
+        drawSeries('read', '#0284c7', 'rgba(2, 132, 199, 0.16)');
+        drawSeries('write', '#ea580c', 'rgba(234, 88, 12, 0.14)');
+    }
+
+    // 走势图交互 Tooltip
+    (function initChartInteractions() {
+        var canvas = document.getElementById('rssTrendCanvas');
+        var tooltip = document.getElementById('chartTooltip');
+        if (!canvas || !tooltip) return;
+
+        canvas.addEventListener('mousemove', function (e) {
+            var pts = chartState.dataPoints;
+            if (!pts || pts.length === 0) return;
+
+            var rect = canvas.getBoundingClientRect();
+            var mouseX = e.clientX - rect.left;
+            var padLeft = 65;
+            var padRight = 20;
+            var plotW = rect.width - padLeft - padRight;
+
+            if (mouseX < padLeft || mouseX > rect.width - padRight) {
+                tooltip.style.display = 'none';
+                return;
+            }
+
+            var ratio = (mouseX - padLeft) / plotW;
+            var index = Math.round(ratio * (pts.length - 1));
+            if (index < 0) index = 0;
+            if (index >= pts.length) index = pts.length - 1;
+
+            var pt = pts[index];
+            var d = new Date(pt.time);
+            function pad(n) { return n < 10 ? '0' + n : n; }
+            var timeStr = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':00';
+
+            tooltip.innerHTML = '<div class="tt-time">📅 ' + timeStr + '</div>'
+                + '<div class="tt-row"><span style="color:#38bdf8;">↓ 下行流量:</span><strong>' + rssFormatBytes(pt.read) + '</strong></div>'
+                + '<div class="tt-row"><span style="color:#fb923c;">↑ 上行流量:</span><strong>' + rssFormatBytes(pt.write) + '</strong></div>'
+                + '<div class="tt-row" style="margin-top:2px;padding-top:2px;border-top:1px dashed #475569;"><span>🌟 合计:</span><strong>' + rssFormatBytes(pt.read + pt.write) + '</strong></div>';
+
+            tooltip.style.display = 'block';
+            var ttLeft = e.clientX - rect.left + 15;
+            var ttTop = e.clientY - rect.top - 20;
+            if (ttLeft + 180 > rect.width) ttLeft -= 195;
+            tooltip.style.left = ttLeft + 'px';
+            tooltip.style.top = ttTop + 'px';
+        });
+
+        canvas.addEventListener('mouseleave', function () {
+            tooltip.style.display = 'none';
+        });
+
+        window.addEventListener('resize', function () {
+            rssRenderTrendChart();
+        });
+    })();
+
+    // 页面加载后自动绘制走势图
+    setTimeout(rssRenderTrendChart, 50);
+
+    // 🌟 Tab 标签页切换逻辑
+    function rssSwitchTab(tabId) {
+        var panes = document.querySelectorAll('.rss-tab-pane');
+        for (var i = 0; i < panes.length; i++) {
+            panes[i].classList.remove('active');
+        }
+        var targetPane = document.getElementById(tabId);
+        if (targetPane) targetPane.classList.add('active');
+
+        var btns = document.querySelectorAll('.rss-tab-btn');
+        for (var j = 0; j < btns.length; j++) {
+            btns[j].classList.toggle('active', btns[j].getAttribute('data-tab-target') === tabId);
+        }
+        if (window.history && window.history.replaceState) {
+            window.history.replaceState(null, null, '#' + tabId);
+        }
+    }
+
+    // 根据 Hash 恢复激活的 Tab
+    (function restoreActiveTab() {
+        var hash = (window.location.hash || '').replace('#', '');
+        if (hash && document.getElementById(hash)) {
+            rssSwitchTab(hash);
+        }
+    })();
+
     // 快捷时间范围填充并自动提交
     function rssSetQuickRange(days) {
         var now = new Date();
@@ -1062,7 +1560,7 @@
         }
     }
 
-    // 客户端智能表头排序（支持数字、流量、日期和文本）
+    // 客户端智能表头排序
     function rssSortTable(th) {
         var table = th.closest('table');
         var tbody = table.querySelector('tbody');
@@ -1070,7 +1568,6 @@
         var colIndex = Array.prototype.indexOf.call(th.parentNode.children, th);
         var isAsc = !th.classList.contains('sorted-asc');
 
-        // 清理同一行所有表头的排序状态
         var allTh = th.parentNode.querySelectorAll('th');
         for (var i = 0; i < allTh.length; i++) {
             allTh[i].classList.remove('sorted-asc', 'sorted-desc');
@@ -1083,7 +1580,6 @@
             var cellB = b.children[colIndex];
             if (!cellA || !cellB) return 0;
 
-            // 优先检查 data-sort-val 属性
             var valA = cellA.getAttribute('data-sort-val');
             var valB = cellB.getAttribute('data-sort-val');
 
@@ -1098,14 +1594,12 @@
             var textA = cellA.innerText.trim();
             var textB = cellB.innerText.trim();
 
-            // 尝试智能解析流量单位 (GB/MB/KB/B)
             var sizeA = parseByteSize(textA);
             var sizeB = parseByteSize(textB);
             if (sizeA !== null && sizeB !== null) {
                 return isAsc ? (sizeA - sizeB) : (sizeB - sizeA);
             }
 
-            // 纯数字比较
             var nA = parseFloat(textA.replace(/[^0-9.-]/g, ''));
             var nB = parseFloat(textB.replace(/[^0-9.-]/g, ''));
             if (!isNaN(nA) && !isNaN(nB) && textA.length === String(nA).length) {

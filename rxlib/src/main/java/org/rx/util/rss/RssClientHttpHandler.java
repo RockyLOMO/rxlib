@@ -194,6 +194,8 @@ public class RssClientHttpHandler implements HttpServer.Handler {
                 : trafficStore.queryProtocolSummaries(query.fromMillis, query.toMillis);
         List<LoginIpTrafficSummary> historyIps = trafficStore == null ? Collections.<LoginIpTrafficSummary>emptyList()
                 : trafficStore.queryLoginIpSummaries(query.fromMillis, query.toMillis);
+        List<RssUserTrafficStore.TrafficTrendPoint> trendPoints = trafficStore == null ? Collections.<RssUserTrafficStore.TrafficTrendPoint>emptyList()
+                : trafficStore.queryTrafficTrends(query.fromMillis, query.toMillis);
 
         Collections.sort(historyUsers, USER_SUMMARY_COMPARATOR);
         Collections.sort(protocolSummaries, PROTOCOL_SUMMARY_COMPARATOR);
@@ -257,6 +259,8 @@ public class RssClientHttpHandler implements HttpServer.Handler {
         vars.put("liveIpCount", liveIpRows.size());
         vars.put("totalSessions", allTotalSessions);
         vars.put("totalActiveDuration", formatDurationSeconds(allTotalActive));
+        vars.put("hasTrends", !trendPoints.isEmpty());
+        vars.put("trendJson", org.rx.core.Sys.toJsonString(trendPoints));
 
         vars.put("stats", buildStats(userRows.size(), protocolRows.size(), loginIpRows.size(), liveIpRows.size(),
                 historyUsers, protocolSummaries, query, trafficStore, effectiveMemoryRetentionHours, upstreamRows));

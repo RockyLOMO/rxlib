@@ -164,6 +164,16 @@ public class RssUserTrafficStore implements SocksUserTraffic.Recorder, AutoClose
         Date latestTime;
     }
 
+    @Data
+    public static class TrafficTrendPoint implements Serializable {
+        private static final long serialVersionUID = 1L;
+        String username;
+        long hourEpoch;
+        long timeMillis;
+        long readBytes;
+        long writeBytes;
+    }
+
     private final EntityDatabase db;
     private final int retentionDays;
     private final AtomicReference<Map<String, Counter>> counters = new AtomicReference<>(new ConcurrentHashMap<String, Counter>());
@@ -453,6 +463,34 @@ public class RssUserTrafficStore implements SocksUserTraffic.Recorder, AutoClose
                         if (latest != null) {
                             row.setLatestTime(new Date(latest.getTime()));
                         }
+                        rows.add(row);
+                    }
+                }
+            }
+        });
+        return rows;
+    }
+
+    public List<TrafficTrendPoint> queryTrafficTrends(long fromMillis, long toMillis) {
+        final long fromHour = normalizeFromHour(fromMillis);
+        final long toHour = normalizeToHour(fromMillis, toMillis);
+        final String trafficTable = db.tableName(HourlyTrafficEntity.class);
+        final List<TrafficTrendPoint> rows = new ArrayList<TrafficTrendPoint>();
+
+        withConnection(conn -> {
+            try (PreparedStatement stmt = conn.prepareStatement("SELECT username, hour_epoch, SUM(read_bytes) AS read_bytes, SUM(write_bytes) AS write_bytes FROM "
+                    + trafficTable + " WHERE hour_epoch BETWEEN ? AND ? GROUP BY username, hour_epoch ORDER BY hour_epoch ASC, username ASC")) {
+                stmt.setLong(1, fromHour);
+                stmt.setLong(2, toHour);
+                try (ResultSet rs = stmt.executeQuery()) {
+                    while (rs.next()) {
+                        TrafficTrendPoint row = new TrafficTrendPoint();
+                        row.setUsername(rs.getString(1));
+                        long epoch = rs.getLong(2);
+                        row.setHourEpoch(epoch);
+                        row.setTimeMillis(epoch * ONE_HOUR_MILLIS);
+                        row.setReadBytes(rs.getLong(3));
+                        row.setWriteBytes(rs.getLong(4));
                         rows.add(row);
                     }
                 }
