@@ -392,6 +392,8 @@ UDP2RAW_ARG=""
 if [ -n "${UDP2RAW_PORT}" ]; then
   UDP2RAW_ARG="-udp2rawPort=${UDP2RAW_PORT}"
 fi
+# Bound glibc arena retention for this Java process; allow an explicit environment override.
+MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-4}" \
 nohup java ${MEM_OPTIONS} ${GC_OPTIONS} ${APP_OPTIONS} ${DUMP_OPTS} -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} -shadowMode=1 ${UDP2RAW_ARG} -debug=0 "-shadowUser=youfanX:5PXx0^JNMOgvn3P658@f-li.cn:9900" >>"${APP_LOG_FILE}" 2>&1 &
 APP_PID=$!
 wait_for_startup "${APP_PID}" || exit 1
