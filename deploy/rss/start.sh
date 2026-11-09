@@ -51,8 +51,9 @@ if ! [[ "${MAX_LIVE_PROCESSES}" =~ ^[0-9]+$ ]] || [ "${MAX_LIVE_PROCESSES}" -lt 
     MAX_LIVE_PROCESSES=2
 fi
 
-MEM_OPTIONS="-Xms1g -Xmx2g -Xss512k -XX:MaxMetaspaceSize=192m -XX:ReservedCodeCacheSize=160m -XX:MaxDirectMemorySize=3g -XX:+UseCompressedClassPointers"
-GC_OPTIONS="-XX:+UseG1GC -XX:MaxGCPauseMillis=30 -XX:ParallelGCThreads=4 -XX:ConcGCThreads=2 -XX:G1ReservePercent=20 -XX:InitiatingHeapOccupancyPercent=30 -XX:+ParallelRefProcEnabled -XX:+AlwaysPreTouch -XX:+ExplicitGCInvokesConcurrent -XX:-OmitStackTraceInFastThrow"
+# Leave more evacuation headroom; favor throughput with a modest pause-time target.
+MEM_OPTIONS="-Xms1g -Xmx2560m -Xss512k -XX:MaxMetaspaceSize=192m -XX:ReservedCodeCacheSize=160m -XX:MaxDirectMemorySize=3g -XX:+UseCompressedClassPointers"
+GC_OPTIONS="-XX:+UseG1GC -XX:MaxGCPauseMillis=50 -XX:ParallelGCThreads=4 -XX:ConcGCThreads=2 -XX:G1ReservePercent=20 -XX:InitiatingHeapOccupancyPercent=30 -XX:+ParallelRefProcEnabled -XX:+AlwaysPreTouch -XX:+ExplicitGCInvokesConcurrent -XX:-OmitStackTraceInFastThrow"
 DIAGNOSTIC_OPTIONS="-Dapp.diagnostic.enabled=false -Dapp.diagnostic.h2.enabled=false -Dapp.diagnostic.disk.scan.enabled=false -Dapp.diagnostic.nmt.enabled=false -Dapp.trace.keepDays=0"
 FLOW_DEBUG_OPTIONS="-Dapp.net.flowDebug.flags=${FLOW_DEBUG_FLAGS}"
 RRP_SERVER_OPTIONS="-Dapp.rss.rrpServerEnabled=${RRP_SERVER_ENABLED}"
