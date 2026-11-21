@@ -1011,6 +1011,7 @@ public final class RssClient {
 
         config.setUdpMtu(UDP2RAW_MTU);
         config.setDailyUdp(true);
+        config.setAdaptiveTcp(conf.adaptiveTcp);
         applyUdpLeasePool(conf, config);
     }
 

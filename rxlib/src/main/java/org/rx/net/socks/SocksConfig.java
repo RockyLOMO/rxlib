@@ -61,6 +61,7 @@ public class SocksConfig extends SocketConfig {
 
     /** Negotiate RSS daily UDP (timed port hopping and adaptive FEC) over RPC. */
     private boolean dailyUdp;
+    private boolean adaptiveTcp;
     @Setter(AccessLevel.NONE)
     private int dailyPortFirst, dailyPortLast;
 

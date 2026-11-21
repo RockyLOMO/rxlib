@@ -40,6 +40,11 @@ public class Socks5InitialRequestHandler extends SimpleChannelInboundHandler<Def
             ctx.writeAndFlush(new DefaultSocks5InitialResponse(Socks5AuthMethod.UNACCEPTED)).addListener(ChannelFutureListener.CLOSE);
             return;
         }
+        if (server.adaptivePort != null && msg.authMethods().contains(SocksAdaptiveHandshake.METHOD)) {
+            ctx.channel().attr(SocksAdaptiveHandshake.NEGOTIATED).set(true);
+            ctx.writeAndFlush(SocksAdaptiveHandshake.SELECTED);
+            return;
+        }
         ctx.writeAndFlush(server.isAuthEnabled() ? AUTH : new DefaultSocks5InitialResponse(Socks5AuthMethod.NO_AUTH));
     }
 }

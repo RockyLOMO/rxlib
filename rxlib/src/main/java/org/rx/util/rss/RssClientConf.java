@@ -72,6 +72,7 @@ public class RssClientConf {
     public String wowEndpointReadyFile;
     public String wowEndpointRpcEndpoint;
     public String[] publicIpEndpoints;
+    public boolean adaptiveTcp = true;
     public boolean udpLeasePoolEnabled = true;
     public int udpLeasePoolMinSize = 2;
     public int udpLeasePoolMaxSize = 32;

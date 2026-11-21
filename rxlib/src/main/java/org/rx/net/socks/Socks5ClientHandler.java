@@ -46,6 +46,8 @@ public final class Socks5ClientHandler extends ProxyHandler {
     private final String username;
     private final String password;
     private final Socks5CommandType commandType;
+    @Setter private boolean adaptiveTcp;
+    private boolean negotiated;
     private String decoderName;
     private String encoderName;
     @Setter
@@ -124,6 +126,9 @@ public final class Socks5ClientHandler extends ProxyHandler {
 
     @Override
     protected Object newInitialMessage(ChannelHandlerContext ctx) throws Exception {
+        if (adaptiveTcp && commandType == Socks5CommandType.CONNECT && password != null && ctx.channel().remoteAddress() instanceof InetSocketAddress) {
+            return SocksAdaptiveHandshake.OFFER;
+        }
         return socksAuthMethod() == Socks5AuthMethod.PASSWORD ? INIT_REQUEST_PASSWORD : INIT_REQUEST_NO_AUTH;
     }
 
@@ -134,6 +139,10 @@ public final class Socks5ClientHandler extends ProxyHandler {
             Socks5InitialResponse res = (Socks5InitialResponse) response;
             Socks5AuthMethod authMethod = socksAuthMethod();
             Socks5AuthMethod resAuthMethod = res.authMethod();
+            if (adaptiveTcp && password != null && commandType == Socks5CommandType.CONNECT && SocksAdaptiveHandshake.METHOD.equals(resAuthMethod)) {
+                negotiated = true;
+                resAuthMethod = Socks5AuthMethod.PASSWORD;
+            }
             if (resAuthMethod != Socks5AuthMethod.NO_AUTH && resAuthMethod != authMethod) {
                 // Server did not allow unauthenticated access nor accept the requested authentication scheme.
                 throw new ProxyConnectException(exceptionMessage("unexpected authMethod: " + res.authMethod()));
@@ -144,6 +153,7 @@ public final class Socks5ClientHandler extends ProxyHandler {
             } else if (resAuthMethod == Socks5AuthMethod.PASSWORD) {
                 // In case of password authentication, send an authentication request.
                 ctx.pipeline().replace(decoderName, decoderName, new Socks5PasswordAuthResponseDecoder());
+                if (negotiated) SocksAdaptiveHandshake.awaitNonce(ctx.pipeline(), decoderName);
                 sendToProxyServer(new DefaultSocks5PasswordAuthRequest(
                         username != null ? username : Strings.EMPTY, password != null ? password : Strings.EMPTY));
             } else {
@@ -161,6 +171,10 @@ public final class Socks5ClientHandler extends ProxyHandler {
                 throw new ProxyConnectException(exceptionMessage("authStatus: " + res.status()));
             }
 
+            if (negotiated) {
+                SocksAdaptiveHandshake.install(ctx.channel(), ctx.channel().attr(SocksAdaptiveHandshake.NONCE).getAndSet(null), password, null);
+                negotiated = false;
+            }
             sendCommand(ctx);
             return false;
         }
