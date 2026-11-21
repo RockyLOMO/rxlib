@@ -19,6 +19,7 @@ public final class UdpRelayGroupOpenResult implements Serializable {
     private String errorCode;
     private String errorMessage;
     private String groupId;
+    @ToString.Exclude
     private String token;
     private long expireAtMillis;
     private List<UdpRelayEndpoint> relays = Collections.emptyList();

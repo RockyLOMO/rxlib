@@ -26,6 +26,7 @@ import org.rx.net.socks.UdpRelayGroupUpdateResult;
 import org.rx.net.socks.UdpRelayAttributes;
 import org.rx.net.socks.UdpRedundantSupport;
 import org.rx.net.socks.UdpLeasePoolKey;
+import org.rx.net.udp.DailyUdpWire;
 import org.rx.net.udp.UdpPortHoppingConfig;
 import org.rx.net.udp.UdpPortHoppingMode;
 import java.net.InetSocketAddress;
@@ -33,6 +34,7 @@ import org.rx.net.support.UpstreamSupport;
 
 import java.nio.channels.ClosedChannelException;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -301,7 +303,7 @@ public class SocksUdpUpstream extends Upstream {
         if (mode == UdpRelayControlMode.SOCKS5_COMPAT || mode == UdpRelayControlMode.RX_SOCKS5_BATCH) {
             return null;
         }
-        if (mode == UdpRelayControlMode.AUTO && !socksConfig.isUdpPortHoppingEnabled()) {
+        if (mode == UdpRelayControlMode.AUTO && !socksConfig.isDailyUdp() && !socksConfig.isUdpPortHoppingEnabled()) {
             return null;
         }
         UdpLeasePoolKey key = poolKey();
@@ -316,6 +318,7 @@ public class SocksUdpUpstream extends Upstream {
             return handleRpcRelayGroupUnavailable(socksConfig, "facade-null", null);
         }
 
+        boolean daily = false;
         try {
             SocksRpcCapabilities capabilities = facade.capabilities(SocksRpcContract.rpcToken());
             if (capabilities == null || !capabilities.has(SocksRpcCapabilities.UDP_RELAY_GROUP)) {
@@ -335,6 +338,13 @@ public class SocksUdpUpstream extends Upstream {
             minActive = Math.min(minActive, initialCount);
 
             UdpRelayGroupOpenRequest request = new UdpRelayGroupOpenRequest();
+            daily = socksConfig.isDailyUdp() && capabilities.has(SocksRpcCapabilities.SUPPORT_DAILY_UDP);
+            if (daily) {
+                request.setAttributes(Collections.singletonMap("profile", SocksRpcCapabilities.DAILY_PROFILE));
+                // One logical relay with two physical ingress ports.
+                initialCount = minActive = 1;
+                maxRelayCount = 2;
+            }
             request.setClientId(key.toString());
             request.setClientAddr(resolveRpcClientAddress(channel));
             request.setFirstDestination(destination);
@@ -348,11 +358,22 @@ public class SocksUdpUpstream extends Upstream {
                 String reason = result == null ? "null-result"
                         : !result.isSupported() ? "unsupported"
                         : result.getErrorCode();
+                if (daily) {
+                    throw new IllegalStateException("Failed to open both daily UDP ports: " + reason);
+                }
                 return handleRpcRelayGroupUnavailable(socksConfig, reason, null);
             }
 
-            String controlToken = result.getToken() != null ? result.getToken() : SocksRpcContract.rpcToken();
+            String controlToken = !daily && result.getToken() != null ? result.getToken() : SocksRpcContract.rpcToken();
             RpcRelayGroupControl control = new RpcRelayGroupControl(facade, result.getGroupId(), controlToken);
+            if (daily) {
+                try {
+                    return dailyGroup(control, result);
+                } catch (Exception e) {
+                    control.closeGroup();
+                    throw e;
+                }
+            }
             SessionHolder[] holders = toRpcHolders(control, result.getRelays());
             if (holders.length < minActive) {
                 control.closeGroup();
@@ -363,9 +384,37 @@ public class SocksUdpUpstream extends Upstream {
                     "mode=rss_rpc");
             return newSessionGroup(holders, socksConfig, initialCount, control);
         } catch (Throwable e) {
+            if (daily) {
+                throw new IllegalStateException("Daily UDP negotiation failed", e);
+            }
             onRpcRelayGroupFailure(key, socksConfig, "open", e);
             return handleRpcRelayGroupUnavailable(socksConfig, "error", e);
         }
+    }
+
+    private SessionGroup dailyGroup(RpcRelayGroupControl control, UdpRelayGroupOpenResult result) throws Exception {
+        InetSocketAddress primary = null, alias = null;
+        for (UdpRelayEndpoint endpoint : result.getRelays()) {
+            if (SocksRpcCapabilities.DAILY_HOP_ID.equals(endpoint.getRelayId())) {
+                alias = normalizeRpcRelayAddress(endpoint.getRelayAddress());
+            } else {
+                primary = normalizeRpcRelayAddress(endpoint.getRelayAddress());
+            }
+        }
+        if (primary == null || alias == null || primary.getPort() == alias.getPort()) {
+            throw new IllegalStateException("Daily UDP requires two distinct relay ports");
+        }
+        // Only the proxy transport host is resolved here, on the existing off-loop RPC setup path.
+        if (primary.isUnresolved()) {
+            primary = Sockets.resolveUdpEndpointAsync(primary, config).get();
+        }
+        alias = new InetSocketAddress(primary.getAddress(), alias.getPort());
+        control.dailyWire = DailyUdpWire.client(result.getToken(), primary, alias, config.getUdpMtu());
+        SessionGroup group = new SessionGroup(new SessionHolder[]{SessionHolder.rpc(control, result.getGroupId(), primary)},
+                UdpPortHoppingMode.ROUND_ROBIN, 1, control);
+        onRpcRelayGroupSuccess(poolKey());
+        DiagnosticMetrics.record("socks.udp.relay.control.mode.count", 1D, "mode=daily-v1");
+        return group;
     }
 
     private SessionGroup handleRpcRelayGroupUnavailable(SocksConfig socksConfig, String reason, Throwable error) {
@@ -587,7 +636,7 @@ public class SocksUdpUpstream extends Upstream {
             return;
         }
         if (group.rpcControl != null) {
-            group.rpcControl.closeGroup();
+            Tasks.runAsync(() -> group.rpcControl.closeGroup());
             return;
         }
         SessionHolder[] holders = group.holders;
@@ -604,8 +653,19 @@ public class SocksUdpUpstream extends Upstream {
         channel.attr(ATTR_UDP_SESSION).set(group);
         group.retain(next);
         InetSocketAddress[] relayAddresses = group.snapshotRelayAddresses();
-        for (InetSocketAddress relayAddr : relayAddresses) {
-            addRequestRedundantPeer(channel, relayAddr);
+        if (group.rpcControl != null && group.rpcControl.dailyWire != null) {
+            DailyUdpWire.install(channel.pipeline(), group.rpcControl.dailyWire);
+        } else {
+            if (((SocksConfig) config).isDailyUdp()) {
+                UdpRelayAttributes.installLegacyDecoders(channel, "legacyUpstream", sender -> {
+                    SessionGroup g = channel.attr(ATTR_UDP_SESSION).get();
+                    return g != null && (g.rpcControl == null || g.rpcControl.dailyWire == null)
+                            && g.containsRelayAddress(sender);
+                });
+            }
+            for (InetSocketAddress relayAddr : relayAddresses) {
+                addRequestRedundantPeer(channel, relayAddr);
+            }
         }
         recordGroupActiveCount(channel, group, "bind");
         final SessionGroup finalGroup = group;
@@ -836,6 +896,10 @@ public class SocksUdpUpstream extends Upstream {
             }
             InetSocketAddress[] relayAddresses = active.snapshotAllRelayAddresses();
             relay.attr(ATTR_UDP_SESSION).set(null);
+            if (active.rpcControl != null && active.rpcControl.dailyWire != null
+                    && relay.pipeline().context(active.rpcControl.dailyWire) != null) {
+                relay.pipeline().remove(active.rpcControl.dailyWire);
+            }
             active.releaseActive();
             SocksUdpRelayHandler.onUpstreamSessionInvalidated(relay, relayAddresses, this);
             DiagnosticMetrics.record("socks.udp.session.invalidate.count", 1D,
@@ -940,6 +1004,7 @@ public class SocksUdpUpstream extends Upstream {
         final SocksRpcContract facade;
         final String groupId;
         final String token;
+        DailyUdpWire dailyWire;
         final AtomicBoolean closed = new AtomicBoolean();
 
         RpcRelayGroupControl(SocksRpcContract facade, String groupId, String token) {

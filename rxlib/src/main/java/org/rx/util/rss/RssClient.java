@@ -49,8 +49,6 @@ import org.rx.net.socks.UdpRelayGroupOpenResult;
 import org.rx.net.socks.UdpRelayGroupUpdateResult;
 import org.rx.net.socks.Udp2rawOpenRequest;
 import org.rx.net.socks.Udp2rawOpenResult;
-import org.rx.net.udp.UdpPortHoppingMode;
-import org.rx.net.udp.UdpRedundantMode;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Udp2rawUpstream;
@@ -1012,23 +1010,8 @@ public final class RssClient {
         config.setUdpReadTimeoutSeconds(conf.udpTimeoutSeconds);
 
         config.setUdpMtu(UDP2RAW_MTU);
-        config.setUdpRedundantMultiplier(2);
-        config.setSocksUdpRedundantMode(UdpRedundantMode.BIDIRECTIONAL);
-        config.setUdpRedundantAdaptive(true);
-        config.setUdpRedundantMinMultiplier(1);
-        config.setUdpRedundantMaxMultiplier(3);
-        config.setUdpRedundantLossThresholdHigh(0.20);
-        config.setUdpRedundantLossThresholdLow(0.05);
-        config.setUdpRedundantStablePeriods(3);
-
-        config.setUdpPortHoppingEnabled(true);
-        config.setUdpPortHoppingAdaptive(true);
-        config.setUdpPortHoppingMinHopCount(1);
-        config.setUdpPortHoppingMaxHopCount(2);
-        config.setUdpPortHoppingMinActiveHops(1);
-        config.setUdpPortHoppingMode(UdpPortHoppingMode.ROUND_ROBIN);
+        config.setDailyUdp(true);
         applyUdpLeasePool(conf, config);
-        RssSupport.applyUdpCompressionTrial(config);
     }
 
     static SocksConfig createOutboundConfig(RssClientConf conf, SocksConfig inConf) {
@@ -1458,8 +1441,7 @@ public final class RssClient {
             RssAuthenticator rssAuthenticator = (RssAuthenticator) authenticator;
             inSvr.setConnectionTagResolver(rssAuthenticator::resolve);
         }
-        SocksConfig outConf = createOutboundConfig(conf, inConf);
-        AtomicReference<SocksConfig> outConfRef = new AtomicReference<>(outConf);
+        AtomicReference<OutboundProfiles> outConfRef = new AtomicReference<>(new OutboundProfiles(conf, inConf));
         AtomicBoolean sourceSteeringEnabled = new AtomicBoolean(true);
         BiFunc<SocksContext, UpstreamSupport> selectUpstreamFn = e -> {
             InetAddress srcHost = sourceAddress(e.getSource());
@@ -1483,7 +1465,7 @@ public final class RssClient {
                 return;
             }
             InetSocketAddress dstEp = e.getFirstDestination();
-            SocksConfig currentOutConf = outConfRef.get();
+            SocksConfig currentOutConf = outConfRef.get().ordinary;
             RssClientConf currentConf = rssConf;
             boolean routeLog = currentConf != null && currentConf.hasRouteFlag();
             long userRuleBegin = routeLog ? System.nanoTime() : 0L;
@@ -1521,7 +1503,6 @@ public final class RssClient {
                 return;
             }
             InetSocketAddress dstEp = e.getFirstDestination();
-            SocksConfig currentOutConf = outConfRef.get();
             RssClientConf currentConf = rssConf;
             boolean routeLog = currentConf != null && currentConf.hasRouteFlag();
             long userRuleBegin = routeLog ? System.nanoTime() : 0L;
@@ -1551,7 +1532,9 @@ public final class RssClient {
                         userRoute ? "user:route" : "defaultRoute",
                         Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
             }
-            e.setUpstream(createUdpRouteUpstream(dstEp, currentOutConf, selectUpstreamFn.apply(e)));
+            UpstreamSupport next = selectUpstreamFn.apply(e);
+            OutboundProfiles profiles = outConfRef.get();
+            e.setUpstream(createUdpRouteUpstream(dstEp, next != null && next.isUdp2raw() ? profiles.tunnel : profiles.ordinary, next));
         });
         inSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
         return new RssRuntime.RssInServer(inSvr, inConf, outConfRef, sourceSteeringEnabled);
@@ -1730,15 +1713,25 @@ public final class RssClient {
         return new SocksUdpUpstream(dstEp, config, routeUpstream(config, next));
     }
 
+    static final class OutboundProfiles {
+        final SocksConfig ordinary, tunnel;
+
+        OutboundProfiles(RssClientConf conf, SocksConfig inbound) {
+            ordinary = createOutboundConfig(conf, inbound);
+            tunnel = udp2rawRouteConfig(ordinary);
+        }
+    }
+
     private static SocksConfig udp2rawRouteConfig(SocksConfig config) {
         if (config == null) {
             config = new SocksConfig();
         }
-        if (config.getUdpMtu() > 0) {
+        if (config.getUdpMtu() > 0 && !config.isDailyUdp()) {
             return config;
         }
         SocksConfig routed = Sys.deepClone(config);
         routed.setUdpMtu(UDP2RAW_MTU);
+        RssSupport.configureUdp2raw(routed);
         return routed;
     }
 

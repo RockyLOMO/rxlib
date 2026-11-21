@@ -4085,3 +4085,16 @@ test_classes=Aes256GcmByteBufCryptoTest,CipherCodecTest,SSProtocolCodecTest,Shad
 - HttpServerConfig 提供正文、Multipart、单文件/字段、连接/上传/异步配额以及头/body/idle 期限。默认独立有界 async executor，避免全局 Tasks 池提交等待占用 EventLoop；自定义 executor 由调用方管理。读进展更新 deadline，而非每 chunk 分配 timer。
 - 停服使用 stayClosed ChannelGroup，覆盖已经 accept 但迟到的 child；连接计数须在 add 之前登记，防止 add 同步关闭 child 导致计数泄漏。
 - 新增生命周期、限额、协议和所有权回归，其中 1000 次真实落盘 multipart 中断逐轮检查文件/引用和活动计数。证书按用户要求不改，完整性能基准/流式 Server API 未实施；验证记录见 docs/httpserver-fixes-validation-20261026.md。
+
+## 2026-11-21 RSS 日常 UDP
+
+普通 RSS 的 SOCKS UDP 上游通过 RPC 协商 `daily-v1`。客户端使用一个 UDP socket，每 30 秒在服务端为本组分配的两个端口间切换。服务端两个入口共用 EventLoop 和 FEC 状态，发往真实目标的 socket 固定为主端口。回客户端时使用最近一代跳跃在该入口实际观测到的地址和端口。数据面使用按组随机生成的 cookie。旧版能力协商走兼容路径，显式 udp2raw 和外部固定隧道保持各自的协议。
+
+Windows 与 Linux 均使用应用内双端口。Hysteria 2 的 Linux 方案将一段端口重定向到一个监听端口；RSS 需要保留各个动态 SOCKS relay 的独立出口。RSS Server 可用 `-udpHopPorts=20000-20127` 指定一段**已双向放行**的 UDP 端口。这个示例范围最多同时容纳 64 个日常会话，每组独占两个端口。省略时由 OS 分配临时端口。范围耗尽时协商失败，组内任意 socket 关闭会释放整组。部署时需核对云安全组、NAT 和主机防火墙的实际回程。[Hysteria 2 官方端口跳跃说明](https://v2.hysteria.network/zh/docs/advanced/Port-Hopping/)
+
+每个方向独立估算原始数据包缺口，32 个序号为一个反馈窗口，并给后续 8 包留出乱序空间。健康时单发；观测到 1、2–3、4 个及以上缺口后，分别使用 16、8、4 片数据配一片 XOR。每组最多恢复一个缺片，数据立即转发。15 ms 内不足 4 片时免发校验，连续 3 个干净窗口或 5 秒没有新反馈则退出保护。每方向的发送端保留一个 XOR 累加缓冲，接收端最多保留四个。空闲时无需周期扫描。配置的 1300 B 上限计入完整 UDP 线包，SOCKS 数据报（含其地址头）预留 28 B 后最多 1272 B。
+
+监控按 `side=client/server` 汇总 `rss.udp.daily.rx.sampled`、`rx.missing`、`rx.recovered`、`tx.parity`、`tx.payloadBytes` 和 `tx.encodedBytes`（均在 `rss.udp.daily` 下）。采样缺口会受乱序窗口影响，恢复计数也可能包括随后才到达的原片。结合应用交付序号、两端 PPS、P95/P99 延迟、活跃端口、Netty 堆外内存及内核 UDP 接收缓冲丢弃评估。1 核 / 768 MiB 指整机预算。
+
+- 本地确定性 A/B 使用 2048 个业务包，每 32 包丢一个原片。裸发交付 1984；自适应发送 133 个校验包，恢复 63 个，交付 2047。该模型只丢原片；长连丢或校验同时丢失时收益会下降。另有 IPv4/IPv6 真实套接字回显覆盖 1200 B 业务数据、主 → 副 → 主切换、稳定出口和正确回程。
+- 现网独立限时探测使用运行主机和真实 FEC 编解码器，已有 RSS 服务保持原版本。在 32 秒交错对照中，每方向每组 6400 个 320 B 业务包。上行两组全到，下行两组均为零，恢复计数为零。为在短时窗覆盖轮换，探针每 4 秒跳一次，累计 7 次。一次 8 秒低速复测中服务端网卡观测到 3249 个回程包，客户端网卡在对应目标端口观测到 0 个。该路径不足以测出零散丢包下的现网恢复收益。三轮实际发包合计 48 秒，两个远端探针均已清理。

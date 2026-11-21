@@ -7,6 +7,8 @@ import org.rx.net.OptimalSettings;
 import org.rx.net.http.HttpClient;
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.udp.UdpCompressCodec;
+import org.rx.net.udp.UdpPortHoppingMode;
+import org.rx.net.udp.UdpRedundantMode;
 import org.rx.net.udp.UdpCompressConfig;
 
 @Slf4j
@@ -38,6 +40,26 @@ public final class RssSupport {
     static void bootstrapRuntime() throws ClassNotFoundException {
         Class.forName(Sys.class.getName());
         DiagnosticMonitor.startDefault();
+    }
+
+    static void configureUdp2raw(SocksConfig config) {
+        config.setDailyUdp(false);
+        config.setUdpRedundantMultiplier(2);
+        config.setSocksUdpRedundantMode(UdpRedundantMode.BIDIRECTIONAL);
+        config.setUdpRedundantAdaptive(true);
+        config.setUdpRedundantMinMultiplier(1);
+        config.setUdpRedundantMaxMultiplier(3);
+        config.setUdpRedundantLossThresholdHigh(0.20);
+        config.setUdpRedundantLossThresholdLow(0.05);
+        config.setUdpRedundantStablePeriods(3);
+
+        config.setUdpPortHoppingEnabled(true);
+        config.setUdpPortHoppingAdaptive(true);
+        config.setUdpPortHoppingMinHopCount(1);
+        config.setUdpPortHoppingMaxHopCount(2);
+        config.setUdpPortHoppingMinActiveHops(1);
+        config.setUdpPortHoppingMode(UdpPortHoppingMode.ROUND_ROBIN);
+        applyUdpCompressionTrial(config);
     }
 
     static void applyUdpCompressionTrial(SocksConfig config) {
