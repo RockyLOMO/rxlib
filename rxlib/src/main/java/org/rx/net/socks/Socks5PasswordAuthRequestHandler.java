@@ -29,13 +29,25 @@ public class Socks5PasswordAuthRequestHandler extends SimpleChannelInboundHandle
             return;
         }
         AuthResult result = server.getAuthenticator().loginResult(msg.username(), msg.password());
-        if (result == null) {
+        byte[] nonce = Boolean.TRUE.equals(ctx.channel().attr(SocksAdaptiveHandshake.NEGOTIATED).getAndSet(null))
+                ? SocksAdaptiveHandshake.sendNonce(ctx) : null;
+        if (result == null || nonce != null && (result.getUser() == null || result.getUser().isAnonymous()
+                || msg.password().isEmpty())) {
             ctx.writeAndFlush(new DefaultSocks5PasswordAuthResponse(Socks5PasswordAuthStatus.FAILURE)).addListener(ChannelFutureListener.CLOSE);
             return;
         }
         user = result.getUser();
         trafficUser = result.getTrafficUser();
-        ctx.writeAndFlush(SUCCESS);
+        ChannelFuture success = ctx.writeAndFlush(SUCCESS);
+        if (nonce != null) {
+            success.addListener(f -> {
+                if (f.isSuccess()) {
+                    SocksAdaptiveHandshake.install(ctx.channel(), nonce, msg.password(), server.adaptivePort);
+                } else {
+                    ctx.close();
+                }
+            });
+        }
         ProxyManageHandler.get(ctx).setUser(user, trafficUser, ctx);
     }
 }

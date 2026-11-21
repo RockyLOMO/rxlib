@@ -1843,6 +1843,90 @@ class SocksProxyServerIntegrationTest {
     }
 
     @Test
+    @Timeout(value = 20)
+    void shadowsocksTcpAdaptiveHopSurvivesUdpOutage() throws Exception {
+        SocksConfig cfg = new SocksConfig(15796);
+        cfg.setAdaptiveTcp(true);
+        cfg.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
+        ShadowsocksConfig ss = new ShadowsocksConfig(Sockets.newAnyEndpoint(15797),
+                org.rx.net.socks.encryption.CipherKind.AES_256_GCM.getCipherName(), "external-ss");
+        SocksUser user = new SocksUser("rss");
+        user.setPassword("hop-test");
+        try (SocksProxyServer remote = new SocksProxyServer(cfg, new SocksAuthenticator(Collections.singletonList(user)));
+             ShadowsocksServer local = new ShadowsocksServer(ss);
+             Socket app = new Socket("127.0.0.1", 15797)) {
+            assertNotNull(remote.adaptivePort);
+            UpstreamSupport endpoint = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 15796),
+                    "rss", "hop-test"), null);
+            AtomicReference<Channel> hop = new AtomicReference<>();
+            local.onTcpRoute.replace((server, route) -> route.setUpstream(new SocksTcpUpstream(route.getFirstDestination(), cfg, endpoint) {
+                @Override public void initChannel(Channel ch) {
+                    super.initChannel(ch);
+                    hop.set(ch);
+                }
+            }));
+            app.setSoTimeout(6000);
+            org.rx.net.socks.encryption.ICrypto crypto = org.rx.net.socks.encryption.ICrypto.get(ss.getMethod(), ss.getPassword());
+            for (int i = 0; i < 3; i++) {
+                if (i == 1) {
+                    waitForCondition(() -> hop.get() != null && hop.get().pipeline().get(AdaptiveTcpHandler.class) != null
+                            && hop.get().pipeline().get(AdaptiveTcpHandler.class).usingUdp(), 5000, "bidirectional UDP probe");
+                }
+                if (i == 2) remote.adaptivePort.close();
+                ByteBuf plain = Unpooled.buffer();
+                if (i == 0) UdpManager.encode(plain, "127.0.0.1", TCP_ECHO_PORT);
+                String payload = "external-ss-echo-" + i;
+                plain.writeBytes(payload.getBytes(StandardCharsets.UTF_8));
+                try {
+                    app.getOutputStream().write(toBytes(crypto.encrypt(plain)));
+                } finally {
+                    plain.release();
+                }
+                StringBuilder echoed = new StringBuilder();
+                while (echoed.length() < payload.length()) {
+                    ByteBuf encrypted = Unpooled.wrappedBuffer(readAtLeast(app.getInputStream(), 1, 2048, 5000));
+                    try {
+                        ByteBuf clear = crypto.decrypt(encrypted);
+                        try {
+                            echoed.append(clear.toString(StandardCharsets.UTF_8));
+                        } finally {
+                            clear.release();
+                        }
+                    } finally {
+                        encrypted.release();
+                    }
+                }
+                assertEquals(payload, echoed.toString());
+            }
+        }
+    }
+
+    @Test
+    @Timeout(value = 15)
+    void adaptiveWarmChannelNegotiatesWithNewAndLegacyServers() throws Exception {
+        for (boolean modern : new boolean[]{true, false}) {
+            SocksConfig cfg = new SocksConfig(0);
+            cfg.setAdaptiveTcp(modern);
+            SocksUser user = new SocksUser("warm");
+            user.setPassword("test-pass");
+            try (SocksProxyServer server = new SocksProxyServer(cfg, new SocksAuthenticator(Collections.singletonList(user)))) {
+                int port = ((InetSocketAddress) server.tcpChannels.get(0).localAddress()).getPort();
+                InetSocketAddress address = new InetSocketAddress("127.0.0.1", port);
+                Socks5WarmupHandler warm = new Socks5WarmupHandler(address, "warm", "test-pass", 4000);
+                warm.setAdaptiveTcp(true);
+                Channel ch = Sockets.bootstrap(cfg, address, c -> c.pipeline().addLast(warm)).connect(address).sync().channel();
+                try {
+                    warm.readyFuture().get(4, java.util.concurrent.TimeUnit.SECONDS);
+                    assertEquals(modern, ch.pipeline().get(AdaptiveTcpHandler.class) != null);
+                    ch.eventLoop().submit(() -> warm.connect(new InetSocketAddress("127.0.0.1", TCP_ECHO_PORT))).get().sync();
+                } finally {
+                    ch.close().sync();
+                }
+            }
+        }
+    }
+
+    @Test
     @SneakyThrows
     @Timeout(value = 15)
     void shadowsocksUdpRelay_socks5_localChannel_preservesOrigin_e2e() {

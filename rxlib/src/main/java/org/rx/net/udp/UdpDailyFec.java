@@ -38,7 +38,7 @@ public final class UdpDailyFec implements AutoCloseable {
         this(allocator, System::nanoTime);
     }
 
-    UdpDailyFec(ByteBufAllocator allocator, LongSupplier clock) {
+    public UdpDailyFec(ByteBufAllocator allocator, LongSupplier clock) {
         this.alloc = allocator;
         this.clock = clock;
     }

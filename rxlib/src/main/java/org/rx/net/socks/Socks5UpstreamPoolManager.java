@@ -94,6 +94,7 @@ public final class Socks5UpstreamPoolManager extends Disposable {
         private Channel createWarmChannel() {
             Socks5WarmupHandler handler = new Socks5WarmupHandler(serverEndpoint.getConnectEndpoint(), serverEndpoint.getUsername(),
                     serverEndpoint.getPassword(), config.getConnectTimeoutMillis());
+            handler.setAdaptiveTcp(config.isAdaptiveTcp());
             try {
                 ChannelFuture connectFuture = Sockets.bootstrap(config, serverEndpoint.getConnectEndpoint(), ch -> {
                     Sockets.addTcpClientHandler(ch, config, serverEndpoint.getInetEndpoint());

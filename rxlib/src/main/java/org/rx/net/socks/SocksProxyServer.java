@@ -31,7 +31,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
-// @Slf4j
+@lombok.extern.slf4j.Slf4j
 public class SocksProxyServer extends Disposable implements EventPublisher<SocksProxyServer> {
     public static final TripleAction<SocksProxyServer, SocksContext> DIRECT_ROUTER = (s, e) -> e.setUpstream(new Upstream(e.getFirstDestination()));
     public static final PredicateFunc<InetSocketAddress> DNS_CIPHER_ROUTER = dstEp -> dstEp.getPort() == SocksRpcContract.DNS_PORT
@@ -49,6 +49,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     final ConcurrentMap<Integer, Channel> udpRelayRegistry = new ConcurrentHashMap<>();
     private final UdpRelayGroupManager udpRelayGroupManager;
     private final Udp2rawServerEntryManager udp2rawEntryManager;
+    volatile org.rx.net.transport.AdaptiveUdpPort adaptivePort;
     final AtomicInteger activeChannels = new AtomicInteger();
     // 只有压缩时一定要用
     @Setter
@@ -153,6 +154,14 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             }
         }
 
+        if (config.isAdaptiveTcp() && isAuthEnabled() && !enableMemoryChannel
+                && tcpChannels.get(0).localAddress() instanceof InetSocketAddress) {
+            try {
+                adaptivePort = org.rx.net.transport.AdaptiveUdpPort.listen((InetSocketAddress) tcpChannels.get(0).localAddress());
+            } catch (Exception e) {
+                log.warn("Adaptive UDP listener unavailable, continuing over TCP", e);
+            }
+        }
         if (udp2rawEntryManager != null) {
             udp2rawEntryManager.start();
         }
@@ -208,6 +217,9 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
 
     @Override
     protected void dispose() {
+        if (adaptivePort != null) {
+            adaptivePort.close();
+        }
         if (udp2rawEntryManager != null) {
             udp2rawEntryManager.close();
         }

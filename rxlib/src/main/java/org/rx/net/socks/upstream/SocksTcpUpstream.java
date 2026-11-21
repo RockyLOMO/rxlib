@@ -301,6 +301,7 @@ public class SocksTcpUpstream extends Upstream {
     public void initProxyHandler(Channel channel) {
         AuthenticEndpoint svrEp = next.getEndpoint();
         Socks5ClientHandler proxyHandler = new Socks5ClientHandler(svrEp.getConnectEndpoint(), svrEp.getUsername(), svrEp.getPassword());
+        proxyHandler.setAdaptiveTcp(((SocksConfig) config).isAdaptiveTcp());
         proxyHandler.setConnectTimeoutMillis(config.getConnectTimeoutMillis());
         channel.pipeline().addLast(proxyHandler);
     }

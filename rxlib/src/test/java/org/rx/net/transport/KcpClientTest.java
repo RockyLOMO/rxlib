@@ -171,7 +171,7 @@ class KcpClientTest {
             client.send(server.getLocalEndpoint(), "migrated").syncUninterruptibly();
             ByteBuf data = capture.captured.get(2, TimeUnit.SECONDS);
             InetSocketAddress rebound = new InetSocketAddress("127.0.0.1",
-                    client.getLocalEndpoint().getPort() + 1000);
+                    differentPort(client.getLocalEndpoint()));
             InetSocketAddress migratedRemote = server.getChannel().eventLoop().submit(() -> {
                 DatagramPacket injected = new DatagramPacket(data, server.getLocalEndpoint(), rebound);
                 try {
@@ -204,7 +204,7 @@ class KcpClientTest {
             client.send(server.getLocalEndpoint(), "rebind-disabled").syncUninterruptibly();
             ByteBuf data = capture.captured.get(2, TimeUnit.SECONDS);
             InetSocketAddress original = client.getLocalEndpoint();
-            InetSocketAddress rebound = new InetSocketAddress("127.0.0.1", original.getPort() + 1000);
+            InetSocketAddress rebound = new InetSocketAddress("127.0.0.1", differentPort(original));
             InetSocketAddress remote = server.getChannel().eventLoop().submit(() -> {
                 DatagramPacket injected = new DatagramPacket(data, server.getLocalEndpoint(), rebound);
                 try {
@@ -593,5 +593,9 @@ class KcpClientTest {
         public Object decode(ByteBuf payload) {
             return null;
         }
+    }
+    private static int differentPort(InetSocketAddress endpoint) {
+        int port = endpoint.getPort();
+        return port > 64535 ? port - 1000 : port + 1000;
     }
 }

@@ -44,6 +44,7 @@ public final class RssSupport {
 
     static void configureUdp2raw(SocksConfig config) {
         config.setDailyUdp(false);
+        config.setAdaptiveTcp(false);
         config.setUdpRedundantMultiplier(2);
         config.setSocksUdpRedundantMode(UdpRedundantMode.BIDIRECTIONAL);
         config.setUdpRedundantAdaptive(true);

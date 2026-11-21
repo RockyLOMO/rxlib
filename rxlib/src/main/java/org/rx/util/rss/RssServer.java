@@ -66,6 +66,7 @@ public final class RssServer {
 
         SocksConfig outConf = new SocksConfig(port);
         configureOutboundConfig(outConf, debugFlag);
+        outConf.setAdaptiveTcp(!"0".equals(options.get("adaptiveTcp")));
         outConf.setDailyPortRange(options.get("udpHopPorts"));
         Authenticator defAuth = (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS;
         SocksProxyServer outSvr = new SocksProxyServer(outConf, defAuth);

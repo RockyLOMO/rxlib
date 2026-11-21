@@ -37,6 +37,8 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
     private final String password;
     private final int connectTimeoutMillis;
     private final CompletableFuture<Channel> readyFuture = new CompletableFuture<>();
+    @Setter private boolean adaptiveTcp;
+    private boolean negotiated;
     private volatile State state = State.INIT;
     @Getter
     private volatile long readyAtMillis;
@@ -141,12 +143,19 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
     }
 
     private Object newInitialMessage() {
+        if (adaptiveTcp && password != null && ctx.channel().remoteAddress() instanceof InetSocketAddress) {
+            return SocksAdaptiveHandshake.OFFER;
+        }
         return socksAuthMethod() == Socks5AuthMethod.PASSWORD ? INIT_REQUEST_PASSWORD : INIT_REQUEST_NO_AUTH;
     }
 
     private void handleInitial(ChannelHandlerContext ctx, Socks5InitialResponse res) {
         Socks5AuthMethod authMethod = socksAuthMethod();
         Socks5AuthMethod resAuthMethod = res.authMethod();
+        if (adaptiveTcp && password != null && SocksAdaptiveHandshake.METHOD.equals(resAuthMethod)) {
+            negotiated = true;
+            resAuthMethod = Socks5AuthMethod.PASSWORD;
+        }
         if (resAuthMethod != Socks5AuthMethod.NO_AUTH && resAuthMethod != authMethod) {
             fail(new ProxyConnectException(exceptionMessage("unexpected authMethod: " + resAuthMethod)));
             return;
@@ -156,6 +165,7 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
             return;
         }
         ctx.pipeline().replace(decoderName, decoderName, new Socks5PasswordAuthResponseDecoder());
+        if (negotiated) SocksAdaptiveHandshake.awaitNonce(ctx.pipeline(), decoderName);
         ctx.writeAndFlush(new DefaultSocks5PasswordAuthRequest(
                 username != null ? username : Strings.EMPTY, password != null ? password : Strings.EMPTY));
     }
@@ -164,6 +174,10 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
         if (res.status() != Socks5PasswordAuthStatus.SUCCESS) {
             fail(new ProxyConnectException(exceptionMessage("authStatus: " + res.status())));
             return;
+        }
+        if (negotiated) {
+            SocksAdaptiveHandshake.install(ctx.channel(), ctx.channel().attr(SocksAdaptiveHandshake.NONCE).getAndSet(null), password, null);
+            negotiated = false;
         }
         markReady(ctx);
     }
