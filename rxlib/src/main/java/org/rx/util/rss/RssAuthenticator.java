@@ -1,6 +1,5 @@
 package org.rx.util.rss;
 
-import lombok.Getter;
 import org.rx.bean.DateTime;
 import org.rx.core.Strings;
 import org.rx.core.Tasks;
@@ -11,24 +10,29 @@ import org.rx.net.socks.SocksUser;
 import org.rx.net.socks.TrafficLoginInfo;
 
 import java.net.InetAddress;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.rx.core.Extends.eq;
 
 public class RssAuthenticator implements Authenticator {
     static final int DEFAULT_MEMORY_RETENTION_HOURS = 5;
 
-    @Getter
-    private final Map<String, ShadowUser> shadowStore = new ConcurrentHashMap<>();
-    @Getter
-    private final Map<String, SocksUser> socksStore = new ConcurrentHashMap<>();
-    private final AtomicReference<AuthSettings> settings = new AtomicReference<>(new AuthSettings(null, DEFAULT_MEMORY_RETENTION_HOURS));
+    private volatile AuthSettings settings = new AuthSettings(null, DEFAULT_MEMORY_RETENTION_HOURS,
+            Collections.emptyMap(), Collections.emptyMap());
+
+    public Map<String, ShadowUser> getShadowStore() {
+        return settings.shadowStore;
+    }
+
+    public Map<String, SocksUser> getSocksStore() {
+        return settings.socksStore;
+    }
 
     public RssAuthenticator(List<ShadowUser> shadowUsers, String socksPassword) {
         this(shadowUsers, socksPassword, DEFAULT_MEMORY_RETENTION_HOURS);
@@ -60,7 +64,7 @@ public class RssAuthenticator implements Authenticator {
                 throw new InvalidException("Duplicate shadow username {}", username);
             }
             shadowUser.setUsername(username);
-            ShadowUser oldShadowUser = shadowStore.get(username);
+            ShadowUser oldShadowUser = settings.shadowStore.get(username);
             if (oldShadowUser != null && oldShadowUser != shadowUser) {
                 shadowUser.getLoginIps().putAll(oldShadowUser.getLoginIps());
                 if (shadowUser.getLastResetTime() == null) {
@@ -72,18 +76,16 @@ public class RssAuthenticator implements Authenticator {
             String socksUserName = shadowUser.getSocksUser();
             SocksUser socksUser = nextSocksStore.get(socksUserName);
             if (socksUser == null) {
-                SocksUser oldSocksUser = socksStore.get(socksUserName);
+                SocksUser oldSocksUser = settings.socksStore.get(socksUserName);
                 socksUser = oldSocksUser != null ? oldSocksUser : new SocksUser(socksUserName);
-                socksUser.setPassword(socksPassword);
                 nextSocksStore.put(socksUserName, socksUser);
             }
         }
 
-        shadowStore.clear();
-        shadowStore.putAll(nextShadowStore);
-        socksStore.clear();
-        socksStore.putAll(nextSocksStore);
-        settings.set(new AuthSettings(socksPassword, Math.max(1, memoryRetentionHours)));
+        for (SocksUser user : nextSocksStore.values()) {
+            user.setPassword(socksPassword);
+        }
+        settings = new AuthSettings(socksPassword, Math.max(1, memoryRetentionHours), nextShadowStore, nextSocksStore);
     }
 
     private void validateShadowUser(ShadowUser shadowUser) {
@@ -109,21 +111,21 @@ public class RssAuthenticator implements Authenticator {
 
     @Override
     public AuthResult loginResult(String username, String password) {
-        ShadowUser shadowUser = shadowStore.get(username);
-        if (shadowUser == null || !eq(settings.get().socksPassword, password)) {
-            return null;
-        }
-        return resolve(shadowUser);
+        AuthSettings current = settings;
+        return eq(current.socksPassword, password) ? resolve(current, username) : null;
     }
 
     public AuthResult resolve(String username) {
-        ShadowUser shadowUser = shadowStore.get(username);
-        return shadowUser == null ? null : resolve(shadowUser);
+        return resolve(settings, username);
     }
 
-    private AuthResult resolve(ShadowUser shadowUser) {
+    private AuthResult resolve(AuthSettings current, String username) {
+        ShadowUser shadowUser = current.shadowStore.get(username);
+        if (shadowUser == null) {
+            return null;
+        }
         // 认证返回内部 socks 用户，统计归属单独绑定到对应 SS 用户。
-        SocksUser socksUser = socksStore.get(shadowUser.getSocksUser());
+        SocksUser socksUser = current.socksStore.get(shadowUser.getSocksUser());
         if (socksUser == null) {
             return null;
         }
@@ -133,7 +135,7 @@ public class RssAuthenticator implements Authenticator {
     public void resetIp() {
         DateTime now = DateTime.now();
         DateTime expireBefore = now.addHours(-currentMemoryRetentionHours());
-        for (ShadowUser user : shadowStore.values()) {
+        for (ShadowUser user : settings.shadowStore.values()) {
             Map<InetAddress, TrafficLoginInfo> loginIps = user.getLoginIps();
             boolean hasConnectionData = false;
             for (Map.Entry<InetAddress, TrafficLoginInfo> lEntry : loginIps.entrySet()) {
@@ -172,18 +174,24 @@ public class RssAuthenticator implements Authenticator {
     }
 
     public String getSocksPassword() {
-        return settings.get().socksPassword;
+        return settings.socksPassword;
     }
 
     public int getMemoryRetentionHours() {
-        return settings.get().memoryRetentionHours;
+        return settings.memoryRetentionHours;
     }
 
     static final class AuthSettings {
         final String socksPassword;
         final int memoryRetentionHours;
 
-        AuthSettings(String socksPassword, int memoryRetentionHours) {
+        final Map<String, ShadowUser> shadowStore;
+        final Map<String, SocksUser> socksStore;
+
+        AuthSettings(String socksPassword, int memoryRetentionHours, Map<String, ShadowUser> shadowStore,
+                     Map<String, SocksUser> socksStore) {
+            this.shadowStore = shadowStore;
+            this.socksStore = socksStore;
             this.socksPassword = socksPassword;
             this.memoryRetentionHours = memoryRetentionHours;
         }

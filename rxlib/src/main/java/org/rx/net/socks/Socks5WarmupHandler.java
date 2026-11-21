@@ -136,7 +136,7 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
         connectPromise = ctx.newPromise();
         scheduleCommandTimeout();
         ctx.writeAndFlush(new DefaultSocks5CommandRequest(
-                Socks5CommandType.CONNECT, Socks5AddressType.DOMAIN, destination.getHostString(), destination.getPort()));
+                Socks5CommandType.CONNECT, UdpManager.addressType(destination.getHostString()), destination.getHostString(), destination.getPort()));
         return connectPromise;
     }
 

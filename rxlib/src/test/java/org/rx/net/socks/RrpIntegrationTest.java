@@ -58,8 +58,11 @@ class RrpIntegrationTest {
     @SneakyThrows
     @Timeout(value = 25)
     void rrpRemotePort_socks5PasswordAuth_connectToLocalEcho_e2e() {
-        int bindPort = 19000;
-        int remotePort = 19001;
+        int bindPort, remotePort;
+        try (ServerSocket control = new ServerSocket(0); ServerSocket relay = new ServerSocket(0)) {
+            bindPort = control.getLocalPort();
+            remotePort = relay.getLocalPort();
+        }
 
         RrpConfig sConf = new RrpConfig();
         sConf.setToken("tok1");

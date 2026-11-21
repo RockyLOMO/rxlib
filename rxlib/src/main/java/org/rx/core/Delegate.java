@@ -7,6 +7,7 @@ import lombok.SneakyThrows;
 import org.rx.exception.InvalidException;
 import org.rx.util.function.TripleAction;
 
+import java.util.function.Supplier;
 import java.lang.reflect.Field;
 import java.util.EventObject;
 import java.util.List;
@@ -168,6 +169,16 @@ public class Delegate<TSender extends EventPublisher<TSender>, TEvent> implement
         EventArgs args = as(event, EventArgs.class);
         for (Invocation<TSender, TEvent> invocation : invocations) {
             if (!innerInvoke(invocation.delegate, target, event, args)) {
+                break;
+            }
+        }
+    }
+
+    /** Creates an independently owned event for each subscriber actually invoked. */
+    public void invokeEach(@NonNull TSender target, Supplier<TEvent> events) throws Throwable {
+        for (Invocation<TSender, TEvent> invocation : invocations) {
+            TEvent event = events.get();
+            if (!innerInvoke(invocation.delegate, target, event, as(event, EventArgs.class))) {
                 break;
             }
         }

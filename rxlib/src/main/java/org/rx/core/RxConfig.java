@@ -458,6 +458,7 @@ public final class RxConfig {
         public void setPublicIpEndpoints(String[] value) { publicIpEndpoints = value == null || value.length == 0
                 ? new String[]{"https://myip.ipip.net/json", "https://ip.3322.net/", "https://api.ipify.org/", "https://checkip.amazonaws.com/"} : value.clone(); }
         int reactorThreadAmount;
+        boolean shareTcpAcceptLoop;
         int connectTimeoutMillis;
         int readWriteTimeoutMillis;
         int poolMaxSize;
@@ -559,6 +560,7 @@ public final class RxConfig {
         final List<String> directServers = newConcurrentList(true);
         final List<String> remoteServers = newConcurrentList(true);
         boolean localSystemFallback;
+        boolean cacheResolverAnswers = true;
         boolean dohEnabled;
         String dohPath = "/dns-query";
         boolean dohAllowPlainHttp;

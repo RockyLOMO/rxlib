@@ -9,6 +9,7 @@ import io.netty.channel.socket.DatagramPacket;
 import io.netty.util.ReferenceCountUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.NetworkFlowControl;
+import org.rx.net.NetworkTrafficConfig;
 import org.rx.net.NetworkFlowDiagnostics;
 import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
@@ -75,13 +76,6 @@ public final class UdpFinalEgressGuardHandler extends ChannelDuplexHandler {
 
         InetSocketAddress recipient = packet.recipient();
         int limitBytes = Sockets.udpWriteLimitBytes(channel);
-        if (recipient != null && recipient.isUnresolved()) {
-            Sockets.resolveUdpEndpointAsync(recipient, effectiveConfig)
-                    .whenComplete((resolved, error) -> executeResolvedWrite(ctx, packet,
-                            recipient, resolved, error, promise, metricPrefix, tags, limitBytes));
-            return;
-        }
-
         int udpMtu = effectiveConfig != null ? Math.max(0, effectiveConfig.getUdpMtu()) : 0;
         if (!(packet instanceof UdpMtuProbeDatagramPacket) && udpMtu > 0 && bytes > udpMtu) {
             Sockets.releaseUdpPacketByMtu(packet, metricPrefix, tags, bytes, udpMtu);
@@ -91,7 +85,8 @@ public final class UdpFinalEgressGuardHandler extends ChannelDuplexHandler {
         }
 
         UdpBackpressurePolicy udpPolicy = NetworkFlowControl.DEFAULT.udpBackpressurePolicy();
-        boolean trackBackpressure = udpPolicy.isEnabled()
+        boolean unresolved = recipient != null && recipient.isUnresolved();
+        boolean trackBackpressure = unresolved || udpPolicy.isEnabled()
                 && (forceBackpressure || udpMtu > 0 || udpPolicy.hasConfiguredPendingLimit());
         if (!trackBackpressure) {
             writeToTransport(ctx, packet, promise, forceFlush);
@@ -112,8 +107,33 @@ public final class UdpFinalEgressGuardHandler extends ChannelDuplexHandler {
             return;
         }
 
+        NetworkTrafficConfig limits = NetworkFlowControl.DEFAULT.config();
+        UdpBackpressureDecision process = udpPolicy.reserveProcess(channel, bytes, limits);
+        if (!process.accepted) {
+            if (decision.tracked) {
+                udpPolicy.release(bytes, pendingBytes, pendingPackets, limitPackets);
+            }
+            Sockets.releaseUdpPacket(packet, metricPrefix, tags, process.reason, process.queuedBytes,
+                    process.limitBytes, process.queuedPackets, process.limitPackets);
+            completeDroppedWrite(promise);
+            return;
+        }
+
         ChannelPromise writePromise = promise.isVoid() ? ctx.newPromise() : promise;
+        if (!writePromise.setUncancellable()) {
+            if (process.tracked) {
+                udpPolicy.releaseProcess(bytes, limits);
+            }
+            if (decision.tracked) {
+                udpPolicy.release(bytes, pendingBytes, pendingPackets, limitPackets);
+            }
+            ReferenceCountUtil.release(packet);
+            return;
+        }
         writePromise.addListener((ChannelFutureListener) f -> {
+            if (process.tracked) {
+                udpPolicy.releaseProcess(bytes, limits);
+            }
             if (decision.tracked) {
                 udpPolicy.release(bytes, pendingBytes, pendingPackets, limitPackets);
             }
@@ -125,12 +145,16 @@ public final class UdpFinalEgressGuardHandler extends ChannelDuplexHandler {
             }
         });
         try {
-            writeToTransport(ctx, packet, writePromise, forceFlush);
+            if (unresolved) {
+                Sockets.resolveUdpEndpointAsync(recipient, effectiveConfig)
+                        .whenComplete((resolved, error) -> executeResolvedWrite(ctx, packet,
+                                recipient, resolved, error, writePromise, metricPrefix, tags, limitBytes));
+            } else {
+                writeToTransport(ctx, packet, writePromise, forceFlush);
+            }
         } catch (Throwable e) {
             ReferenceCountUtil.release(packet);
-            if (!writePromise.tryFailure(e) && decision.tracked) {
-                udpPolicy.release(bytes, pendingBytes, pendingPackets, limitPackets);
-            }
+            writePromise.tryFailure(e);
             Sockets.recordUdpMetric(metricPrefix, "drop.count",
                     Sockets.appendUdpMetricTags(tags,
                             "reason=final-write-throw,limitBucket=" + Sockets.udpLimitBucket(limitBytes)));
@@ -171,7 +195,17 @@ public final class UdpFinalEgressGuardHandler extends ChannelDuplexHandler {
                 ? new DatagramPacket(packet.content().retain(), resolved)
                 : new DatagramPacket(packet.content().retain(), resolved, packet.sender());
         ReferenceCountUtil.release(packet);
-        writeDatagram(ctx, next, promise, true);
+        if (!ctx.channel().isActive()) {
+            ReferenceCountUtil.release(next);
+            completeDroppedWrite(promise);
+            return;
+        }
+        try {
+            writeToTransport(ctx, next, promise, true);
+        } catch (Throwable cause) {
+            ReferenceCountUtil.release(next);
+            failPromise(promise, cause);
+        }
     }
 
     private void executeResolvedRead(ChannelHandlerContext ctx, DatagramPacket packet,

@@ -199,18 +199,17 @@ public final class Socks5ClientHandler extends ProxyHandler {
             // Per RFC 1928: use 0.0.0.0:0 when the client UDP address is not yet known
             String host = "0.0.0.0";
             int port = 0;
-            Socks5AddressType addressType = Socks5AddressType.DOMAIN;
             if (srcAddress != null) {
                 host = srcAddress.getHostString();
                 port = srcAddress.getPort();
             }
             // RFC 1928: use 0.0.0.0:0 when the client UDP address is not yet known
             sendToProxyServer(new DefaultSocks5CommandRequest(
-                    Socks5CommandType.UDP_ASSOCIATE, addressType, host, port));
+                    Socks5CommandType.UDP_ASSOCIATE, UdpManager.addressType(host), host, port));
             return;
         }
         InetSocketAddress raddr = destinationAddress();
         sendToProxyServer(new DefaultSocks5CommandRequest(
-                Socks5CommandType.CONNECT, Socks5AddressType.DOMAIN, raddr.getHostString(), raddr.getPort()));
+                Socks5CommandType.CONNECT, UdpManager.addressType(raddr.getHostString()), raddr.getHostString(), raddr.getPort()));
     }
 }

@@ -1140,6 +1140,12 @@ public class H2StoreCache<TK, TV> implements Cache<TK, TV>, EventPublisher<H2Sto
         return DeleteResult.COMMITTED;
     }
 
+    /** Returns a currently visible L1 or pending value without a database read or sliding TTL renewal. */
+    public TV getIfInMemory(Object key) {
+        H2CacheItem<TK, TV> item = resolveVisibleFromMemory(requireKey(key));
+        return item == null || item.isTombstone() ? null : item.getValue();
+    }
+
     TV visibleValue(Object key) {
         H2CacheItem<TK, TV> item = resolveVisibleItem(key, false);
         return item == null || item.isTombstone() ? null : item.getValue();

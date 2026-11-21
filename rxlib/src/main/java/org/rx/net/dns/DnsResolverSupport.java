@@ -163,9 +163,10 @@ abstract class DnsResolverSupport extends Disposable {
     @Getter
     @Setter
     int negativeTtl = DnsServer.DEFAULT_NEGATIVE_TTL;
-    RandomList<DnsResolveInterceptor> interceptors;
-    Cache<String, List<InetAddress>> interceptorCache;
-    Cache<String, DnsResponseCacheEntry> responseCache;
+    final Object cacheWriteLock = new Object();
+    volatile RandomList<DnsResolveInterceptor> interceptors;
+    volatile Cache<String, List<InetAddress>> interceptorCache;
+    volatile Cache<String, DnsResponseCacheEntry> responseCache;
     final Cache<String, DomainCacheKeys> domainKeyCache = new MemoryCache<>(b -> b.maximumSize(4096));
     final Map<String, Promise<List<InetAddress>>> resolvingPromises = new ConcurrentHashMap<>();
     final Map<String, Promise<DnsResponseCacheEntry>> responseRefreshPromises = new ConcurrentHashMap<>();
@@ -180,17 +181,54 @@ abstract class DnsResolverSupport extends Disposable {
     @Setter
     long interceptorBreakerOpenMillis = DEFAULT_INTERCEPTOR_BREAKER_MILLIS;
 
-    public void setInterceptors(RandomList<DnsResolveInterceptor> interceptors) {
-        if (CollectionUtils.isEmpty(interceptors)) {
-            this.interceptors = null;
-            interceptorCache = null;
-            interceptorBreakerUntil.clear();
-            return;
+    public synchronized void setInterceptors(RandomList<DnsResolveInterceptor> interceptors) {
+        checkNotClosed();
+        boolean enabled = !CollectionUtils.isEmpty(interceptors);
+        Cache<String, List<InetAddress>> next = enabled ? newInterceptorCache() : null;
+        Cache<?, ?> old;
+        synchronized (cacheWriteLock) {
+            old = interceptorCache;
+            interceptorCache = next;
+            this.interceptors = enabled ? interceptors : null;
+            resolvingPromises.clear();
         }
+        if (enabled) {
+            retainInterceptorBreakerKeys(interceptors.aliveList());
+        } else {
+            interceptorBreakerUntil.clear();
+        }
+        closeOwnedCache(old);
+    }
 
-        interceptorCache = newInterceptorCache();
-        this.interceptors = interceptors;
-        retainInterceptorBreakerKeys(interceptors.aliveList());
+    void closeCaches() {
+        Cache<?, ?> oldInterceptor, oldResponse;
+        synchronized (cacheWriteLock) {
+            interceptors = null;
+            oldInterceptor = interceptorCache;
+            oldResponse = responseCache;
+            interceptorCache = null;
+            responseCache = null;
+        }
+        try {
+            closeOwnedCache(oldInterceptor);
+        } finally {
+            closeOwnedCache(oldResponse);
+        }
+    }
+
+    private static void closeOwnedCache(Cache<?, ?> cache) {
+        if (cache instanceof H2StoreCache) {
+            H2StoreCache<?, ?> store = (H2StoreCache<?, ?>) cache;
+            try {
+                // DNS answers are reconstructible. Bound reload latency if the store is unavailable.
+                store.setFlushTimeoutMillis(1000);
+                store.flush();
+            } catch (RuntimeException error) {
+                log.warn("Could not flush DNS cache before closing", error);
+            } finally {
+                store.close();
+            }
+        }
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -410,7 +448,12 @@ abstract class DnsResolverSupport extends Disposable {
             return null;
         }
 
-        List<InetAddress> ips = cachedLocalIps(srcIp, domain, queryType);
+        Cache<String, List<InetAddress>> cache = interceptorCache;
+        // ALL may need two family lookups. A partial L1 hit cannot establish that the other family is absent.
+        boolean readOnWorker = cache instanceof H2StoreCache;
+        List<InetAddress> ips = readOnWorker
+                ? ((H2StoreCache<String, List<InetAddress>>) cache).getIfInMemory(cacheKey(domain, queryType))
+                : cachedLocalIps(cache, srcIp, domain, queryType);
         if (ips != null) {
             return executor.newSucceededFuture(DnsResolveCore.filterByType(ips, queryType));
         }
@@ -423,10 +466,10 @@ abstract class DnsResolverSupport extends Disposable {
             Promise<List<InetAddress>> targetPromise = resolvePromise;
             Tasks.run(() -> {
                 try {
-                    List<InetAddress> resolvedIps =
-                            DnsResolveCore.resolveByInterceptorWithFailover(this, localInterceptors, srcIp, domain);
-                    if (resolvedIps != null) {
-                        cacheInterceptorResult(domain, queryType, resolvedIps);
+                    List<InetAddress> resolvedIps = readOnWorker ? cachedLocalIps(cache, srcIp, domain, queryType) : null;
+                    if (resolvedIps == null) {
+                        resolvedIps = DnsResolveCore.resolveByInterceptorWithFailover(this, localInterceptors, srcIp, domain);
+                        cacheInterceptorResult(localInterceptors, domain, queryType, resolvedIps);
                     }
                     targetPromise.trySuccess(resolvedIps == null
                             ? null : DnsResolveCore.filterByType(resolvedIps, queryType));
@@ -441,20 +484,20 @@ abstract class DnsResolverSupport extends Disposable {
         return resolvePromise;
     }
 
-    List<InetAddress> cachedLocalIps(InetAddress srcIp, String domain, DnsRecordType queryType) {
-        if (interceptorCache == null) {
+    List<InetAddress> cachedLocalIps(Cache<String, List<InetAddress>> cache, InetAddress srcIp, String domain, DnsRecordType queryType) {
+        if (cache == null) {
             return null;
         }
         List<InetAddress> ips = DnsResolveCore.getCachedInterceptorIps(
-                interceptorCache, cacheKey(domain, queryType), srcIp, domain);
+                cache, cacheKey(domain, queryType), srcIp, domain);
         if (ips != null || queryType != null) {
             return ips;
         }
 
         List<InetAddress> aRecords = DnsResolveCore.getCachedInterceptorIps(
-                interceptorCache, cacheKey(domain, DnsRecordType.A), srcIp, domain);
+                cache, cacheKey(domain, DnsRecordType.A), srcIp, domain);
         List<InetAddress> aaaaRecords = DnsResolveCore.getCachedInterceptorIps(
-                interceptorCache, cacheKey(domain, DnsRecordType.AAAA), srcIp, domain);
+                cache, cacheKey(domain, DnsRecordType.AAAA), srcIp, domain);
         if (aRecords == null && aaaaRecords == null) {
             return null;
         }
@@ -470,15 +513,27 @@ abstract class DnsResolverSupport extends Disposable {
         return merged;
     }
 
-    void cacheInterceptorResult(String domain, DnsRecordType queryType, List<InetAddress> resolvedIps) {
-        if (interceptorCache == null) {
+    void cacheInterceptorResult(RandomList<DnsResolveInterceptor> source, String domain, DnsRecordType type, List<InetAddress> ips) {
+        if (ips == null) {
             return;
         }
-        if (queryType == null) {
-            interceptorCache.put(cacheKey(domain, null), resolvedIps,
-                    CachePolicy.absolute(CollectionUtils.isEmpty(resolvedIps) ? negativeTtl : ttl));
+        synchronized (cacheWriteLock) {
+            if (source != interceptors || interceptorCache == null) {
+                return;
+            }
+            if (type == null) {
+                putCached(interceptorCache, cacheKey(domain, null), ips, CachePolicy.absolute(ips.isEmpty() ? negativeTtl : ttl));
+            }
+            DnsResolveCore.cacheInterceptorResultByFamily(this, domain, ips);
         }
-        DnsResolveCore.cacheInterceptorResultByFamily(this, domain, resolvedIps);
+    }
+
+    static <T> void putCached(Cache<String, T> cache, String key, T value, CachePolicy policy) {
+        if (cache instanceof H2StoreCache) {
+            ((H2StoreCache<String, T>) cache).fastPut(key, value, policy);
+        } else {
+            cache.put(key, value, policy);
+        }
     }
 
     private List<InetAddress> weightedHosts(RandomList<InetAddress> ips) {

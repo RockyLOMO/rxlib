@@ -265,14 +265,13 @@ public final class Sockets {
             return TCP_DIRECT_RESOLVER_GROUP;
         }
         if (isRemoteDnsMode(mode)) {
-            Collection<InetSocketAddress> nameServerList = DnsClient.remoteNameServers();
             AddressResolverGroup<InetSocketAddress> g = tcpRemoteDnsAddressResolverGroup;
             if (g != null) {
                 return g;
             }
             synchronized (Sockets.class) {
                 if (tcpRemoteDnsAddressResolverGroup == null) {
-                    tcpRemoteDnsAddressResolverGroup = buildTcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.REMOTE, nameServerList);
+                    tcpRemoteDnsAddressResolverGroup = buildTcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode.REMOTE, DnsClient.remoteNameServers());
                 }
                 return tcpRemoteDnsAddressResolverGroup;
             }
@@ -345,12 +344,10 @@ public final class Sockets {
 
     private static AddressResolverGroup<InetSocketAddress> buildTcpDnsAddressResolverGroup(SocksConfig.TcpAsyncDnsMode mode,
                                                                                           Collection<InetSocketAddress> nameServerList) {
-        DnsNameResolverBuilder nb = new DnsNameResolverBuilder()
+        DnsNameResolverBuilder nb = DnsClient.configureResolverCache(new DnsNameResolverBuilder())
                 .channelType(udpChannelClass())
                 .socketChannelType(tcpChannelClass())
                 .nameServerProvider(DnsClient.nameServerProvider(nameServerList, DnsClient.localSystemFallback()))
-                .ttl(5, 300)
-                .negativeTtl(DnsServer.DEFAULT_NEGATIVE_TTL)
                 .queryTimeoutMillis(TimeUnit.SECONDS.toMillis(5))
                 .resolvedAddressTypes(ResolvedAddressTypes.IPV4_PREFERRED)
                 .recursionDesired(true)
@@ -746,8 +743,11 @@ public final class Sockets {
         int connectTimeoutMillis = config.getConnectTimeoutMillis();
         // REUSEPORT 多 bind 需要至少匹配的 boss 数量，才能让监听 socket 分散到多个 accept loop。
         final int bossThreadAmount = reusePortBindCount(config, null);
+        EventLoopGroup worker = reactor(rn, true);
+        EventLoopGroup boss = bossThreadAmount == 1 && RxConfig.INSTANCE.getNet().isShareTcpAcceptLoop()
+                ? worker : newEventLoop(bossThreadAmount);
         ServerBootstrap b = new ServerBootstrap()
-                .group(newEventLoop(bossThreadAmount), reactor(rn, true))
+                .group(boss, worker)
                 .channel(Epoll.isAvailable() ? EpollServerSocketChannel.class : NioServerSocketChannel.class)
                 .option(ChannelOption.SO_BACKLOG, backlog)
                 // .option(ChannelOption.SO_REUSEADDR, true)
@@ -780,7 +780,7 @@ public final class Sockets {
 
         ServerBootstrapConfig config = bootstrap.config();
         EventLoopGroup group = config.group();
-        if (group != null && !localReactors.containsValue(group)) {
+        if (group != null && !reactors.containsValue(group) && !localReactors.containsValue(group)) {
             group.shutdownGracefully();
         }
         group = config.childGroup();
@@ -810,11 +810,10 @@ public final class Sockets {
             rn = ReactorNames.SHARED_TCP;
         }
         boolean localConnect = connectHint instanceof LocalAddress;
-        if (localConnect && (eventLoopGroup == null
-                || eventLoopGroup instanceof NioEventLoopGroup
-                || eventLoopGroup instanceof EpollEventLoopGroup)) {
+        EventLoopGroup group = eventLoopGroup instanceof EventLoop ? ((EventLoop) eventLoopGroup).parent() : eventLoopGroup;
+        if (localConnect && (group == null || group instanceof NioEventLoopGroup || group instanceof EpollEventLoopGroup)) {
             eventLoopGroup = localReactor(rn);
-        } else if (eventLoopGroup == null) {
+        } else if (eventLoopGroup == null || !localConnect && group instanceof DefaultEventLoopGroup) {
             eventLoopGroup = reactor(rn, true);
         }
 
@@ -1719,7 +1718,7 @@ public final class Sockets {
     }
 
     /**
-     * isSiteLocalAddress()IPv4: 10/8, 172.16/12, 192.168/16 IPv6: fc00::/7 (ULA)是（最常用私有地址）常规内网地址
+     * isSiteLocalAddress()IPv4: 10/8, 172.16/12, 192.168/16 IPv6: fec0::/10 (site-local)；ULA 不在此自动信任范围
      * isLoopbackAddress()127.0.0.0/8, ::1是（本机回环）通常也算作本地地址
      * isLinkLocalAddress()IPv4: 169.254.0.0/16 IPv6: fe80::/10是（链路本地）自动分配的临时地址，无路由
      *
@@ -1994,6 +1993,10 @@ public final class Sockets {
         byte[] bytes = NetUtil.createByteArrayFromIpAddressString(ip);
         if (bytes == null) {
             throw new InvalidException("Invalid IP address {}", ip);
+        }
+        if (bytes.length == 16 && ip.indexOf('%') >= 0) {
+            // NetUtil strips the zone. Ask the JDK to interpret it only after validating the literal.
+            return InetAddress.getByName(ip);
         }
         return InetAddress.getByAddress(bytes);
     }

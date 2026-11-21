@@ -35,6 +35,8 @@ public class SocksTcpUpstream extends Upstream {
     private static final int FAKE_ENDPOINT_RETRY_SECONDS = 5;
     private static final int FAKE_ENDPOINT_COLLISION_RETRIES = 3;
     private static final Object[] FAKE_ENDPOINT_LOCKS = new Object[64];
+    // Route selection can claim a mapping while holding its route lock.
+    private static final Object[] ROUTE_LOCKS = new Object[64];
     private static final CompletableFuture<Boolean> REGISTERED = CompletableFuture.completedFuture(Boolean.TRUE);
     private static final CompletableFuture<Boolean> NOT_REGISTERED = CompletableFuture.completedFuture(Boolean.FALSE);
     private static final CompletableFuture<RegistrationOutcome> REGISTERED_OUTCOME =
@@ -52,6 +54,7 @@ public class SocksTcpUpstream extends Upstream {
     static {
         for (int i = 0; i < FAKE_ENDPOINT_LOCKS.length; i++) {
             FAKE_ENDPOINT_LOCKS[i] = new Object();
+            ROUTE_LOCKS[i] = new Object();
         }
     }
 
@@ -143,7 +146,7 @@ public class SocksTcpUpstream extends Upstream {
 
     private static String selectFakeHost(String routeCacheKey, String endpoint) {
         Cache<String, String> cache = fakeEndpointCache();
-        Object lock = FAKE_ENDPOINT_LOCKS[routeCacheKey.hashCode() & (FAKE_ENDPOINT_LOCKS.length - 1)];
+        Object lock = ROUTE_LOCKS[routeCacheKey.hashCode() & (ROUTE_LOCKS.length - 1)];
         synchronized (lock) {
             String fakeHost = cache.get(routeCacheKey);
             if (SocksRpcContract.isFakeHost(fakeHost) && claimLocalMapping(fakeHost, endpoint)) {
@@ -213,15 +216,17 @@ public class SocksTcpUpstream extends Upstream {
         Cache<String, String> cache = fakeEndpointCache();
         String endpointCacheKey = fakeEndpointCacheKey(fakeHost);
         Object lock = FAKE_ENDPOINT_LOCKS[endpointCacheKey.hashCode() & (FAKE_ENDPOINT_LOCKS.length - 1)];
-        synchronized (lock) {
-            if (endpoint.equals(cache.get(endpointCacheKey))) {
-                cache.remove(endpointCacheKey);
+        synchronized (ROUTE_LOCKS[routeCacheKey.hashCode() & (ROUTE_LOCKS.length - 1)]) {
+            synchronized (lock) {
+                if (endpoint.equals(cache.get(endpointCacheKey))) {
+                    cache.remove(endpointCacheKey);
+                }
             }
+            if (fakeHost.equals(cache.get(routeCacheKey))) {
+                cache.remove(routeCacheKey);
+            }
+            fakeEndpointAckCache().remove(fakeEndpointAckCacheKey(fakeHost));
         }
-        if (fakeHost.equals(cache.get(routeCacheKey))) {
-            cache.remove(routeCacheKey);
-        }
-        fakeEndpointAckCache().remove(fakeEndpointAckCacheKey(fakeHost));
     }
 
     private static CompletableFuture<RegistrationOutcome> registerFakeEndpointCandidate(SocksRpcContract facade,
