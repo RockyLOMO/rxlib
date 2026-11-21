@@ -1,5 +1,7 @@
 package org.rx.net.udp;
 
+import org.rx.net.NetworkFlowControl;
+import org.rx.net.NetworkTrafficConfig;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
@@ -16,6 +18,29 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class UdpPipelineMtuGuardTest {
     private static final InetSocketAddress REMOTE = new InetSocketAddress("127.0.0.1", 22345);
+
+    @Test
+    void processBudgetIsSharedAcrossChannelsAndRefunded() {
+        NetworkTrafficConfig limits = new NetworkTrafficConfig();
+        limits.setUdpProcessPendingBytes(10);
+        limits.setUdpProcessPendingPackets(2);
+        UdpBackpressurePolicy policy = new UdpBackpressurePolicy(NetworkFlowControl.DEFAULT);
+        EmbeddedChannel first = new EmbeddedChannel();
+        EmbeddedChannel second = new EmbeddedChannel();
+        try {
+            assertTrue(policy.reserveProcess(first, 8, limits).tracked);
+            assertFalse(policy.reserveProcess(second, 3, limits).accepted);
+            assertTrue(policy.reserveProcess(second, 2, limits).tracked);
+            assertFalse(policy.reserveProcess(first, 0, limits).accepted);
+            policy.releaseProcess(8, limits);
+            assertTrue(policy.reserveProcess(second, 8, limits).tracked);
+            policy.releaseProcess(2, limits);
+            policy.releaseProcess(8, limits);
+        } finally {
+            first.finishAndReleaseAll();
+            second.finishAndReleaseAll();
+        }
+    }
 
     @Test
     void finalGuardIsBeforeOutboundOptimizationEncoders() {

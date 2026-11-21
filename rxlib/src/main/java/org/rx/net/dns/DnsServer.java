@@ -66,6 +66,7 @@ public class DnsServer extends DnsResolverSupport {
         }
         upstreamClient.close();
         Sockets.closeBootstrap(serverBootstrap);
+        closeCaches();
     }
 
     private void closeChannel(Channel channel) {

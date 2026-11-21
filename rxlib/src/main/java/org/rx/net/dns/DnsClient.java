@@ -109,6 +109,15 @@ public class DnsClient extends DnsResolverSupport {
         return new DnsServerAddressStreamProviderImpl(servers);
     }
 
+    public static DnsNameResolverBuilder configureResolverCache(DnsNameResolverBuilder builder) {
+        if (RxConfig.INSTANCE.getNet().getDns().isCacheResolverAnswers()) {
+            return builder.ttl(5, 300).negativeTtl(DnsServer.DEFAULT_NEGATIVE_TTL);
+        }
+        return builder.resolveCache(new DefaultDnsCache(0, 0, DnsServer.DEFAULT_NEGATIVE_TTL))
+                .cnameCache(NoopDnsCnameCache.INSTANCE)
+                .consolidateCacheSize(256);
+    }
+
     public static boolean localSystemFallback() {
         return RxConfig.INSTANCE.getNet().getDns().isLocalSystemFallback();
     }
@@ -185,12 +194,10 @@ public class DnsClient extends DnsResolverSupport {
     public DnsClient(@NonNull Collection<InetSocketAddress> nameServerList, boolean localSystemFallback) {
         nameServerProvider = nameServerProvider(nameServerList, localSystemFallback);
         executor = Sockets.reactor(Sockets.ReactorNames.SHARED_UDP, false).next();
-        nameResolver = new DnsNameResolverBuilder(executor)
+        nameResolver = configureResolverCache(new DnsNameResolverBuilder(executor))
                 .nameServerProvider(nameServerProvider)
                 .channelType(Sockets.udpChannelClass())
                 .socketChannelType(Sockets.tcpChannelClass())
-                .ttl(5, 300)
-                .negativeTtl(DnsServer.DEFAULT_NEGATIVE_TTL)
                 .queryTimeoutMillis(TimeUnit.SECONDS.toMillis(5))
                 .resolvedAddressTypes(ResolvedAddressTypes.IPV4_PREFERRED)
                 .recursionDesired(true)
@@ -202,6 +209,7 @@ public class DnsClient extends DnsResolverSupport {
     @Override
     protected void dispose() {
         nameResolver.close();
+        closeCaches();
     }
 
     public Future<AddressedEnvelope<DnsResponse, InetSocketAddress>> query(DnsQuestion question) {

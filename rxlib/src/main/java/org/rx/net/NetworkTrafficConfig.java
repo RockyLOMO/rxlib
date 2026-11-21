@@ -21,6 +21,9 @@ public class NetworkTrafficConfig implements Serializable {
     private boolean udpBackpressureEnabled = true;
     private int udpMaxPendingBytes;
     private int udpMaxPendingPackets;
+    // Aggregate across final UDP egress channels, including packets awaiting DNS.
+    private int udpProcessPendingBytes;
+    private int udpProcessPendingPackets;
 
     public NetworkTrafficConfig() {
     }
@@ -36,6 +39,8 @@ public class NetworkTrafficConfig implements Serializable {
             udpBackpressureEnabled = source.udpBackpressureEnabled;
             udpMaxPendingBytes = source.udpMaxPendingBytes;
             udpMaxPendingPackets = source.udpMaxPendingPackets;
+            udpProcessPendingBytes = source.udpProcessPendingBytes;
+            udpProcessPendingPackets = source.udpProcessPendingPackets;
         }
         normalize();
     }
@@ -49,7 +54,11 @@ public class NetworkTrafficConfig implements Serializable {
     }
 
     public boolean isUdpPendingLimitConfigured() {
-        return udpBackpressureEnabled && (udpMaxPendingBytes > 0 || udpMaxPendingPackets > 0);
+        return udpBackpressureEnabled && (udpMaxPendingBytes > 0 || udpMaxPendingPackets > 0 || hasUdpProcessLimit());
+    }
+
+    public boolean hasUdpProcessLimit() {
+        return udpProcessPendingBytes > 0 || udpProcessPendingPackets > 0;
     }
 
     long uploadBytesPerSecond() {

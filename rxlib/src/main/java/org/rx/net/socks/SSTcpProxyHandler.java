@@ -1,6 +1,7 @@
 package org.rx.net.socks;
 
 import io.netty.channel.*;
+import io.netty.util.ReferenceCountUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
 import org.rx.net.TcpBackpressureHandler;
@@ -16,6 +17,18 @@ public class SSTcpProxyHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+        try {
+            connect(ctx);
+        } catch (Throwable error) {
+            ReferenceCountUtil.release(msg);
+            ctx.close();
+            throw error;
+        }
+        ctx.fireChannelRead(msg);
+        ctx.pipeline().remove(this);
+    }
+
+    private void connect(ChannelHandlerContext ctx) {
         Channel inbound = ctx.channel();
         ShadowsocksServer server = Sockets.getAttr(inbound, ShadowsocksConfig.SVR);
         boolean debug = server.config.isDebug();
@@ -26,9 +39,9 @@ public class SSTcpProxyHandler extends ChannelInboundHandlerAdapter {
         Upstream upstream = e.getUpstream();
         InetSocketAddress upDstEp = upstream.getDestination();
 
+        inbound.pipeline().addLast(SocksTcpFrontendRelayHandler.DEFAULT);
         ChannelFuture outboundFuture = Sockets.bootstrap(inbound.eventLoop(), upstream.getConfig(), upstream.connectAddressHint(), outbound -> {
             upstream.initChannel(outbound);
-            inbound.pipeline().addLast(SocksTcpFrontendRelayHandler.DEFAULT);
         }).connect(upDstEp).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 logConnectFailure(upDstEp, dstEp, f.cause());
@@ -39,13 +52,15 @@ public class SSTcpProxyHandler extends ChannelInboundHandlerAdapter {
                 log.info("SS TCP connect to backend {}[{}]", upDstEp, dstEp);
             }
             Channel outbound = f.channel();
+            if (!inbound.isActive()) {
+                outbound.close();
+                return;
+            }
             TcpBackpressureHandler.installPair(inbound, outbound);
             EndpointTracer.TCP.link(Sockets.getOriginRemoteAddress(inbound), outbound);
             outbound.pipeline().addLast(SocksTcpBackendRelayHandler.DEFAULT);
         });
         SocksContext.markCtx(inbound, outboundFuture, e);
-
-        ctx.fireChannelRead(msg).pipeline().remove(this);
     }
 
     static void logConnectFailure(InetSocketAddress upDstEp, InetSocketAddress dstEp, Throwable cause) {

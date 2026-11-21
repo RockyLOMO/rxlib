@@ -207,7 +207,13 @@ final class RssRuntime implements AutoCloseable {
 
     void addPublicIpWhiteList() {
         try {
-            InetAddress addr = Sockets.parseIpAddress(Sockets.getPublicIp());
+            InetAddress observed = null;
+            try {
+                observed = Sockets.parseIpAddress(Sockets.getPublicIp());
+            } catch (Exception unavailable) {
+                log.debug("No public IPv4 observation, registering authenticated RPC peer", unavailable);
+            }
+            InetAddress addr = observed;
             eachQuietly(socksServersRef.get(), p -> p.getFacade().addWhiteList(addr, SocksRpcContract.rpcToken()));
         } catch (Throwable e) {
             log.warn("rss auto whitelist failed", e);

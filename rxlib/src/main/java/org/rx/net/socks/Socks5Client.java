@@ -14,7 +14,6 @@ import org.rx.core.Delegate;
 import org.rx.core.Disposable;
 import org.rx.core.EventPublisher;
 import org.rx.core.NEventArgs;
-import org.rx.io.Bytes;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
@@ -84,7 +83,7 @@ public class Socks5Client extends Disposable {
         final boolean closeUdpRelayOnDispose;
 
         /**
-         * Fired (asynchronously) whenever a UDP datagram is received from the relay.
+         * Fired asynchronously. Each listener owns one reference and must release it even on failure.
          * The {@link DatagramPacket} value has:
          * <ul>
          *   <li>{@code sender()} – the decoded SOCKS5 source address (original sender)</li>
@@ -154,20 +153,22 @@ public class Socks5Client extends Disposable {
             if (session == null || session.onReceive.isEmpty()) {
                 return;
             }
-            // Retain so the ByteBuf survives the async dispatch (SimpleChannelInboundHandler
-            // releases msg after channelRead0 returns).
-            ByteBuf content = msg.content().retain();
+            ByteBuf content = msg.content();
+            InetSocketAddress src = UdpManager.socks5Decode(content);
+            InetSocketAddress recipient = msg.recipient();
+            content.retain();
             try {
-                InetSocketAddress src = UdpManager.socks5Decode(content);
-                // After socks5Decode the readerIndex points at the application payload.
-                DatagramPacket decoded = new DatagramPacket(
-                        content.retain(),  // caller must release
-                        msg.recipient(),
-                        src);
-                session.publishEventAsync(session.onReceive, new NEventArgs<>(decoded))
-                        .whenComplete((r, e) -> Bytes.release(decoded));
-            } finally {
-                Bytes.release(content);
+                session.asyncScheduler().runAsync(() -> session.onReceive.invokeEach(session,
+                        () -> new NEventArgs<>(new DatagramPacket(content.retainedDuplicate(), recipient, src))))
+                        .whenComplete((v, error) -> {
+                            content.release();
+                            if (error != null) {
+                                log.warn("socks5 UDP receive callback failed", error);
+                            }
+                        });
+            } catch (Throwable error) {
+                content.release();
+                throw error;
             }
         }
 

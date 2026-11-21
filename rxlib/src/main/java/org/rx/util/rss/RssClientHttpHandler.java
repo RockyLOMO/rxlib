@@ -22,6 +22,7 @@ import org.rx.util.rss.RssUserTrafficStore.LoginIpTrafficSummary;
 import org.rx.util.rss.RssUserTrafficStore.ProtocolTrafficSummary;
 import org.rx.util.rss.RssUserTrafficStore.UserTrafficSummary;
 
+import java.util.function.Supplier;
 import java.net.InetAddress;
 import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -115,7 +116,7 @@ public class RssClientHttpHandler implements HttpServer.Handler {
         IpGeolocation resolve(String ip);
     }
 
-    private final Map<String, ShadowUser> shadowStore;
+    private final Supplier<Map<String, ShadowUser>> shadowStore;
     private final RssUserTrafficStore trafficStore;
     private final int memoryRetentionHours;
 
@@ -128,6 +129,11 @@ public class RssClientHttpHandler implements HttpServer.Handler {
     }
 
     public RssClientHttpHandler(Map<String, ShadowUser> shadowStore, RssUserTrafficStore trafficStore, int memoryRetentionHours) {
+        this(trafficStore, memoryRetentionHours, () -> shadowStore);
+    }
+
+    RssClientHttpHandler(RssUserTrafficStore trafficStore, int memoryRetentionHours,
+                         Supplier<Map<String, ShadowUser>> shadowStore) {
         this.shadowStore = shadowStore;
         this.trafficStore = trafficStore;
         this.memoryRetentionHours = Math.max(1, memoryRetentionHours);
@@ -153,7 +159,7 @@ public class RssClientHttpHandler implements HttpServer.Handler {
             response.htmlBody(page("Authorization required", "<p>Use Basic Auth: <code>rxlib</code> / <code>app.rtoken</code>.</p>"));
             return;
         }
-        response.htmlBody(renderShadowUsersPage(shadowStore, trafficStore, parseQuery(request), effectiveMemoryRetentionHours(memoryRetentionHours)));
+        response.htmlBody(renderShadowUsersPage(shadowStore.get(), trafficStore, parseQuery(request), effectiveMemoryRetentionHours(memoryRetentionHours)));
     }
 
     static String renderShadowUsersPage(Map<String, ShadowUser> shadowStore) {

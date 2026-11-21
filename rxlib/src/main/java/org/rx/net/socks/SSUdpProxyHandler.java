@@ -36,6 +36,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             AttributeKey.valueOf("ssUdpRouteMap");
     static final AttributeKey<ConcurrentMap<RouteKey, RouteInitState>> ATTR_ROUTE_INIT_MAP =
             AttributeKey.valueOf("ssUdpRouteInitMap");
+    private static final AttributeKey<Boolean> ROUTE_CLEANUP = AttributeKey.valueOf("ssUdpRouteCleanup");
     static final AttributeKey<LastRoute> ATTR_LAST_ROUTE = AttributeKey.valueOf("ssUdpLastRoute");
     static final AttributeKey<OutboundBinding> ATTR_OUTBOUND_BINDING =
             AttributeKey.valueOf("ssUdpOutboundBinding");
@@ -300,13 +301,6 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         return context != null && context.outbound != null && context.outbound.channel().isActive();
     }
 
-    private static void clearLastRoute(Channel inbound, RouteKey routeKey, SocksContext context) {
-        LastRoute lastRoute = inbound.attr(ATTR_LAST_ROUTE).get();
-        if (lastRoute != null && lastRoute.context == context && lastRoute.matches(routeKey.source, routeKey.destination)) {
-            inbound.attr(ATTR_LAST_ROUTE).set(null);
-        }
-    }
-
     private static SocksContext lookupRoute(Channel inbound, ConcurrentMap<RouteKey, SocksContext> routeMap,
             InetSocketAddress srcEp, InetSocketAddress dstEp) {
         LastRoute lastRoute = inbound.attr(ATTR_LAST_ROUTE).get();
@@ -451,22 +445,6 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             installOutboundIdleHandler(ob.pipeline(), server.config);
             ob.pipeline().addLast(UdpBackendRelayHandler.DEFAULT);
         }).attr(ShadowsocksConfig.SVR, server).bind(0);
-        chf.addListener((ChannelFutureListener) f -> {
-            if (!f.isSuccess()) {
-                if (!removeOutboundPool(key, chf, "bind-fail")) {
-                    releaseOutboundSource(key);
-                    recordOutboundPoolClose("bind-fail");
-                }
-            }
-        });
-        chf.channel().closeFuture().addListener(f -> {
-            removeOutboundPool(key, chf, "close");
-        });
-        inbound.closeFuture().addListener(f -> {
-            if (removeOutboundPool(key, chf, "inbound-close") && chf.channel().isOpen()) {
-                chf.channel().close();
-            }
-        });
         return chf;
     }
 
@@ -502,6 +480,12 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
                 return openOutboundChannel(inbound, server, upstream, routeKey.source, k);
             });
             if (created.get()) {
+                ChannelFutureListener closeChild = f -> channelFuture.channel().close();
+                inbound.closeFuture().addListener(closeChild);
+                channelFuture.channel().closeFuture().addListener(f -> {
+                    inbound.closeFuture().removeListener(closeChild);
+                    removeOutboundPool(key, channelFuture, "close");
+                });
                 recordOutboundPoolOpen("success");
             } else {
                 releaseOutboundSource(key);
@@ -550,13 +534,6 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         }
         ConcurrentMap<InetSocketAddress, SocksContext> routeMap = outbound.attr(ATTR_OUTBOUND_ROUTE_MAP).get();
         return routeMap != null ? routeMap.get(destination) : null;
-    }
-
-    private static void unregisterOutboundRoute(Channel outbound, InetSocketAddress destination, SocksContext context) {
-        ConcurrentMap<InetSocketAddress, SocksContext> routeMap = outbound.attr(ATTR_OUTBOUND_ROUTE_MAP).get();
-        if (routeMap != null) {
-            routeMap.remove(destination, context);
-        }
     }
 
     private static MemoryCache<InetSocketAddress, UdpManager.HeaderTemplate> socks5HeaderCache(Channel inbound) {
@@ -664,7 +641,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             releasePending(initState);
             return;
         }
-        if (!inbound.isActive()) {
+        if (!inbound.isActive() || !outboundFuture.channel().isActive()) {
             releasePending(initState);
             return;
         }
@@ -675,12 +652,17 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         routeMap.put(routeKey, context);
         inbound.attr(ATTR_LAST_ROUTE).set(new LastRoute(routeKey.source, routeKey.destination, context));
         recordRouteCacheSizes(inbound, routeMap, outboundFuture.channel());
-        outboundFuture.channel().closeFuture().addListener(f -> routeExecutor.execute(() -> {
-            routeMap.remove(routeKey, context);
-            unregisterOutboundRoute(outboundFuture.channel(), routeKey.destination, context);
-            clearLastRoute(inbound, routeKey, context);
-            recordRouteCacheSizes(inbound, routeMap, outboundFuture.channel());
-        }));
+        Channel outbound = outboundFuture.channel();
+        if (outbound.attr(ROUTE_CLEANUP).setIfAbsent(Boolean.TRUE) == null) {
+            outbound.closeFuture().addListener(f -> routeExecutor.execute(() -> {
+                routeMap.entrySet().removeIf(entry -> entry.getValue().outbound.channel() == outbound);
+                LastRoute last = inbound.attr(ATTR_LAST_ROUTE).get();
+                if (last != null && last.context.outbound.channel() == outbound) {
+                    inbound.attr(ATTR_LAST_ROUTE).compareAndSet(last, null);
+                }
+                recordRouteCacheSizes(inbound, routeMap, outbound);
+            }));
+        }
         flushPending(server, routeKey, context, initState);
     }
 
@@ -727,13 +709,27 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         if (inbound == null || source == null || bytes <= 0 || limitBytes <= 0) {
             return true;
         }
-        AtomicInteger counter = sourcePendingMap(inbound).computeIfAbsent(source, k -> new AtomicInteger());
-        int pending = counter.addAndGet(bytes);
-        if (pending <= limitBytes) {
-            return true;
+        if (bytes > limitBytes) {
+            return false;
         }
-        releaseSourcePending(inbound, source, bytes);
-        return false;
+        return reserveCount(sourcePendingMap(inbound), source, bytes, limitBytes);
+    }
+
+    private static <K> boolean reserveCount(ConcurrentMap<K, AtomicInteger> map, K source, int bytes, int limitBytes) {
+        for (;;) {
+            AtomicInteger counter = map.computeIfAbsent(source, key -> new AtomicInteger());
+            int pending = counter.get();
+            if (pending < 0) {
+                map.remove(source, counter);
+                continue;
+            }
+            if (bytes > limitBytes - pending) {
+                return false;
+            }
+            if (counter.compareAndSet(pending, pending + bytes)) {
+                return true;
+            }
+        }
     }
 
     static void releaseSourcePending(Channel inbound, InetSocketAddress source, int bytes) {
@@ -741,16 +737,29 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             return;
         }
         ConcurrentMap<InetSocketAddress, AtomicInteger> map = inbound.attr(ATTR_UDP_PENDING_WRITE_BYTES_BY_SOURCE).get();
-        if (map == null) {
-            return;
+        if (map != null) {
+            releaseCount(map, source, bytes);
         }
+    }
+
+    private static <K> void releaseCount(ConcurrentMap<K, AtomicInteger> map, K source, int bytes) {
         AtomicInteger counter = map.get(source);
         if (counter == null) {
             return;
         }
-        int pending = counter.addAndGet(-bytes);
-        if (pending <= 0) {
-            map.remove(source, counter);
+        for (;;) {
+            int pending = counter.get();
+            if (pending <= 0) {
+                return;
+            }
+            // Retire the entry before unlinking it so another loop cannot reserve against it.
+            int next = pending <= bytes ? -1 : pending - bytes;
+            if (counter.compareAndSet(pending, next)) {
+                if (next < 0) {
+                    map.remove(source, counter);
+                }
+                return;
+            }
         }
     }
 
@@ -967,31 +976,15 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
 
     private static boolean reserveOutboundSource(OutboundPoolKey key, int maxPerSource) {
         if (maxPerSource <= 0) {
+            key.sourceReleased.set(true);
             return true;
         }
-        AtomicInteger count = OUTBOUND_POOL_SOURCE_COUNTS.computeIfAbsent(key.sourceKey, k -> new AtomicInteger());
-        int current = count.incrementAndGet();
-        if (current <= maxPerSource) {
-            return true;
-        }
-        releaseOutboundSourceCount(key.sourceKey, count);
-        return false;
+        return reserveCount(OUTBOUND_POOL_SOURCE_COUNTS, key.sourceKey, 1, maxPerSource);
     }
 
     private static void releaseOutboundSource(OutboundPoolKey key) {
         if (key.sourceReleased.compareAndSet(false, true)) {
-            AtomicInteger count = OUTBOUND_POOL_SOURCE_COUNTS.get(key.sourceKey);
-            releaseOutboundSourceCount(key.sourceKey, count);
-        }
-    }
-
-    private static void releaseOutboundSourceCount(OutboundSourceKey key, AtomicInteger count) {
-        if (count == null) {
-            return;
-        }
-        int remaining = count.decrementAndGet();
-        if (remaining <= 0) {
-            OUTBOUND_POOL_SOURCE_COUNTS.remove(key, count);
+            releaseCount(OUTBOUND_POOL_SOURCE_COUNTS, key.sourceKey, 1);
         }
     }
 

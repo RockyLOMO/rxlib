@@ -71,7 +71,10 @@ public final class DnsResolveCore {
         DnsRecordType queryType = question.type();
         if (interceptors != null && !domain.endsWith(".lan") && (queryType == DnsRecordType.A || queryType == DnsRecordType.AAAA)) {
             String cacheKey = server.cacheKey(domain, queryType);
-            List<InetAddress> ips = getCachedInterceptorIps(server.interceptorCache, cacheKey, srcIp, domain);
+            Cache<String, List<InetAddress>> cache = server.interceptorCache;
+            List<InetAddress> ips = cache instanceof H2StoreCache
+                    ? ((H2StoreCache<String, List<InetAddress>>) cache).getIfInMemory(cacheKey)
+                    : getCachedInterceptorIps(cache, cacheKey, srcIp, domain);
             if (ips != null) {
                 promise.setSuccess(newInterceptorResponse(query, isTcp, question, server, srcIp, domain, ips));
                 return promise;
@@ -115,6 +118,9 @@ public final class DnsResolveCore {
 
     static List<InetAddress> getCachedInterceptorIps(Cache<String, List<InetAddress>> cache, String cacheKey,
                                                      InetAddress srcIp, String domain) {
+        if (cache == null) {
+            return null;
+        }
         try {
             return cache.get(cacheKey);
         } catch (RuntimeException e) {
@@ -189,15 +195,18 @@ public final class DnsResolveCore {
     static void cacheInterceptorResultByFamily(DnsResolverSupport resolver, String domain, List<InetAddress> resolvedIps) {
         List<InetAddress> aRecords = filterByType(resolvedIps, DnsRecordType.A);
         List<InetAddress> aaaaRecords = filterByType(resolvedIps, DnsRecordType.AAAA);
-        resolver.interceptorCache.put(resolver.cacheKey(domain, DnsRecordType.A), aRecords,
+        DnsResolverSupport.putCached(resolver.interceptorCache, resolver.cacheKey(domain, DnsRecordType.A), aRecords,
                 CachePolicy.absolute(aRecords.isEmpty() ? resolver.negativeTtl : resolver.ttl));
-        resolver.interceptorCache.put(resolver.cacheKey(domain, DnsRecordType.AAAA), aaaaRecords,
+        DnsResolverSupport.putCached(resolver.interceptorCache, resolver.cacheKey(domain, DnsRecordType.AAAA), aaaaRecords,
                 CachePolicy.absolute(aaaaRecords.isEmpty() ? resolver.negativeTtl : resolver.ttl));
     }
 
     static List<InetAddress> filterByType(List<InetAddress> ips, DnsRecordType queryType) {
         if (CollectionUtils.isEmpty(ips)) {
             return Collections.emptyList();
+        }
+        if (queryType == null) {
+            return ips;
         }
         List<InetAddress> filtered = null;
         for (int i = 0; i < ips.size(); i++) {
@@ -241,9 +250,14 @@ public final class DnsResolveCore {
             List<InetAddress> resolvedIps = null;
             boolean handoffToUpstream = false;
             try {
-                resolvedIps = resolveByInterceptorWithFailover(server, interceptors, srcIp, domain);
-                if (resolvedIps != null) {
-                    cacheInterceptorResultByFamily(server, domain, resolvedIps);
+                DefaultDnsQuestion question = query.recordAt(DnsSection.QUESTION);
+                Cache<String, List<InetAddress>> cache = server.interceptorCache;
+                if (cache instanceof H2StoreCache) {
+                    resolvedIps = getCachedInterceptorIps(cache, server.cacheKey(domain, question.type()), srcIp, domain);
+                }
+                if (resolvedIps == null) {
+                    resolvedIps = resolveByInterceptorWithFailover(server, interceptors, srcIp, domain);
+                    server.cacheInterceptorResult(interceptors, domain, question.type(), resolvedIps);
                 }
                 resolvePromise.trySuccess(resolvedIps);
                 if (resolvedIps == null) {
@@ -251,7 +265,6 @@ public final class DnsResolveCore {
                     queryUpstream(server, upstream, query, isTcp, responsePromise);
                     return;
                 }
-                DefaultDnsQuestion question = query.recordAt(DnsSection.QUESTION);
                 responsePromise.trySuccess(newInterceptorResponse(query, isTcp, question, server, srcIp, domain, resolvedIps));
             } catch (Throwable e) {
                 logResolveFailure(srcIp, domain, e, false);
@@ -360,7 +373,37 @@ public final class DnsResolveCore {
         }
 
         String cacheKey = server.responseCacheKey(domain, question.type(), question.dnsClass());
-        DnsResponseCacheEntry cached = getCachedResponse(server, cacheKey, domain);
+        Cache<String, DnsResponseCacheEntry> cache = server.responseCache;
+        if (cache instanceof H2StoreCache) {
+            DnsResponseCacheEntry hit = ((H2StoreCache<String, DnsResponseCacheEntry>) cache).getIfInMemory(cacheKey);
+            if (hit == null) {
+                // queryUpstream owns a retained query until the response is delivered or forwarded.
+                try {
+                    Tasks.run(() -> {
+                        try {
+                            answerCachedOrQuery(server, upstream, query, isTcp, promise, question, domain, cacheKey,
+                                    config, getCachedResponse(server, cacheKey, domain));
+                        } catch (Throwable error) {
+                            query.release();
+                            promise.tryFailure(error);
+                        }
+                    });
+                } catch (RuntimeException error) {
+                    query.release();
+                    promise.tryFailure(error);
+                }
+                return;
+            }
+            answerCachedOrQuery(server, upstream, query, isTcp, promise, question, domain, cacheKey, config, hit);
+            return;
+        }
+        answerCachedOrQuery(server, upstream, query, isTcp, promise, question, domain, cacheKey, config,
+                getCachedResponse(server, cacheKey, domain));
+    }
+
+    private static void answerCachedOrQuery(DnsServer server, DnsClient upstream, DefaultDnsQuery query, boolean isTcp,
+                                            Promise<DefaultDnsResponse> promise, DefaultDnsQuestion question, String domain,
+                                            String cacheKey, RxConfig.DnsCacheConfig config, DnsResponseCacheEntry cached) {
         long now = System.currentTimeMillis();
         if (cached != null && cached.isFresh(now)) {
             server.responseCacheFreshHits.incrementAndGet();
@@ -547,7 +590,11 @@ public final class DnsResolveCore {
         } else {
             policy = CachePolicy.absolute(entry.freshTtlSeconds);
         }
-        server.responseCache.put(cacheKey, entry, policy);
+        synchronized (server.cacheWriteLock) {
+            if (server.responseCache != null) {
+                DnsResolverSupport.putCached(server.responseCache, cacheKey, entry, policy);
+            }
+        }
         return entry;
     }
 

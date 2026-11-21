@@ -404,7 +404,9 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                     DiagnosticMetrics.record("socks.tcp.warm.fallback.count", 1D, "key=" + upstream.warmPoolKey());
                 }
                 Sockets.closeOnFlushed(outbound);
-                connectSlow(inbound, dstAddrType, e, null);
+                if (inbound.isActive()) {
+                    connectSlow(inbound, dstAddrType, e, null);
+                }
                 return;
             }
             relay(inbound, outbound, dstAddrType, e);
@@ -426,7 +428,10 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             ensureFrontendHandlers(inbound, outbound);
         }).attr(SocksContext.SOCKS_SVR, server).connect(e.getUpstream().getDestination()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
-                if (server.onReconnecting != null) {
+                if (!inbound.isActive()) {
+                    return;
+                }
+                if (!server.onReconnecting.isEmpty()) {
                     server.publishEvent(server.onReconnecting, e);
                     short[] attempts = reconnectionAttempts;
                     if (attempts == null) {
@@ -447,6 +452,10 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 return;
             }
             Channel outbound = f.channel();
+            if (!inbound.isActive()) {
+                outbound.close();
+                return;
+            }
             EndpointTracer.TCP.link(Sockets.getOriginRemoteAddress(inbound), outbound);
             Socks5ClientHandler proxyHandler;
             if (server.cipherRoute(e.getFirstDestination()) && (proxyHandler = outbound.pipeline().get(Socks5ClientHandler.class)) != null) {

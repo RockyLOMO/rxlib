@@ -3,6 +3,7 @@ package org.rx.net.udp;
 import io.netty.channel.Channel;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.NetworkFlowControl;
+import org.rx.net.NetworkTrafficConfig;
 import org.rx.net.NetworkFlowDiagnostics;
 import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
@@ -12,6 +13,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Slf4j
 public final class UdpBackpressurePolicy {
     private final NetworkFlowControl owner;
+    private final AtomicInteger processBytes = new AtomicInteger();
+    private final AtomicInteger processPackets = new AtomicInteger();
 
     public UdpBackpressurePolicy(NetworkFlowControl owner) {
         this.owner = owner;
@@ -29,6 +32,19 @@ public final class UdpBackpressurePolicy {
 
     public boolean hasConfiguredPendingLimit() {
         return owner.config().isUdpPendingLimitConfigured();
+    }
+
+    UdpBackpressureDecision reserveProcess(Channel channel, int bytes, NetworkTrafficConfig limits) {
+        if (!limits.hasUdpProcessLimit()) {
+            return UdpBackpressureDecision.ALLOW_UNTRACKED;
+        }
+        int limitBytes = limits.getUdpProcessPendingBytes();
+        return reserve(channel, bytes, processBytes, processPackets, limitBytes > 0 ? limitBytes : Integer.MAX_VALUE,
+                limits.getUdpProcessPendingPackets(), "process-");
+    }
+
+    void releaseProcess(int bytes, NetworkTrafficConfig limits) {
+        release(bytes, processBytes, processPackets, limits.getUdpProcessPendingPackets());
     }
 
     public int writeLimitBytes(Channel channel) {
@@ -77,7 +93,7 @@ public final class UdpBackpressurePolicy {
         }
 
         int queuedBytes = pendingBytes.addAndGet(bytes);
-        if (queuedBytes > limitBytes) {
+        if (queuedBytes < 0 || queuedBytes > limitBytes) {
             pendingBytes.addAndGet(-bytes);
             if (limitPackets > 0) {
                 pendingPackets.addAndGet(-1);

@@ -3,8 +3,11 @@ package org.rx.util.rss;
 import io.netty.handler.codec.http.HttpMethod;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Reflects;
+import org.rx.core.RxConfig;
 import org.rx.core.Sys;
 import org.rx.net.AuthenticEndpoint;
+import org.rx.net.NetworkFlowControl;
+import org.rx.net.NetworkTrafficConfig;
 import org.rx.net.Sockets;
 import org.rx.net.TransportFlags;
 import org.rx.net.http.HttpClient;
@@ -33,6 +36,21 @@ public final class RssServer {
     private RssServer() {}
 
     public static void launch(Map<String, String> options, int port) {
+        // The RSS client owns the long-lived answer cache. Coalesce concurrent egress lookups.
+        RxConfig.NetConfig net = RxConfig.INSTANCE.getNet();
+        net.getDns().setCacheResolverAnswers(false);
+        net.setShareTcpAcceptLoop(true);
+        if (net.getReactorThreadAmount() <= 0) {
+            net.setReactorThreadAmount(1);
+        }
+        NetworkTrafficConfig limits = net.getGlobalTraffic();
+        if (limits.getUdpProcessPendingBytes() == 0) {
+            limits.setUdpProcessPendingBytes(4 * 1024 * 1024);
+        }
+        if (limits.getUdpProcessPendingPackets() == 0) {
+            limits.setUdpProcessPendingPackets(4096);
+        }
+        NetworkFlowControl.refresh();
         Integer udp2rawPort = Reflects.convertQuietly(options.get("udp2rawPort"), Integer.class);
         Integer rpcPort = Reflects.convertQuietly(options.get("rpcPort"), Integer.class);
         boolean debugFlag = "1".equals(options.get("debug"));

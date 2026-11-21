@@ -1816,7 +1816,7 @@ public final class RssClient {
         }
 
         httpServer = HttpServer.getDefault().requestAsync(RssClientHttpHandler.SHADOW_USERS_PAGE_PATH,
-                new RssClientHttpHandler(authenticator.getShadowStore(), trafficStore, authenticator.getMemoryRetentionHours()));
+                new RssClientHttpHandler(trafficStore, authenticator.getMemoryRetentionHours(), authenticator::getShadowStore));
 
         configureRrpServer(rssConf);
 

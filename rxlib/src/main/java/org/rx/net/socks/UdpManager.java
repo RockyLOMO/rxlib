@@ -223,17 +223,17 @@ public final class UdpManager {
 
     @SneakyThrows
     public static void encode(ByteBuf buf, String host, int port) {
-        Socks5AddressType addrType;
-        if (NetUtil.isValidIpV4Address(host)) {
-            addrType = Socks5AddressType.IPv4;
-        } else if (NetUtil.isValidIpV6Address(host)) {
-            addrType = Socks5AddressType.IPv6;
-        } else {
-            addrType = Socks5AddressType.DOMAIN;
-        }
+        Socks5AddressType addrType = addressType(host);
         buf.writeByte(addrType.byteValue());
         Socks5AddressEncoder.DEFAULT.encodeAddress(addrType, host, buf);
         buf.writeShort(port);
+    }
+
+    static Socks5AddressType addressType(String host) {
+        if (NetUtil.isValidIpV4Address(host)) {
+            return Socks5AddressType.IPv4;
+        }
+        return NetUtil.isValidIpV6Address(host) ? Socks5AddressType.IPv6 : Socks5AddressType.DOMAIN;
     }
 
     @SneakyThrows
