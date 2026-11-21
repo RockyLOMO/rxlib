@@ -321,7 +321,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     public UdpRelayGroupOpenResult openUdpRelayGroup(UdpRelayGroupOpenRequest request, String token) {
         validateRpcToken(token, "open-group");
         UdpRelayGroupOpenResult result = openUdpRelayGroup(request);
-        if (result != null && result.isSuccess()) {
+        if (result != null && result.isSuccess() && !UdpRelayGroupManager.isDaily(request)) {
             result.setToken(token);
         }
         return result;

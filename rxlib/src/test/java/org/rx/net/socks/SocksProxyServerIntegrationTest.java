@@ -1344,11 +1344,33 @@ class SocksProxyServerIntegrationTest {
     @SneakyThrows
     @Timeout(value = 25)
     void shadowsocksUdpRelay_socks5_chained_withRpcRelayGroup_e2e() {
-        int proxyBPort = 15463;
-        int proxyAPort = 15464;
-        int ssPort = 15465;
+        rpcRelayGroupEcho(false, false);
+    }
+
+    @Test
+    @Timeout(value = 25)
+    void dailyUdp_chainedRpcEcho() throws Exception {
+        rpcRelayGroupEcho(true, true);
+    }
+
+    @Test
+    @Timeout(value = 25)
+    void dailyClient_acceptsLegacyRpcRelayReplies() throws Exception {
+        rpcRelayGroupEcho(true, false);
+    }
+
+    private void rpcRelayGroupEcho(boolean daily, boolean modernServer) throws Exception {
+        int proxyBPort = modernServer ? 15763 : daily ? 15773 : 15463;
+        int proxyAPort = proxyBPort + 1;
+        int ssPort = proxyBPort + 2;
 
         SocksConfig configB = new SocksConfig(proxyBPort);
+        configB.setDailyUdp(modernServer);
+        if (daily && !modernServer) {
+            configB.setUdpRedundantMultiplier(2);
+            configB.setSocksUdpRedundantMode(org.rx.net.udp.UdpRedundantMode.BIDIRECTIONAL);
+            configB.setUdpCompressEnabled(true);
+        }
         configB.getWhiteList();
         SocksProxyServer proxyB = new SocksProxyServer(configB);
 
@@ -1366,7 +1388,8 @@ class SocksProxyServerIntegrationTest {
         ssServer.onUdpRoute.replace((s, e) -> e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), new SocksConfig(proxyAPort), supportA)));
         proxyA.onUdpRoute.replace((s, e) -> {
             SocksConfig bConf = new SocksConfig(proxyBPort);
-            bConf.setUdpPortHoppingEnabled(true);
+            bConf.setDailyUdp(daily);
+            bConf.setUdpPortHoppingEnabled(!daily);
             bConf.setUdpPortHoppingHopCount(3);
             bConf.setUdpPortHoppingMinActiveHops(3);
             bConf.setUdpRelayControlMode(UdpRelayControlMode.AUTO);
@@ -1380,8 +1403,12 @@ class SocksProxyServerIntegrationTest {
             clientSock.setSoTimeout(5000);
             try {
                 assertShadowsocksUdpEcho(clientSock, ssPort, crypto, "ss-rpc-port-hop-1");
-                waitForCondition(() -> proxyB.udpRelayRegistry.size() >= 3, 5000,
+                waitForCondition(() -> proxyB.udpRelayRegistry.size() == (modernServer ? 2 : daily ? 1 : 3), 5000,
                         "proxyB should allocate RPC managed UDP relay group");
+                if (modernServer) {
+                    assertTrue(proxyB.udpRelayRegistry.values().stream()
+                            .anyMatch(ch -> ch.pipeline().get(org.rx.net.udp.DailyUdpWire.class) != null));
+                }
                 assertEquals(0, proxyB.activeChannelCount(), "RPC relay group must not create standard SOCKS5 TCP control channels on proxyB");
                 assertShadowsocksUdpEcho(clientSock, ssPort, crypto, "ss-rpc-port-hop-2");
                 assertShadowsocksUdpEcho(clientSock, ssPort, crypto, "ss-rpc-port-hop-3");

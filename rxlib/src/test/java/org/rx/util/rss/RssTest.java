@@ -49,7 +49,6 @@ import org.rx.net.socks.SocksUserTraffic;
 import org.rx.net.socks.TrafficLoginInfo;
 import org.rx.net.socks.Udp2rawOpenRequest;
 import org.rx.net.socks.Udp2rawOpenResult;
-import org.rx.net.udp.UdpRedundantMode;
 import org.rx.net.socks.encryption.CipherKind;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
@@ -1843,7 +1842,9 @@ public class RssTest extends AbstractTester {
         assertEquals(SocksConfig.DEF_UDP_READ_TIMEOUT_SECONDS, config.getUdpReadTimeoutSeconds());
         assertEquals(1300, config.getUdpMtu());
         assertFalse(config.isEnableUdp2raw());
-        assertEquals(UdpRedundantMode.BIDIRECTIONAL, config.getSocksUdpRedundantMode());
+        assertTrue(config.isDailyUdp());
+        assertEquals(1, config.getUdpRedundantMultiplier());
+        assertFalse(config.isUdpCompressEnabled());
     }
 
     @Test
