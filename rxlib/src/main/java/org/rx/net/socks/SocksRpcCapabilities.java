@@ -19,6 +19,10 @@ public final class SocksRpcCapabilities implements Serializable {
     public static final int UDP_RELAY_GROUP_BATCH_RESET = 1 << 4;
     public static final int UDP2RAW_TUNNEL = 1 << 5;
 
+    public static final int SUPPORT_DAILY_UDP = 1 << 6;
+    public static final String DAILY_PROFILE = "daily-v1";
+    public static final String DAILY_HOP_ID = "daily-hop";
+
     public static final SocksRpcCapabilities EMPTY = new SocksRpcCapabilities();
 
     private int flags;

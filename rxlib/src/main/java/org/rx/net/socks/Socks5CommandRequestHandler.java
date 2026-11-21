@@ -121,6 +121,9 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 if (config.getUdpReadTimeoutSeconds() > 0 || config.getUdpWriteTimeoutSeconds() > 0) {
                     p.addLast(new ProxyChannelIdleHandler(config.getUdpReadTimeoutSeconds(), config.getUdpWriteTimeoutSeconds()));
                 }
+                if (!udp2raw) {
+                    UdpRelayAttributes.acceptLegacyClient(ch, config);
+                }
                 p.addLast(udp2raw ? Udp2rawHandler.DEFAULT : SocksUdpRelayHandler.DEFAULT);
             }).attr(SocksContext.SOCKS_SVR, server).bind(udpBindAddr);
             SocksUserTraffic.bind(udpFuture.channel(), user, loginInfo);

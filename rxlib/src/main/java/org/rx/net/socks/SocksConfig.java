@@ -59,6 +59,29 @@ public class SocksConfig extends SocketConfig {
     @ToString.Exclude
     private transient volatile Set<InetAddress> whiteList;
 
+    /** Negotiate RSS daily UDP (timed port hopping and adaptive FEC) over RPC. */
+    private boolean dailyUdp;
+    @Setter(AccessLevel.NONE)
+    private int dailyPortFirst, dailyPortLast;
+
+    /** Optional inclusive server UDP range. An unset range uses OS-assigned ephemeral ports. */
+    public void setDailyPortRange(String range) {
+        if (range == null || range.trim().isEmpty()) {
+            dailyPortFirst = dailyPortLast = 0;
+            return;
+        }
+        String[] ports = range.trim().split("-", -1);
+        if (ports.length != 2) {
+            throw new IllegalArgumentException("udpHopPorts requires first-last");
+        }
+        int first = Integer.parseInt(ports[0]), last = Integer.parseInt(ports[1]);
+        if (first < 1 || last > 65535 || first >= last) {
+            throw new IllegalArgumentException("udpHopPorts requires at least two valid UDP ports");
+        }
+        dailyPortFirst = first;
+        dailyPortLast = last;
+    }
+
     // UDP relay 控制面
     /**
      * UDP relay 控制面选择。AUTO 下优先尝试 rxlib RPC group，失败按 fallback 配置回退标准 SOCKS5。

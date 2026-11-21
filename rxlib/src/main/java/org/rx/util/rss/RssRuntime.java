@@ -471,7 +471,7 @@ final class RssRuntime implements AutoCloseable {
         if (server == null) {
             return;
         }
-        server.outConfRef.set(createOutboundConfig(conf, server.inConf));
+        server.outConfRef.set(new RssClient.OutboundProfiles(conf, server.inConf));
     }
 
     private ShadowServersPlan buildShadowServers(RssClientConf conf, RssInServer targetInServer,
@@ -683,10 +683,10 @@ final class RssRuntime implements AutoCloseable {
     static final class RssInServer {
         final SocksProxyServer server;
         final SocksConfig inConf;
-        final AtomicReference<SocksConfig> outConfRef;
+        final AtomicReference<RssClient.OutboundProfiles> outConfRef;
         final AtomicBoolean sourceSteeringEnabled;
 
-        RssInServer(SocksProxyServer server, SocksConfig inConf, AtomicReference<SocksConfig> outConfRef,
+        RssInServer(SocksProxyServer server, SocksConfig inConf, AtomicReference<RssClient.OutboundProfiles> outConfRef,
                     AtomicBoolean sourceSteeringEnabled) {
             this.server = server;
             this.inConf = inConf;

@@ -2,6 +2,8 @@
 
 2026-11-20，审查版本为 `master` 的 `b2487eab2b46b1c8342a648355e0c7d651988864`。在 Windows、Temurin 8、Netty NIO 上验证。SOCKS5 和 Shadowsocks 的 TCP、UDP 都能在 IPv4 与 IPv6 之间转发。使用仓库默认值部署到纯 IPv6 网络时，远端 DNS 和自动白名单仍依赖 IPv4。Server 按单核小内存优先控制进程级积压、复用解析与执行资源；Client 优先修复 EventLoop 锁顺序、ByteBuf 所有权与 DNS 热更回收。
 
+2026-11-21 起，支持新版协议的两端默认协商日常 UDP，使用双端口跳跃和按丢包反馈启停的 XOR FEC。端口配置、本地丢包对照和现网探测结果见[日常 UDP 验证记录](../.memory/network_and_proxy.md#2026-11-21-rss-日常-udp)。
+
 ## 本轮代码变更
 
 下文的抓包、资源采样和 P1 表格记录了 `b2487eab` 的行为。本轮修复在本地源码验证，尚未部署。

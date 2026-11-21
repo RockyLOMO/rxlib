@@ -19,8 +19,6 @@ import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.socks.SocksUser;
-import org.rx.net.udp.UdpPortHoppingMode;
-import org.rx.net.udp.UdpRedundantMode;
 import org.rx.net.transport.TcpServerConfig;
 
 import java.util.Map;
@@ -68,6 +66,7 @@ public final class RssServer {
 
         SocksConfig outConf = new SocksConfig(port);
         configureOutboundConfig(outConf, debugFlag);
+        outConf.setDailyPortRange(options.get("udpHopPorts"));
         Authenticator defAuth = (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS;
         SocksProxyServer outSvr = new SocksProxyServer(outConf, defAuth);
         outSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
@@ -110,22 +109,7 @@ public final class RssServer {
         config.setOptimalSettings(RssSupport.OUT_OPS);
 
         config.setUdpMtu(UDP2RAW_MTU);
-        config.setUdpRedundantMultiplier(2);
-        config.setSocksUdpRedundantMode(UdpRedundantMode.BIDIRECTIONAL);
-        config.setUdpRedundantAdaptive(true);
-        config.setUdpRedundantMinMultiplier(1);
-        config.setUdpRedundantMaxMultiplier(3);
-        config.setUdpRedundantLossThresholdHigh(0.20);
-        config.setUdpRedundantLossThresholdLow(0.05);
-        config.setUdpRedundantStablePeriods(3);
-
-        config.setUdpPortHoppingEnabled(true);
-        config.setUdpPortHoppingAdaptive(true);
-        config.setUdpPortHoppingMinHopCount(1);
-        config.setUdpPortHoppingMaxHopCount(2);
-        config.setUdpPortHoppingMinActiveHops(1);
-        config.setUdpPortHoppingMode(UdpPortHoppingMode.ROUND_ROBIN);
-        RssSupport.applyUdpCompressionTrial(config);
+        config.setDailyUdp(true);
     }
 
     static void configureUdp2rawOutboundConfig(SocksConfig config, boolean debugFlag, int udp2rawPort) {
@@ -133,6 +117,7 @@ public final class RssServer {
         config.setListenAddress(Sockets.newAnyEndpoint(udp2rawPort));
         // RSS Server 的独立 udp2raw 端口必须开启隧道服务能力，客户端 RPC open 才能成功。
         config.setEnableUdp2raw(true);
+        RssSupport.configureUdp2raw(config);
     }
 
     static void serverInit() {
