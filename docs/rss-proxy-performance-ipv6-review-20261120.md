@@ -16,6 +16,18 @@
 
 **后续容量验收**需要在 1 核、768 MiB 整机环境记录 PSS、Netty 实际堆外分配、活动连接、最终出口丢包原因、每秒转发包数及 P99。4 MiB 和 4096 包为初始预算。TCP 进程级建连限额、可选 DoH 的双查询并行及转发批量 flush 仍需负载数据。生产回程样本缺失也需独立定位。
 
+### 修复后的验证记录
+
+修复提交为 `master 558f493a`，Java 21 部署包对应本地合并 `ee14b09e`。各轮测试有重叠。
+
+| 环境 | 范围与结果 |
+| --- | --- |
+| Windows NIO / Temurin 8 | Maven 离线执行定向回归，204 项通过。随后加入拒连仅尝试一次的断言，重跑完整 SOCKS5 Client 集成套件，10 项通过。SOCKS5、Shadowsocks 的 TCP 和 UDP 均验证了 IPv4→IPv4、IPv4→IPv6、IPv6→IPv4、IPv6→IPv6 的回环回显。 |
+| 限制测试 JVM | 1 个可见 CPU、128 MiB 最大堆、64 MiB 最大 direct、每组 1 个 reactor 线程。SOCKS5 收发、共享监听关闭、DNS 缓存及 UDP 最终出口合计 24 项通过。在独立磁盘 H2 库上另跑 DNS 套件，28 项通过。 |
+| Windows NIO / Temurin 21 | 合并分支后执行 Maven `package`，205 项通过，0 失败、0 错误、0 跳过。已检查 Spring Boot JAR 的 `Start-Class` 为 `org.rx.util.rss.RssLauncher`。包的 SHA-256 为 `6add72a73362a733641bb4eef16222a44f065b6fe8a5f43a71bbbe8c329fa6b6`。 |
+
+本轮只作本地构建。部署脚本仍显式设置每组 2 个 reactor 线程、256 MiB 固定堆及 640 MiB direct 上限。最终 UDP 出口的 4 MiB 限额只统计该层持有的数据。以 768 MiB 整机作容量验收时，还需记录内核 socket、其他 direct 分配、线程栈及 OS 的峰值占用。
+
 ## RSS Server 的整机预算与优化顺序
 
 **设计验收以 1 核、768 MiB 整机内存为准。** OS、同机服务与内核网络缓冲也从这 768 MiB 中支出。Client 不套用这组硬件上限，两端均减少重复常驻状态。[项目基线](../AGENTS.md)
