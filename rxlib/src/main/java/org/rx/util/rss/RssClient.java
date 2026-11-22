@@ -1,5 +1,6 @@
 package org.rx.util.rss;
 
+import org.rx.net.RssHopTls;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import io.netty.channel.local.LocalAddress;
@@ -440,6 +441,13 @@ public final class RssClient {
 
         if (Strings.isEmpty(conf.socksPwd) || CollectionUtils.isEmpty(conf.shadowUsers) || CollectionUtils.isEmpty(conf.socksServers)) {
             return false;
+        }
+        if (!SocksConfig.validTlsPorts(conf.tcpCipherPorts)) {
+            log.warn("rssConf tcpCipherPorts must be a list of ports in 1..65535");
+            return false;
+        }
+        if (conf.tcpCipherPorts.length != 0) {
+            RssHopTls.clientFromEnvironment();
         }
         if (!hasWeightedSocksServer(conf.socksServers)) {
             log.warn("rssConf socksServers has no enabled server");
@@ -1019,7 +1027,7 @@ public final class RssClient {
     static SocksConfig createOutboundConfig(RssClientConf conf, SocksConfig inConf) {
         SocksConfig outConf = Sys.deepClone(inConf);
         outConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
-        outConf.setTcpCompressionLevel(RssSupport.TCP_TRIAL_COMPRESSION_LEVEL);
+        outConf.setTcpCompressionLevel(RssSupport.TCP_COMPRESSION_LEVEL);
         outConf.setOptimalSettings(RssSupport.OUT_OPS);
         configureOutboundConfig(conf, outConf);
         return outConf;
@@ -1496,7 +1504,7 @@ public final class RssClient {
                         userRoute ? "user:route" : "defaultRoute",
                         Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
             }
-            SocksConfig currentOutConf = outConfRef.get().tcp(e.getUser());
+            SocksConfig currentOutConf = outConfRef.get().tcp(e.getUser(), dstEp.getPort());
             e.setUpstream(new SocksTcpUpstream(dstEp, currentOutConf,
                     routeUpstream(currentOutConf, selectUpstreamFn.apply(e))));
         });
@@ -1538,7 +1546,6 @@ public final class RssClient {
             OutboundProfiles profiles = outConfRef.get();
             e.setUpstream(createUdpRouteUpstream(dstEp, next != null && next.isUdp2raw() ? profiles.tunnel : profiles.ordinary, next));
         });
-        inSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
         return new RssRuntime.RssInServer(inSvr, inConf, outConfRef, sourceSteeringEnabled);
     }
 
@@ -1717,6 +1724,7 @@ public final class RssClient {
 
     static final class OutboundProfiles {
         final SocksConfig ordinary, tunnel, adaptive;
+        private final SocksConfig secure, secureAdaptive;
         private final Set<String> adaptiveUsers = new HashSet<>();
 
         OutboundProfiles(RssClientConf conf, SocksConfig inbound) {
@@ -1735,11 +1743,26 @@ public final class RssClient {
                 adaptive = Sys.deepClone(ordinary);
                 adaptive.setAdaptiveTcp(true);
             }
+            secure = Sys.deepClone(ordinary);
+            secure.setRequiredTlsPorts(conf.tcpCipherPorts);
+            secure.setTransportFlags(TransportFlags.RSS_AUTHENTICATED_TLS.flags());
+            secureAdaptive = adaptiveUsers.isEmpty() ? secure : Sys.deepClone(secure);
+            if (secureAdaptive != secure) {
+                secureAdaptive.setAdaptiveTcp(true);
+            }
+            if (conf.tcpCipherPorts.length != 0) {
+                secure.setRssTlsContext(RssHopTls.clientFromEnvironment());
+                secureAdaptive.setRssTlsContext(secure.getRssTlsContext());
+            }
         }
 
-        SocksConfig tcp(TrafficUser user) {
+        SocksConfig tcp(TrafficUser user, int port) {
             // 已认证的本地连接可能仍引用热更新前的用户对象。
-            return user instanceof ShadowUser && adaptiveUsers.contains(user.getUsername()) ? adaptive : ordinary;
+            boolean accelerated = user instanceof ShadowUser && adaptiveUsers.contains(user.getUsername());
+            if (secure.requiresTls(port)) {
+                return accelerated ? secureAdaptive : secure;
+            }
+            return accelerated ? adaptive : ordinary;
         }
     }
 

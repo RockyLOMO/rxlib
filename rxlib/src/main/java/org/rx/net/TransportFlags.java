@@ -22,6 +22,7 @@ public enum TransportFlags implements NEnum<TransportFlags> {
     HTTP_PSEUDO_BOTH(HTTP_PSEUDO_READ.value | HTTP_PSEUDO_WRITE.value),
 
     TLS(1 << 12),
+    RSS_AUTHENTICATED_TLS(1 << 13),
 
     GFW(1 << 14);
 

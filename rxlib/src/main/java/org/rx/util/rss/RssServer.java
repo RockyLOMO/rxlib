@@ -1,5 +1,7 @@
 package org.rx.util.rss;
 
+import java.util.Arrays;
+import org.rx.net.RssHopTls;
 import io.netty.handler.codec.http.HttpMethod;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Reflects;
@@ -68,15 +70,21 @@ public final class RssServer {
         configureOutboundConfig(outConf, debugFlag);
         outConf.setAdaptiveTcp(!"0".equals(options.get("adaptiveTcp")));
         outConf.setDailyPortRange(options.get("udpHopPorts"));
+        String portList = options.getOrDefault("tcpCipherPorts", "53,80").trim();
+        outConf.setRequiredTlsPorts(portList.isEmpty() ? new int[0] : Arrays.stream(portList.split(",", -1))
+                .mapToInt(p -> Integer.parseInt(p.trim())).toArray());
+        outConf.setRssTlsContext(RssHopTls.serverFromEnvironment());
+        if (!portList.isEmpty() && outConf.getRssTlsContext() == null) {
+            log.warn("RSS protected TCP ports will reject connections until RSS_TCP_TLS_CERT and RSS_TCP_TLS_KEY are configured");
+        }
         Authenticator defAuth = (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS;
         SocksProxyServer outSvr = new SocksProxyServer(outConf, defAuth);
-        outSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
         SocksProxyServer outUdp2rawSvr = null;
         if (udp2rawPort != null && udp2rawPort > 0) {
             SocksConfig outTunConf = Sys.deepClone(outConf);
+            outTunConf.setRssTlsContext(outConf.getRssTlsContext());
             configureUdp2rawOutboundConfig(outTunConf, debugFlag, udp2rawPort);
             outUdp2rawSvr = new SocksProxyServer(outTunConf, defAuth);
-            outUdp2rawSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
         }
 
         int actualRpcPort = rpcPort == null ? port + 1 : rpcPort;
@@ -106,7 +114,7 @@ public final class RssServer {
         config.setWhiteListEnabled(true);
         config.setTcpAsyncDnsMode(SocksConfig.TcpAsyncDnsMode.REMOTE);
         config.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
-        config.setTcpCompressionLevel(RssSupport.TCP_TRIAL_COMPRESSION_LEVEL);
+        config.setTcpCompressionLevel(RssSupport.TCP_COMPRESSION_LEVEL);
         config.setOptimalSettings(RssSupport.OUT_OPS);
 
         config.setUdpMtu(UDP2RAW_MTU);

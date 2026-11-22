@@ -43,6 +43,7 @@ public class RssClientConf {
 
     // socks
     public List<ShadowUser> shadowUsers;
+    public int[] tcpCipherPorts = {53, 80};
     public UserRule defaultRoute;
     @JSONField(serialize = false, deserialize = false)
     @ToString.Exclude

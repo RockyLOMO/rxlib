@@ -2030,18 +2030,28 @@ public class RssTest extends AbstractTester {
         SocksConfig inbound = new SocksConfig();
         RssClient.OutboundProfiles profiles = new RssClient.OutboundProfiles(conf, inbound);
         ShadowUser a = conf.shadowUsers.get(0), b = conf.shadowUsers.get(1);
-        assertTrue(profiles.tcp(a).isAdaptiveTcp());
-        assertFalse(profiles.tcp(b).isAdaptiveTcp());
-        assertSame(profiles.ordinary, profiles.tcp(null));
+        assertTrue(profiles.tcp(a, 443).isAdaptiveTcp());
+        assertFalse(profiles.tcp(b, 443).isAdaptiveTcp());
+        assertSame(profiles.ordinary, profiles.tcp(null, 443));
         assertFalse(profiles.ordinary.isAdaptiveTcp());
+        assertTrue(profiles.tcp(a, 53).isAdaptiveTcp());
+        assertFalse(profiles.tcp(b, 80).isAdaptiveTcp());
+        assertTrue(profiles.tcp(b, 80).getTransportFlags().has(TransportFlags.RSS_AUTHENTICATED_TLS));
+        assertFalse(profiles.tcp(a, 53).getTransportFlags().has(TransportFlags.COMPRESS_WRITE));
+        assertTrue(profiles.tcp(a, 443).getTransportFlags().has(TransportFlags.COMPRESS_BOTH));
         assertFalse(profiles.tunnel.isAdaptiveTcp());
         assertTrue(profiles.ordinary.isDailyUdp());
         RssClientConf reload = JSON.parseObject(json, RssClientConf.class);
+        reload.tcpCipherPorts = new int[]{8443};
         reload.shadowUsers.get(0).setAdaptiveTcp(false);
         reload.shadowUsers.get(1).setAdaptiveTcp(true);
         RssClient.OutboundProfiles changed = new RssClient.OutboundProfiles(reload, inbound);
-        assertFalse(changed.tcp(a).isAdaptiveTcp());
-        assertTrue(changed.tcp(b).isAdaptiveTcp());
+        assertFalse(changed.tcp(a, 443).isAdaptiveTcp());
+        assertTrue(changed.tcp(b, 443).isAdaptiveTcp());
+        assertTrue(changed.tcp(a, 8443).getTransportFlags().has(TransportFlags.RSS_AUTHENTICATED_TLS));
+        assertSame(changed.ordinary, changed.tcp(a, 53));
+        reload.tcpCipherPorts = new int[]{65536};
+        assertThrows(IllegalArgumentException.class, () -> new RssClient.OutboundProfiles(reload, inbound));
     }
 
     @Test
