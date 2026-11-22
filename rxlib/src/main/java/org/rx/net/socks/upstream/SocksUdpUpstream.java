@@ -339,8 +339,10 @@ public class SocksUdpUpstream extends Upstream {
 
             UdpRelayGroupOpenRequest request = new UdpRelayGroupOpenRequest();
             daily = socksConfig.isDailyUdp() && capabilities.has(SocksRpcCapabilities.SUPPORT_DAILY_UDP);
+            boolean lz4 = capabilities.has(SocksRpcCapabilities.SUPPORT_DAILY_LZ4);
             if (daily) {
-                request.setAttributes(Collections.singletonMap("profile", SocksRpcCapabilities.DAILY_PROFILE));
+                request.setAttributes(Collections.singletonMap("profile", lz4
+                        ? SocksRpcCapabilities.DAILY_LZ4_PROFILE : SocksRpcCapabilities.DAILY_PROFILE));
                 // One logical relay with two physical ingress ports.
                 initialCount = minActive = 1;
                 maxRelayCount = 2;
@@ -368,7 +370,7 @@ public class SocksUdpUpstream extends Upstream {
             RpcRelayGroupControl control = new RpcRelayGroupControl(facade, result.getGroupId(), controlToken);
             if (daily) {
                 try {
-                    return dailyGroup(control, result);
+                    return dailyGroup(control, result, lz4);
                 } catch (Exception e) {
                     control.closeGroup();
                     throw e;
@@ -392,7 +394,7 @@ public class SocksUdpUpstream extends Upstream {
         }
     }
 
-    private SessionGroup dailyGroup(RpcRelayGroupControl control, UdpRelayGroupOpenResult result) throws Exception {
+    private SessionGroup dailyGroup(RpcRelayGroupControl control, UdpRelayGroupOpenResult result, boolean lz4) throws Exception {
         InetSocketAddress primary = null, alias = null;
         for (UdpRelayEndpoint endpoint : result.getRelays()) {
             if (SocksRpcCapabilities.DAILY_HOP_ID.equals(endpoint.getRelayId())) {
@@ -409,11 +411,11 @@ public class SocksUdpUpstream extends Upstream {
             primary = Sockets.resolveUdpEndpointAsync(primary, config).get();
         }
         alias = new InetSocketAddress(primary.getAddress(), alias.getPort());
-        control.dailyWire = DailyUdpWire.client(result.getToken(), primary, alias, config.getUdpMtu());
+        control.dailyWire = DailyUdpWire.client(result.getToken(), primary, alias, config.getUdpMtu(), lz4);
         SessionGroup group = new SessionGroup(new SessionHolder[]{SessionHolder.rpc(control, result.getGroupId(), primary)},
                 UdpPortHoppingMode.ROUND_ROBIN, 1, control);
         onRpcRelayGroupSuccess(poolKey());
-        DiagnosticMetrics.record("socks.udp.relay.control.mode.count", 1D, "mode=daily-v1");
+        DiagnosticMetrics.record("socks.udp.relay.control.mode.count", 1D, lz4 ? "mode=daily-lz4-v1" : "mode=daily-v1");
         return group;
     }
 

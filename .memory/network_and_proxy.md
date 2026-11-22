@@ -4105,4 +4105,12 @@ Windows 与 Linux 均使用应用内双端口。Hysteria 2 的 Linux 方案将�
 
 业务流先经 TCP。每方向完成签名 UDP 往返探测后，才将分块交给 `UdpDailyFec`。接收侧按序交付并经 TCP 累计确认，FEC 无法恢复的缺块用原 TCP 补发。窗口已满或确认停滞时，通过同一连接补齐在途数据，后续流量回 TCP 并重新探测。普通 UDP 代理仍使用原先协商的日常双端口跳跃。此 TCP 加速协议使用服务器 SOCKS TCP **同号**的共享 UDP 端口，客户端沿用一个会话对应一个 UDP socket。TCP 是全程依赖的可靠通道。通用 UdpClient / KcpClient 的旧版可选 FEC 与其线协议继续兼容。
 
-RSS Client 配置 `adaptiveTcp` 默认 true，RSS Server 可通过 `-adaptiveTcp=0` 禁用协商。服务端 UDP 端口绑定失败时提供标准 TCP。每个流的发送和重排窗口各上限 64 个数据块，每块小于 1250 字节；单核机器验收关注 Netty 堆外内存、活动流数、P95/P99、`rss.tcp.adaptive.transition` 以及连接结束时上报的 `rss.tcp.adaptive.tx.frameBytes`。该字节数记录交给各通道的帧，包含协议控制帧。
+RSS Client 按外部 SS 用户读取 `shadowUsers[].adaptiveTcp`，默认 false。设为 true 的用户在新建 RSS 内部 TCP 代理连接时发起协商。热更新按用户名匹配，预热连接池按协商模式隔离。RSS Server 可通过 `-adaptiveTcp=0` 禁用协商。服务端 UDP 端口绑定失败时提供标准 TCP。每个流的发送和重排窗口各上限 64 个数据块，每块小于 1250 字节；单核机器验收关注 Netty 堆外内存、活动流数、P95/P99、`rss.tcp.adaptive.transition` 以及连接结束时上报的 `rss.tcp.adaptive.tx.frameBytes`。该字节数记录交给各通道的帧，包含协议控制帧。
+
+### 2026-11-22 RSS 内部跳的压缩策略
+
+TCP 业务沿用 Netty 的 zlib/DEFLATE 流压缩，RSS 级别为 5。TCP 自适应通道承载这条已编码的字节流，TCP 补发和 UDP/FEC 切换共用相同的压缩上下文。RSS 默认对目标端口 53、80 另加链路加密。其余端口的保密性取决于业务协议等已有加密层；UDP 签名提供完整性和防重放。
+
+普通 UDP 代理的新版两端通过 RPC 协商 `daily-lz4-v1`。先逐个 SOCKS 数据报试用 LZ4 fast，再对实际发送的数据做 FEC。每包可独立解码。小于 96 B 的数据报直接发送，压缩净节省至少 24 B 且达到 12% 才采用；连续 8 次收益不足后暂停尝试 30 秒。接收端以本地 MTU 及 FEC 协议上限约束解压输出。旧端继续协商原有 profile。压缩可逆，普通 UDP 的业务保密性仍取决于应用加密。评估收益时需同时对照 `rss.udp.daily.tx.payloadBytes`、`tx.encodedBytes`、CPU、P99 及 Netty 堆外内存。
+
+Java 8 本地单线程编码对比取仓库 README 的 256 个 1200 B 片段，循环 20000 次，重复三轮。LZ4 fast 含两字节前缀平均 937 B/包，耗时 2.5–2.7 ns/B；逐包重置的 zlib 5 平均 728 B/包，耗时 39–50 ns/B。该数据仅用于比较独立块编码成本。部署后可按方向查看 `rss.udp.daily.tx.compressionSavedBytes` 获取实际净压缩收益。

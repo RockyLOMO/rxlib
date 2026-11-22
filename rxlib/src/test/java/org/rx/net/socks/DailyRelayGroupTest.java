@@ -24,6 +24,7 @@ class DailyRelayGroupTest {
         try (SocksProxyServer server = new SocksProxyServer(config)) {
             UdpRelayGroupOpenRequest request = new UdpRelayGroupOpenRequest();
             String rpcToken = SocksRpcContract.rpcToken();
+            assertTrue(server.socksRpcCapabilities(rpcToken).has(SocksRpcCapabilities.SUPPORT_DAILY_LZ4));
             UdpRelayGroupOpenResult legacy = server.openUdpRelayGroup(request, rpcToken);
             assertTrue(legacy.isSuccess());
             assertEquals(rpcToken, legacy.getToken());

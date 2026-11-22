@@ -2022,6 +2022,29 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
+    public void adaptiveTcpFollowsCurrentShadowUserConfig() {
+        String json = "{\"adaptiveTcp\":true,\"shadowUsers\":["
+                + "{\"ssPort\":6898,\"username\":\"a\",\"socksUser\":\"shared\",\"adaptiveTcp\":true},"
+                + "{\"ssPort\":6899,\"username\":\"b\",\"socksUser\":\"shared\"}]}";
+        RssClientConf conf = JSON.parseObject(json, RssClientConf.class);
+        SocksConfig inbound = new SocksConfig();
+        RssClient.OutboundProfiles profiles = new RssClient.OutboundProfiles(conf, inbound);
+        ShadowUser a = conf.shadowUsers.get(0), b = conf.shadowUsers.get(1);
+        assertTrue(profiles.tcp(a).isAdaptiveTcp());
+        assertFalse(profiles.tcp(b).isAdaptiveTcp());
+        assertSame(profiles.ordinary, profiles.tcp(null));
+        assertFalse(profiles.ordinary.isAdaptiveTcp());
+        assertFalse(profiles.tunnel.isAdaptiveTcp());
+        assertTrue(profiles.ordinary.isDailyUdp());
+        RssClientConf reload = JSON.parseObject(json, RssClientConf.class);
+        reload.shadowUsers.get(0).setAdaptiveTcp(false);
+        reload.shadowUsers.get(1).setAdaptiveTcp(true);
+        RssClient.OutboundProfiles changed = new RssClient.OutboundProfiles(reload, inbound);
+        assertFalse(changed.tcp(a).isAdaptiveTcp());
+        assertTrue(changed.tcp(b).isAdaptiveTcp());
+    }
+
+    @Test
     public void rssTcpIdleConfig_ClonesAndCanBeDisabled() {
         RssClientConf conf = new RssClientConf();
         SocksConfig inbound = new SocksConfig();

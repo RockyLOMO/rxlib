@@ -72,6 +72,7 @@ import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -1011,7 +1012,7 @@ public final class RssClient {
 
         config.setUdpMtu(UDP2RAW_MTU);
         config.setDailyUdp(true);
-        config.setAdaptiveTcp(conf.adaptiveTcp);
+        config.setAdaptiveTcp(false);
         applyUdpLeasePool(conf, config);
     }
 
@@ -1466,7 +1467,6 @@ public final class RssClient {
                 return;
             }
             InetSocketAddress dstEp = e.getFirstDestination();
-            SocksConfig currentOutConf = outConfRef.get().ordinary;
             RssClientConf currentConf = rssConf;
             boolean routeLog = currentConf != null && currentConf.hasRouteFlag();
             long userRuleBegin = routeLog ? System.nanoTime() : 0L;
@@ -1496,6 +1496,7 @@ public final class RssClient {
                         userRoute ? "user:route" : "defaultRoute",
                         Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
             }
+            SocksConfig currentOutConf = outConfRef.get().tcp(e.getUser());
             e.setUpstream(new SocksTcpUpstream(dstEp, currentOutConf,
                     routeUpstream(currentOutConf, selectUpstreamFn.apply(e))));
         });
@@ -1715,11 +1716,30 @@ public final class RssClient {
     }
 
     static final class OutboundProfiles {
-        final SocksConfig ordinary, tunnel;
+        final SocksConfig ordinary, tunnel, adaptive;
+        private final Set<String> adaptiveUsers = new HashSet<>();
 
         OutboundProfiles(RssClientConf conf, SocksConfig inbound) {
             ordinary = createOutboundConfig(conf, inbound);
             tunnel = udp2rawRouteConfig(ordinary);
+            if (conf.shadowUsers != null) {
+                for (ShadowUser user : conf.shadowUsers) {
+                    if (user.isAdaptiveTcp()) {
+                        adaptiveUsers.add(user.getUsername());
+                    }
+                }
+            }
+            if (adaptiveUsers.isEmpty()) {
+                adaptive = ordinary;
+            } else {
+                adaptive = Sys.deepClone(ordinary);
+                adaptive.setAdaptiveTcp(true);
+            }
+        }
+
+        SocksConfig tcp(TrafficUser user) {
+            // 已认证的本地连接可能仍引用热更新前的用户对象。
+            return user instanceof ShadowUser && adaptiveUsers.contains(user.getUsername()) ? adaptive : ordinary;
         }
     }
 
