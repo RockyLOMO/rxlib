@@ -17,6 +17,9 @@ public final class RssSupport {
     public static final OptimalSettings IN_OPS = null;
     public static final OptimalSettings SS_IN_OPS = new OptimalSettings((int) (1024 * 0.8), 30, 200, 2000, OptimalSettings.Mode.BALANCED);
     public static final int TCP_COMPRESSION_LEVEL = 3;
+    /** Original trial preset, retained for callers that explicitly select it. */
+    @Deprecated
+    public static final int TCP_TRIAL_COMPRESSION_LEVEL = 5;
 
     /** Dynadot、/hf 等复用，避免每次 new HttpClient */
     static final HttpClient MAIN_HTTP_CLIENT = new HttpClient();
