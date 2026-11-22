@@ -50,14 +50,14 @@ final class UdpRelayGroupManager extends Disposable {
         SocksConfig config = server.getConfig();
         SocksRpcCapabilities caps = SocksRpcCapabilities.udpRelayGroup(config.getUdpRelayControlMaxRelaysPerGroup(), MAX_GROUPS);
         if (config.isDailyUdp() && caps.getMaxRelaysPerGroup() >= 2) {
-            caps.addFlag(SocksRpcCapabilities.SUPPORT_DAILY_UDP);
+            caps.addFlag(SocksRpcCapabilities.SUPPORT_DAILY_UDP | SocksRpcCapabilities.SUPPORT_DAILY_LZ4);
         }
         return caps;
     }
 
-    static boolean isDaily(UdpRelayGroupOpenRequest request) {
-        return request != null && request.getAttributes() != null
-                && SocksRpcCapabilities.DAILY_PROFILE.equals(request.getAttributes().get("profile"));
+    static String dailyProfile(UdpRelayGroupOpenRequest request) {
+        String value = request == null || request.getAttributes() == null ? null : request.getAttributes().get("profile");
+        return SocksRpcCapabilities.DAILY_PROFILE.equals(value) || SocksRpcCapabilities.DAILY_LZ4_PROFILE.equals(value) ? value : null;
     }
 
     UdpRelayGroupOpenResult open(UdpRelayGroupOpenRequest request) {
@@ -77,7 +77,8 @@ final class UdpRelayGroupManager extends Disposable {
         int initialCount = clamp(request.getInitialRelayCount(), 1, maxAllowed);
         int minActive = clamp(request.getMinActiveRelays(), 1, initialCount);
         int maxRelayCount = clamp(request.getMaxRelayCount(), initialCount, maxAllowed);
-        boolean daily = isDaily(request);
+        String profile = dailyProfile(request);
+        boolean daily = profile != null;
         if (daily) {
             if (!config.isDailyUdp()) {
                 return UdpRelayGroupOpenResult.fail("DAILY_DISABLED", "daily UDP profile is disabled");
@@ -93,7 +94,7 @@ final class UdpRelayGroupManager extends Disposable {
                 : config.getUdpRelayGroupIdleMillis();
 
         UdpRelayGroup group = new UdpRelayGroup(UUID.randomUUID().toString(), UUID.randomUUID().toString(),
-                daily ? null : request.getClientAddr(), request.getFirstDestination(), maxRelayCount, idleMillis, now, daily);
+                daily ? null : request.getClientAddr(), request.getFirstDestination(), maxRelayCount, idleMillis, now, profile);
         groups.put(group.groupId, group);
 
         List<UdpRelayEndpoint> opened = addRelays(group, initialCount);
@@ -210,7 +211,7 @@ final class UdpRelayGroupManager extends Disposable {
                     group.wire = DailyUdpWire.server(group.dataPlaneToken, sender -> {
                         ConcurrentMap<InetSocketAddress, SocksContext> routes = ch.attr(SocksUdpRelayHandler.ATTR_CTX_MAP).get();
                         return routes != null && routes.containsKey(sender);
-                    });
+                    }, group.lz4);
                     p.addLast(group.wire);
                 } else if (config.getUdpReadTimeoutSeconds() > 0 || config.getUdpWriteTimeoutSeconds() > 0) {
                     p.addLast(new ProxyChannelIdleHandler(config.getUdpReadTimeoutSeconds(), config.getUdpWriteTimeoutSeconds()));
@@ -377,7 +378,7 @@ final class UdpRelayGroupManager extends Disposable {
         final String groupId;
         // Negotiated daily frames carry this per-group cookie. RPC authorization is independent.
         final String dataPlaneToken;
-        final boolean daily;
+        final boolean daily, lz4;
         volatile Channel primary;
         volatile DailyUdpWire wire;
         final InetSocketAddress clientAddr;
@@ -390,8 +391,9 @@ final class UdpRelayGroupManager extends Disposable {
         volatile boolean closed;
 
         UdpRelayGroup(String groupId, String dataPlaneToken, InetSocketAddress clientAddr,
-                InetSocketAddress firstDestination, int maxRelayCount, long idleTimeoutMillis, long now, boolean daily) {
-            this.daily = daily;
+                InetSocketAddress firstDestination, int maxRelayCount, long idleTimeoutMillis, long now, String profile) {
+            daily = profile != null;
+            lz4 = SocksRpcCapabilities.DAILY_LZ4_PROFILE.equals(profile);
             this.groupId = groupId;
             this.dataPlaneToken = dataPlaneToken;
             this.clientAddr = clientAddr;
