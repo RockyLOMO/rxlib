@@ -3,11 +3,10 @@ package org.rx.net.socks;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
-import java.net.InetSocketAddress;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
-import java.util.Map;
+import java.util.UUID;
 
 @Getter
 @Setter
@@ -22,6 +21,7 @@ public final class UdpRelayGroupOpenRequest implements Serializable {
     private int minActiveRelays = 1;
     private int maxRelayCount = 1;
     private long idleTimeoutMillis;
+    private int dailyFeatures;
+    private UUID clientSalt;
     private boolean sharedDedupRequired;
-    private Map<String, String> attributes;
 }

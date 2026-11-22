@@ -43,7 +43,8 @@ public class RssClientConf {
 
     // socks
     public List<ShadowUser> shadowUsers;
-    public int[] tcpCipherPorts = {53, 80};
+    public int[] tcpCipherPorts = RssTransport.cipherPorts();
+    public int[] tcpAlreadyEncryptedPorts = RssTransport.alreadyEncryptedPorts();
     public UserRule defaultRoute;
     @JSONField(serialize = false, deserialize = false)
     @ToString.Exclude

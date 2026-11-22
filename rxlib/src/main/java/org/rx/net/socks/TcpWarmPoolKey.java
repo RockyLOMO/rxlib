@@ -16,19 +16,15 @@ import java.io.Serializable;
 public final class TcpWarmPoolKey implements Serializable {
     private static final long serialVersionUID = 5233525606849670764L;
 
-    public TcpWarmPoolKey(String endpointText, String username, String password, String reactorName,
-                          int connectTimeoutMillis, int transportFlagsBits, short cipher, long cipherKeyHash) {
-        this(endpointText, username, password, reactorName, connectTimeoutMillis, transportFlagsBits, cipher, cipherKeyHash, false);
-    }
-
     public static TcpWarmPoolKey from(AuthenticEndpoint endpoint, SocketConfig config, String reactorName) {
         String addr = Sockets.toString(endpoint.getEndpoint());
         long cipherKeyHash = config.getCipherKey() == null ? 0L : CodecUtil.hash64(config.getCipherKey());
-        return new TcpWarmPoolKey(addr, endpoint.getUsername(), endpoint.getPassword(),
+        return new TcpWarmPoolKey(endpoint.getParameters().get(SocksConnectionTagRegistry.PARAM_NAME), addr, endpoint.getUsername(), endpoint.getPassword(),
                 reactorName, config.getConnectTimeoutMillis(), config.getTransportFlags().getValue(), config.getCipher(), cipherKeyHash,
                 config instanceof SocksConfig && ((SocksConfig) config).isAdaptiveTcp());
     }
 
+    private final String trafficUser;
     private final String endpointText;
     private final String username;
     private final String password;

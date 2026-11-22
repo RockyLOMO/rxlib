@@ -54,7 +54,10 @@ class AdaptiveUdpPortTest {
         byte[] key = new byte[32];
         new SecureRandom().nextBytes(key);
         BlockingQueue<Integer> frames = new LinkedBlockingQueue<>();
-        try (AdaptiveUdpPort server = AdaptiveUdpPort.listen(loopback);
+        String range = System.getenv("RSS_TEST_REDIRECTED_RANGE");
+        int firstPort = range == null ? 0 : Integer.parseInt(range.split("-")[0]);
+        try (AdaptiveUdpPort server = firstPort == 0 ? AdaptiveUdpPort.listen(loopback)
+                : AdaptiveUdpPort.listen(new InetSocketAddress(loopback.getAddress(), firstPort), firstPort + 1, true);
              DatagramSocket first = new DatagramSocket(loopback);
              DatagramSocket next = new DatagramSocket(loopback)) {
             InetSocketAddress target = new InetSocketAddress(loopback.getAddress(), server.port());
@@ -72,8 +75,8 @@ class AdaptiveUdpPortTest {
             byte[] seen = packet(key, 1, 3);
             send(first, target, seen);
             send(first, target, seen);
-            send(next, target, packet(key, 1, 5));
             assertEquals(Integer.valueOf(3), frames.poll(2, TimeUnit.SECONDS));
+            send(next, new InetSocketAddress(target.getAddress(), server.aliasPort()), packet(key, 1, 5));
             assertEquals(Integer.valueOf(5), frames.poll(2, TimeUnit.SECONDS));
             send(first, target, packet(key, 1, 4));
             assertEquals(Integer.valueOf(4), frames.poll(2, TimeUnit.SECONDS));
@@ -81,10 +84,11 @@ class AdaptiveUdpPortTest {
             next.setSoTimeout(2000);
             DatagramPacket reply = new DatagramPacket(new byte[100], 100);
             next.receive(reply);
+            assertEquals(server.aliasPort(), reply.getPort());
             assertEquals(99, ByteBuffer.wrap(reply.getData()).getInt(16));
 
             BlockingQueue<Integer> inbound = new LinkedBlockingQueue<>();
-            try (AdaptiveUdpPort client = AdaptiveUdpPort.client(8, key, tcp, target, frame -> {
+            try (AdaptiveUdpPort client = AdaptiveUdpPort.client(8, key, tcp, server.port(), server.aliasPort(), frame -> {
                 try { inbound.add(frame.readInt()); } finally { frame.release(); }
             })) {
                 server.register(8, key, remote, frame -> server.send(8, frame));

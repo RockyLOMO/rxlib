@@ -1,11 +1,12 @@
 package org.rx.net;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.compression.ZlibCodecFactory;
 import io.netty.handler.codec.compression.ZlibWrapper;
-import io.netty.handler.ssl.OptionalSslHandler;
+import io.netty.handler.codec.ByteToMessageDecoder;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.SslHandler;
@@ -16,8 +17,9 @@ import org.rx.net.socks.SocksConfig;
 import java.io.File;
 import java.net.InetSocketAddress;
 import java.util.Collections;
+import java.util.List;
 
-/** Authenticated RSS TCP hop. Ordinary SOCKS streams on the same listener keep their zlib framing. */
+/** Authenticated RSS TCP hop. One listener accepts raw SOCKS and zlib, both directly and inside TLS. */
 public final class RssHopTls {
     private RssHopTls() { }
 
@@ -64,16 +66,45 @@ public final class RssHopTls {
     }
 
     static ChannelHandler serverSelector(SocksConfig config) {
-        return new OptionalSslHandler(config.getRssTlsContext()) {
-            @Override protected String newNonSslHandlerName() {
-                return Sockets.ZIP_DECODER;
-            }
+        return new ServerSelector(config, config.getRssTlsContext());
+    }
 
-            @Override protected ChannelHandler newNonSslHandler(ChannelHandlerContext ctx) {
-                ctx.pipeline().addAfter(ctx.name(), Sockets.ZIP_ENCODER,
-                        Sockets.newTcpCompressionEncoder(config, ZlibWrapper.ZLIB));
-                return ZlibCodecFactory.newZlibDecoder(ZlibWrapper.ZLIB);
+    /** The first SOCKS greeting can be just three bytes. Consume no bytes while selecting its decoder. */
+    private static final class ServerSelector extends ByteToMessageDecoder {
+        private final SocksConfig config;
+        private final SslContext tls;
+
+        ServerSelector(SocksConfig config, SslContext tls) {
+            this.config = config;
+            this.tls = tls;
+        }
+
+        @Override protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) {
+            int pos = in.readerIndex();
+            int first = in.getUnsignedByte(pos);
+            if (first == 5) {
+                ctx.pipeline().remove(this);
+                return;
             }
-        };
+            if (first == 0x16 && tls != null) { // TLS ClientHello (handshake record)
+                ctx.pipeline().addAfter(ctx.name(), null, new ServerSelector(config, null));
+                ctx.pipeline().replace(this, null, tls.newHandler(ctx.alloc()));
+                return;
+            }
+            if ((first & 0x0f) == 8 && first <= 0x78) { // RFC 1950, DEFLATE with at most a 32 KiB window
+                if (in.readableBytes() < 2) {
+                    return;
+                }
+                int header = in.getUnsignedShort(pos);
+                if (header % 31 == 0 && (header & 0x20) == 0) {
+                    ctx.pipeline().addAfter(ctx.name(), Sockets.ZIP_ENCODER,
+                            Sockets.newTcpCompressionEncoder(config, ZlibWrapper.ZLIB));
+                    ctx.pipeline().replace(this, Sockets.ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(ZlibWrapper.ZLIB));
+                    return;
+                }
+            }
+            in.skipBytes(in.readableBytes());
+            ctx.close();
+        }
     }
 }

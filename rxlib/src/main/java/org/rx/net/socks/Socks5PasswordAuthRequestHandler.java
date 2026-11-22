@@ -30,7 +30,7 @@ public class Socks5PasswordAuthRequestHandler extends SimpleChannelInboundHandle
         }
         AuthResult result = server.getAuthenticator().loginResult(msg.username(), msg.password());
         byte[] nonce = Boolean.TRUE.equals(ctx.channel().attr(SocksAdaptiveHandshake.NEGOTIATED).getAndSet(null))
-                ? SocksAdaptiveHandshake.sendNonce(ctx) : null;
+                ? SocksAdaptiveHandshake.sendNonce(ctx, server.adaptivePort) : null;
         if (result == null || nonce != null && (result.getUser() == null || result.getUser().isAnonymous()
                 || msg.password().isEmpty())) {
             ctx.writeAndFlush(new DefaultSocks5PasswordAuthResponse(Socks5PasswordAuthStatus.FAILURE)).addListener(ChannelFutureListener.CLOSE);

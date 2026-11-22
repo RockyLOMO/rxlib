@@ -20,9 +20,6 @@ public final class SocksRpcCapabilities implements Serializable {
     public static final int UDP2RAW_TUNNEL = 1 << 5;
 
     public static final int SUPPORT_DAILY_UDP = 1 << 6;
-    public static final int SUPPORT_DAILY_LZ4 = 1 << 7;
-    public static final String DAILY_PROFILE = "daily-v1";
-    public static final String DAILY_LZ4_PROFILE = "daily-lz4-v1";
     public static final String DAILY_HOP_ID = "daily-hop";
 
     public static final SocksRpcCapabilities EMPTY = new SocksRpcCapabilities();

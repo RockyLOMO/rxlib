@@ -16,22 +16,22 @@ class DailyRelayGroupTest {
     @Test
     void negotiationIsPerGroupAndClosingEitherPortClosesItsPartner() throws Exception {
         SocksConfig config = new SocksConfig(new LocalAddress(UUID.randomUUID().toString()));
-        config.setDailyUdp(true);
+        config.setDailyUdpFeatures(7);
         assertThrows(IllegalArgumentException.class, () -> config.setDailyPortRange("66000-66001"));
         assertThrows(IllegalArgumentException.class, () -> config.setDailyPortRange("15680-15680"));
-        config.setDailyPortRange("15680-15681");
+        config.setDailyPortRange("15678-15681");
         config.setUdpRedundantMultiplier(2);
         try (SocksProxyServer server = new SocksProxyServer(config)) {
             UdpRelayGroupOpenRequest request = new UdpRelayGroupOpenRequest();
             String rpcToken = SocksRpcContract.rpcToken();
-            assertTrue(server.socksRpcCapabilities(rpcToken).has(SocksRpcCapabilities.SUPPORT_DAILY_LZ4));
+            assertTrue(server.socksRpcCapabilities(rpcToken).has(SocksRpcCapabilities.SUPPORT_DAILY_UDP));
             UdpRelayGroupOpenResult legacy = server.openUdpRelayGroup(request, rpcToken);
             assertTrue(legacy.isSuccess());
             assertEquals(rpcToken, legacy.getToken());
             assertEquals(1, legacy.getRelays().size());
 
             request.setMaxRelayCount(2);
-            request.setAttributes(Collections.singletonMap("profile", SocksRpcCapabilities.DAILY_PROFILE));
+            request.setDailyFeatures(DailyUdpWire.FEC);
             UdpRelayGroupOpenResult daily = server.openUdpRelayGroup(request, rpcToken);
             assertTrue(daily.isSuccess(), daily.getErrorCode());
             assertNotEquals(rpcToken, daily.getToken());

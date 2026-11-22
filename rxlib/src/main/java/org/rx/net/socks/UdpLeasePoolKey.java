@@ -19,10 +19,11 @@ public final class UdpLeasePoolKey implements Serializable {
     public static UdpLeasePoolKey from(AuthenticEndpoint endpoint, SocketConfig config, String reactorName) {
         String addr = Sockets.toString(endpoint.getEndpoint());
         long cipherKeyHash = config.getCipherKey() == null ? 0L : CodecUtil.hash64(config.getCipherKey());
-        return new UdpLeasePoolKey(addr, endpoint.getUsername(), endpoint.getPassword(),
+        return new UdpLeasePoolKey(endpoint.getParameters().get(SocksConnectionTagRegistry.PARAM_NAME), addr, endpoint.getUsername(), endpoint.getPassword(),
                 reactorName, config.getConnectTimeoutMillis(), config.getTransportFlags().getValue(), config.getCipher(), cipherKeyHash);
     }
 
+    private final String trafficUser;
     private final String endpointText;
     private final String username;
     private final String password;

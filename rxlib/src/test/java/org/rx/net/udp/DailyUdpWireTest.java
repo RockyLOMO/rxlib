@@ -14,7 +14,6 @@ import org.rx.net.socks.*;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.util.Collections;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -26,30 +25,44 @@ import static org.junit.jupiter.api.Assertions.*;
 class DailyUdpWireTest {
     @Test
     void ipv4ChangesReturnPortAndKeepsTargetTuple() throws Exception {
-        verifyHops(InetAddress.getByName("127.0.0.1"), false);
+        verifyHops(InetAddress.getByName("127.0.0.1"), DailyUdpWire.FEC);
     }
 
     @Test
     void ipv6ChangesReturnPortAndKeepsTargetTuple() throws Exception {
-        verifyHops(InetAddress.getByName("::1"), false);
+        verifyHops(InetAddress.getByName("::1"), DailyUdpWire.FEC);
     }
 
     @Test
     void negotiatedCompressionShrinksBothHopRepliesAndPreservesRawTarget() throws Exception {
-        verifyHops(InetAddress.getByName("127.0.0.1"), true);
-        verifyHops(InetAddress.getByName("::1"), true);
+        verifyHops(InetAddress.getByName("127.0.0.1"), DailyUdpWire.LZ4);
+        verifyHops(InetAddress.getByName("::1"), DailyUdpWire.LZ4 | DailyUdpWire.FEC);
     }
 
-    private void verifyHops(InetAddress ip, boolean lz4) throws Exception {
+    @Test
+    void authenticatedUdpCombinationsHopAndEcho() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(DailyUdpWire.hasCipherKey(), "test deployment key required");
+        for (int flags : new int[]{2, 3, 6, 7}) {
+            verifyHops(InetAddress.getByName("127.0.0.1"), flags);
+        }
+    }
+
+    private void verifyHops(InetAddress ip, int flags) throws Exception {
+        boolean lz4 = (flags & DailyUdpWire.LZ4) != 0;
         SocksConfig config = new SocksConfig(new LocalAddress(UUID.randomUUID().toString()));
-        config.setDailyUdp(true);
+        config.setDailyUdpFeatures(7);
+        String redirectedRange = System.getenv("RSS_TEST_REDIRECTED_RANGE");
+        if (redirectedRange != null) {
+            config.setDailyPortRange(redirectedRange);
+            config.setRedirectUdpHops(true);
+        }
         try (DatagramSocket target = new DatagramSocket(new InetSocketAddress(ip, 0));
              SocksProxyServer server = new SocksProxyServer(config)) {
             target.setSoTimeout(5000);
             UdpRelayGroupOpenRequest req = new UdpRelayGroupOpenRequest();
             req.setMaxRelayCount(2);
-            req.setAttributes(Collections.singletonMap("profile", lz4
-                    ? SocksRpcCapabilities.DAILY_LZ4_PROFILE : SocksRpcCapabilities.DAILY_PROFILE));
+            req.setDailyFeatures(flags);
+            req.setClientSalt(UUID.randomUUID());
             UdpRelayGroupOpenResult result = server.openUdpRelayGroup(req, SocksRpcContract.rpcToken());
             assertTrue(result.isSuccess(), result.getErrorCode());
             InetSocketAddress primary = new InetSocketAddress(ip, result.getRelays().get(0).getRelayAddress().getPort());
@@ -65,7 +78,8 @@ class DailyUdpWireTest {
                         ctx.fireChannelRead(msg);
                     }
                 });
-                ch.pipeline().addLast(new DailyUdpWire(result.getToken(), primary, alias, null, clock::get, lz4));
+                ch.pipeline().addLast(new DailyUdpWire(result.getToken(), primary, alias, null, clock::get, flags, req.getClientSalt(),
+                        (flags & DailyUdpWire.AES) != 0 ? DailyUdpCipher.configuredKey() : null));
                 ch.pipeline().addLast(new SimpleChannelInboundHandler<DatagramPacket>() {
                     @Override protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket packet) {
                         ByteBuf b = packet.content();

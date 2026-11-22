@@ -98,6 +98,7 @@ public final class Socks5UpstreamPoolManager extends Disposable {
             try {
                 ChannelFuture connectFuture = Sockets.bootstrap(config, serverEndpoint.getConnectEndpoint(), ch -> {
                     Sockets.addTcpClientHandler(ch, config, serverEndpoint.getInetEndpoint());
+                    SocksConnectionTagRegistry.bindOnActive(ch, key.getTrafficUser());
                     ch.pipeline().addLast(handler);
                 }).connect(serverEndpoint.getConnectEndpoint());
                 long timeout = Math.max(config.getConnectTimeoutMillis(), 1000);

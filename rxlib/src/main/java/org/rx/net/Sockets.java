@@ -951,7 +951,8 @@ public final class Sockets {
         // 先压缩再加密
         // 支持LengthField?
         boolean g = flags.has(TransportFlags.GFW);
-        if (!g) {
+        boolean rss = config instanceof SocksConfig && ((SocksConfig) config).getRequiredTlsPorts() != null;
+        if (!g && !rss) {
             if (flags.has(TransportFlags.COMPRESS_READ)) {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
             }
@@ -982,7 +983,7 @@ public final class Sockets {
             pipeline.addLast(HttpPseudoHeaderEncoder.DEFAULT);
         }
 
-        if (config instanceof SocksConfig && ((SocksConfig) config).getRssTlsContext() != null) {
+        if (rss) {
             pipeline.addLast(RssHopTls.serverSelector((SocksConfig) config));
         } else if (g) {
             if (flags.has(TransportFlags.COMPRESS_READ)) {

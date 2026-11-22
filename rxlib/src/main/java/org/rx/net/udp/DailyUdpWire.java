@@ -25,6 +25,7 @@ import java.util.function.Predicate;
 /** One RPC-negotiated UDP association. Both server ports run on the primary relay's event loop. */
 public final class DailyUdpWire extends ChannelDuplexHandler {
     public static final int HEADER_BYTES = UdpDailyFec.WIRE_HEADROOM;
+    public static final int LZ4 = 1, AES = 2, FEC = 4;
     static final long HOP_NANOS = TimeUnit.SECONDS.toNanos(30);
 
     private final long tokenHigh, tokenLow;
@@ -32,6 +33,8 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
     private final Predicate<InetSocketAddress> knownTarget;
     private final LongSupplier clock;
     private final DailyUdpCompression compression;
+    private final DailyUdpCipher cipher;
+    private final boolean useFec;
     private final Consumer<ByteBuf> emit = this::sendFrame;
     private final Consumer<ByteBuf> deliver = this::deliver;
     private ChannelHandlerContext main, returnPath;
@@ -43,34 +46,40 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
     private long started, lastMetrics, lastProbe, payloadBytes, encodedBytes, compressionSavedBytes;
     private int epoch, wireMtu;
 
-    public static DailyUdpWire client(String token, InetSocketAddress primary, InetSocketAddress alias, int mtu) {
-        return client(token, primary, alias, mtu, false);
+    private static final class Key {
+        static final byte[] PSK = DailyUdpCipher.configuredKey();
     }
 
-    public static DailyUdpWire client(String token, InetSocketAddress primary, InetSocketAddress alias, int mtu, boolean lz4) {
-        DailyUdpWire wire = new DailyUdpWire(token, primary, alias, null, System::nanoTime, lz4);
+    public static boolean hasCipherKey() {
+        return Key.PSK != null;
+    }
+
+    public static DailyUdpWire client(String token, InetSocketAddress primary, InetSocketAddress alias,
+                                      int mtu, int features, UUID salt) {
+        DailyUdpWire wire = new DailyUdpWire(token, primary, alias, null, System::nanoTime, features, salt,
+                (features & AES) != 0 ? Key.PSK : null);
         wire.wireMtu = mtu;
         return wire;
     }
 
-    public static DailyUdpWire server(String token, Predicate<InetSocketAddress> knownTarget) {
-        return server(token, knownTarget, false);
+    public static DailyUdpWire server(String token, Predicate<InetSocketAddress> knownTarget, int features, UUID salt) {
+        return new DailyUdpWire(token, null, null, knownTarget, System::nanoTime, features, salt,
+                (features & AES) != 0 ? Key.PSK : null);
     }
 
-    public static DailyUdpWire server(String token, Predicate<InetSocketAddress> knownTarget, boolean lz4) {
-        return new DailyUdpWire(token, null, null, knownTarget, System::nanoTime, lz4);
-    }
-
-    DailyUdpWire(String token, InetSocketAddress primary, InetSocketAddress alias,
-                 Predicate<InetSocketAddress> knownTarget, LongSupplier clock, boolean lz4) {
+    DailyUdpWire(String token, InetSocketAddress primary, InetSocketAddress alias, Predicate<InetSocketAddress> knownTarget,
+                 LongSupplier clock, int features, UUID salt, byte[] key) {
+        if (features <= 0 || features > 7) throw new IllegalArgumentException("invalid UDP extension mask");
         UUID id = UUID.fromString(token);
+        useFec = (features & FEC) != 0;
+        cipher = (features & AES) != 0 ? new DailyUdpCipher(key, id, salt, primary == null, features) : null;
         tokenHigh = id.getMostSignificantBits();
         tokenLow = id.getLeastSignificantBits();
         this.primary = logicalPeer = physicalPeer = primary;
         this.alias = alias;
         this.knownTarget = knownTarget;
         this.clock = clock;
-        compression = lz4 ? new DailyUdpCompression() : null;
+        compression = (features & LZ4) != 0 ? new DailyUdpCompression() : null;
     }
 
     public static void install(ChannelPipeline pipeline, DailyUdpWire wire) {
@@ -101,7 +110,7 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
         if (wireMtu <= 0 || channelMtu > 0 && channelMtu < wireMtu) {
             wireMtu = channelMtu;
         }
-        fec = new UdpDailyFec(ctx.alloc());
+        fec = useFec ? new UdpDailyFec(ctx.alloc()) : null;
         started = lastMetrics = clock.getAsLong();
     }
 
@@ -121,7 +130,7 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
         }
         ctx.channel().config().setRecvByteBufAllocator(originalAllocator);
         recordMetrics();
-        fec.close();
+        if (fec != null) fec.close();
         main = returnPath = null;
     }
 
@@ -143,6 +152,7 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
             path.fireChannelRead(msg);
             return;
         }
+        ByteBuf decoded = null;
         try {
             ByteBuf b = packet.content();
             int pos = b.readerIndex();
@@ -152,6 +162,13 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
                 return;
             }
             int generation = b.getInt(pos + 16);
+            if (cipher != null) {
+                decoded = cipher.open(b);
+                if (decoded == null) return;
+                b = decoded;
+            } else {
+                b.skipBytes(HEADER_BYTES);
+            }
             if (primary == null) {
                 if (logicalPeer == null) {
                     logicalPeer = sender;
@@ -171,15 +188,19 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
                 // Open the new NAT binding even during a download with no application uplink.
                 sendFrame(main.alloc().ioBuffer(HEADER_BYTES, HEADER_BYTES).setIndex(HEADER_BYTES, HEADER_BYTES));
             }
-            if (b.readableBytes() > HEADER_BYTES) {
-                b.skipBytes(HEADER_BYTES);
-                fec.read(b, deliver, emit);
+            if (b.isReadable()) {
+                if (fec != null) {
+                    fec.read(b, deliver, emit);
+                    scheduleTick();
+                } else if (b.readableBytes() <= maxPayload()) {
+                    deliver(b.retainedSlice());
+                }
                 if (clock.getAsLong() - lastMetrics >= TimeUnit.SECONDS.toNanos(30)) {
                     recordMetrics();
                 }
-                scheduleTick();
             }
         } finally {
+            if (decoded != null) decoded.release();
             packet.release();
         }
     }
@@ -208,8 +229,16 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
             if (block != null) {
                 compressionSavedBytes += packet.content().readableBytes() - block.readableBytes();
             }
-            fec.write(block == null ? packet.content() : block, emit);
-            scheduleTick();
+            ByteBuf data = block == null ? packet.content() : block;
+            if (fec != null) {
+                fec.write(data, emit);
+                scheduleTick();
+            } else {
+                int len = data.readableBytes();
+                ByteBuf frame = ctx.alloc().ioBuffer(HEADER_BYTES + len, HEADER_BYTES + len);
+                frame.setIndex(HEADER_BYTES, HEADER_BYTES).writeBytes(data, data.readerIndex(), len);
+                sendFrame(frame);
+            }
         } catch (RuntimeException e) {
             promise.tryFailure(e);
         } finally {
@@ -232,12 +261,24 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
     private void sendFrame(ByteBuf frame) {
         int pos = frame.readerIndex();
         ChannelPromise pending = null;
-        if (dataPromise != null && frame.isReadable() && frame.getUnsignedByte(pos) <= UdpDailyFec.SHARD) {
+        if (dataPromise != null && frame.isReadable() && (fec == null || frame.getUnsignedByte(pos) <= UdpDailyFec.SHARD)) {
             pending = dataPromise;
             dataPromise = null;
         }
         frame.setLong(pos - HEADER_BYTES, tokenHigh).setLong(pos - HEADER_BYTES + 8, tokenLow)
                 .setInt(pos - 4, epoch).readerIndex(pos - HEADER_BYTES);
+        if (cipher != null) {
+            ByteBuf plain = frame;
+            try {
+                frame = cipher.seal(plain);
+            } catch (RuntimeException failure) {
+                // A fresh association will negotiate new salts / directional keys.
+                main.close();
+                throw failure;
+            } finally {
+                plain.release();
+            }
+        }
         encodedBytes += frame.readableBytes();
         DatagramPacket packet = new DatagramPacket(frame, physicalPeer);
         if (pending == null || pending.isVoid()) {
@@ -267,18 +308,22 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
     }
 
     private int maxPayload() {
-        return wireMtu <= 0 ? UdpDailyFec.MAX_PAYLOAD
-                : Math.min(UdpDailyFec.MAX_PAYLOAD, wireMtu - HEADER_BYTES - UdpDailyFec.MAX_OVERHEAD);
+        int mtu = wireMtu > 0 ? Math.min(65507, wireMtu) : 65507;
+        int overhead = HEADER_BYTES + (cipher != null ? DailyUdpCipher.OVERHEAD : 0)
+                + (useFec ? UdpDailyFec.MAX_OVERHEAD : 0);
+        return mtu - overhead;
     }
 
     private void recordMetrics() {
         lastMetrics = clock.getAsLong();
         if (DiagnosticMetrics.isEnabled()) {
             String side = primary == null ? "side=server" : "side=client";
-            DiagnosticMetrics.record("rss.udp.daily.rx.sampled", fec.sampledData, side);
-            DiagnosticMetrics.record("rss.udp.daily.rx.missing", fec.missingData, side);
-            DiagnosticMetrics.record("rss.udp.daily.rx.recovered", fec.recoveredData, side);
-            DiagnosticMetrics.record("rss.udp.daily.tx.parity", fec.paritySent, side);
+            if (fec != null) {
+                DiagnosticMetrics.record("rss.udp.daily.rx.sampled", fec.sampledData, side);
+                DiagnosticMetrics.record("rss.udp.daily.rx.missing", fec.missingData, side);
+                DiagnosticMetrics.record("rss.udp.daily.rx.recovered", fec.recoveredData, side);
+                DiagnosticMetrics.record("rss.udp.daily.tx.parity", fec.paritySent, side);
+            }
             DiagnosticMetrics.record("rss.udp.daily.tx.payloadBytes", payloadBytes, side);
             DiagnosticMetrics.record("rss.udp.daily.tx.encodedBytes", encodedBytes, side);
             if (compression != null) {
@@ -286,7 +331,7 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
             }
         }
         payloadBytes = encodedBytes = compressionSavedBytes = 0;
-        fec.sampledData = fec.missingData = fec.recoveredData = fec.paritySent = 0;
+        if (fec != null) fec.sampledData = fec.missingData = fec.recoveredData = fec.paritySent = 0;
     }
 
     private void scheduleTick() {
