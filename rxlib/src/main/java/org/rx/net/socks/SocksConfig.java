@@ -1,5 +1,7 @@
 package org.rx.net.socks;
 
+import java.util.Arrays;
+import io.netty.handler.ssl.SslContext;
 import lombok.AccessLevel;
 import io.netty.channel.local.LocalAddress;
 import lombok.Getter;
@@ -62,6 +64,34 @@ public class SocksConfig extends SocketConfig {
     /** Negotiate RSS daily UDP (timed port hopping and adaptive FEC) over RPC. */
     private boolean dailyUdp;
     private boolean adaptiveTcp;
+    @ToString.Exclude
+    private transient SslContext rssTlsContext;
+    private int[] requiredTlsPorts;
+
+    public boolean requiresTls(int port) {
+        return requiredTlsPorts != null && Arrays.binarySearch(requiredTlsPorts, port) >= 0;
+    }
+
+    public static boolean validTlsPorts(int[] ports) {
+        if (ports == null) {
+            return false;
+        }
+        for (int port : ports) {
+            if (port < 1 || port > 65535) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public void setRequiredTlsPorts(int[] ports) {
+        if (!validTlsPorts(ports)) {
+            throw new IllegalArgumentException("tcpCipherPorts must be a list of ports in 1..65535");
+        }
+        int[] copy = ports.clone();
+        Arrays.sort(copy);
+        requiredTlsPorts = copy;
+    }
     @Setter(AccessLevel.NONE)
     private int dailyPortFirst, dailyPortLast;
 

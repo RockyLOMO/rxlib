@@ -1,5 +1,20 @@
 package org.rx.net.socks;
 
+import org.junit.jupiter.api.io.TempDir;
+import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslHandler;
+import org.rx.net.RssHopTls;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.Files;
+import java.security.KeyStore;
+import java.security.PrivateKey;
+import java.security.cert.X509Certificate;
+import java.util.Base64;
+import java.io.File;
+import java.util.concurrent.TimeUnit;
+import javax.net.ssl.SSLException;
+import io.netty.handler.proxy.ProxyConnectException;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.ByteBuf;
@@ -1845,9 +1860,58 @@ class SocksProxyServerIntegrationTest {
     @Test
     @Timeout(value = 20)
     void shadowsocksTcpAdaptiveHopSurvivesUdpOutage() throws Exception {
+        verifyAdaptiveHop(null, null);
+    }
+
+    @Test
+    @Timeout(35)
+    void verifiedTlsAdaptiveHopSurvivesUdpOutage(@TempDir Path dir) throws Exception {
+        KeyStore keys = testHopIdentity(dir);
+        X509Certificate cert = (X509Certificate) keys.getCertificate("hop");
+        PrivateKey key = (PrivateKey) keys.getKey("hop", "test-only".toCharArray());
+        File pem = writePem(dir, "CERTIFICATE", cert.getEncoded());
+        verifyAdaptiveHop(RssHopTls.serverContext(pem, writePem(dir, "PRIVATE KEY", key.getEncoded())),
+                RssHopTls.clientContext(pem));
+    }
+
+    private static KeyStore testHopIdentity(Path dir) throws Exception {
+        Path file = dir.resolve("hop.p12");
+        String tool = Paths.get(System.getProperty("java.home"), "bin", "keytool").toString();
+        Process child = new ProcessBuilder(tool, "-genkeypair", "-alias", "hop", "-storetype", "PKCS12",
+                "-keystore", file.toString(), "-storepass", "test-only", "-keypass", "test-only", "-keyalg", "EC",
+                "-keysize", "256", "-dname", "CN=localhost", "-ext", "SAN=dns:localhost").redirectErrorStream(true).start();
+        try {
+            assertTrue(child.waitFor(10, TimeUnit.SECONDS));
+            assertEquals(0, child.exitValue());
+        } finally {
+            child.destroy();
+        }
+        KeyStore keys = KeyStore.getInstance("PKCS12");
+        try (InputStream in = Files.newInputStream(file)) {
+            keys.load(in, "test-only".toCharArray());
+        }
+        return keys;
+    }
+
+    private static File writePem(Path dir, String type, byte[] der) throws Exception {
+        String data = "-----BEGIN " + type + "-----\n" + Base64.getMimeEncoder().encodeToString(der)
+                + "\n-----END " + type + "-----\n";
+        return Files.write(dir.resolve(type + ".pem"), data.getBytes(StandardCharsets.US_ASCII)).toFile();
+    }
+
+    private void verifyAdaptiveHop(SslContext tlsServer, SslContext tlsClient) throws Exception {
         SocksConfig cfg = new SocksConfig(15796);
         cfg.setAdaptiveTcp(true);
         cfg.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
+        SocksConfig uplink = new SocksConfig();
+        uplink.setAdaptiveTcp(true);
+        uplink.setTransportFlags(cfg.getTransportFlags());
+        if (tlsServer != null) {
+            cfg.setRssTlsContext(tlsServer);
+            cfg.setRequiredTlsPorts(new int[]{TCP_ECHO_PORT});
+            uplink.setTransportFlags(TransportFlags.RSS_AUTHENTICATED_TLS.flags());
+            uplink.setRssTlsContext(tlsClient);
+        }
         ShadowsocksConfig ss = new ShadowsocksConfig(Sockets.newAnyEndpoint(15797),
                 org.rx.net.socks.encryption.CipherKind.AES_256_GCM.getCipherName(), "external-ss");
         SocksUser user = new SocksUser("rss");
@@ -1856,10 +1920,28 @@ class SocksProxyServerIntegrationTest {
              ShadowsocksServer local = new ShadowsocksServer(ss);
              Socket app = new Socket("127.0.0.1", 15797)) {
             assertNotNull(remote.adaptivePort);
-            UpstreamSupport endpoint = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 15796),
+            if (tlsServer != null) {
+                InetSocketAddress destination = InetSocketAddress.createUnresolved("secure-origin.invalid", TCP_ECHO_PORT);
+                UpstreamSupport support = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("localhost", 15796)),
+                        new LocalRpcFacade(remote));
+                assertSame(destination, new SocksTcpUpstream(destination, uplink, support).prepareDestination());
+                checkProtectedWarmConnection(uplink, true, "localhost", TCP_ECHO_PORT);
+                checkProtectedWarmConnection(uplink, false, "127.0.0.1", TCP_ECHO_PORT);
+                SocksConfig untrusted = new SocksConfig();
+                untrusted.setTransportFlags(uplink.getTransportFlags());
+                untrusted.setRssTlsContext(RssHopTls.clientContext(null));
+                checkProtectedWarmConnection(untrusted, false, "localhost", TCP_ECHO_PORT);
+                SocksConfig plain = new SocksConfig();
+                plain.setTransportFlags(cfg.getTransportFlags());
+                checkProtectedWarmConnection(plain, false, "localhost", TCP_ECHO_PORT);
+                try (ServerSocket ordinary = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+                    checkProtectedWarmConnection(plain, true, "localhost", ordinary.getLocalPort());
+                }
+            }
+            UpstreamSupport endpoint = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("localhost", 15796),
                     "rss", "hop-test"), null);
             AtomicReference<Channel> hop = new AtomicReference<>();
-            local.onTcpRoute.replace((server, route) -> route.setUpstream(new SocksTcpUpstream(route.getFirstDestination(), cfg, endpoint) {
+            local.onTcpRoute.replace((server, route) -> route.setUpstream(new SocksTcpUpstream(route.getFirstDestination(), uplink, endpoint) {
                 @Override public void initChannel(Channel ch) {
                     super.initChannel(ch);
                     hop.set(ch);
@@ -1901,11 +1983,41 @@ class SocksProxyServerIntegrationTest {
         }
     }
 
+    private static void checkProtectedWarmConnection(SocksConfig config, boolean success, String peer, int target) throws Exception {
+        InetSocketAddress address = new InetSocketAddress(peer, 15796);
+        Socks5WarmupHandler warm = new Socks5WarmupHandler(address, "rss", "hop-test", 3000);
+        Channel ch = Sockets.bootstrap(config, address, c -> {
+            Sockets.addTcpClientHandler(c, config, address);
+            c.pipeline().addLast(warm);
+        }).connect(address).sync().channel();
+        try {
+            SslHandler ssl = ch.pipeline().get(SslHandler.class);
+            if (ssl != null && !success) {
+                assertThrows(SSLException.class, () -> ssl.handshakeFuture().sync());
+                return;
+            }
+            warm.readyFuture().get(4, TimeUnit.SECONDS);
+            ChannelFuture command = ch.eventLoop().submit(() -> warm.connect(new InetSocketAddress("127.0.0.1", target))).get();
+            if (success) {
+                command.sync();
+                assertEquals(ssl == null, Sockets.hasTcpCompressionHandlers(ch));
+                if (ssl != null) {
+                    assertEquals("TLS_AES_128_GCM_SHA256", ssl.engine().getSession().getCipherSuite());
+                }
+            } else {
+                assertThrows(ProxyConnectException.class, command::sync);
+            }
+        } finally {
+            ch.close().sync();
+        }
+    }
+
     @Test
     @Timeout(value = 15)
     void adaptiveWarmChannelNegotiatesWithNewAndLegacyServers() throws Exception {
         for (boolean modern : new boolean[]{true, false}) {
-            SocksConfig cfg = new SocksConfig(0);
+            // The adaptive listener needs the same available port for both TCP and UDP.
+            SocksConfig cfg = new SocksConfig(modern ? 15798 : 15799);
             cfg.setAdaptiveTcp(modern);
             SocksUser user = new SocksUser("warm");
             user.setPassword("test-pass");

@@ -1,0 +1,79 @@
+package org.rx.net;
+
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandler;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.handler.codec.compression.ZlibCodecFactory;
+import io.netty.handler.codec.compression.ZlibWrapper;
+import io.netty.handler.ssl.OptionalSslHandler;
+import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.SslHandler;
+import io.netty.handler.ssl.SslProvider;
+import lombok.SneakyThrows;
+import org.rx.net.socks.SocksConfig;
+
+import java.io.File;
+import java.net.InetSocketAddress;
+import java.util.Collections;
+
+/** Authenticated RSS TCP hop. Ordinary SOCKS streams on the same listener keep their zlib framing. */
+public final class RssHopTls {
+    private RssHopTls() { }
+
+    @SneakyThrows
+    private static SslContext build(SslContextBuilder builder) {
+        return builder.sslProvider(SslProvider.JDK).protocols("TLSv1.3")
+                .ciphers(Collections.singletonList("TLS_AES_128_GCM_SHA256")).build();
+    }
+
+    public static SslContext serverFromEnvironment() {
+        String cert = System.getenv("RSS_TCP_TLS_CERT"), key = System.getenv("RSS_TCP_TLS_KEY");
+        if (cert == null && key == null) {
+            return null;
+        }
+        if (cert == null || key == null) {
+            throw new IllegalArgumentException("Set both RSS_TCP_TLS_CERT and RSS_TCP_TLS_KEY to PEM file paths");
+        }
+        return serverContext(new File(cert), new File(key));
+    }
+
+    public static SslContext serverContext(File chain, File privateKey) {
+        return build(SslContextBuilder.forServer(chain, privateKey));
+    }
+
+    public static SslContext clientContext(File ca) {
+        SslContextBuilder builder = SslContextBuilder.forClient().endpointIdentificationAlgorithm("HTTPS");
+        return build(ca == null ? builder : builder.trustManager(ca));
+    }
+
+    private static final class Client {
+        static final String CA = System.getenv("RSS_TCP_TLS_CA");
+        static final SslContext CONTEXT = clientContext(CA == null ? null : new File(CA));
+    }
+
+    public static SslContext clientFromEnvironment() {
+        return Client.CONTEXT;
+    }
+
+    static SslHandler clientHandler(Channel ch, SslContext context, InetSocketAddress peer) {
+        if (peer == null || context == null) {
+            throw new IllegalArgumentException("RSS TLS requires a client context and an upstream hostname or IP");
+        }
+        return context.newHandler(ch.alloc(), peer.getHostString(), peer.getPort());
+    }
+
+    static ChannelHandler serverSelector(SocksConfig config) {
+        return new OptionalSslHandler(config.getRssTlsContext()) {
+            @Override protected String newNonSslHandlerName() {
+                return Sockets.ZIP_DECODER;
+            }
+
+            @Override protected ChannelHandler newNonSslHandler(ChannelHandlerContext ctx) {
+                ctx.pipeline().addAfter(ctx.name(), Sockets.ZIP_ENCODER,
+                        Sockets.newTcpCompressionEncoder(config, ZlibWrapper.ZLIB));
+                return ZlibCodecFactory.newZlibDecoder(ZlibWrapper.ZLIB);
+            }
+        };
+    }
+}

@@ -4114,3 +4114,13 @@ TCP 业务沿用 Netty 的 zlib/DEFLATE 流压缩，RSS 级别为 5。TCP 自适
 普通 UDP 代理的新版两端通过 RPC 协商 `daily-lz4-v1`。先逐个 SOCKS 数据报试用 LZ4 fast，再对实际发送的数据做 FEC。每包可独立解码。小于 96 B 的数据报直接发送，压缩净节省至少 24 B 且达到 12% 才采用；连续 8 次收益不足后暂停尝试 30 秒。接收端以本地 MTU 及 FEC 协议上限约束解压输出。旧端继续协商原有 profile。压缩可逆，普通 UDP 的业务保密性仍取决于应用加密。评估收益时需同时对照 `rss.udp.daily.tx.payloadBytes`、`tx.encodedBytes`、CPU、P99 及 Netty 堆外内存。
 
 Java 8 本地单线程编码对比取仓库 README 的 256 个 1200 B 片段，循环 20000 次，重复三轮。LZ4 fast 含两字节前缀平均 937 B/包，耗时 2.5–2.7 ns/B；逐包重置的 zlib 5 平均 728 B/包，耗时 39–50 ns/B。该数据仅用于比较独立块编码成本。部署后可按方向查看 `rss.udp.daily.tx.compressionSavedBytes` 获取实际净压缩收益。
+
+### 2026-11-22 RSS 指定 TCP 目的端口的认证加密（覆盖前述旧版 53/80 策略）
+
+普通 TCP 内部跳使用 zlib/DEFLATE 3。按原始目标 TCP 端口选择的保护连接从 SOCKS 认证、CONNECT 到业务数据都使用 JDK TLS 1.3 的 TLS_AES_128_GCM_SHA256 套件。客户端校验上游证书链，以及配置的 RSS Server 域名或 IP 与证书的匹配关系。保护连接直接在 TLS 内传递原始目标域名，不经 fake-host RPC 注册。证书验证或 TLS 握手失败时关闭连接。单个服务器监听端口识别 TLS 和原有 zlib 流，按原始目标端口拒绝缺少 TLS 的 CONNECT。客户端的预热连接池分别复用 TLS、普通和各自的自适应连接。
+
+同时使用压缩和加密时，先压缩，再认证加密。HTTP 请求可能把可控内容与 Cookie、Authorization 放入同一压缩上下文，密文长度随输入变化会泄漏秘密。因此本实现的保护端口直接使用 TLS 记录，跳过跨请求流压缩。TLS 使用会话密钥、记录序号和认证标签，FEC 通道直接承载原 TLS 记录，丢块可回 TCP 补发。普通 UDP 沿用逐包 LZ4 选择、端口跳跃与 FEC。策略适用于 RSS 内部代理跳，直接出站与独立外部隧道由对应传输负责。[RFC 9325 §3.3](https://www.rfc-editor.org/rfc/rfc9325.html#section-3.3) · [TLS 1.3 密码套件](https://www.rfc-editor.org/rfc/rfc9846.html#section-9.1)
+
+**双端部署**。Client 的 `conf.yml` 使用顶层 `tcpCipherPorts: [53, 80]`；Server 使用 `-tcpCipherPorts=53,80`，省略时两端都默认 53、80。Client 端口列表可热更新，已建连接沿用原策略。Server 启动时读取 `RSS_TCP_TLS_CERT`（服务端 PEM 证书链）与 `RSS_TCP_TLS_KEY`（对应的 PEM 私钥文件路径）。证书 SAN 应包含 Client 配置的上游域名或 IP。Client 默认使用 JVM 信任库，私有 CA 使用 `RSS_TCP_TLS_CA` 指向 CA 的 PEM 文件。仅将 CA 公共证书交给 Client，Server 私钥留在 Server。缺少两项服务端证书配置时普通 TCP 可继续工作，保护端口拒绝无 TLS 请求。只有其中一项、或证书/key 无法读取时启动报错。两端及证书需一起配置，回滚也应同时恢复两端版本与端口配置。外部 SS 与普通 UDP 无需改配置。
+
+**单核取舍**。Ryzen 7 1700X，JDK 21，单线程预热后以 1200 B 记录测量。固定种子 4242 从本仓 Java 源码抽取 256 个片段，持久 Deflater 逐记录 SYNC_FLUSH。级别 1、3、5 的平均输出依次为 402、370、339 B，编码耗时依次为 23.67、26.75、39.58 ns/B。1216 B 的 GCM 输出经这三个级别处理均变为 1226 B。单独的加密微测中，JCE AES-128-GCM 为 0.87 ns/B，AES-256-GCM 为 0.97 ns/B，项目现有的 XChaCha20-Poly1305 实现为 12.81 ns/B。随机数和缓冲实现不同，这些数字比较的是所测调用路径。生产 Server 的虚拟 Xeon 提供 AES-NI、PCLMULQDQ；实际业务比例、TLS 握手成本和服务器 CPU 尚待部署后测量。观察新连接/握手失败率、CPU、净吞吐、P95/P99、Netty 堆外内存及进程 RSS。

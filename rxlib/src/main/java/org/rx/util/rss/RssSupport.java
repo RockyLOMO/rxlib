@@ -16,7 +16,7 @@ public final class RssSupport {
     public static final OptimalSettings OUT_OPS = new OptimalSettings((int) (640 * 0.8), 150, 60, 1000, OptimalSettings.Mode.LOW_LATENCY);
     public static final OptimalSettings IN_OPS = null;
     public static final OptimalSettings SS_IN_OPS = new OptimalSettings((int) (1024 * 0.8), 30, 200, 2000, OptimalSettings.Mode.BALANCED);
-    public static final int TCP_TRIAL_COMPRESSION_LEVEL = 5;
+    public static final int TCP_COMPRESSION_LEVEL = 3;
 
     /** Dynadot、/hf 等复用，避免每次 new HttpClient */
     static final HttpClient MAIN_HTTP_CLIENT = new HttpClient();

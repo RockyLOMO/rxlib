@@ -12,6 +12,7 @@ import org.rx.core.Tasks;
 import org.rx.core.cache.MemoryCache;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
+import org.rx.net.TransportFlags;
 import org.rx.net.socks.SocksConnectionTagRegistry;
 import org.rx.net.socks.Socks5ClientHandler;
 import org.rx.net.socks.SocksConfig;
@@ -91,7 +92,7 @@ public class SocksTcpUpstream extends Upstream {
         }
         destinationPrepared = true;
         SocksRpcContract facade = next.getFacade();
-        if (facade == null
+        if (facade == null || config.getTransportFlags().has(TransportFlags.RSS_AUTHENTICATED_TLS)
                 || (!SocksRpcContract.FAKE_IPS.contains(destination.getHostString()) && !SocksRpcContract.FAKE_PORTS.contains(destination.getPort())
                 && Sockets.isValidIp(destination.getHostString()))) {
             return destination;

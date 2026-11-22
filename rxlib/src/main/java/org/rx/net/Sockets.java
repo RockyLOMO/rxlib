@@ -982,7 +982,9 @@ public final class Sockets {
             pipeline.addLast(HttpPseudoHeaderEncoder.DEFAULT);
         }
 
-        if (g) {
+        if (config instanceof SocksConfig && ((SocksConfig) config).getRssTlsContext() != null) {
+            pipeline.addLast(RssHopTls.serverSelector((SocksConfig) config));
+        } else if (g) {
             if (flags.has(TransportFlags.COMPRESS_READ)) {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
             }
@@ -1009,7 +1011,9 @@ public final class Sockets {
 
         ZlibWrapper zlib = ZlibWrapper.ZLIB;
         ChannelPipeline pipeline = channel.pipeline();
-        if (flags.has(TransportFlags.TLS)) {
+        if (flags.has(TransportFlags.RSS_AUTHENTICATED_TLS)) {
+            pipeline.addLast(RssHopTls.clientHandler(channel, ((SocksConfig) config).getRssTlsContext(), SNISpoofing));
+        } else if (flags.has(TransportFlags.TLS)) {
             SslContext tls = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
             if (SNISpoofing == null) {
                 SNISpoofing = Sockets.parseEndpoint("qq.com:443");
