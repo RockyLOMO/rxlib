@@ -69,15 +69,21 @@ public final class RssServer {
         SocksConfig outConf = new SocksConfig(port);
         configureOutboundConfig(outConf, debugFlag);
         outConf.setAdaptiveTcp(!"0".equals(options.get("adaptiveTcp")));
-        outConf.setDailyPortRange(options.get("udpHopPorts"));
-        String portList = options.getOrDefault("tcpCipherPorts", "53,80").trim();
-        outConf.setRequiredTlsPorts(portList.isEmpty() ? new int[0] : Arrays.stream(portList.split(",", -1))
+        outConf.setDailyPortRange(options.getOrDefault("udpHopPorts", "20000-20127"));
+        if (outConf.getDailyPortLast() - outConf.getDailyPortFirst() < 3 || outConf.getDailyPortFirst() == 0
+                || (outConf.getDailyPortLast() - outConf.getDailyPortFirst()) % 2 == 0) {
+            throw new IllegalArgumentException("udpHopPorts requires at least two pairs of dedicated UDP ports");
+        }
+        String portList = options.get("tcpCipherPorts");
+        outConf.setRequiredTlsPorts(portList == null ? RssTransport.cipherPorts()
+                : portList.trim().isEmpty() ? new int[0] : Arrays.stream(portList.split(",", -1))
                 .mapToInt(p -> Integer.parseInt(p.trim())).toArray());
         outConf.setRssTlsContext(RssHopTls.serverFromEnvironment());
-        if (!portList.isEmpty() && outConf.getRssTlsContext() == null) {
+        if (outConf.getRequiredTlsPorts().length != 0 && outConf.getRssTlsContext() == null) {
             log.warn("RSS protected TCP ports will reject connections until RSS_TCP_TLS_CERT and RSS_TCP_TLS_KEY are configured");
         }
         Authenticator defAuth = (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS;
+        configureHopRedirect(outConf);
         SocksProxyServer outSvr = new SocksProxyServer(outConf, defAuth);
         SocksProxyServer outUdp2rawSvr = null;
         if (udp2rawPort != null && udp2rawPort > 0) {
@@ -106,6 +112,23 @@ public final class RssServer {
         app.await();
     }
 
+    private static void configureHopRedirect(SocksConfig config) {
+        if (!System.getProperty("os.name", "").startsWith("Linux")) {
+            return;
+        }
+        try {
+            if (RssUdpFirewall.start(config.getDailyPortFirst(), config.getDailyPortLast())) {
+                config.setRedirectUdpHops(true);
+                return;
+            }
+        } catch (Exception e) {
+            log.warn("Cannot install RSS UDP hop rules", e);
+        }
+        config.setDailyUdpFeatures(0);
+        config.setAdaptiveTcp(false);
+        log.warn("RSS UDP hop extensions unavailable: check nft, CAP_NET_ADMIN and dedicated port range");
+    }
+
     static void configureOutboundConfig(SocksConfig config, boolean debugFlag) {
         config.setDebug(debugFlag);
         config.setReadTimeoutSeconds(0);
@@ -118,7 +141,7 @@ public final class RssServer {
         config.setOptimalSettings(RssSupport.OUT_OPS);
 
         config.setUdpMtu(UDP2RAW_MTU);
-        config.setDailyUdp(true);
+        config.setDailyUdpFeatures(7);
     }
 
     static void configureUdp2rawOutboundConfig(SocksConfig config, boolean debugFlag, int udp2rawPort) {

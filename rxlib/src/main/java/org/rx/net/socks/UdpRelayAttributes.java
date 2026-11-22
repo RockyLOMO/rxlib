@@ -1,18 +1,12 @@
 package org.rx.net.socks;
 
 import io.netty.channel.Channel;
-import io.netty.channel.ChannelPipeline;
-import io.netty.channel.socket.DatagramPacket;
 import io.netty.util.AttributeKey;
-import org.rx.net.Sockets;
-import org.rx.net.udp.UdpCompressDecoder;
 import org.rx.net.udp.UdpPeerAttributes;
-import org.rx.net.udp.UdpRedundantDecoder;
 import org.rx.net.udp.UdpResilienceAttributes;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.ConcurrentMap;
-import java.util.function.Predicate;
 
 public final class UdpRelayAttributes {
     static final AttributeKey<Boolean> ATTR_CLIENT_LOCKED = AttributeKey.valueOf("udpClientLocked");
@@ -23,35 +17,6 @@ public final class UdpRelayAttributes {
     static final AttributeKey<InetSocketAddress> ATTR_REDUNDANT_CLIENT_ADDR = AttributeKey.valueOf("udpRedundantClientAddr");
 
     private UdpRelayAttributes() {
-    }
-
-    /** Older RSS peers may still send RDNT followed by UCMP. Never decode ordinary Internet payloads. */
-    public static void installLegacyDecoders(Channel ch, String role, Predicate<InetSocketAddress> peer) {
-        ChannelPipeline p = ch.pipeline();
-        String first = role + "Rdnt";
-        if (p.get(first) != null) {
-            return;
-        }
-        Predicate<Object> accept = msg -> msg instanceof DatagramPacket && peer.test(((DatagramPacket) msg).sender());
-        p.addAfter(Sockets.UDP_FINAL_EGRESS_GUARD, first, new UdpRedundantDecoder() {
-            @Override public boolean acceptInboundMessage(Object msg) {
-                return accept.test(msg);
-            }
-        });
-        p.addAfter(first, role + "Ucmp", new UdpCompressDecoder() {
-            @Override public boolean acceptInboundMessage(Object msg) {
-                return accept.test(msg);
-            }
-        });
-    }
-
-    static void acceptLegacyClient(Channel ch, SocksConfig config) {
-        if (config.isDailyUdp()) {
-            installLegacyDecoders(ch, "legacyClient", sender -> {
-                ConcurrentMap<InetSocketAddress, SocksContext> targets = ch.attr(SocksUdpRelayHandler.ATTR_CTX_MAP).get();
-                return (targets == null || !targets.containsKey(sender)) && config.isAllowed(sender.getAddress());
-            });
-        }
     }
 
     public static ConcurrentMap<InetSocketAddress, Boolean> initRedundantPeers(Channel channel) {

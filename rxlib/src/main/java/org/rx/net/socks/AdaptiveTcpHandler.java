@@ -7,7 +7,6 @@ import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.transport.AdaptiveStream;
 import org.rx.net.transport.AdaptiveUdpPort;
 
-import java.net.InetSocketAddress;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -17,13 +16,16 @@ final class AdaptiveTcpHandler extends ChannelDuplexHandler {
     private final byte[] key;
     private final boolean server;
     private AdaptiveUdpPort port;
+    private final int primaryPort, aliasPort;
     private AdaptiveStream stream;
     private ChannelHandlerContext ctx;
     private ScheduledFuture<?> timer;
     private boolean started, closing, udpReady;
     private long tcpFrameBytes, udpFrameBytes;
 
-    AdaptiveTcpHandler(long id, byte[] key, AdaptiveUdpPort port) {
+    AdaptiveTcpHandler(long id, byte[] key, AdaptiveUdpPort port, int primaryPort, int aliasPort) {
+        this.primaryPort = primaryPort;
+        this.aliasPort = aliasPort;
         this.id = id;
         this.key = key;
         this.port = port;
@@ -36,7 +38,7 @@ final class AdaptiveTcpHandler extends ChannelDuplexHandler {
                 ctx::fireChannelRead, System::nanoTime);
         try {
             if (server) port.register(id, key, ctx.channel(), this::receiveUdp);
-            else port = AdaptiveUdpPort.client(id, key, ctx.channel(), (InetSocketAddress) ctx.channel().remoteAddress(), this::receiveUdp);
+            else port = AdaptiveUdpPort.client(id, key, ctx.channel(), primaryPort, aliasPort, this::receiveUdp);
         } catch (RuntimeException unavailable) {
             port = null;
             DiagnosticMetrics.record("rss.tcp.adaptive.udpUnavailable", 1);

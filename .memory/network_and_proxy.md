@@ -4124,3 +4124,7 @@ Java 8 本地单线程编码对比取仓库 README 的 256 个 1200 B 片段，�
 **双端部署**。Client 的 `conf.yml` 使用顶层 `tcpCipherPorts: [53, 80]`；Server 使用 `-tcpCipherPorts=53,80`，省略时两端都默认 53、80。Client 端口列表可热更新，已建连接沿用原策略。Server 启动时读取 `RSS_TCP_TLS_CERT`（服务端 PEM 证书链）与 `RSS_TCP_TLS_KEY`（对应的 PEM 私钥文件路径）。证书 SAN 应包含 Client 配置的上游域名或 IP。Client 默认使用 JVM 信任库，私有 CA 使用 `RSS_TCP_TLS_CA` 指向 CA 的 PEM 文件。仅将 CA 公共证书交给 Client，Server 私钥留在 Server。缺少两项服务端证书配置时普通 TCP 可继续工作，保护端口拒绝无 TLS 请求。只有其中一项、或证书/key 无法读取时启动报错。两端及证书需一起配置，回滚也应同时恢复两端版本与端口配置。外部 SS 与普通 UDP 无需改配置。
 
 **单核取舍**。Ryzen 7 1700X，JDK 21，单线程预热后以 1200 B 记录测量。固定种子 4242 从本仓 Java 源码抽取 256 个片段，持久 Deflater 逐记录 SYNC_FLUSH。级别 1、3、5 的平均输出依次为 402、370、339 B，编码耗时依次为 23.67、26.75、39.58 ns/B。1216 B 的 GCM 输出经这三个级别处理均变为 1226 B。单独的加密微测中，JCE AES-128-GCM 为 0.87 ns/B，AES-256-GCM 为 0.97 ns/B，项目现有的 XChaCha20-Poly1305 实现为 12.81 ns/B。随机数和缓冲实现不同，这些数字比较的是所测调用路径。生产 Server 的虚拟 Xeon 提供 AES-NI、PCLMULQDQ；实际业务比例、TLS 握手成本和服务器 CPU 尚待部署后测量。观察新连接/握手失败率、CPU、净吞吐、P95/P99、Netty 堆外内存及进程 RSS。
+
+### 2026-11-22 RSS 用户传输策略和跨平台跳跃
+
+当前双端按 `shadowUsers[].transport` 编译并复用配置。普通 UDP 扩展与 TCP/FEC 分别处理各自的载荷。Windows 服务端物理双绑定，Linux 在专用 nft NAT 表中成对转发，按组单绑定。共享内部账号的用户在本地控制通道池中按 SS 用户名隔离。此前章节中的默认参数和应用内双端口做法记录的是历史版本。配置、端口预算、证书与密钥要求以 [RSS 传输配置](../docs/rss-transport.md) 为准。

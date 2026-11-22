@@ -2022,36 +2022,53 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
-    public void adaptiveTcpFollowsCurrentShadowUserConfig() {
-        String json = "{\"adaptiveTcp\":true,\"shadowUsers\":["
-                + "{\"ssPort\":6898,\"username\":\"a\",\"socksUser\":\"shared\",\"adaptiveTcp\":true},"
-                + "{\"ssPort\":6899,\"username\":\"b\",\"socksUser\":\"shared\"}]}";
+    public void localTransportPoolsSeparateShadowUsersOnTheSameListener() {
+        InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 9999);
+        AuthenticEndpoint a = RssClient.resolveShadowEndpoint(addr, null, "a", false);
+        AuthenticEndpoint b = RssClient.resolveShadowEndpoint(addr, null, "b", false);
+        SocksConfig config = new SocksConfig();
+        assertNotEquals(org.rx.net.socks.TcpWarmPoolKey.from(a, config, null),
+                org.rx.net.socks.TcpWarmPoolKey.from(b, config, null));
+        assertNotEquals(org.rx.net.socks.UdpLeasePoolKey.from(a, config, null),
+                org.rx.net.socks.UdpLeasePoolKey.from(b, config, null));
+    }
+
+    @Test
+    public void transportProfilesFollowUserAcrossReloadAndSharedSocksCredentials() {
+        String json = "{\"shadowUsers\":[{\"ssPort\":6898,\"username\":\"a\",\"socksUser\":\"shared\","
+                + "\"transport\":{\"profile\":\"daily\"}},{\"ssPort\":6899,\"username\":\"b\",\"socksUser\":\"shared\"}]}";
         RssClientConf conf = JSON.parseObject(json, RssClientConf.class);
         SocksConfig inbound = new SocksConfig();
         RssClient.OutboundProfiles profiles = new RssClient.OutboundProfiles(conf, inbound);
         ShadowUser a = conf.shadowUsers.get(0), b = conf.shadowUsers.get(1);
         assertTrue(profiles.tcp(a, 443).isAdaptiveTcp());
-        assertFalse(profiles.tcp(b, 443).isAdaptiveTcp());
-        assertSame(profiles.ordinary, profiles.tcp(null, 443));
-        assertFalse(profiles.ordinary.isAdaptiveTcp());
-        assertTrue(profiles.tcp(a, 53).isAdaptiveTcp());
-        assertFalse(profiles.tcp(b, 80).isAdaptiveTcp());
+        assertEquals(0, profiles.tcp(a, 443).getTransportFlags().getValue());
+        assertFalse(profiles.tcp(b, 12345).isAdaptiveTcp());
+        assertTrue(profiles.tcp(a, 12345).getTransportFlags().has(TransportFlags.COMPRESS_BOTH));
+        assertSame(profiles.tcp(null, 443), profiles.tcp(b, 12345));
         assertTrue(profiles.tcp(b, 80).getTransportFlags().has(TransportFlags.RSS_AUTHENTICATED_TLS));
         assertFalse(profiles.tcp(a, 53).getTransportFlags().has(TransportFlags.COMPRESS_WRITE));
-        assertTrue(profiles.tcp(a, 443).getTransportFlags().has(TransportFlags.COMPRESS_BOTH));
-        assertFalse(profiles.tunnel.isAdaptiveTcp());
-        assertTrue(profiles.ordinary.isDailyUdp());
+        assertEquals(4, profiles.udp(a).getDailyUdpFeatures());
+        assertEquals(0, profiles.udp(b).getDailyUdpFeatures());
+
         RssClientConf reload = JSON.parseObject(json, RssClientConf.class);
-        reload.tcpCipherPorts = new int[]{8443};
-        reload.shadowUsers.get(0).setAdaptiveTcp(false);
-        reload.shadowUsers.get(1).setAdaptiveTcp(true);
-        RssClient.OutboundProfiles changed = new RssClient.OutboundProfiles(reload, inbound);
-        assertFalse(changed.tcp(a, 443).isAdaptiveTcp());
-        assertTrue(changed.tcp(b, 443).isAdaptiveTcp());
-        assertTrue(changed.tcp(a, 8443).getTransportFlags().has(TransportFlags.RSS_AUTHENTICATED_TLS));
-        assertSame(changed.ordinary, changed.tcp(a, 53));
-        reload.tcpCipherPorts = new int[]{65536};
+        RssTransport policy = reload.shadowUsers.get(0).transport;
+        policy.udp = 3;
+        policy.tcp = 3;
+        for (int fec = 0; fec <= 3; fec++) {
+            policy.fec = fec;
+            RssClient.OutboundProfiles changed = new RssClient.OutboundProfiles(reload, inbound);
+            SocksConfig tcp = changed.tcp(a, 80);
+            assertEquals((fec & 2) != 0, tcp.isAdaptiveTcp());
+            assertTrue(tcp.getTransportFlags().has(TransportFlags.COMPRESS_BOTH));
+            assertTrue(tcp.getTransportFlags().has(TransportFlags.RSS_AUTHENTICATED_TLS));
+            assertEquals(3 | ((fec & 1) << 2), changed.udp(a).getDailyUdpFeatures());
+            assertEquals(0, changed.tcp(a, 993).getTransportFlags().getValue());
+        }
+        policy.profile = "game";
         assertThrows(IllegalArgumentException.class, () -> new RssClient.OutboundProfiles(reload, inbound));
+        reload.tcpCipherPorts = new int[]{443};
+        assertFalse(RssTransport.validPortLists(reload.tcpCipherPorts, reload.tcpAlreadyEncryptedPorts));
     }
 
     @Test

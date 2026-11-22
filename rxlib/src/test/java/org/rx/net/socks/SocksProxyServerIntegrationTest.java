@@ -1359,33 +1359,22 @@ class SocksProxyServerIntegrationTest {
     @SneakyThrows
     @Timeout(value = 25)
     void shadowsocksUdpRelay_socks5_chained_withRpcRelayGroup_e2e() {
-        rpcRelayGroupEcho(false, false);
+        rpcRelayGroupEcho(false);
     }
 
     @Test
     @Timeout(value = 25)
     void dailyUdp_chainedRpcEcho() throws Exception {
-        rpcRelayGroupEcho(true, true);
+        rpcRelayGroupEcho(true);
     }
 
-    @Test
-    @Timeout(value = 25)
-    void dailyClient_acceptsLegacyRpcRelayReplies() throws Exception {
-        rpcRelayGroupEcho(true, false);
-    }
-
-    private void rpcRelayGroupEcho(boolean daily, boolean modernServer) throws Exception {
-        int proxyBPort = modernServer ? 15763 : daily ? 15773 : 15463;
+    private void rpcRelayGroupEcho(boolean daily) throws Exception {
+        int proxyBPort = daily ? 15763 : 15463;
         int proxyAPort = proxyBPort + 1;
         int ssPort = proxyBPort + 2;
 
         SocksConfig configB = new SocksConfig(proxyBPort);
-        configB.setDailyUdp(modernServer);
-        if (daily && !modernServer) {
-            configB.setUdpRedundantMultiplier(2);
-            configB.setSocksUdpRedundantMode(org.rx.net.udp.UdpRedundantMode.BIDIRECTIONAL);
-            configB.setUdpCompressEnabled(true);
-        }
+        configB.setDailyUdpFeatures(daily ? 7 : 0);
         configB.getWhiteList();
         SocksProxyServer proxyB = new SocksProxyServer(configB);
 
@@ -1403,7 +1392,7 @@ class SocksProxyServerIntegrationTest {
         ssServer.onUdpRoute.replace((s, e) -> e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), new SocksConfig(proxyAPort), supportA)));
         proxyA.onUdpRoute.replace((s, e) -> {
             SocksConfig bConf = new SocksConfig(proxyBPort);
-            bConf.setDailyUdp(daily);
+            bConf.setDailyUdpFeatures(daily ? 4 : 0);
             bConf.setUdpPortHoppingEnabled(!daily);
             bConf.setUdpPortHoppingHopCount(3);
             bConf.setUdpPortHoppingMinActiveHops(3);
@@ -1418,9 +1407,9 @@ class SocksProxyServerIntegrationTest {
             clientSock.setSoTimeout(5000);
             try {
                 assertShadowsocksUdpEcho(clientSock, ssPort, crypto, "ss-rpc-port-hop-1");
-                waitForCondition(() -> proxyB.udpRelayRegistry.size() == (modernServer ? 2 : daily ? 1 : 3), 5000,
+                waitForCondition(() -> proxyB.udpRelayRegistry.size() == (daily ? 2 : 3), 5000,
                         "proxyB should allocate RPC managed UDP relay group");
-                if (modernServer) {
+                if (daily) {
                     assertTrue(proxyB.udpRelayRegistry.values().stream()
                             .anyMatch(ch -> ch.pipeline().get(org.rx.net.udp.DailyUdpWire.class) != null));
                 }
@@ -1926,6 +1915,9 @@ class SocksProxyServerIntegrationTest {
                         new LocalRpcFacade(remote));
                 assertSame(destination, new SocksTcpUpstream(destination, uplink, support).prepareDestination());
                 checkProtectedWarmConnection(uplink, true, "localhost", TCP_ECHO_PORT);
+                // Exercise TLS alone and zlib inside TLS on the same SOCKS listener.
+                uplink.setTransportFlags(TransportFlags.RSS_AUTHENTICATED_TLS.flags(TransportFlags.COMPRESS_BOTH));
+                checkProtectedWarmConnection(uplink, true, "localhost", TCP_ECHO_PORT);
                 checkProtectedWarmConnection(uplink, false, "127.0.0.1", TCP_ECHO_PORT);
                 SocksConfig untrusted = new SocksConfig();
                 untrusted.setTransportFlags(uplink.getTransportFlags());
@@ -1934,8 +1926,11 @@ class SocksProxyServerIntegrationTest {
                 SocksConfig plain = new SocksConfig();
                 plain.setTransportFlags(cfg.getTransportFlags());
                 checkProtectedWarmConnection(plain, false, "localhost", TCP_ECHO_PORT);
-                try (ServerSocket ordinary = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+                try (ServerSocket ordinary = new ServerSocket(0, 8, InetAddress.getByName("127.0.0.1"))) {
                     checkProtectedWarmConnection(plain, true, "localhost", ordinary.getLocalPort());
+                    plain.setTransportFlags(TransportFlags.NONE.flags());
+                    checkProtectedWarmConnection(plain, true, "localhost", ordinary.getLocalPort());
+                    checkProtectedWarmConnection(plain, false, "localhost", TCP_ECHO_PORT);
                 }
             }
             UpstreamSupport endpoint = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("localhost", 15796),
@@ -2000,7 +1995,7 @@ class SocksProxyServerIntegrationTest {
             ChannelFuture command = ch.eventLoop().submit(() -> warm.connect(new InetSocketAddress("127.0.0.1", target))).get();
             if (success) {
                 command.sync();
-                assertEquals(ssl == null, Sockets.hasTcpCompressionHandlers(ch));
+                assertEquals(config.getTransportFlags().has(TransportFlags.COMPRESS_BOTH), Sockets.hasTcpCompressionHandlers(ch));
                 if (ssl != null) {
                     assertEquals("TLS_AES_128_GCM_SHA256", ssl.engine().getSession().getCipherSuite());
                 }
