@@ -74,13 +74,11 @@ public final class RssServer {
                 || (outConf.getDailyPortLast() - outConf.getDailyPortFirst()) % 2 == 0) {
             throw new IllegalArgumentException("udpHopPorts requires at least two pairs of dedicated UDP ports");
         }
-        String portList = options.get("tcpCipherPorts");
-        outConf.setRequiredTlsPorts(portList == null ? RssTransport.cipherPorts()
-                : portList.trim().isEmpty() ? new int[0] : Arrays.stream(portList.split(",", -1))
-                .mapToInt(p -> Integer.parseInt(p.trim())).toArray());
+        outConf.setRequiredTcpCipherPorts(parsePorts(options.get("tcpCipherPorts"), RssTransport.cipherPorts()));
+        outConf.setRequiredUdpCipherPorts(parsePorts(options.get("udpCipherPorts"), RssTransport.udpCipherPorts()));
         outConf.setRssTlsContext(RssHopTls.serverFromEnvironment());
-        if (outConf.getRequiredTlsPorts().length != 0 && outConf.getRssTlsContext() == null) {
-            log.warn("RSS protected TCP ports will reject connections until RSS_TCP_TLS_CERT and RSS_TCP_TLS_KEY are configured");
+        if (outConf.getRequiredTcpCipherPorts().length != 0 && !org.rx.net.RssHopAes.configured() && outConf.getRssTlsContext() == null) {
+            log.warn("RSS protected TCP ports require RSS_TCP_AES_KEY or an explicitly configured TLS transport");
         }
         Authenticator defAuth = (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS;
         configureHopRedirect(outConf);
@@ -127,6 +125,12 @@ public final class RssServer {
         config.setDailyUdpFeatures(0);
         config.setAdaptiveTcp(false);
         log.warn("RSS UDP hop extensions unavailable: check nft, CAP_NET_ADMIN and dedicated port range");
+    }
+
+    private static int[] parsePorts(String list, int[] defaults) {
+        if (list == null) return defaults;
+        return list.trim().isEmpty() ? new int[0] : Arrays.stream(list.split(",", -1))
+                .mapToInt(p -> Integer.parseInt(p.trim())).toArray();
     }
 
     static void configureOutboundConfig(SocksConfig config, boolean debugFlag) {

@@ -10,6 +10,7 @@ import io.netty.channel.ChannelPromise;
 import io.netty.channel.FixedRecvByteBufAllocator;
 import io.netty.channel.RecvByteBufAllocator;
 import io.netty.channel.socket.DatagramPacket;
+import io.netty.util.AttributeKey;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
@@ -27,6 +28,7 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
     public static final int HEADER_BYTES = UdpDailyFec.WIRE_HEADROOM;
     public static final int LZ4 = 1, AES = 2, FEC = 4;
     static final long HOP_NANOS = TimeUnit.SECONDS.toNanos(30);
+    private static final AttributeKey<RecvByteBufAllocator> ORIGINAL_ALLOCATOR = AttributeKey.valueOf("rssDailyOriginalAllocator");
 
     private final long tokenHigh, tokenLow;
     private final InetSocketAddress primary, alias;
@@ -39,7 +41,6 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
     private final Consumer<ByteBuf> deliver = this::deliver;
     private ChannelHandlerContext main, returnPath;
     private InetSocketAddress logicalPeer, physicalPeer;
-    private RecvByteBufAllocator originalAllocator;
     private UdpDailyFec fec;
     private ScheduledFuture<?> timer;
     private ChannelPromise dataPromise;
@@ -84,9 +85,9 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
 
     public static void install(ChannelPipeline pipeline, DailyUdpWire wire) {
         if (pipeline.get(Sockets.UDP_FINAL_EGRESS_GUARD) == null) {
-            pipeline.addFirst("dailyUdp", wire);
+            pipeline.addFirst(wire);
         } else {
-            pipeline.addAfter(Sockets.UDP_FINAL_EGRESS_GUARD, "dailyUdp", wire);
+            pipeline.addAfter(Sockets.UDP_FINAL_EGRESS_GUARD, null, wire);
         }
     }
 
@@ -105,7 +106,7 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
     @Override
     public void handlerAdded(ChannelHandlerContext ctx) {
         main = returnPath = ctx;
-        originalAllocator = ctx.channel().config().getRecvByteBufAllocator();
+        ctx.channel().attr(ORIGINAL_ALLOCATOR).setIfAbsent(ctx.channel().config().getRecvByteBufAllocator());
         int channelMtu = sizeReceiveBuffer(ctx);
         if (wireMtu <= 0 || channelMtu > 0 && channelMtu < wireMtu) {
             wireMtu = channelMtu;
@@ -128,7 +129,10 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
         if (timer != null) {
             timer.cancel(false);
         }
-        ctx.channel().config().setRecvByteBufAllocator(originalAllocator);
+        if (ctx.pipeline().get(DailyUdpWire.class) == null) {
+            RecvByteBufAllocator original = ctx.channel().attr(ORIGINAL_ALLOCATOR).getAndSet(null);
+            if (original != null) ctx.channel().config().setRecvByteBufAllocator(original);
+        }
         recordMetrics();
         if (fec != null) fec.close();
         main = returnPath = null;
@@ -323,6 +327,8 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
                 DiagnosticMetrics.record("rss.udp.daily.rx.missing", fec.missingData, side);
                 DiagnosticMetrics.record("rss.udp.daily.rx.recovered", fec.recoveredData, side);
                 DiagnosticMetrics.record("rss.udp.daily.tx.parity", fec.paritySent, side);
+                DiagnosticMetrics.record("rss.udp.daily.tx.skippedSmallGroups", fec.skippedSmallGroups, side);
+                DiagnosticMetrics.record("rss.udp.daily.rx.evictedGroups", fec.evictedGroups, side);
             }
             DiagnosticMetrics.record("rss.udp.daily.tx.payloadBytes", payloadBytes, side);
             DiagnosticMetrics.record("rss.udp.daily.tx.encodedBytes", encodedBytes, side);
@@ -331,7 +337,10 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
             }
         }
         payloadBytes = encodedBytes = compressionSavedBytes = 0;
-        if (fec != null) fec.sampledData = fec.missingData = fec.recoveredData = fec.paritySent = 0;
+        if (fec != null) {
+            fec.sampledData = fec.missingData = fec.recoveredData = fec.paritySent = 0;
+            fec.skippedSmallGroups = fec.evictedGroups = 0;
+        }
     }
 
     private void scheduleTick() {

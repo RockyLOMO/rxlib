@@ -93,6 +93,7 @@ public class SocksTcpUpstream extends Upstream {
         destinationPrepared = true;
         SocksRpcContract facade = next.getFacade();
         if (facade == null || config.getTransportFlags().has(TransportFlags.RSS_AUTHENTICATED_TLS)
+                || config.getTransportFlags().has(TransportFlags.RSS_PSK_AES)
                 || (!SocksRpcContract.FAKE_IPS.contains(destination.getHostString()) && !SocksRpcContract.FAKE_PORTS.contains(destination.getPort())
                 && Sockets.isValidIp(destination.getHostString()))) {
             return destination;

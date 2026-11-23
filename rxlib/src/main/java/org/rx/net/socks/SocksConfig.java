@@ -77,13 +77,22 @@ public class SocksConfig extends SocketConfig {
     private boolean adaptiveTcp;
     @ToString.Exclude
     private transient SslContext rssTlsContext;
-    private int[] requiredTlsPorts;
+    private int[] requiredTcpCipherPorts;
+    private int[] requiredUdpCipherPorts;
 
-    public boolean requiresTls(int port) {
-        return requiredTlsPorts != null && Arrays.binarySearch(requiredTlsPorts, port) >= 0;
+    public boolean requiresUdpCipher(int port) {
+        return requiredUdpCipherPorts != null && Arrays.binarySearch(requiredUdpCipherPorts, port) >= 0;
     }
 
-    public static boolean validTlsPorts(int[] ports) {
+    public void setRequiredUdpCipherPorts(int[] ports) {
+        requiredUdpCipherPorts = sortedPorts(ports);
+    }
+
+    public boolean requiresTcpCipher(int port) {
+        return requiredTcpCipherPorts != null && Arrays.binarySearch(requiredTcpCipherPorts, port) >= 0;
+    }
+
+    public static boolean validCipherPorts(int[] ports) {
         if (ports == null) {
             return false;
         }
@@ -95,13 +104,17 @@ public class SocksConfig extends SocketConfig {
         return true;
     }
 
-    public void setRequiredTlsPorts(int[] ports) {
-        if (!validTlsPorts(ports)) {
-            throw new IllegalArgumentException("tcpCipherPorts must be a list of ports in 1..65535");
+    public void setRequiredTcpCipherPorts(int[] ports) {
+        requiredTcpCipherPorts = sortedPorts(ports);
+    }
+
+    private static int[] sortedPorts(int[] ports) {
+        if (!validCipherPorts(ports)) {
+            throw new IllegalArgumentException("Cipher ports must be in 1..65535");
         }
         int[] copy = ports.clone();
         Arrays.sort(copy);
-        requiredTlsPorts = copy;
+        return copy;
     }
     @Setter(AccessLevel.NONE)
     private int dailyPortFirst, dailyPortLast;

@@ -13,13 +13,14 @@ import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.ssl.SslProvider;
 import lombok.SneakyThrows;
 import org.rx.net.socks.SocksConfig;
+import javax.crypto.spec.SecretKeySpec;
 
 import java.io.File;
 import java.net.InetSocketAddress;
 import java.util.Collections;
 import java.util.List;
 
-/** Authenticated RSS TCP hop. One listener accepts raw SOCKS and zlib, both directly and inside TLS. */
+/** RSS TCP hop. One listener accepts raw SOCKS or zlib, optionally protected by TLS or PSK AES. */
 public final class RssHopTls {
     private RssHopTls() { }
 
@@ -66,17 +67,23 @@ public final class RssHopTls {
     }
 
     static ChannelHandler serverSelector(SocksConfig config) {
-        return new ServerSelector(config, config.getRssTlsContext());
+        return serverSelector(config, RssHopAes.configuredKey());
+    }
+
+    static ChannelHandler serverSelector(SocksConfig config, SecretKeySpec key) {
+        return new ServerSelector(config, config.getRssTlsContext(), key);
     }
 
     /** The first SOCKS greeting can be just three bytes. Consume no bytes while selecting its decoder. */
     private static final class ServerSelector extends ByteToMessageDecoder {
         private final SocksConfig config;
         private final SslContext tls;
+        private final SecretKeySpec key;
 
-        ServerSelector(SocksConfig config, SslContext tls) {
+        ServerSelector(SocksConfig config, SslContext tls, SecretKeySpec key) {
             this.config = config;
             this.tls = tls;
+            this.key = key;
         }
 
         @Override protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) {
@@ -86,8 +93,13 @@ public final class RssHopTls {
                 ctx.pipeline().remove(this);
                 return;
             }
-            if (first == 0x16 && tls != null) { // TLS ClientHello (handshake record)
-                ctx.pipeline().addAfter(ctx.name(), null, new ServerSelector(config, null));
+            if (first == RssHopAes.MAGIC && key != null) {
+                ctx.pipeline().addAfter(ctx.name(), null, new ServerSelector(config, null, null));
+                ctx.pipeline().replace(this, null, new RssHopAes(false, key));
+                return;
+            }
+            if (first == 0x16 && tls != null) { // TLS ClientHello
+                ctx.pipeline().addAfter(ctx.name(), null, new ServerSelector(config, null, null));
                 ctx.pipeline().replace(this, null, tls.newHandler(ctx.alloc()));
                 return;
             }

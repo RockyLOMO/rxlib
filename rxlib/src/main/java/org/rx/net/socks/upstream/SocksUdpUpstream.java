@@ -48,10 +48,8 @@ import static org.rx.core.Extends.tryClose;
 
 @Slf4j
 public class SocksUdpUpstream extends Upstream {
-    private static final AttributeKey<SessionGroup> ATTR_UDP_SESSION =
-            AttributeKey.valueOf("socksUdpUpstreamSessionGroup");
-    private static final AttributeKey<CompletableFuture<SessionGroup>> ATTR_UDP_SESSION_INIT =
-            AttributeKey.valueOf("socksUdpUpstreamSessionInit");
+    private final AttributeKey<SessionGroup> sessionKey;
+    private final AttributeKey<CompletableFuture<SessionGroup>> initKey;
     private static final InetSocketAddress[] EMPTY_RELAY_ADDRESSES = new InetSocketAddress[0];
     private static final MemoryCache<UdpLeasePoolKey, Boolean> RPC_RELAY_GROUP_BREAKER = new MemoryCache<>();
     private static final ConcurrentMap<UdpLeasePoolKey, AtomicInteger> RPC_RELAY_GROUP_FAILURES = new ConcurrentHashMap<>();
@@ -61,6 +59,10 @@ public class SocksUdpUpstream extends Upstream {
     public SocksUdpUpstream(InetSocketAddress dstEp, @NonNull SocksConfig config, @NonNull UpstreamSupport next) {
         super(dstEp, config);
         this.next = next;
+        // A single local SOCKS UDP association can multiplex destinations requiring different wire formats.
+        int features = config.getDailyUdpFeatures();
+        sessionKey = AttributeKey.valueOf("socksUdpUpstreamSessionGroup." + features);
+        initKey = AttributeKey.valueOf("socksUdpUpstreamSessionInit." + features);
     }
 
     public AuthenticEndpoint getServerEndpoint() {
@@ -140,7 +142,7 @@ public class SocksUdpUpstream extends Upstream {
     }
 
     private SessionGroup activeGroup(Channel channel) {
-        SessionGroup group = channel.attr(ATTR_UDP_SESSION).get();
+        SessionGroup group = channel.attr(sessionKey).get();
         if (group == null) {
             return null;
         }
@@ -158,18 +160,18 @@ public class SocksUdpUpstream extends Upstream {
 
     @Override
     public CompletableFuture<Void> initChannelAsync(Channel channel) {
-        SessionGroup group = channel.attr(ATTR_UDP_SESSION).get();
+        SessionGroup group = channel.attr(sessionKey).get();
         if (group != null && group.isValid()) {
             return CompletableFuture.completedFuture(null);
         }
 
-        CompletableFuture<SessionGroup> initFuture = channel.attr(ATTR_UDP_SESSION_INIT).get();
+        CompletableFuture<SessionGroup> initFuture = channel.attr(initKey).get();
         if (initFuture != null) {
             return initFuture.thenApply(v -> null);
         }
 
         CompletableFuture<SessionGroup> created = new CompletableFuture<>();
-        CompletableFuture<SessionGroup> existing = channel.attr(ATTR_UDP_SESSION_INIT).setIfAbsent(created);
+        CompletableFuture<SessionGroup> existing = channel.attr(initKey).setIfAbsent(created);
         if (existing != null) {
             return existing.thenApply(v -> null);
         }
@@ -242,12 +244,12 @@ public class SocksUdpUpstream extends Upstream {
     }
 
     private SessionGroup acquireGroup(Channel channel) {
-        SessionGroup group = channel.attr(ATTR_UDP_SESSION).get();
+        SessionGroup group = channel.attr(sessionKey).get();
         if (group != null && group.isValid()) {
             return group;
         }
         if (group != null) {
-            channel.attr(ATTR_UDP_SESSION).set(null);
+            channel.attr(sessionKey).set(null);
         }
 
         SocksConfig socksConfig = (SocksConfig) config;
@@ -591,14 +593,14 @@ public class SocksUdpUpstream extends Upstream {
 
     private void completeSessionInit(Channel channel, CompletableFuture<SessionGroup> future,
                                      SessionGroup group, Throwable error) {
-        CompletableFuture<SessionGroup> activeInit = channel.attr(ATTR_UDP_SESSION_INIT).get();
+        CompletableFuture<SessionGroup> activeInit = channel.attr(initKey).get();
         if (activeInit != future) {
             closeGroup(group, false);
             return;
         }
-        channel.attr(ATTR_UDP_SESSION_INIT).set(null);
+        channel.attr(initKey).set(null);
 
-        SessionGroup activeGroup = channel.attr(ATTR_UDP_SESSION).get();
+        SessionGroup activeGroup = channel.attr(sessionKey).get();
         if (activeGroup != null && activeGroup.isValid()) {
             closeGroup(group, false);
             future.complete(activeGroup);
@@ -662,7 +664,7 @@ public class SocksUdpUpstream extends Upstream {
     }
 
     private void bindGroup(Channel channel, SessionGroup group) {
-        channel.attr(ATTR_UDP_SESSION).set(group);
+        channel.attr(sessionKey).set(group);
         group.retain(next);
         InetSocketAddress[] relayAddresses = group.snapshotRelayAddresses();
         if (group.rpcControl != null && group.rpcControl.dailyWire != null) {
@@ -695,7 +697,7 @@ public class SocksUdpUpstream extends Upstream {
     }
 
     private void handleHolderClosed(Channel channel, SessionGroup group, SessionHolder holder) {
-        SessionGroup active = channel.attr(ATTR_UDP_SESSION).get();
+        SessionGroup active = channel.attr(sessionKey).get();
         if (active != group || holder == null || !group.removeHolder(holder)) {
             return;
         }
@@ -779,7 +781,7 @@ public class SocksUdpUpstream extends Upstream {
     private void completeGroupReplenish(Channel channel, SessionGroup group, SessionHolder holder, Throwable error) {
         boolean success = false;
         try {
-            SessionGroup active = channel.attr(ATTR_UDP_SESSION).get();
+            SessionGroup active = channel.attr(sessionKey).get();
             if (active != group || !channel.isActive() || !group.isValid() || !group.needsReplenish()) {
                 closeHolder(holder);
                 return;
@@ -856,7 +858,7 @@ public class SocksUdpUpstream extends Upstream {
                                      Throwable error, int maxHopCount) {
         boolean success = false;
         try {
-            SessionGroup active = channel.attr(ATTR_UDP_SESSION).get();
+            SessionGroup active = channel.attr(sessionKey).get();
             if (active != group || !channel.isActive() || !group.isValid() || group.holderCount() >= maxHopCount) {
                 closeHolder(holder);
                 return;
@@ -895,12 +897,12 @@ public class SocksUdpUpstream extends Upstream {
 
     private void invalidateGroup(Channel relay, SessionGroup group, boolean resetPooledLease, String reason) {
         Runnable task = () -> {
-            SessionGroup active = relay.attr(ATTR_UDP_SESSION).get();
+            SessionGroup active = relay.attr(sessionKey).get();
             if (active != group) {
                 return;
             }
             InetSocketAddress[] relayAddresses = active.snapshotAllRelayAddresses();
-            relay.attr(ATTR_UDP_SESSION).set(null);
+            relay.attr(sessionKey).set(null);
             if (active.rpcControl != null && active.rpcControl.dailyWire != null
                     && relay.pipeline().context(active.rpcControl.dailyWire) != null) {
                 relay.pipeline().remove(active.rpcControl.dailyWire);

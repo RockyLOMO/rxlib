@@ -4,7 +4,7 @@
 
 ## 用户策略
 
-在 Client 的 `conf.yml` 中给已有的 SS 用户增加 `transport`。省略时使用 `plain`，普通 TCP 走 TCP，普通 UDP 单发。两类传输均遵守下面的 TCP 端口规则。下面是已有 6898 用户的配置片段，其余身份和路由字段按原配置填写。
+在 Client 的 `conf.yml` 中给已有的 SS 用户增加 `transport`。省略时使用 `plain`，普通 TCP 走 TCP，普通 UDP 单发。TCP 与 UDP 分别应用各自的端口规则。下面是已有 6898 用户的配置片段，其余身份和路由字段按原配置填写。
 
 ```yaml
 shadowUsers:
@@ -16,21 +16,25 @@ shadowUsers:
 | 字段 | 值 | plain | daily |
 | --- | --- | --- | --- |
 | `fec` | 0 关闭，1 仅 UDP，2 仅 TCP，3 两者 | 0 | 3 |
-| `tcp` | 位 1 为 zlib 3，位 2 为 AES-128-GCM，位 4 为 TLS。2 与 4 使用同一套校验证书的 TLS 1.3 / AES-128-GCM；组合只装一层 | 0 | 1 |
+| `tcp` | 位 1 为 zlib 3，位 2 为共享密钥 AES-128-GCM，位 4 为校验证书的 TLS 1.3。显式同时设置两位时只使用 TLS | 0 | 1 |
 | `udp` | 位 1 为逐包 LZ4 fast，位 2 为 AES-128-GCM，3 为先压缩再加密 | 0 | 0 |
 
 在同一个 `transport` 下写 `fec`、`tcp`、`udp` 可覆盖 profile 对应字段，包括显式 0。`daily` 的 UDP 默认仅 FEC 和跳跃。游戏 profile 尚未开放。热更新影响新建代理连接和 UDP 会话。用户按外部 SS 用户名匹配，内部 SOCKS 账号可复用。旧 `adaptiveTcp` 用户字段已移除。
 
-## TCP 端口
+## 按协议选择目标端口
 
-| Client 顶层字段 | 默认目标 TCP 端口 | 行为 |
+| Client 顶层字段 | 默认目标端口 | 行为 |
 | --- | --- | --- |
 | `tcpCipherPorts` | 21、23、25、53、80、110、143、389、587、1883、8080 | 默认认证加密。覆盖 FTP 控制、Telnet、可明文或 STARTTLS 的邮件和目录协议、DNS、HTTP、MQTT |
 | `tcpAlreadyEncryptedPorts` | 22、443、465、636、853、990、993、995、8883 | 按 SSH、HTTPS、隐式 TLS 邮件、LDAPS、DoT、FTPS 和安全 MQTT 透传，跳过 RSS 压缩和加密；仍可走 TCP FEC |
+| `udpCipherPorts` | 53 | UDP DNS 走共享密钥 AES-128-GCM，并启用端口跳跃 |
+| `udpAlreadyEncryptedPorts` | 443、853 | QUIC、DoQ 跳过额外压缩和加密，保留用户启用的 FEC |
 
-端口号是策略约定，不能证明业务实际开启了加密。使用非标准端口时调整列表。两表不得重叠。Server 的 `-tcpCipherPorts=21,23,...` 设置同一保护下限。对其余端口应用用户的 `tcp`。明确组合如 `tcp: 3` 或 `tcp: 5` 会先 zlib 再 TLS；日常模式的 `tcp: 1` 在强制保护端口只做加密，避免 HTTP Cookie 与可控输入共享压缩上下文泄漏长度。
+端口号是策略约定，不能证明业务实际开启了加密。使用非标准端口时调整列表。每种协议的两张表不得重叠。Server 的 `-tcpCipherPorts` 与 `-udpCipherPorts` 可分别覆盖强制保护端口。UDP/80 使用用户的 UDP 策略。TCP 显式组合 `3` 先 zlib 再共享密钥 AES，`5` 先 zlib 再 TLS。日常模式的强制保护 TCP 端口只用共享密钥 AES，避免 HTTP Cookie 与可控输入共享压缩上下文泄漏长度。
 
-Server 读取 `RSS_TCP_TLS_CERT` 和 `RSS_TCP_TLS_KEY` 指向的 PEM 证书链与私钥。证书 SAN 需匹配 Client 上配置的 RSS 上游域名或 IP。Client 信任 JVM 信任库，私有 CA 可用 `RSS_TCP_TLS_CA` 指定 PEM 路径。验证失败关闭保护连接。TCP/FEC 先在 TCP 上协商，再探测 UDP；成功后直接拆分已编码的字节流，UDP 外层保留签名、防重放、FEC 和端口跳跃。UDP 不可用时继续 TCP。
+TCP 的 AES 模式由两端读取同一个 `RSS_TCP_AES_KEY`（32 个随机字节的 Base64），与 UDP 密钥独立。双方随机数和部署密钥派生每连接、每方向独立的 128 位 AES 密钥；握手一次往返，最多 16 KiB 的数据记录额外占 18 字节。此模式没有前向保密，变更密钥应协调两端发布。
+
+选择 TCP 的 TLS 位时，Server 读取 `RSS_TCP_TLS_CERT` 和 `RSS_TCP_TLS_KEY` 指向的 PEM 证书链与私钥。证书 SAN 需匹配 Client 上配置的 RSS 上游域名或 IP。Client 信任 JVM 信任库，私有 CA 可用 `RSS_TCP_TLS_CA` 指定 PEM 路径。验证失败关闭保护连接。TCP/FEC 先在 TCP 上协商，再探测 UDP；成功后直接拆分已编码的字节流，UDP 外层保留签名、防重放、FEC 和端口跳跃。UDP 不可用时继续 TCP。
 
 ## UDP 和跳跃端口
 
@@ -45,7 +49,7 @@ Server 读取 `RSS_TCP_TLS_CERT` 和 `RSS_TCP_TLS_KEY` 指向的 PEM 证书链�
 
 ## Actions 发布
 
-两端工作流共用仓库 Secret `RSS_DEPLOY`。本机恢复副本在 `D:\home\.envKeys\rss\deploy.json`，签发用的 CA 私钥仅保存在该目录。轮换时先更新 JSON，再通过标准输入传给 `gh secret set RSS_DEPLOY`。每个 SSH 目标固定主机公钥。Client 只接收信任证书与 UDP 密钥，Server 接收服务端证书、私钥、内部账号及 UDP 密钥。证书 SAN 要覆盖 Client 配置的实际 upstream。
+两端工作流共用仓库 Secret `RSS_DEPLOY`。本机恢复副本在 `D:\home\.envKeys\rss\deploy.json`，签发用的 CA 私钥仅保存在该目录。轮换时先更新 JSON，再通过标准输入传给 `gh secret set RSS_DEPLOY`。每个 SSH 目标固定主机公钥。两端分别接收 TCP、UDP 共享密钥。Server 单独接收内部账号。启用证书 TLS 时，Client 接收信任证书，Server 接收证书及私钥。证书 SAN 要覆盖 Client 配置的实际 upstream。
 
 协议变更时先用 `rss-21` 手动发布主 Server，再发布 Gateway。两端各自的发布目录下保存本次 `.release-<run id>-<attempt>/deploy.log`、原启动脚本及变更过的用户配置；目录仅部署账号可访问。Server 的工作流在切换前验证 nft 权限并合并预留 UDP 端口；firewalld 活跃时同时放行运行时和永久端口。主 Server 当前的 nft INPUT 策略允许这段流量。上游安全组或 NAT 在主机权限之外，发布后需从 Client 走真实业务验证。工作流在本地监听以外还检查首尾 nft 映射和公网 TCP 入口。
 

@@ -951,7 +951,7 @@ public final class Sockets {
         // 先压缩再加密
         // 支持LengthField?
         boolean g = flags.has(TransportFlags.GFW);
-        boolean rss = config instanceof SocksConfig && ((SocksConfig) config).getRequiredTlsPorts() != null;
+        boolean rss = config instanceof SocksConfig && ((SocksConfig) config).getRequiredTcpCipherPorts() != null;
         if (!g && !rss) {
             if (flags.has(TransportFlags.COMPRESS_READ)) {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
@@ -1012,7 +1012,9 @@ public final class Sockets {
 
         ZlibWrapper zlib = ZlibWrapper.ZLIB;
         ChannelPipeline pipeline = channel.pipeline();
-        if (flags.has(TransportFlags.RSS_AUTHENTICATED_TLS)) {
+        if (flags.has(TransportFlags.RSS_PSK_AES)) {
+            pipeline.addLast(RssHopAes.clientHandler());
+        } else if (flags.has(TransportFlags.RSS_AUTHENTICATED_TLS)) {
             pipeline.addLast(RssHopTls.clientHandler(channel, ((SocksConfig) config).getRssTlsContext(), SNISpoofing));
         } else if (flags.has(TransportFlags.TLS)) {
             SslContext tls = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();

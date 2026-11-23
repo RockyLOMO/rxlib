@@ -1849,7 +1849,14 @@ class SocksProxyServerIntegrationTest {
     @Test
     @Timeout(value = 20)
     void shadowsocksTcpAdaptiveHopSurvivesUdpOutage() throws Exception {
-        verifyAdaptiveHop(null, null);
+        verifyAdaptiveHop(null, null, false);
+    }
+
+    @Test
+    @Timeout(25)
+    void pskAdaptiveHopSurvivesUdpOutage() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(org.rx.net.RssHopAes.configured());
+        verifyAdaptiveHop(null, null, true);
     }
 
     @Test
@@ -1860,7 +1867,7 @@ class SocksProxyServerIntegrationTest {
         PrivateKey key = (PrivateKey) keys.getKey("hop", "test-only".toCharArray());
         File pem = writePem(dir, "CERTIFICATE", cert.getEncoded());
         verifyAdaptiveHop(RssHopTls.serverContext(pem, writePem(dir, "PRIVATE KEY", key.getEncoded())),
-                RssHopTls.clientContext(pem));
+                RssHopTls.clientContext(pem), false);
     }
 
     private static KeyStore testHopIdentity(Path dir) throws Exception {
@@ -1888,52 +1895,61 @@ class SocksProxyServerIntegrationTest {
         return Files.write(dir.resolve(type + ".pem"), data.getBytes(StandardCharsets.US_ASCII)).toFile();
     }
 
-    private void verifyAdaptiveHop(SslContext tlsServer, SslContext tlsClient) throws Exception {
-        SocksConfig cfg = new SocksConfig(15796);
+    private void verifyAdaptiveHop(SslContext tlsServer, SslContext tlsClient, boolean psk) throws Exception {
+        SocksConfig cfg = new SocksConfig(0);
         cfg.setAdaptiveTcp(true);
         cfg.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
         SocksConfig uplink = new SocksConfig();
         uplink.setAdaptiveTcp(true);
         uplink.setTransportFlags(cfg.getTransportFlags());
+        if (psk) {
+            cfg.setRequiredTcpCipherPorts(new int[]{TCP_ECHO_PORT});
+            uplink.setTransportFlags(TransportFlags.RSS_PSK_AES.flags(TransportFlags.COMPRESS_BOTH));
+        }
         if (tlsServer != null) {
             cfg.setRssTlsContext(tlsServer);
-            cfg.setRequiredTlsPorts(new int[]{TCP_ECHO_PORT});
+            cfg.setRequiredTcpCipherPorts(new int[]{TCP_ECHO_PORT});
             uplink.setTransportFlags(TransportFlags.RSS_AUTHENTICATED_TLS.flags());
             uplink.setRssTlsContext(tlsClient);
         }
-        ShadowsocksConfig ss = new ShadowsocksConfig(Sockets.newAnyEndpoint(15797),
+        ShadowsocksConfig ss = new ShadowsocksConfig(Sockets.newAnyEndpoint(0),
                 org.rx.net.socks.encryption.CipherKind.AES_256_GCM.getCipherName(), "external-ss");
         SocksUser user = new SocksUser("rss");
         user.setPassword("hop-test");
         try (SocksProxyServer remote = new SocksProxyServer(cfg, new SocksAuthenticator(Collections.singletonList(user)));
              ShadowsocksServer local = new ShadowsocksServer(ss);
-             Socket app = new Socket("127.0.0.1", 15797)) {
+             Socket app = new Socket("127.0.0.1", ((InetSocketAddress) local.tcpChannels.get(0).localAddress()).getPort())) {
+            int remotePort = ((InetSocketAddress) remote.tcpChannels.get(0).localAddress()).getPort();
             assertNotNull(remote.adaptivePort);
+            if (psk) {
+                checkProtectedWarmConnection(remotePort, uplink, true, "localhost", TCP_ECHO_PORT);
+                checkProtectedWarmConnection(remotePort, new SocksConfig(), false, "localhost", TCP_ECHO_PORT);
+            }
             if (tlsServer != null) {
                 InetSocketAddress destination = InetSocketAddress.createUnresolved("secure-origin.invalid", TCP_ECHO_PORT);
-                UpstreamSupport support = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("localhost", 15796)),
+                UpstreamSupport support = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("localhost", remotePort)),
                         new LocalRpcFacade(remote));
                 assertSame(destination, new SocksTcpUpstream(destination, uplink, support).prepareDestination());
-                checkProtectedWarmConnection(uplink, true, "localhost", TCP_ECHO_PORT);
+                checkProtectedWarmConnection(remotePort, uplink, true, "localhost", TCP_ECHO_PORT);
                 // Exercise TLS alone and zlib inside TLS on the same SOCKS listener.
                 uplink.setTransportFlags(TransportFlags.RSS_AUTHENTICATED_TLS.flags(TransportFlags.COMPRESS_BOTH));
-                checkProtectedWarmConnection(uplink, true, "localhost", TCP_ECHO_PORT);
-                checkProtectedWarmConnection(uplink, false, "127.0.0.1", TCP_ECHO_PORT);
+                checkProtectedWarmConnection(remotePort, uplink, true, "localhost", TCP_ECHO_PORT);
+                checkProtectedWarmConnection(remotePort, uplink, false, "127.0.0.1", TCP_ECHO_PORT);
                 SocksConfig untrusted = new SocksConfig();
                 untrusted.setTransportFlags(uplink.getTransportFlags());
                 untrusted.setRssTlsContext(RssHopTls.clientContext(null));
-                checkProtectedWarmConnection(untrusted, false, "localhost", TCP_ECHO_PORT);
+                checkProtectedWarmConnection(remotePort, untrusted, false, "localhost", TCP_ECHO_PORT);
                 SocksConfig plain = new SocksConfig();
                 plain.setTransportFlags(cfg.getTransportFlags());
-                checkProtectedWarmConnection(plain, false, "localhost", TCP_ECHO_PORT);
+                checkProtectedWarmConnection(remotePort, plain, false, "localhost", TCP_ECHO_PORT);
                 try (ServerSocket ordinary = new ServerSocket(0, 8, InetAddress.getByName("127.0.0.1"))) {
-                    checkProtectedWarmConnection(plain, true, "localhost", ordinary.getLocalPort());
+                    checkProtectedWarmConnection(remotePort, plain, true, "localhost", ordinary.getLocalPort());
                     plain.setTransportFlags(TransportFlags.NONE.flags());
-                    checkProtectedWarmConnection(plain, true, "localhost", ordinary.getLocalPort());
-                    checkProtectedWarmConnection(plain, false, "localhost", TCP_ECHO_PORT);
+                    checkProtectedWarmConnection(remotePort, plain, true, "localhost", ordinary.getLocalPort());
+                    checkProtectedWarmConnection(remotePort, plain, false, "localhost", TCP_ECHO_PORT);
                 }
             }
-            UpstreamSupport endpoint = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("localhost", 15796),
+            UpstreamSupport endpoint = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("localhost", remotePort),
                     "rss", "hop-test"), null);
             AtomicReference<Channel> hop = new AtomicReference<>();
             local.onTcpRoute.replace((server, route) -> route.setUpstream(new SocksTcpUpstream(route.getFirstDestination(), uplink, endpoint) {
@@ -1978,8 +1994,8 @@ class SocksProxyServerIntegrationTest {
         }
     }
 
-    private static void checkProtectedWarmConnection(SocksConfig config, boolean success, String peer, int target) throws Exception {
-        InetSocketAddress address = new InetSocketAddress(peer, 15796);
+    private static void checkProtectedWarmConnection(int remotePort, SocksConfig config, boolean success, String peer, int target) throws Exception {
+        InetSocketAddress address = new InetSocketAddress(peer, remotePort);
         Socks5WarmupHandler warm = new Socks5WarmupHandler(address, "rss", "hop-test", 3000);
         Channel ch = Sockets.bootstrap(config, address, c -> {
             Sockets.addTcpClientHandler(c, config, address);

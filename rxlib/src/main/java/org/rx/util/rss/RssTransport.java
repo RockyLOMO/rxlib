@@ -40,8 +40,12 @@ public final class RssTransport implements Serializable {
         return new int[]{22, 443, 465, 636, 853, 990, 993, 995, 8883};
     }
 
+    static int[] udpCipherPorts() {
+        return new int[]{53};
+    }
+
     static boolean validPortLists(int[] cipher, int[] encrypted) {
-        if (!SocksConfig.validTlsPorts(cipher) || !SocksConfig.validTlsPorts(encrypted)) {
+        if (!SocksConfig.validCipherPorts(cipher) || !SocksConfig.validCipherPorts(encrypted)) {
             return false;
         }
         for (int port : encrypted) {

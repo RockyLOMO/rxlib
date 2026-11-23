@@ -155,6 +155,61 @@ class AdaptiveStreamTest {
     }
 
     @Test
+    void contiguousGapsRecoverInOrderAndDiscardLateArrivals() {
+        for (int burst : new int[]{2, 3, 5}) {
+            AtomicLong clock = new AtomicLong();
+            try (End a = new End(clock); End b = new End(clock)) {
+                probe(a, b);
+                ArrayDeque<ByteBuf> delayed = new ArrayDeque<>();
+                try {
+                    for (int i = 0; i < 15; i++) {
+                        a.send(i);
+                        if (i >= 2 && i < 2 + burst) delayed.add(a.udp.remove());
+                        a.passUdp(b);
+                        b.passTcp(a);
+                    }
+                    for (int i = 0; i < 10 && b.delivered.size() < 15; i++) {
+                        clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(40));
+                        b.stream.tick();
+                        b.passTcp(a);
+                        a.stream.tick();
+                        a.passTcp(b);
+                    }
+                    a.udp.addAll(delayed);
+                    delayed.clear();
+                    a.passUdp(b);
+                    ordered(b, 15);
+                } finally {
+                    while (!delayed.isEmpty()) delayed.remove().release();
+                }
+            }
+        }
+    }
+
+    @Test
+    void missingTailIsRepairedWithoutFollowingDataAndLateCopyIsDiscarded() {
+        AtomicLong clock = new AtomicLong();
+        try (End a = new End(clock); End b = new End(clock)) {
+            a.stream.tick();
+            a.passUdp(b);
+            clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(30));
+            b.passUdp(a);
+            assertTrue(a.stream.usingUdp());
+            a.send(0);
+            long repairAt = a.stream.nextDelayMillis();
+            assertTrue(repairAt >= 80 && repairAt <= 150, "tail repair deadline: " + repairAt);
+            clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(repairAt - 1));
+            a.stream.tick();
+            assertTrue(a.tcp.isEmpty());
+            clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(1));
+            a.stream.tick();
+            a.passTcp(b);
+            a.passUdp(b);
+            ordered(b, 1);
+        }
+    }
+
+    @Test
     void oneWayFailureDrainsOnceAndCanProbeAgain() {
         AtomicLong clock = new AtomicLong();
         try (End a = new End(clock); End b = new End(clock)) {

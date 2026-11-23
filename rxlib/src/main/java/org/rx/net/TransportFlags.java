@@ -23,6 +23,7 @@ public enum TransportFlags implements NEnum<TransportFlags> {
 
     TLS(1 << 12),
     RSS_AUTHENTICATED_TLS(1 << 13),
+    RSS_PSK_AES(1 << 15),
 
     GFW(1 << 14);
 

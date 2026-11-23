@@ -58,14 +58,16 @@ def main():
             if not p.name.endswith(("-sources.jar", "-javadoc.jar", "-tests.jar"))]
     with jar.open("rb") as stream:
         digest = hashlib.file_digest(stream, "sha256").hexdigest()
-    secrets = {"udp-key": bundle["udpKey"]}
-    if len(base64.b64decode(secrets["udp-key"], validate=True)) != 32:
-        raise ValueError("Invalid UDP key length")
+    secrets = {"tcp-key": bundle["tcpKey"], "udp-key": bundle["udpKey"]}
+    if any(len(base64.b64decode(v, validate=True)) != 32 for v in secrets.values()):
+        raise ValueError("RSS transport keys must be 32 bytes")
     if role == "client":
-        secrets["ca.pem"] = bundle["tlsCa"]
+        if bundle.get("tlsCa"):
+            secrets["ca.pem"] = bundle["tlsCa"]
     else:
-        secrets.update({"cert.pem": bundle["tlsCert"], "key.pem": bundle["tlsKey"],
-                        "shadow-user": bundle["shadowUser"]})
+        secrets["shadow-user"] = bundle["shadowUser"]
+        if bundle.get("tlsCert") or bundle.get("tlsKey"):
+            secrets.update({"cert.pem": bundle["tlsCert"], "key.pem": bundle["tlsKey"]})
     with connect(target) as ssh:
         with ssh.open_sftp() as sftp:
             sftp.mkdir(stage, mode=0o700)
