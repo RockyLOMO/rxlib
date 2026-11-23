@@ -20,7 +20,7 @@
   混合传输组件。支持在 TCP 连接的基础上，根据网络状况和数据包大小自动切换到 UDP 通道。
   - **默认行为**：默认开启 `enableUdpDirect` 和 `enableUdpHolePunch`。
   - **端口绑定**：若未指定 `udpBindPort`（默认为 0），服务端会启动并绑定一个随机的可用 UDP 端口。
-  - **探测机制**：当客户端连接时，服务端会主动发起 UDP 探测包，尝试建立更高效的 UDP 直连。
+  - **探测机制**：当客户端连接时，服务端会主动发起 UDP 探测包，尝试建立更高效的 UDP 直连。`udpSmallPacketThresholdBytes` 默认 8KiB，`udpProbeCount` 默认 6，`udpProbeTimeoutMillis` 默认 1500，`udpProbeIntervalMillis` 默认 120。`udpBindPort` 默认 0。
 
 ## 适用场景
 - 任何需要构建裸 TCP/UDP 服务的场景。

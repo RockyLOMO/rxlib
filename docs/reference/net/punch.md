@@ -96,7 +96,7 @@ String pong = session.request("ping", String.class, 3000);
 ### 被动收包并回复
 
 ```java
-session.onReceive.combine((s, e) -> {
+session.onReceive.add((s, e) -> {
     Object packet = e.getValue().packet();
     if ("ping".equals(packet)) {
         s.reply(e.getValue(), "pong");

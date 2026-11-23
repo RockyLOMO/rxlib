@@ -8,7 +8,7 @@
   核心的 HTTP 客户端，支持同步/异步调用、长连接复用（Keep-Alive）、流式文件上传/下载以及代理（SOCKS5/HTTP Proxy）配置。
 
 - **`HttpServer`**:
-  轻量级的 Netty HTTP 服务器。可以利用其内置的注解支持或处理器映射快速启动 RESTful 服务或静态文件服务器。
+  轻量级的 Netty HTTP 服务器。路由用 `requestMapping` 和 `requestAsync` 注册，没有注解扫描。
 
 - **`RestClient`**:
   建立在 `HttpClient` 之上，提供类似 Retrofit / Feign 的声明式接口调用能力。
@@ -20,7 +20,7 @@
   实现了 Cookie 的自动管理和持久化，用于保持会话状态（如自动带上 JSESSIONID 访问连续接口）。
 
 - **`ServerRequest` / `ServerResponse`**:
-  对应于 `HttpServer` 处理中的请求和响应上下文，封装了 Netty 原生的 `FullHttpRequest` / `HttpResponse` 以便于业务提取参数和写入响应。
+  一次已完成路由的请求和响应上下文。响应对象在进入 handler 时创建，不是对 `FullHttpRequest` 的长期封装。
 
 ## 适用场景
 - 构建需要极大并发的 HTTP 反向代理或微型网关。
@@ -50,7 +50,7 @@ try (HttpClient client = new HttpClient(config);
 旧 `HybridStream` 构造函数保持原有分配行为，只有新的四参数构造函数支持独立初始容量。
 `Response` 仍在完整接收后交付，支持重复读取，由调用方关闭；`bodyAsFile()` 仍从响应存储复制到目标文件。
 
-Multipart 带文件时通过 worker 分块读取和发送；已知长度使用 `Content-Length`，未知长度使用 chunked。
+Multipart 带文件、长度未知或大于 16KiB 时通过 worker 分块发送；无文件且不超过 16KiB 时整包缓冲。16KiB 是固定阈值。已知长度使用 `Content-Length`，未知长度使用 chunked。普通 `InputStream` 请求体始终 chunked，且不关闭调用方的流。
 字段文本及文件 Header 在构造时固定；文件内容在发送时读取，期间不能修改文件。
 每个已知长度的文件和整个请求均检查发送字节数，长度变化会使请求失败并关闭连接。
 Multipart 完成或失败后关闭其文件流；普通 `InputStream` 请求体沿用调用方关闭流的约定。
@@ -59,6 +59,7 @@ Multipart 完成或失败后关闭其文件流；普通 `InputStream` 请求体�
 取消、超时或提前响应后停止后续读取；尚未完整发送请求体的连接不复用。
 调用方提供的阻塞读取只能在该次读取返回后检查取消，需自行确保流可及时返回。
 同步 API 禁止从 Netty EventLoop 调用。分块默认值尚未经过完整吞吐矩阵调优，可按负载配置。
+默认 SSL 使用 `InsecureTrustManagerFactory`，`verifyHostname` 默认 false。没有 `BodyConsumer`，响应仍在收完后一次交付。Cookie 保存、磁盘缓存、重定向和 `Future` 完成默认整段交给 `Tasks.run`，不会按是否出现 `Set-Cookie` 分开调度。客户端指标只有成败、超时、字节、累计/最大延迟，以及 JVM 全局 `usedDirectMemory()`。
 
 建议同时监测连接数、池等待、吞吐、p95/p99、Heap/GC、临时文件及文件描述符数量，
 以及 `client.getMetrics().usedDirectMemory()`（JVM 全局 Netty 堆外内存，非客户端独占用量）。
@@ -70,7 +71,7 @@ Multipart 完成或失败后关闭其文件流；普通 `InputStream` 请求体�
 1. 先定义接口,例如：
 ```java
 @RequestMapping(value = "user", method = {RequestMethod.POST})
-public interface UserContract extends RestTypeInvoker {  //RestTypeInvoker 用于处理复杂嵌套的泛型
+public interface UserContract extends JsonTypeInvoker {  //复杂泛型用 typeInvoke
     @RequestMapping("/saveUser")
     SaveUserResponse saveUser(@RequestBody SaveUserRequest request);
 
@@ -130,20 +131,13 @@ public class UserService {
 
     @Test
     public void restClient() {
-        List<Tuple<String, List<Integer>>> result = userClient.invoke(() -> userClient.checkSignIn(), new TypeReference<List<Tuple<String, List<Integer>>>>() {
-        }.getType());  //复杂泛型情况
+        List<Tuple<String, List<Integer>>> result = userClient.typeInvoke(new TypeReference<List<Tuple<String, List<Integer>>>>() {
+        }.getType(), () -> userClient.checkSignIn());
     }
 }
 ```
 
-4. 连接池配置
-```yml
-app:
-  bufferSize: 512
-  netTimeoutMillis: 15000
-  netMinPoolSize: 2
-  netMaxPoolSize: 0  #默认 cpu * 2
-```
+`facade` 固定使用 `HttpClient.getDefault()`。连接池上限是 `app.net.poolMaxSize`；小于等于 0 时取 `max(10, CPU 线程数 * 2)`。超时用 `app.net.connectTimeoutMillis` 和 `app.net.readWriteTimeoutMillis`。没有 `app.bufferSize`、`netTimeoutMillis`、`netMinPoolSize`、`netMaxPoolSize` 这些键。
 
 ### HttpServer
 
@@ -185,7 +179,7 @@ Multipart 总量与并发上传共同约束临时磁盘占用，单字段/文件
 排队任务在断线时取消资源所有权；已运行的 handler 在返回前继续拥有请求资源，断线不提前释放。
 
 同一 HTTP/1.1 连接在完整请求至响应 flush 期间只处理一个请求；检测到重叠 pipelining 时关闭连接。
-普通 Keep-Alive 顺序请求继续支持。查询路径与注册路径都做尾斜线规范化，路径区分大小写。
+普通 Keep-Alive 顺序请求继续支持。`normalize` 会 trim，去掉首尾斜杠后再补一个前导斜杠，因此 `a`、`/a`、`/a/` 是同一路径。路径区分大小写。
 
 `ServerRequest.getContent()` 和 `getFiles()` 中的数据在 handler 调用期间借用，返回后由框架清理。
 如需保留 ByteBuf/FileUpload，必须显式 retain 并最终 release。

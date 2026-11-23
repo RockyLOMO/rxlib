@@ -25,7 +25,7 @@
 | **解析拦截器** | `DnsResolveInterceptor` 接口支持自定义解析逻辑，可对接外部服务（如服务发现） |
 | **防缓存击穿** | `resolvingPromises` 按域名与记录类型合并并发解析，防止缓存穿透（thundering-herd） |
 | **上游响应缓存** | `DnsServer` 对 raw upstream DNS query 增加 response cache，支持 fresh 命中、serve-expired 与 prefetch |
-| **H2 持久缓存** | 使用 `H2StoreCache` 作为 DNS 缓存后端，支持 TTL 和跨进程共享 |
+| **缓存后端** | 默认 `hybrid`。`persistent` / `hybrid` 用 `EntityDatabaseImpl` + `H2StoreCache`；`memory` 只留在内存 |
 
 ## 本地解析与缓存配置
 
@@ -67,6 +67,10 @@ app.net.dns.cacheMaximumBytes=0
 ```
 
 `interceptorBreakerOpenMillis` 控制 DNS interceptor 在可恢复异常（连接断开、超时、IO 异常）后的临时冷却时间；设为 `0` 表示不打开该冷却 breaker。
+
+A 与 AAAA 分开缓存。某一族没有答案时，interceptor cache 用 `negativeTtl`（默认 5 秒）记下空结果。空结果响应码仍是 `NXDOMAIN`，不是 `NOERROR/NODATA`。
+
+`DoHClient.resolveHost` 先查 A 再查 AAAA。任一次查询返回 null，整次解析返回 null。`dohEnabled` 默认 false。
 
 ## 适用场景
 - 在代理服务器或高性能爬虫等需要大量 DNS 解析的场景中，防止 DNS 解析阻塞 Netty 线程池。

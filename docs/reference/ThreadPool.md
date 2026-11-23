@@ -12,8 +12,8 @@ RXlib 的 `ThreadPool` 采用**基于负载的自适应动态调整策略**：
 ### 动态扩缩容逻辑
 1. **负载监控**：实时监控 CPU 使用率与任务队列深度。
 2. **动态调优**：
-   - 当队列已满且 **CPU 使用率 < 40%** 时，自动分批增加 `maxThreads` 以提升并发处理能力。
-   - 当任务积压减少或 **CPU 使用率 > 60%** 时，自动收缩线程数以减少系统负荷，防止过度竞争。
+   - `app.threadPool.cpuWaterMark` 默认 low 40、high 70。队列非空且 CPU 低于 low，连续 `samplingTimes`（默认 2）次后调整 core。不是队列一满就增加 `maxThreads`。
+   - CPU 高于 high 时收缩，避免线程过多。
 3. **阻塞反馈**：当达到最大线程数且队列依然撑爆时，会产生背压（Back-pressure）。默认 `BLOCK` 模式保持旧行为，提交线程会等待队列释放 slot；也可以切换为超时拒绝或 caller-runs。
 
 ---
@@ -164,14 +164,10 @@ RXlib 对 Netty 的 `HashedWheelTimer` 进行了封装，核心点在于：**只
 - **关闭语义**：`WheelTimer.shutdown()` 会拒绝新任务，并取消未执行 timeout task、带 taskId 的 holder task 以及 periodic task，同时停止底层 Netty `HashedWheelTimer`；`awaitTermination()` 在底层 timer 已停止且 holder、active timeout、periodic 集合清空后返回 true。更多 shutdown 语义及与外部 executor running task 的边界见 [WheelTimerShutdown.md](./WheelTimerShutdown.md)。
 
 ```java
-WheelTimer timer = Tasks.timer();
-
-// 设置一个重复执行的任务
-timer.setTimeout(() -> {
-    log.info("Heartbeat...");
-    asyncContinue(true); // 返回 true 表示继续下次循环
-}, 1000, "heartbeat-task", TimeoutFlag.PERIOD.flags());
+Tasks.schedulePeriod(() -> log.info("Heartbeat..."), 1000);
 ```
+
+周期任务靠 `TimeoutFlag.PERIOD` 继续，不是靠回调返回值。没有 `asyncContinue`。
 
 ---
 
@@ -207,54 +203,9 @@ timer.setTimeout(() -> {
 
 网络项目还必须同时关注 JVM 堆外内存和 Netty allocator 指标，尤其是 direct memory 使用量、连接数、吞吐、P99/P999 延迟、写队列水位与拒绝/降级次数。
 
-## 7. Object Pool 对象池
-
-`rxlib` 提供了一个高性能、自适应的通用对象池实现 (`ObjectPool<T>`)，旨在解决高并发场景下频繁创建/销毁对象带来的 GC 压力与锁竞争。
-
-### 7.1 核心设计
-
-*   **L1 级线程本地缓存**：
-    利用 `FastThreadLocal` 实现 L1 级缓存。当同一线程频繁 `borrow` / `recycle` 时，优先从本线程私有的缓存位获取，**完全无锁**且避免了对全局队列的竞争。
-*   **自适应预填充 (Adaptive Refill)**：
-    池化组件会定期采样借用频率。当负载升高时，它会根据 `demandFactor` 自动计算并预创建对象（暖机）；当负载下降时，自动回收空闲对象。
-*   **无锁状态管理**：
-    对象的 `IDLE`、`BORROWED`、`RETIRED` 状态切换全部通过 **CAS (Compare-And-Swap)** 实现，最大程度减少上下文切换。
-*   **健康检测机制**：
-    *   **校验（Validation）**：借出前、归还后均可进行活性检查。
-    *   **泄漏检测（Leak Detection）**：定时扫描借出超时的对象并记录堆栈，帮助定位未归还对象的代码块。
-
-### 7.2 技术指标
-
-| 特性 | 实现方式 | 优势 |
-| :--- | :--- | :--- |
-| **高并发性能** | FastThreadLocal L1 + 无锁 CAS | 借还操作延迟极低，热点数据访问基本无竞争。 |
-| **负载适应度** | 滑动窗口采样 + 动态预填充 | 流量洪峰来临时减少现场创建对象的开销。 |
-| **内存安全性** | 自动状态回收 + 泄漏堆栈追踪 | 配合 `TraceHandler` 能够快速发现资源泄漏。 |
-
-### 7.3 使用示例
-
-```java
-// 初始化对象池：最小 2，最大 20
-ObjectPool<MyClient> pool = new ObjectPool<>(2, 20,
-    () -> new MyClient(),      // createHandler
-    client -> client.isAlive() // validateHandler
-);
-
-// 借用对象
-MyClient client = pool.borrow();
-try {
-    client.execute();
-} finally {
-    // 归还对象
-    pool.recycle(client);
-}
-```
-
----
-
-## 8. 技术特性总结
+## 7. 技术特性总结
 
 - **基于 Netty `FastThreadLocal`**：显著优于 JDK 原生 `ThreadLocal` 的访问性能。
-- **自研 `IntWaterMark` 负载算法**：精准控制核心线程规模。
-- **无锁化串行逻辑**：ThreadPool 采用 `CompletableFuture` 无锁链，ObjectPool 采用 CAS 状态机，共同构建了高性能的并发基石。
+- **自研 `IntWaterMark` 负载算法**：默认水位是 low 40、high 70。
+- **无锁化串行逻辑**：`SERIAL` 用 `CompletableFuture` 串起同一 `taskId`。对象池见 [ObjectPool.md](./ObjectPool.md)。`FastThreadLocal` 只在 `minIdleSize <= 0` 时保存 hint，借还仍走共享 idle 队列。
 - **背压一致性设计**：通过任务队列和借用超时反馈，天然支持流量整形。

@@ -89,18 +89,18 @@ public void runNEvent() {
     UserManagerImpl mgr = new UserManagerImpl();
     PersonBean p = PersonBean.YouFan;
 
-    mgr.onCreate.tail((s, e) -> System.out.println("always tail:" + e));
+    mgr.onCreate.add(Delegate.Order.Last, (s, e) -> System.out.println("always tail:" + e));
     TripleAction<UserManager, UserEventArgs> a = (s, e) -> System.out.println("a:" + e);
     TripleAction<UserManager, UserEventArgs> b = (s, e) -> System.out.println("b:" + e);
     TripleAction<UserManager, UserEventArgs> c = (s, e) -> System.out.println("c:" + e);
 
-    mgr.onCreate.combine(a);
+    mgr.onCreate.add(a);
     mgr.create(p);  //触发事件（a执行）
 
-    mgr.onCreate.combine(b);
+    mgr.onCreate.add(b);
     mgr.create(p); //触发事件（a, b执行）
 
-    mgr.onCreate.combine(a, b);  //会去重
+    mgr.onCreate.add(a, b);  //会去重
     mgr.create(p); //触发事件（a, b执行）
 
     mgr.onCreate.remove(b);
