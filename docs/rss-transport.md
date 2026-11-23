@@ -43,4 +43,10 @@ Server 读取 `RSS_TCP_TLS_CERT` 和 `RSS_TCP_TLS_KEY` 指向的 PEM 证书链�
 
 部署观察每方向 FEC 缺口与恢复数、压缩节省字节、TCP/UDP 切换、活跃组数及剩余端口对，同时对照 CPU、进程 RSS、Netty 堆外内存和 P95/P99。Server 按 1 核、768 MiB 整机预算设计。
 
+## Actions 发布
+
+两端工作流共用仓库 Secret `RSS_DEPLOY`。本机恢复副本在 `D:\home\.envKeys\rss\deploy.json`，签发用的 CA 私钥仅保存在该目录。轮换时先更新 JSON，再通过标准输入传给 `gh secret set RSS_DEPLOY`。每个 SSH 目标固定主机公钥。Client 只接收信任证书与 UDP 密钥，Server 接收服务端证书、私钥、内部账号及 UDP 密钥。证书 SAN 要覆盖 Client 配置的实际 upstream。
+
+协议变更时先用 `rss-21` 手动发布主 Server，再发布 Gateway。两端各自的发布目录下保存本次 `.release-<run id>-<attempt>/deploy.log`、原启动脚本及变更过的用户配置；目录仅部署账号可访问。Server 的工作流在切换前验证 nft 权限并合并预留 UDP 端口；firewalld 活跃时同时放行运行时和永久端口。主 Server 当前的 nft INPUT 策略允许这段流量。上游安全组或 NAT 在主机权限之外，发布后需从 Client 走真实业务验证。工作流在本地监听以外还检查首尾 nft 映射和公网 TCP 入口。
+
 [Hysteria 2 的 Linux 端口重定向](https://v2.hysteria.network/docs/advanced/Port-Hopping/) · [IANA 端口登记](https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xhtml)
