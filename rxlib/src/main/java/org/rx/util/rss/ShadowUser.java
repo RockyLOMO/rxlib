@@ -29,8 +29,7 @@ public class ShadowUser implements Serializable, TrafficUser {
     String username;
     // 内部转发仍复用少量 socks 用户，统计与公网 IP 限制挂在外部 SS 用户上。
     String socksUser;
-    // 仅在 RSS 内部代理跳协商 TCP 业务的 UDP/FEC 通道。
-    boolean adaptiveTcp;
+    RssTransport transport;
     // 为空表示使用全局 socksServers；非空时只使用这些上游 id。
     List<String> socksServers;
     UserRule route;

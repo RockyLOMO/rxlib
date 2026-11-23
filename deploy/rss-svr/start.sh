@@ -35,7 +35,12 @@ fi
 LOCAL_TIME=$(date +"%Y-%m-%d %H:%M:%S")
 # 获取当前脚本所在目录
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
-cd $SCRIPT_DIR
+cd "$SCRIPT_DIR" || exit 1
+if [[ -d transport ]]; then
+    export RSS_TCP_TLS_CERT="$PWD/transport/cert.pem" RSS_TCP_TLS_KEY="$PWD/transport/key.pem"
+    export RSS_UDP_AES_KEY="$(<transport/udp-key)"
+    RSS_SHADOW_USER=$(<transport/shadow-user)
+fi
 
 PORT=${PORT:-9900}
 UDP2RAW_PORT=${UDP2RAW_PORT:-9910}
@@ -394,6 +399,6 @@ if [ -n "${UDP2RAW_PORT}" ]; then
 fi
 # Bound glibc arena retention for this Java process; allow an explicit environment override.
 MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-4}" \
-nohup java ${MEM_OPTIONS} ${GC_OPTIONS} ${APP_OPTIONS} ${DUMP_OPTS} -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} -shadowMode=1 ${UDP2RAW_ARG} -debug=0 "-shadowUser=youfanX:5PXx0^JNMOgvn3P658@f-li.cn:9900" >>"${APP_LOG_FILE}" 2>&1 &
+nohup java ${MEM_OPTIONS} ${GC_OPTIONS} ${APP_OPTIONS} ${DUMP_OPTS} -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} -shadowMode=1 ${UDP2RAW_ARG} -debug=0 "-shadowUser=${RSS_SHADOW_USER:?missing RSS transport credentials}" "-udpHopPorts=20000-20127" >>"${APP_LOG_FILE}" 2>&1 &
 APP_PID=$!
 wait_for_startup "${APP_PID}" || exit 1

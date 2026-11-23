@@ -157,7 +157,11 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         if (config.isAdaptiveTcp() && isAuthEnabled() && !enableMemoryChannel
                 && tcpChannels.get(0).localAddress() instanceof InetSocketAddress) {
             try {
-                adaptivePort = org.rx.net.transport.AdaptiveUdpPort.listen((InetSocketAddress) tcpChannels.get(0).localAddress());
+                InetSocketAddress listen = (InetSocketAddress) tcpChannels.get(0).localAddress();
+                int first = config.getDailyPortFirst();
+                adaptivePort = first == 0 ? org.rx.net.transport.AdaptiveUdpPort.listen(listen)
+                        : org.rx.net.transport.AdaptiveUdpPort.listen(new InetSocketAddress(listen.getAddress(), first),
+                        first + 1, config.isRedirectUdpHops());
             } catch (Exception e) {
                 log.warn("Adaptive UDP listener unavailable, continuing over TCP", e);
             }
@@ -333,7 +337,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     public UdpRelayGroupOpenResult openUdpRelayGroup(UdpRelayGroupOpenRequest request, String token) {
         validateRpcToken(token, "open-group");
         UdpRelayGroupOpenResult result = openUdpRelayGroup(request);
-        if (result != null && result.isSuccess() && UdpRelayGroupManager.dailyProfile(request) == null) {
+        if (result != null && result.isSuccess() && request.getDailyFeatures() == 0) {
             result.setToken(token);
         }
         return result;

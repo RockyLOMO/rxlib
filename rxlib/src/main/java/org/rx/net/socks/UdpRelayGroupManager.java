@@ -50,14 +50,9 @@ final class UdpRelayGroupManager extends Disposable {
         SocksConfig config = server.getConfig();
         SocksRpcCapabilities caps = SocksRpcCapabilities.udpRelayGroup(config.getUdpRelayControlMaxRelaysPerGroup(), MAX_GROUPS);
         if (config.isDailyUdp() && caps.getMaxRelaysPerGroup() >= 2) {
-            caps.addFlag(SocksRpcCapabilities.SUPPORT_DAILY_UDP | SocksRpcCapabilities.SUPPORT_DAILY_LZ4);
+            caps.addFlag(SocksRpcCapabilities.SUPPORT_DAILY_UDP);
         }
         return caps;
-    }
-
-    static String dailyProfile(UdpRelayGroupOpenRequest request) {
-        String value = request == null || request.getAttributes() == null ? null : request.getAttributes().get("profile");
-        return SocksRpcCapabilities.DAILY_PROFILE.equals(value) || SocksRpcCapabilities.DAILY_LZ4_PROFILE.equals(value) ? value : null;
     }
 
     UdpRelayGroupOpenResult open(UdpRelayGroupOpenRequest request) {
@@ -77,11 +72,14 @@ final class UdpRelayGroupManager extends Disposable {
         int initialCount = clamp(request.getInitialRelayCount(), 1, maxAllowed);
         int minActive = clamp(request.getMinActiveRelays(), 1, initialCount);
         int maxRelayCount = clamp(request.getMaxRelayCount(), initialCount, maxAllowed);
-        String profile = dailyProfile(request);
-        boolean daily = profile != null;
+        int features = request.getDailyFeatures();
+        boolean daily = features != 0;
         if (daily) {
-            if (!config.isDailyUdp()) {
+            if ((features & config.getDailyUdpFeatures()) != features) {
                 return UdpRelayGroupOpenResult.fail("DAILY_DISABLED", "daily UDP profile is disabled");
+            }
+            if ((features & DailyUdpWire.AES) != 0 && (request.getClientSalt() == null || !DailyUdpWire.hasCipherKey())) {
+                return UdpRelayGroupOpenResult.fail("DAILY_AES_UNAVAILABLE", "UDP key and session salt required");
             }
             if (maxAllowed < 2 || request.getMaxRelayCount() < 2) {
                 return UdpRelayGroupOpenResult.fail("DAILY_HOPS_UNAVAILABLE", "two relay ports required");
@@ -94,7 +92,7 @@ final class UdpRelayGroupManager extends Disposable {
                 : config.getUdpRelayGroupIdleMillis();
 
         UdpRelayGroup group = new UdpRelayGroup(UUID.randomUUID().toString(), UUID.randomUUID().toString(),
-                daily ? null : request.getClientAddr(), request.getFirstDestination(), maxRelayCount, idleMillis, now, profile);
+                daily ? null : request.getClientAddr(), request.getFirstDestination(), maxRelayCount, idleMillis, now, features, request.getClientSalt());
         groups.put(group.groupId, group);
 
         List<UdpRelayEndpoint> opened = addRelays(group, initialCount);
@@ -186,6 +184,13 @@ final class UdpRelayGroupManager extends Disposable {
     private List<UdpRelayEndpoint> addRelays(UdpRelayGroup group, int count) {
         List<UdpRelayEndpoint> endpoints = new ArrayList<>(count);
         for (int i = 0; i < count && !group.closed && group.relays.size() < group.maxRelayCount; i++) {
+            if (group.daily && group.primary != null && server.getConfig().isRedirectUdpHops()) {
+                UdpRelayEndpoint primary = endpoints.get(0);
+                InetSocketAddress address = primary.getRelayAddress();
+                endpoints.add(new UdpRelayEndpoint(SocksRpcCapabilities.DAILY_HOP_ID,
+                        new InetSocketAddress(address.getAddress(), address.getPort() + 1), 1, group.expireAtMillis()));
+                break;
+            }
             UdpRelayEntry entry = bindRelay(group);
             if (entry != null) {
                 endpoints.add(entry.endpoint());
@@ -211,13 +216,10 @@ final class UdpRelayGroupManager extends Disposable {
                     group.wire = DailyUdpWire.server(group.dataPlaneToken, sender -> {
                         ConcurrentMap<InetSocketAddress, SocksContext> routes = ch.attr(SocksUdpRelayHandler.ATTR_CTX_MAP).get();
                         return routes != null && routes.containsKey(sender);
-                    }, group.lz4);
+                    }, group.features, group.clientSalt);
                     p.addLast(group.wire);
                 } else if (config.getUdpReadTimeoutSeconds() > 0 || config.getUdpWriteTimeoutSeconds() > 0) {
                     p.addLast(new ProxyChannelIdleHandler(config.getUdpReadTimeoutSeconds(), config.getUdpWriteTimeoutSeconds()));
-                }
-                if (!group.daily) {
-                    UdpRelayAttributes.acceptLegacyClient(ch, config);
                 }
                 p.addLast(SocksUdpRelayHandler.DEFAULT);
             }).attr(SocksContext.SOCKS_SVR, server);
@@ -289,11 +291,16 @@ final class UdpRelayGroupManager extends Disposable {
         if (first == 0) {
             return bootstrap.bind(bind);
         }
-        int size = config.getDailyPortLast() - first + 1;
+        first += 2; // First pair serves all adaptive TCP streams.
+        int stride = config.isRedirectUdpHops() ? 2 : 1;
+        int size = (config.getDailyPortLast() - first + 1) / stride;
+        if (size <= 0) {
+            throw new BindException("No UDP relay ports after the adaptive TCP pair");
+        }
         int start = Math.floorMod(nextPort.getAndIncrement(), size);
         int attempts = 0;
         for (int i = 0; i < size && attempts < 32; i++) {
-            int port = first + (start + i) % size;
+            int port = first + ((start + i) % size) * stride;
             if (relays.containsKey(port)) {
                 continue;
             }
@@ -378,7 +385,9 @@ final class UdpRelayGroupManager extends Disposable {
         final String groupId;
         // Negotiated daily frames carry this per-group cookie. RPC authorization is independent.
         final String dataPlaneToken;
-        final boolean daily, lz4;
+        final boolean daily;
+        final int features;
+        final UUID clientSalt;
         volatile Channel primary;
         volatile DailyUdpWire wire;
         final InetSocketAddress clientAddr;
@@ -391,9 +400,10 @@ final class UdpRelayGroupManager extends Disposable {
         volatile boolean closed;
 
         UdpRelayGroup(String groupId, String dataPlaneToken, InetSocketAddress clientAddr,
-                InetSocketAddress firstDestination, int maxRelayCount, long idleTimeoutMillis, long now, String profile) {
-            daily = profile != null;
-            lz4 = SocksRpcCapabilities.DAILY_LZ4_PROFILE.equals(profile);
+                InetSocketAddress firstDestination, int maxRelayCount, long idleTimeoutMillis, long now, int features, UUID clientSalt) {
+            this.features = features;
+            this.clientSalt = clientSalt;
+            daily = features != 0;
             this.groupId = groupId;
             this.dataPlaneToken = dataPlaneToken;
             this.clientAddr = clientAddr;

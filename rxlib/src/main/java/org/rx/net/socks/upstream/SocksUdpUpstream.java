@@ -256,6 +256,9 @@ public class SocksUdpUpstream extends Upstream {
         if (rpcGroup != null) {
             return rpcGroup;
         }
+        if (socksConfig.isDailyUdp()) {
+            throw new IllegalStateException("UDP extensions require a negotiated hopping session");
+        }
         if (hopCount <= 1) {
             return newSessionGroup(new SessionHolder[]{acquireHolder(channel)}, socksConfig, 1);
         }
@@ -318,7 +321,8 @@ public class SocksUdpUpstream extends Upstream {
             return handleRpcRelayGroupUnavailable(socksConfig, "facade-null", null);
         }
 
-        boolean daily = false;
+        int features = socksConfig.getDailyUdpFeatures();
+        boolean daily = features != 0;
         try {
             SocksRpcCapabilities capabilities = facade.capabilities(SocksRpcContract.rpcToken());
             if (capabilities == null || !capabilities.has(SocksRpcCapabilities.UDP_RELAY_GROUP)) {
@@ -338,18 +342,24 @@ public class SocksUdpUpstream extends Upstream {
             minActive = Math.min(minActive, initialCount);
 
             UdpRelayGroupOpenRequest request = new UdpRelayGroupOpenRequest();
-            daily = socksConfig.isDailyUdp() && capabilities.has(SocksRpcCapabilities.SUPPORT_DAILY_UDP);
-            boolean lz4 = capabilities.has(SocksRpcCapabilities.SUPPORT_DAILY_LZ4);
             if (daily) {
-                request.setAttributes(Collections.singletonMap("profile", lz4
-                        ? SocksRpcCapabilities.DAILY_LZ4_PROFILE : SocksRpcCapabilities.DAILY_PROFILE));
+                if (!capabilities.has(SocksRpcCapabilities.SUPPORT_DAILY_UDP)) {
+                    throw new IllegalStateException("Upstream does not support UDP extensions");
+                }
+                request.setDailyFeatures(features);
+                if ((features & DailyUdpWire.AES) != 0) {
+                    if (!DailyUdpWire.hasCipherKey()) {
+                        throw new IllegalStateException("RSS_UDP_AES_KEY is required");
+                    }
+                    request.setClientSalt(java.util.UUID.randomUUID());
+                }
                 // One logical relay with two physical ingress ports.
                 initialCount = minActive = 1;
                 maxRelayCount = 2;
             }
             request.setClientId(key.toString());
             request.setClientAddr(resolveRpcClientAddress(channel));
-            request.setFirstDestination(destination);
+            request.setFirstDestination((features & DailyUdpWire.AES) == 0 ? destination : null);
             request.setInitialRelayCount(initialCount);
             request.setMinActiveRelays(minActive);
             request.setMaxRelayCount(maxRelayCount);
@@ -370,7 +380,7 @@ public class SocksUdpUpstream extends Upstream {
             RpcRelayGroupControl control = new RpcRelayGroupControl(facade, result.getGroupId(), controlToken);
             if (daily) {
                 try {
-                    return dailyGroup(control, result, lz4);
+                    return dailyGroup(control, result, request);
                 } catch (Exception e) {
                     control.closeGroup();
                     throw e;
@@ -394,7 +404,7 @@ public class SocksUdpUpstream extends Upstream {
         }
     }
 
-    private SessionGroup dailyGroup(RpcRelayGroupControl control, UdpRelayGroupOpenResult result, boolean lz4) throws Exception {
+    private SessionGroup dailyGroup(RpcRelayGroupControl control, UdpRelayGroupOpenResult result, UdpRelayGroupOpenRequest request) throws Exception {
         InetSocketAddress primary = null, alias = null;
         for (UdpRelayEndpoint endpoint : result.getRelays()) {
             if (SocksRpcCapabilities.DAILY_HOP_ID.equals(endpoint.getRelayId())) {
@@ -411,11 +421,11 @@ public class SocksUdpUpstream extends Upstream {
             primary = Sockets.resolveUdpEndpointAsync(primary, config).get();
         }
         alias = new InetSocketAddress(primary.getAddress(), alias.getPort());
-        control.dailyWire = DailyUdpWire.client(result.getToken(), primary, alias, config.getUdpMtu(), lz4);
+        control.dailyWire = DailyUdpWire.client(result.getToken(), primary, alias, config.getUdpMtu(), request.getDailyFeatures(), request.getClientSalt());
         SessionGroup group = new SessionGroup(new SessionHolder[]{SessionHolder.rpc(control, result.getGroupId(), primary)},
                 UdpPortHoppingMode.ROUND_ROBIN, 1, control);
         onRpcRelayGroupSuccess(poolKey());
-        DiagnosticMetrics.record("socks.udp.relay.control.mode.count", 1D, lz4 ? "mode=daily-lz4-v1" : "mode=daily-v1");
+        DiagnosticMetrics.record("socks.udp.relay.control.mode.count", 1D, "mode=hopping,features=" + request.getDailyFeatures());
         return group;
     }
 
@@ -658,13 +668,6 @@ public class SocksUdpUpstream extends Upstream {
         if (group.rpcControl != null && group.rpcControl.dailyWire != null) {
             DailyUdpWire.install(channel.pipeline(), group.rpcControl.dailyWire);
         } else {
-            if (((SocksConfig) config).isDailyUdp()) {
-                UdpRelayAttributes.installLegacyDecoders(channel, "legacyUpstream", sender -> {
-                    SessionGroup g = channel.attr(ATTR_UDP_SESSION).get();
-                    return g != null && (g.rpcControl == null || g.rpcControl.dailyWire == null)
-                            && g.containsRelayAddress(sender);
-                });
-            }
             for (InetSocketAddress relayAddr : relayAddresses) {
                 addRequestRedundantPeer(channel, relayAddr);
             }

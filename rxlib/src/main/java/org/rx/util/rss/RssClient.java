@@ -73,7 +73,6 @@ import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -442,8 +441,8 @@ public final class RssClient {
         if (Strings.isEmpty(conf.socksPwd) || CollectionUtils.isEmpty(conf.shadowUsers) || CollectionUtils.isEmpty(conf.socksServers)) {
             return false;
         }
-        if (!SocksConfig.validTlsPorts(conf.tcpCipherPorts)) {
-            log.warn("rssConf tcpCipherPorts must be a list of ports in 1..65535");
+        if (!RssTransport.validPortLists(conf.tcpCipherPorts, conf.tcpAlreadyEncryptedPorts)) {
+            log.warn("Invalid or overlapping RSS TCP port lists");
             return false;
         }
         if (conf.tcpCipherPorts.length != 0) {
@@ -470,6 +469,15 @@ public final class RssClient {
                 return false;
             }
             if (!usernames.add(user.getUsername()) || !shadowPorts.add(user.getSsPort())) {
+                return false;
+            }
+            if (user.transport != null && !user.transport.valid()) {
+                log.warn("Invalid RSS transport profile or mask for user {}", user.getUsername());
+                return false;
+            }
+            if (user.transport != null && (user.transport.udpFeatures() & org.rx.net.udp.DailyUdpWire.AES) != 0
+                    && !org.rx.net.udp.DailyUdpWire.hasCipherKey()) {
+                log.warn("RSS UDP encryption for user {} requires RSS_UDP_AES_KEY", user.getUsername());
                 return false;
             }
             if (!normalizeAndValidateUserSocksServers(user, conf.socksServers)) {
@@ -1019,14 +1027,14 @@ public final class RssClient {
         config.setUdpReadTimeoutSeconds(conf.udpTimeoutSeconds);
 
         config.setUdpMtu(UDP2RAW_MTU);
-        config.setDailyUdp(true);
+        config.setDailyUdpFeatures(0);
         config.setAdaptiveTcp(false);
         applyUdpLeasePool(conf, config);
     }
 
     static SocksConfig createOutboundConfig(RssClientConf conf, SocksConfig inConf) {
         SocksConfig outConf = Sys.deepClone(inConf);
-        outConf.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
+        outConf.setTransportFlags(TransportFlags.NONE.flags());
         outConf.setTcpCompressionLevel(RssSupport.TCP_COMPRESSION_LEVEL);
         outConf.setOptimalSettings(RssSupport.OUT_OPS);
         configureOutboundConfig(conf, outConf);
@@ -1543,8 +1551,8 @@ public final class RssClient {
                         Sys.formatNanosElapsed(System.nanoTime() - userRuleBegin));
             }
             UpstreamSupport next = selectUpstreamFn.apply(e);
-            OutboundProfiles profiles = outConfRef.get();
-            e.setUpstream(createUdpRouteUpstream(dstEp, next != null && next.isUdp2raw() ? profiles.tunnel : profiles.ordinary, next));
+            SocksConfig profile = outConfRef.get().udp(e.getUser());
+            e.setUpstream(new SocksUdpUpstream(dstEp, profile, routeUpstream(profile, next)));
         });
         return new RssRuntime.RssInServer(inSvr, inConf, outConfRef, sourceSteeringEnabled);
     }
@@ -1723,55 +1731,90 @@ public final class RssClient {
     }
 
     static final class OutboundProfiles {
-        final SocksConfig ordinary, tunnel, adaptive;
-        private final SocksConfig secure, secureAdaptive;
-        private final Set<String> adaptiveUsers = new HashSet<>();
+        private final Map<String, Routes> users = new LinkedHashMap<>();
+        private final Routes defaults;
+        private final int[] cipherPorts, encryptedPorts;
 
         OutboundProfiles(RssClientConf conf, SocksConfig inbound) {
-            ordinary = createOutboundConfig(conf, inbound);
-            tunnel = udp2rawRouteConfig(ordinary);
+            if (!RssTransport.validPortLists(conf.tcpCipherPorts, conf.tcpAlreadyEncryptedPorts)) {
+                throw new IllegalArgumentException("Invalid or overlapping RSS TCP port lists");
+            }
+            cipherPorts = conf.tcpCipherPorts.clone();
+            encryptedPorts = conf.tcpAlreadyEncryptedPorts.clone();
+            java.util.Arrays.sort(cipherPorts);
+            java.util.Arrays.sort(encryptedPorts);
+            SocksConfig base = createOutboundConfig(conf, inbound);
+            SocksConfig[] tcpCache = new SocksConfig[8], udpCache = new SocksConfig[8];
+            tcpCache[0] = udpCache[0] = base;
+            defaults = new Routes(RssTransport.DEFAULT, base, tcpCache, udpCache);
             if (conf.shadowUsers != null) {
-                for (ShadowUser user : conf.shadowUsers) {
-                    if (user.isAdaptiveTcp()) {
-                        adaptiveUsers.add(user.getUsername());
+                for (ShadowUser u : conf.shadowUsers) {
+                    if (u.transport != null) {
+                        users.put(u.getUsername(), new Routes(u.transport, base, tcpCache, udpCache));
                     }
                 }
             }
-            if (adaptiveUsers.isEmpty()) {
-                adaptive = ordinary;
-            } else {
-                adaptive = Sys.deepClone(ordinary);
-                adaptive.setAdaptiveTcp(true);
-            }
-            secure = Sys.deepClone(ordinary);
-            secure.setRequiredTlsPorts(conf.tcpCipherPorts);
-            secure.setTransportFlags(TransportFlags.RSS_AUTHENTICATED_TLS.flags());
-            secureAdaptive = adaptiveUsers.isEmpty() ? secure : Sys.deepClone(secure);
-            if (secureAdaptive != secure) {
-                secureAdaptive.setAdaptiveTcp(true);
-            }
-            if (conf.tcpCipherPorts.length != 0) {
-                secure.setRssTlsContext(RssHopTls.clientFromEnvironment());
-                secureAdaptive.setRssTlsContext(secure.getRssTlsContext());
-            }
+        }
+
+        private Routes routes(TrafficUser user) {
+            return user instanceof ShadowUser ? users.getOrDefault(user.getUsername(), defaults) : defaults;
         }
 
         SocksConfig tcp(TrafficUser user, int port) {
-            // 已认证的本地连接可能仍引用热更新前的用户对象。
-            boolean accelerated = user instanceof ShadowUser && adaptiveUsers.contains(user.getUsername());
-            if (secure.requiresTls(port)) {
-                return accelerated ? secureAdaptive : secure;
+            Routes r = routes(user);
+            if (java.util.Arrays.binarySearch(cipherPorts, port) >= 0) {
+                return r.protectedTcp;
             }
-            return accelerated ? adaptive : ordinary;
+            return java.util.Arrays.binarySearch(encryptedPorts, port) >= 0 ? r.passthrough : r.tcp;
+        }
+
+        SocksConfig udp(TrafficUser user) {
+            return routes(user).udp;
+        }
+
+        private static final class Routes {
+            final SocksConfig tcp, protectedTcp, passthrough, udp;
+
+            Routes(RssTransport policy, SocksConfig base, SocksConfig[] tcpCache, SocksConfig[] udpCache) {
+                if (!policy.valid()) {
+                    throw new IllegalArgumentException("Invalid RSS user transport");
+                }
+                boolean adaptive = (policy.fec() & 2) != 0;
+                int mask = policy.tcp();
+                boolean compress = (mask & 1) != 0, encrypt = (mask & 6) != 0;
+                tcp = tcpConfig(base, tcpCache, compress, encrypt, adaptive);
+                protectedTcp = tcpConfig(base, tcpCache, compress && encrypt, true, adaptive);
+                passthrough = tcpConfig(base, tcpCache, false, false, adaptive);
+                int features = policy.udpFeatures();
+                if (udpCache[features] == null) {
+                    SocksConfig c = Sys.deepClone(base);
+                    c.setDailyUdpFeatures(features);
+                    udpCache[features] = c;
+                }
+                udp = udpCache[features];
+            }
+
+            private static SocksConfig tcpConfig(SocksConfig base, SocksConfig[] cache,
+                                                 boolean compress, boolean encrypt, boolean adaptive) {
+                int key = (compress ? 1 : 0) | (encrypt ? 2 : 0) | (adaptive ? 4 : 0);
+                if (cache[key] == null) {
+                    SocksConfig c = Sys.deepClone(base);
+                    c.setAdaptiveTcp(adaptive);
+                    c.setTransportFlags((encrypt ? TransportFlags.RSS_AUTHENTICATED_TLS : TransportFlags.NONE)
+                            .flags(compress ? TransportFlags.COMPRESS_BOTH : TransportFlags.NONE));
+                    if (encrypt) {
+                        c.setRssTlsContext(RssHopTls.clientFromEnvironment());
+                    }
+                    cache[key] = c;
+                }
+                return cache[key];
+            }
         }
     }
 
     private static SocksConfig udp2rawRouteConfig(SocksConfig config) {
         if (config == null) {
             config = new SocksConfig();
-        }
-        if (config.getUdpMtu() > 0 && !config.isDailyUdp()) {
-            return config;
         }
         SocksConfig routed = Sys.deepClone(config);
         routed.setUdpMtu(UDP2RAW_MTU);

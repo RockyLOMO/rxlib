@@ -62,7 +62,18 @@ public class SocksConfig extends SocketConfig {
     private transient volatile Set<InetAddress> whiteList;
 
     /** Negotiate RSS daily UDP (timed port hopping and adaptive FEC) over RPC. */
-    private boolean dailyUdp;
+    private int dailyUdpFeatures;
+
+    public boolean isDailyUdp() {
+        return dailyUdpFeatures != 0;
+    }
+
+    public void setDailyUdpFeatures(int features) {
+        if (features < 0 || features > 7) {
+            throw new IllegalArgumentException("UDP features must be in 0..7");
+        }
+        dailyUdpFeatures = features;
+    }
     private boolean adaptiveTcp;
     @ToString.Exclude
     private transient SslContext rssTlsContext;
@@ -94,6 +105,7 @@ public class SocksConfig extends SocketConfig {
     }
     @Setter(AccessLevel.NONE)
     private int dailyPortFirst, dailyPortLast;
+    private boolean redirectUdpHops;
 
     /** Optional inclusive server UDP range. An unset range uses OS-assigned ephemeral ports. */
     public void setDailyPortRange(String range) {
