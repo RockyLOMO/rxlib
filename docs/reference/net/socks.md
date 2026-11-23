@@ -16,11 +16,14 @@
 - **`RrpServer` / `RrpClient`**:
   “Rx Remoting Proxy” 的实现，专为长连接或混合连接的远程反向代理、内网穿透设计的服务端与客户端套件。
 
-- **`Udp2rawHandler`**:
-  提供了将 UDP 流量伪装为 TCP 流量的功能，以穿过某些阻断 UDP 的严苛防火墙策略。
+- **`Udp2rawHandler` / `Udp2rawUpstream`**:
+  自有 UDP 帧隧道。帧是定长头的 datagram，不是字节流，也不替换 `SocksUdpRelayHandler`。能力协商只有压缩和冗余，没有 FEC。
 
-- **`UdpCompressCodec` / `UdpRedundantCodec`**:
-  为 UDP 代理数据在弱网环境下提供的额外增强：压缩（减少带宽占用）与冗余（多倍发送减少丢包率影响）。
+- **`UdpCompressCodec` / `UdpRedundantEncoder`**:
+  代理链路上的 UDP 压缩和多倍发包。`UdpRedundantConfig.multiplier` 默认 1，`adaptive` 默认关闭。
+
+- **`DailyUdpWire` / `UdpDailyFec`**:
+  RSS `daily` 配置使用的跳跃端口和自适应 XOR FEC，与上面的 RDNT、`UdpResilience` 管线分开。传输字段见 [RSS 传输配置](../../rss-transport.md)。
 
 ---
 
@@ -100,6 +103,7 @@ Shadowsocks 协议服务器（TCP/UDP）。
 - `ACTION_REGISTER (1)` - 客户端注册代理配置
 - `ACTION_FORWARD (2)` - 双向数据转发
 - `ACTION_SYNC_CLOSE (3)` - 同步关闭通知
+- `ACTION_HEARTBEAT (4)` - 心跳。`enableReconnect` 默认 true，`waitConnectMillis` 默认 4000，`heartbeatSeconds` 默认 25。待转发上限 `MAX_PENDING_FORWARD_BYTES` 为 1MiB。
 
 ### RRP 工作流程
 
@@ -166,26 +170,25 @@ end note
 ### SocksConfig
 SOCKS5 服务器配置，继承 `SocketConfig`。
 
-```java
-// 超时控制
-readTimeoutSeconds = 240          // TCP 读超时
-udpReadTimeoutSeconds = 1200        // UDP 读超时
+库默认值：
 
-// 预热连接池
-tcpWarmPoolEnabled = true           // TCP 连接预热
-tcpWarmPoolMinSize = 2
-tcpWarmPoolMaxIdleMillis = 60000
-
-// UDP 租赁池
-udpLeasePoolEnabled = true          // UDP ASSOCIATE 连接池
-udpLeasePoolMinSize = 2
-udpLeasePoolMaxSize = 32
-
-// UDP 多倍发包（游戏场景，继承自 SocketConfig）
-udpRedundant.multiplier = 2         // 2倍发包
-udpRedundant.adaptive = true        // 自适应调节
-udpRedundant.intervalMicros = 1000  // 发包间隔
+```text
+readTimeoutSeconds = 240
+writeTimeoutSeconds = 0
+tcpIdleTimeoutSeconds = 0          // 0 表示关闭双向空闲超时
+udpReadTimeoutSeconds = 1200
+tcpWarmPoolEnabled = false         // 打开后 minSize 默认 2，maxIdle 60s
+udpLeasePoolEnabled = false        // 打开后 minSize 2，maxSize 32
+socksUdpRedundantMode = REQUEST_ONLY
+udpRedundant.multiplier = 1
+udpRedundant.adaptive = false
+udpRedundant.intervalMicros = 0
+udpRelayControlMode = AUTO
 ```
+
+`RX_SOCKS5_BATCH` 与 `SOCKS5_COMPAT` 一样不走 RPC relay group。`AUTO` 在未开 daily UDP、也未开端口跳跃时同样不申请 group。2 倍、自适应和双向 RDNT 只出现在 udp2raw 的配置路径，不是 SOCKS 默认。
+
+RSS Client 会把入站读写超时设为 0，并用 `tcpTimeoutSeconds`（默认 120）作为 all-idle。RSS Server 出站同样把读写超时设为 0，all-idle 为 240 秒。`RssClientConf.udpLeasePoolEnabled` 默认 true，这是 RSS 覆盖，不是 `SocksConfig` 默认。
 
 ### RrpConfig
 RRP 协议配置。

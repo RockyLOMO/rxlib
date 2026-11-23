@@ -76,8 +76,8 @@ class AdaptiveUdpPortTest {
             send(first, target, seen);
             send(first, target, seen);
             assertEquals(Integer.valueOf(3), frames.poll(2, TimeUnit.SECONDS));
-            send(next, new InetSocketAddress(target.getAddress(), server.aliasPort()), packet(key, 1, 5));
-            assertEquals(Integer.valueOf(5), frames.poll(2, TimeUnit.SECONDS));
+            send(next, new InetSocketAddress(target.getAddress(), server.aliasPort()), packet(key, 1, 260));
+            assertEquals(Integer.valueOf(260), frames.poll(2, TimeUnit.SECONDS));
             send(first, target, packet(key, 1, 4));
             assertEquals(Integer.valueOf(4), frames.poll(2, TimeUnit.SECONDS));
             server.send(7, Unpooled.buffer(4).writeInt(99));

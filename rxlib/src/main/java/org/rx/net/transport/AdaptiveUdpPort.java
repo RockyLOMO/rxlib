@@ -6,6 +6,7 @@ import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import org.rx.net.Sockets;
+import org.rx.net.udp.UdpSequenceWindow;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -187,8 +188,9 @@ public final class AdaptiveUdpPort implements AutoCloseable {
             difference |= wire.getByte(i + bytes - TAG + n) ^ peer.digest[n];
         }
         if (difference != 0) return;
-        boolean newest = seq > peer.highest;
-        if (!peer.accept(seq)) return;
+        if (peer.replay.isDuplicate(seq)) return;
+        boolean newest = seq > peer.replay.highest();
+        peer.replay.mark(seq);
         if (server && newest) {
             peer.address = packet.sender();
             peer.returnPath = path;
@@ -250,7 +252,8 @@ public final class AdaptiveUdpPort implements AutoCloseable {
         Channel returnPath;
         final long started = System.nanoTime();
         int lastProbeHop;
-        long sent, highest, seen;
+        final UdpSequenceWindow replay = new UdpSequenceWindow(UdpSequenceWindow.FEC_SIZE);
+        long sent;
 
         int hop(long now) {
             return (int) ((now - started) / TimeUnit.SECONDS.toNanos(30)) & 1;
@@ -279,19 +282,6 @@ public final class AdaptiveUdpPort implements AutoCloseable {
             } catch (GeneralSecurityException e) {
                 throw new IllegalStateException(e);
             }
-        }
-
-        boolean accept(long seq) {
-            if (seq > highest) {
-                long advance = seq - highest;
-                seen = advance >= 64 ? 1L : (seen << advance) | 1L;
-                highest = seq;
-                return true;
-            }
-            long age = highest - seq;
-            if (age >= 64 || (seen & (1L << age)) != 0) return false;
-            seen |= 1L << age;
-            return true;
         }
     }
 }

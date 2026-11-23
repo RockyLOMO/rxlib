@@ -326,6 +326,8 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
                 DiagnosticMetrics.record("rss.udp.daily.rx.sampled", fec.sampledData, side);
                 DiagnosticMetrics.record("rss.udp.daily.rx.missing", fec.missingData, side);
                 DiagnosticMetrics.record("rss.udp.daily.rx.recovered", fec.recoveredData, side);
+                DiagnosticMetrics.record("rss.udp.daily.tx.data", fec.sentData, side);
+                DiagnosticMetrics.record("rss.udp.daily.tx.protectedData", fec.protectedData, side);
                 DiagnosticMetrics.record("rss.udp.daily.tx.parity", fec.paritySent, side);
                 DiagnosticMetrics.record("rss.udp.daily.tx.skippedSmallGroups", fec.skippedSmallGroups, side);
                 DiagnosticMetrics.record("rss.udp.daily.rx.evictedGroups", fec.evictedGroups, side);
@@ -339,6 +341,7 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
         payloadBytes = encodedBytes = compressionSavedBytes = 0;
         if (fec != null) {
             fec.sampledData = fec.missingData = fec.recoveredData = fec.paritySent = 0;
+            fec.sentData = fec.protectedData = 0;
             fec.skippedSmallGroups = fec.evictedGroups = 0;
         }
     }

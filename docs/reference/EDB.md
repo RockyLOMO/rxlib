@@ -4,7 +4,6 @@
 @Test
 public void h2Db() {
     EntityDatabaseImpl db = new EntityDatabaseImpl(h2Db, null);
-      db.setAutoUnderscoreColumnName(true);
     db.createMapping(PersonBean.class);
     System.out.println(db.executeQuery("EXPLAIN select * from person"));
 

@@ -4,11 +4,11 @@
 
 ## 核心类介绍
 
-- **`DomainDoubleArrayTrie` / `UltraDomainTrieMatcher`**:
-  基于双数组 Trie 树（Double-Array Trie）实现的高性能域名匹配算法。用于在成千上万条代理分流规则中，对输入的 Hostname 极速进行前缀/后缀树匹配，不会引起性能瓶颈。
+- **`UltraDomainTrieMatcher`**:
+  基于双数组 Trie 的域名后缀匹配器。`DomainDoubleArrayTrie` 整类已注释，不再使用。
 
-- **`GeoManager` / `GeoSiteMatcher` / `IpGeolocation`**:
-  GeoIP（基于 IP 的地理位置定位）相关支持类。通常用于实现按地域（如国内直连、海外走代理服务器）的网络分流路由策略。
+- **`V2RayGeoManager` / `GeoSiteMatcher` / `IpGeolocation`**:
+  V2Ray `geoip.dat` / `geosite.dat` 与 IP 归属。`match`、`resolve` 一类 API 首次调用只触发后台加载，可能暂时返回 false 或 null；配置期要同步生效时调用 `compile` 或 `waitLoad`。没有 `GeoManager` 这个类。RSS 规则入口是 `org.rx.util.rss.UserRuleMatcher`，默认规则为 `geosite:cn direct`、`geoip:cn direct`、`default proxy`。
 
 - **`PublicSuffixMatcher`**:
   公共后缀列表（Public Suffix List）解析器，可将类似 `www.sub.example.com.cn` 准确提取为根域名 `example.com.cn`，从而提升 DNS 缓存和 Cookie 管理等场景的准确率。
@@ -50,11 +50,8 @@ V2Ray GeoSite 格式规则匹配器，支持完整规则类型。
 - `keyword:example` - 关键词包含
 - `regexp:.*example.*` - 正则匹配
 
-### DomainTrieMatcher (Deprecated)
-早期域名 Trie 实现，使用压缩数组节点。
-- 仅支持 38 字符集（a-z, 0-9, ., -）
-- 反向插入实现后缀匹配
-- 已被 `UltraDomainTrieMatcher` 取代
+### 地址字面量
+`UdpManager.addressType` 按字面量选择 SOCKS 地址类型：IPv4、IPv6，其余当域名。`Sockets.parseIpAddress` 对带 `%` 的 IPv6 保留 zone。`Sockets.isPrivateIp` 覆盖 IPv4 站点本地/回环/链路本地，以及 IPv6 site-local（`fec0::/10`）；ULA（`fc00::/7`）不在此范围内。
 
 ## 适用场景
 - `socks` 代理和 `dns` 模块背后的核心路由引擎。

@@ -2,9 +2,16 @@
 
 本文整理 rxlib 当前 UDP 相关能力：基础 UDP channel、可靠消息、SOCKS/SS UDP relay、压缩、多倍发包、端口跳跃、udp2raw、FEC、打洞、Hybrid 传输、DNS/NTP 与 MTU/背压。当前项目按高性能模式维护，默认 Java 8，UDP 热点路径避免阻塞、反射、正则和无意义对象分配。
 
-## 命名说明
+## 两套平面
 
-UDP 抗弱网新管线统一命名为 `UdpResilience*`，替代原先的 `UdpProtect*`。本次迁移不保留 `UdpProtect*` 兼容类，外部调用需要直接切到 `org.rx.net.udp.UdpResilience*`。
+抗弱网有两条独立实现，都是单 XOR，没有 Reed-Solomon，也不能混在同一条 pipeline 里。
+
+| 平面 | 类 | 谁在用 |
+| --- | --- | --- |
+| Resilience | `UdpResilienceEncoder` / `UdpResilienceDecoder` | `SocketConfig.udpResilience` 安装到通用 UDP channel。默认 3 个 DATA + 1 个 PARITY，5ms flush |
+| Daily | `UdpDailyFec`，外层 `DailyUdpWire` 或 `AdaptiveStream` | RSS `daily`。分组目标 0/4/8/16，flush 约 15–180ms |
+
+`java_fec.md` 里的动态 RS、14 字节头、拥塞熔断和平滑发送没有对应类，文件已删除。Daily FEC 尚未闭合的问题见 [2026-11-23 审查](../../rxlib_fec_review_20261123.md)。
 
 ## 能力总览
 
@@ -14,11 +21,11 @@ UDP 抗弱网新管线统一命名为 `UdpResilience*`，替代原先的 `UdpPro
 | UDP 可靠消息/RPC | `org.rx.net.transport.UdpClient*`，`KcpClient*` | 无序可靠控制消息；有序可靠连续消息 | 是，`RXUP` / `RXKC + KCP` frame | 按顺序语义选择 |
 | SOCKS/SS UDP relay | `SocksUdpRelayHandler`，`SSUdpProxyHandler`，`SocksUdpUpstream` | SOCKS5 UDP ASSOCIATE、Shadowsocks UDP 转发 | SOCKS/SS 标准包 + 内部扩展 | 代理 UDP 主路径 |
 | UDP 压缩 | `org.rx.net.udp.UdpCompress*` | 大包、可压缩 payload、代理链路省带宽 | 是，`UCMP` header | 只在自有代理两端开启 |
-| UDP 多倍发包 | `org.rx.net.udp.UdpRedundant*`，新 pipeline 中为 `UdpResilienceEncoder/Decoder` | 短时突发丢包、运营商抖动 | 是，`RDNT` 或 `UdpResilience` header | 默认 1，确认丢包再 2 |
-| UDP FEC | `org.rx.net.udp.UdpResilience*` | 游戏 UDP 轻微随机丢包 | 是，`UdpResilience` header | 3:1 XOR FEC |
+| UDP 多倍发包 | `UdpRedundant*`，以及 `UdpResilienceEncoder/Decoder` 里的固定倍率 | 短时突发丢包、运营商抖动 | 是，`RDNT` 或 `UdpResilience` header | 默认 1。按丢包率调整只在 `UdpRedundantStats` |
+| UDP FEC | `UdpResilience*` 或 `UdpDailyFec` | 自有链路轻微随机丢 1 包 | 是，两套头互不兼容 | Resilience 默认 3:1；Daily 按反馈选组 |
 | UDP 端口跳跃 | `org.rx.net.udp.UdpPortHopping*`，`SocksUdpUpstream` | 单端口被限速、端口级抖动 | 控制面依赖 SOCKS/RPC relay | 默认关闭，确认端口限速再开 |
 | udp2raw 隧道 | `Udp2rawHandler`，`Udp2rawUpstream`，`Udp2rawCodec` | 把 UDP 代理 payload 包装到自有隧道 | 是，udp2raw frame | 需要 RPC 能力协商 |
-| UDP relay group/lease pool | `UdpRelayGroupManager`，`UdpRelayGroup*`，`UdpLeasePoolKey` | 批量开 relay、端口跳跃、复用 UDP lease | RPC 控制面 | 由 SOCKS upstream 自动使用 |
+| UDP relay group/lease pool | `UdpRelayGroupManager`，`UdpRelayGroup*`，`UdpLeasePoolKey` | 一次打开一组 relay、端口跳跃、复用 UDP lease | RPC 控制面 | 由 SOCKS upstream 自动使用 |
 | UDP 打洞 | `org.rx.net.udp.UdpHolePunch*` | P2P NAT 穿透 | 使用 `UdpClient` 消息协议 | 适合同 NAT 友好网络 |
 | Hybrid TCP/UDP | `org.rx.net.transport.hybrid.*` | 小包走 UDP，大包/失败回 TCP | 内部 Hybrid 消息 | 默认 TCP 兜底 |
 | DNS/NTP/Nameserver | `Dns*`，`NtpClient`，`NameserverImpl` | DNS 查询、NTP、名称服务同步 | DNS/NTP 或内部包 | 按具体组件使用 |
@@ -26,7 +33,7 @@ UDP 抗弱网新管线统一命名为 `UdpResilience*`，替代原先的 `UdpPro
 
 ## 包放置建议
 
-通用 Datagram pipeline 能力应逐步放到 `org.rx.net.udp`：
+通用 Datagram pipeline 已经在 `org.rx.net.udp`：
 
 ```text
 org.rx.net.udp
@@ -52,7 +59,7 @@ udp2raw open/capability 协商
 
 `Sockets.addUdpHandler(channel, config)` 是 UDP 能力统一入口，负责按配置安装压缩、多倍发包、`UdpResilience`、最终出口 guard 和网络指标；`Sockets.udpBootstrap(config, initChannel)` 创建的 channel 会自动执行该入口。handler 安装不等于对裸 UDP 目标启用能力：裸 UDP 在确认对端能力后调用 `Sockets.addUdpPeer(channel, config, remote)`；`UdpClient` 对发出的 RXUP 目标和成功解码的 RXUP 来源自动登记，`KcpClient` 对 RXKC 会话自动登记和清理已开启的优化能力。重复手动调用 `Sockets.addUdpPeer(...)` 仍是幂等兼容操作。`UdpResilienceConfig.resilienceAll=true` 表示 FEC 显式保护全部目标，不依赖 peer 登记。
 
-当前旧优化链路的出站顺序：
+只开压缩和多倍发包时，出站顺序：
 
 ```text
 业务 / socks / udp2raw handler
@@ -62,7 +69,7 @@ udp2raw open/capability 协商
   -> socket
 ```
 
-当前旧优化链路的入站顺序：
+对应入站顺序：
 
 ```text
 socket
@@ -82,14 +89,7 @@ Sockets.addUdpHandler(ch, config);
 Sockets.addUdpPeer(ch, config, remoteAddress);
 ```
 
-新 FEC pipeline 目标顺序：
-
-```text
-出站：业务 handler -> UdpResilienceEncoder -> UdpFinalEgressGuardHandler -> socket
-入站：socket -> UdpResilienceDecoder -> 业务 handler
-```
-
-通过 `SocketConfig` 同时开启三类优化时，自动 pipeline 顺序为：
+`Sockets.addUdpOptimizationHandlers` 同时开启三类优化时，自动 pipeline 顺序为：
 
 ```text
 出站：业务协议 -> UdpCompressEncoder -> UdpRedundantEncoder -> UdpResilienceEncoder -> UdpFinalEgressGuardHandler -> socket
@@ -486,7 +486,57 @@ cfg.setFlowIdResolver((channel, packet) -> {
 3. maxResiliencePayload 默认不要超过 1200，给公网 MTU 和额外 header 留空间。
 4. 如果业务协议不能接受恢复包乱序到达，不要开 FEC。
 5. 该协议只能用于自有两端，不能直接面向普通 UDP 服务端。
+6. parity 被钳在 0 或 1。冗余倍率是配置值，这条管线没有按丢包率改倍率。自适应倍率仍在 UdpRedundantStats。
 ```
+
+## Daily FEC
+
+`UdpDailyFec` 绑定在一条已协商的双向链路上，由调用方的 EventLoop 驱动。`DailyUdpWire` 在 feature 位 `FEC=4` 时使用它；`AdaptiveStream` 在 UDP 已就绪时也使用它，并保留 TCP 修复通道。
+
+```text
+类型：DATA=0，SHARD=1，PARITY=2，REPORT=3
+MAX_OVERHEAD=8，WIRE_HEADROOM=20
+MIN_SHARDS=2，MAX_SHARDS=16，MAX_SHARD_BYTES=1500
+发送 flush：约 15ms 到 180ms，随包间隔拉长
+接收缓存：从 4 组按需扩到 16 组，300ms 过期
+交付去重：UdpSequenceWindow.FEC_SIZE=512，包括原包与恢复包
+```
+
+`target==0` 或单包超过 1500 字节时只发 `DATA`，不产生校验。否则数据立即以 `SHARD` 发出，凑满当前 target 或 flush 到期后，在冗余预算足够时发一份 XOR。接收端每 32 个原始序号窗口回 `REPORT`。发送端按窗口内缺失数设置下一组大小：缺失不少于 4 则为 4，不少于 2 则为 8，否则 16。连续 3 个干净窗口，或 5 秒没有新报告，target 回到 0。每组只能恢复 1 个丢包。
+
+`AdaptiveStream` 把有序字节切成最多 1250 字节的 UDP 帧，未确认窗口和乱序窗口都是 64。最短 TCP 修复等待 80ms，乱序宽限初始 40ms，并按 RTT 调整。超时后把尚未累计确认的帧经 TCP 再送出去。
+
+`DailyUdpWire` 另有 30 秒一轮的 primary/alias 端口跳跃，和下面的 SOCKS relay 端口跳跃不是同一套实现。RSS 用户字段见 [RSS 传输配置](../../rss-transport.md)。
+
+### 2026-11-23 本地弱网验证
+
+FEC 交付去重改用 512 个序号的环形位图。启用 FEC 的 UDP AES 会话和 TCP/FEC 的认证 UDP 端口也使用 512 序号窗口，否则晚到校验会在进入解码器前被丢弃。每个位图占 64 B 堆内数据，原包和恢复包共用一份交付记录。AES 单独使用时窗口为 64。认证通过后才写入重放记录。线格式、16 个接收组上限和 300 ms 分组寿命沿用既有协议。
+
+三个定向回归在修复前均失败。修复后的测试覆盖了校验落后 80、256 个数据序号，299 ms 仍可恢复，300 ms 已过期；另覆盖 32 位序号回绕、同时保留 16 个满组并逆序接收校验，以及重复原包和校验。IPv4/IPv6 的 TCP/FEC 认证端口测试还验证了乱序帧能交付，回包继续发往最新地址。
+
+#### 校验覆盖率
+
+固定档位实验对每种 PPS 和 K 组合发送 16 轮，每轮 512 个数据包。每 16 包丢一个原包，轮换全部 16 个丢包位置，校验包正常送达。表中为发送的校验包所覆盖的原包占比。
+
+| 发送速率 | 每 16 包一份校验 | 每 8 包一份校验 | 每 4 包一份校验 |
+| --- | ---: | ---: | ---: |
+| 20 PPS | 25.0% | 50.0% | 100% |
+| 50 PPS | 49.2% | 100% | 100% |
+| 100 PPS | 100% | 100% | 100% |
+
+20 PPS 时相邻两包相隔 50 ms。180 ms 的组包期限最多纳入 4 包，K=16 时每份校验最多保护 4/16。要覆盖全部原包，需要增加校验预算或延长恢复等待。本轮保留日常模式预算与期限。
+
+另一组实验使用真实的自适应反馈，覆盖 20/50/100/200/300/1000 PPS、0/1/5/10/20% 前向丢包、3 个随机种子和两种丢包模型。数据和校验都可能丢，反向反馈直接送达。20 PPS、名义丢包率 5% 时，独立随机丢包恢复 33/83 个丢失原包，平均连续丢 3 个线包的突发模型恢复 1/63。分母是各组实际丢失的原包数。完整逐项输出可用以下命令在仓库根目录复现。
+
+```powershell
+mvn -f rxlib/pom.xml '-DskipTests=false' '-Dtest=UdpDailyFecCoverageTest' test
+```
+
+#### 运行指标与验收边界
+
+- 普通 UDP 按方向汇总 `rss.udp.daily.tx.protectedData / rss.udp.daily.tx.data` 可计算校验覆盖率。两项均为诊断周期增量，跨多个周期分别求和再相除，可减少组包跨周期带来的偏差。
+- TCP 超时回退同时记录 `rss.tcp.adaptive.timeoutRepairFrames` 和 `rss.tcp.adaptive.timeoutRepairBytes`。字节取实际送往 TCP 的流载荷，扣除每帧 5 B 的内部帧头。GAP 请求、窗口满或 FIN 触发的发送不计入这两个超时指标。
+- 同路径直连、关闭 FEC、自适应 FEC 和 kcptun 固定 RS 的业务对照待测。需按相同负载采样业务 P95/P99、最长卡顿、网卡字节、连接数、吞吐、CPU 与 Netty 堆外内存。真实链路数据用于决定是否引入冷启动冗余、双校验或选择性重传。
 
 ## UDP 端口跳跃
 
@@ -555,7 +605,7 @@ org.rx.net.socks.upstream.SocksUdpUpstream
 ```text
 1. 通过 RPC 一次打开一组 UDP relay。
 2. 支持 relay group heartbeat、idle timeout、add/remove relay。
-3. 支持 RSS_RPC、RX_SOCKS5_BATCH、SOCKS5_COMPAT、AUTO 控制模式。
+3. 控制模式有 `RSS_RPC`、`SOCKS5_COMPAT`、`AUTO`。枚举里的 `RX_SOCKS5_BATCH` 与 `SOCKS5_COMPAT` 一样直接放弃 RPC group，没有 batch 打开实现。
 4. 支持控制面失败熔断和 fallback 到 SOCKS5 兼容方式。
 5. 支持 UDP lease pool 复用 relay，减少高频开关 relay 的控制面成本。
 ```
@@ -647,7 +697,7 @@ org.rx.net.udp.UdpHolePunchPackets
 2. server 记录双方公网观测 endpoint。
 3. client 拿到对端 observed endpoint 后，同一本地 UDP 端口连续发送 DirectProbe。
 4. 任一端收到 DirectProbe 后回 DirectProbeAck。
-5. 收到 ACK 后建立 UdpHolePunchSession，后续直接向 directRemoteEndpoint 发送。
+5. 收到第一发 `DirectProbe` 就完成 `directFuture` 并建立会话，同时回 `DirectProbeAck`。ACK 也会完成尚未完成的 future。之后直接向 `directRemoteEndpoint` 发送。
 ```
 
 服务端示例：
@@ -842,29 +892,14 @@ MTU/背压: mtu drop、pending packets、pending bytes、egress guard drop。
 吞吐与延迟: p50/p95/p99 send latency、recv latency、恢复包乱序延迟。
 ```
 
-## 当前缺口
-
-已经具备但尚未完全统一的点：
+## 当前没有的能力
 
 ```text
-1. UdpResilience 已可通过 SocketConfig.udpResilience 自动安装，但 udp2raw capability 协商尚未接入。
-2. UDP 压缩和多倍发包已迁移到 org.rx.net.udp，但还没有合并进 UdpResilience 统一 header。
-3. UdpResilience 目前覆盖 FEC、固定冗余、去重和基础统计，但还没有旧 UdpRedundant 的自适应丢包调倍率策略。
-4. UdpResilience 还没有和 udp2raw capabilities 做能力协商，也没有配置桥接。
-5. 端口跳跃核心策略还绑定在 SocksUdpUpstream / relay group 控制面，尚未抽出通用端口选择策略。
-6. UdpClient、KcpClient、Hybrid UDP 与 udp2raw 的跨协议选择仍需进一步形成统一指南。
-7. 缺少统一 UDP metrics facade；目前指标分散在 socks.udp、socks.udp2raw、net.udp 等前缀。
-8. 没有 Reed-Solomon 类多 parity FEC；当前 XOR FEC 只能恢复每组 1 个丢包。
-```
-
-建议补齐顺序：
-
-```text
-1. 把 UdpCompress* / UdpRedundant* 编排进 UdpResilience 能力层，保留 SocketConfig 配置入口。
-2. 为 KcpClient 补充会话/重传/窗口指标与弱网压测基线。
-3. 给 udp2raw open capabilities 增加 FEC/Resilience 协商。
-4. 统一 UDP 指标命名，至少覆盖堆外内存、pending、drop、MTU、FEC、冗余、压缩、端口跳跃。
-5. 最后再考虑多 parity FEC 或 QUIC 类可靠流；这些属于协议层，不应混进轻量 datagram pipeline。
+1. 没有 Reed-Solomon，也没有每组多于 1 个 parity。连续丢多个数据包时，单条 XOR 组只能恢复 1 个。
+2. UdpResilience 与 UdpRedundant 是两套头。前者的倍率是固定配置；按丢包率调整倍率只在 UdpRedundantStats。
+3. udp2raw 的能力协商没有 FEC。UdpResilience 不会自动装进 udp2raw。
+4. RX_SOCKS5_BATCH 没有批量打开 relay 的实现。
+5. 指标仍分散在 socks.udp、socks.udp2raw、net.udp 等前缀，没有统一 facade。
 ```
 
 ## 上线检查清单

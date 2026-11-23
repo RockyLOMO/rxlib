@@ -134,7 +134,7 @@ Remoting.register(contractInstance, rpcConf);
 `computeArgs` 功能允许服务端在广播事件之前，先请求一个特定的客户端（通常是版本最新的）来“填充”或“计算”事件参数。
 
 ### 核心流程
-1. **服务端触发事件**：业务代码调用 `server.raiseEvent(eventName, args)`。
+1. **服务端触发事件**：业务代码调用 `EventPublisher.publishEvent(eventName, args)`。没有 `raiseEvent`。
 2. **请求计算 (COMPUTE_ARGS)**：服务端根据配置选择一个客户端发送请求。此时服务端会同步等待客户端回传。
 3. **客户端计算**：被选中的客户端执行本地事件逻辑，更新 `args` 中的属性并回传给服务端。
 4. **最终广播 (BROADCAST)**：服务端收到回传后，将“计算完成”的参数广播给所有订阅该事件的客户端。
@@ -162,108 +162,19 @@ Remoting.register(contractInstance, conf);
 > 该特性非常适合用于“服务端通知、客户端决策”的异步协同场景。服务端只需负责事件流转，而具体的决策数据由当前逻辑最完备（版本最高）的客户端提供。
 
 
-### 基本 RPC 调用与事件广播
+### 注册与调用
 
-基于 netty 实现。
-
-```java
-@Test
-public void apiRpc() {
-    UserManagerImpl server = new UserManagerImpl();
-    restartServer(server, 3307);
-
-    String ep = "127.0.0.1:3307";
-    String groupA = "a", groupB = "b";
-    List<UserManager> facadeGroupA = new ArrayList<>();
-    facadeGroupA.add(RemotingFactory.create(UserManager.class, Sockets.parseEndpoint(ep), groupA, null));
-    facadeGroupA.add(RemotingFactory.create(UserManager.class, Sockets.parseEndpoint(ep), groupA, null));
-
-    for (UserManager facade : facadeGroupA) {
-        assert facade.computeInt(1, 1) == 2;
-    }
-    //重启server，客户端自动重连
-    restartServer(server, 3307);
-    for (UserManager facade : facadeGroupA) {
-        facade.testError();
-        assert facade.computeInt(2, 2) == 4;  //服务端计算并返回
-    }
-
-    List<UserManager> facadeGroupB = new ArrayList<>();
-    facadeGroupB.add(RemotingFactory.create(UserManager.class, Sockets.parseEndpoint(ep), groupB, null));
-    facadeGroupB.add(RemotingFactory.create(UserManager.class, Sockets.parseEndpoint(ep), groupB, null));
-
-    for (UserManager facade : facadeGroupB) {
-        assert facade.computeInt(1, 1) == 2;
-        facade.testError();
-        assert facade.computeInt(2, 2) == 4;
-    }
-
-    //自定义事件（广播）
-    String groupAEvent = "onAuth-A", groupBEvent = "onAuth-B";
-    for (int i = 0; i < facadeGroupA.size(); i++) {
-        int x = i;
-        facadeGroupA.get(i).<UserEventArgs>attachEvent(groupAEvent, (s, e) -> {
-            System.out.println(String.format("!!groupA - facade%s - %s[flag=%s]!!", x, groupAEvent, e.getFlag()));
-            e.setFlag(e.getFlag() + 1);
-        });
-    }
-    for (int i = 0; i < facadeGroupB.size(); i++) {
-        int x = i;
-        facadeGroupB.get(i).<UserEventArgs>attachEvent(groupBEvent, (s, e) -> {
-            System.out.println(String.format("!!groupB - facade%s - %s[flag=%s]!!", x, groupBEvent, e.getFlag()));
-            e.setFlag(e.getFlag() + 1);
-        });
-    }
-
-    UserEventArgs args = new UserEventArgs(PersonInfo.def);
-    facadeGroupA.get(0).raiseEvent(groupAEvent, args);  //客户端触发事件，不广播
-    assert args.getFlag() == 1;
-    facadeGroupA.get(1).raiseEvent(groupAEvent, args);
-    assert args.getFlag() == 2;
-
-    server.raiseEvent(groupAEvent, args);
-    assert args.getFlag() == 3;  //服务端触发事件，先执行最后一次注册事件，拿到最后一次注册客户端的EventArgs值，再广播其它组内客户端。
-
-    facadeGroupB.get(0).raiseEvent(groupBEvent, args);
-    assert args.getFlag() == 4;
-
-    sleep(1000);
-    args.setFlag(8);
-    server.raiseEvent(groupBEvent, args);
-    assert args.getFlag() == 9;
-
-    facadeGroupB.get(0).close();  //facade接口继承AutoCloseable调用后可主动关闭连接
-    sleep(1000);
-    args.setFlag(16);
-    server.raiseEvent(groupBEvent, args);
-    assert args.getFlag() == 17;
-}
-```
-
-### 客户端重连与端口轮询
+没有 `RemotingFactory`。服务端始终创建 `HybridServer`。`register` 返回其中的 TCP 服务器，`registerHybrid` 返回 `HybridServer`。
 
 ```java
-@SneakyThrows
-private void epGroupReconnect() {
-    UserManagerImpl server = new UserManagerImpl();
-    restartServer(server, 3307);
-    String ep = "127.0.0.1:3307";
-    String groupA = "a", groupB = "b";
-
-    UserManager userManager = RemotingFactory.create(UserManager.class, Sockets.parseEndpoint(ep), groupA, null, p -> {
-        InetSocketAddress result;
-        if (p.equals(Sockets.parseEndpoint(ep))) {
-            result = Sockets.parseEndpoint("127.0.0.1:3308");
-        } else {
-            result = Sockets.parseEndpoint(ep);  //3307和3308端口轮询重试连接，模拟分布式不同端口重试连接
-        }
-        log.debug("reconnect {}", result);
-        return result;
-    });
-    assert userManager.computeInt(1, 1) == 2;
-    sleep(1000);
-    tcpServer.close();  //关闭3307
-    Tasks.scheduleOnce(() -> tcpServer2 = RemotingFactory.listen(server, 3308), 32000);  //32秒后开启3308端口实例，重连3308成功
-    System.in.read();
-}
+Remoting.register(contractInstance, 3307, false);
+UserManager facade = Remoting.createFacade(UserManager.class,
+        RpcClientConfig.statefulMode("127.0.0.1:3307", 0));
+facade.publishEvent("onAuth", RemotingEventArgs.broadcast(args));
 ```
+
+定向回推用 `Remoting.currentClientHandle()` 和 `Remoting.publishEventToClient(handle, name, args)`。对端已断开时返回 false。这和客户端 `publishEvent` 上的 `RemotingEventArgs.direct` 不是同一条路径。
+
+`RpcServerConfig.executor` 非空时，业务方法丢到该池；默认在调用线程执行。只有 `executorForPing` 为真时，ping 也丢出去。`poolMode` 下多参数的 `attachEvent` 会抛 `InvalidException`。
+
+没有 H2 Outbox，也没有重启后补推。
