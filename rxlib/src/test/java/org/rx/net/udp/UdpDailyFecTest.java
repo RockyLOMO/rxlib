@@ -18,6 +18,7 @@ class UdpDailyFecTest {
         final UdpDailyFec receiver = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, time::get);
         final ArrayDeque<ByteBuf> packets = new ArrayDeque<>();
         final ArrayDeque<Integer> delivered = new ArrayDeque<>();
+        int fixedMissing = -1; // Optional controlled feedback for fixed-tier coverage measurements.
 
         void send(int value) {
             ByteBuf payload = Unpooled.buffer().writeInt(value).writeZero(value % 11);
@@ -47,6 +48,7 @@ class UdpDailyFecTest {
                 }, report -> {
                     try {
                         assertEquals(UdpDailyFec.WIRE_HEADROOM, report.readerIndex());
+                        if (fixedMissing >= 0) report.setByte(report.readerIndex() + 5, fixedMissing);
                         sender.read(report, unused -> unused.release(), unused -> unused.release());
                     } finally {
                         report.release();
@@ -153,20 +155,51 @@ class UdpDailyFecTest {
     }
 
     @Test
-    void delayedParityRecoversBeyondFourInterleavedGroups() {
+    void lateParityRecoversOnceWithinLiveGroupAcrossSequenceWrap() {
+        for (int age : new int[]{80, 256}) {
+            for (int elapsed : new int[]{299, 300}) {
+                try (Link link = new Link()) {
+                    // Two shards with identical four-byte payloads have all-zero XOR and length XOR.
+                    int base = -3;
+                    link.receive(Unpooled.buffer().writeByte(UdpDailyFec.SHARD).writeInt(base)
+                            .writeByte(0).writeInt(0));
+                    link.time.addAndGet(TimeUnit.MILLISECONDS.toNanos(elapsed));
+                    for (int i = 2; i <= age + 1; i++) {
+                        link.receive(Unpooled.buffer().writeByte(UdpDailyFec.DATA).writeInt(base + i)
+                                .writeInt(0));
+                    }
+                    for (int i = 0; i < 2; i++) {
+                        link.receive(Unpooled.buffer().writeByte(UdpDailyFec.PARITY).writeInt(base)
+                                .writeByte(2).writeShort(0).writeInt(0));
+                    }
+                    assertEquals(elapsed < 300 ? 1 : 0, link.receiver.recoveredData);
+                    link.receive(Unpooled.buffer().writeByte(UdpDailyFec.SHARD).writeInt(base + 1)
+                            .writeByte(1).writeInt(0));
+                    assertEquals(age + 2, link.delivered.size());
+                }
+            }
+        }
+    }
+
+    @Test
+    void delayedParityRecoversAllSixteenFullGroupsInReverseOrder() {
         try (Link link = new Link()) {
-            link.introduceLoss();
+            long interval = TimeUnit.MILLISECONDS.toNanos(1);
+            link.fixedMissing = 1;
+            link.introduceLoss(interval);
             ArrayDeque<ByteBuf> delayed = new ArrayDeque<>();
             try {
-                for (int seq = 40; seq < 64; seq++) {
+                for (int seq = 40; seq < 296; seq++) {
+                    link.time.addAndGet(interval);
                     link.send(seq);
-                    if (seq % 4 == 3) delayed.add(link.packets.removeLast());
-                    if (seq % 4 == 1) link.packets.removeFirst().release();
+                    int index = (seq - 40) & 15;
+                    if (index == 15) delayed.add(link.packets.removeLast());
+                    if (index == 0) link.packets.removeFirst().release();
                     link.drain();
                 }
                 while (!delayed.isEmpty()) link.receive(delayed.removeLast());
-                assertEquals(6, link.receiver.recoveredData);
-                assertEquals(24, link.delivered.size());
+                assertEquals(16, link.receiver.recoveredData);
+                assertEquals(256, link.delivered.size());
                 assertEquals(0, link.receiver.evictedGroups);
             } finally {
                 while (!delayed.isEmpty()) delayed.remove().release();

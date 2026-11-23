@@ -9,7 +9,7 @@
 
 ## 审查
 
-[自适应 FEC 二轮审查](rxlib_fec_review_20261123.md) 保持原文。它提到的 `docs/java_fec.md` 是未实现的 RS 设计，已经删除。现行 FEC 见 [UDP 说明](reference/net/udp.md)。
+[自适应 FEC 二轮审查](rxlib_fec_review_20261123.md) 保持原文。它提到的 `docs/java_fec.md` 是未实现的 RS 设计，已经删除。实现与低 PPS 测量见 [Daily FEC](reference/net/udp.md#daily-fec)。
 
 ## 测试场景
 

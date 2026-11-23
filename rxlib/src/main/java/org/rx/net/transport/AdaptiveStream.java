@@ -223,7 +223,8 @@ public final class AdaptiveStream implements AutoCloseable {
         long now = clock.getAsLong();
         if (!pending.isEmpty() && now - deadline >= 0) {
             DiagnosticMetrics.record("rss.tcp.adaptive.timeoutRepairFrames", pending.size());
-            drainToTcp();
+            int bytes = drainPendingToTcp();
+            DiagnosticMetrics.record("rss.tcp.adaptive.timeoutRepairBytes", bytes);
         }
         if (!ready && now - nextProbe >= 0) {
             lastPing = now;
@@ -269,11 +270,19 @@ public final class AdaptiveStream implements AutoCloseable {
 
     /** Hand all outstanding bytes to the TCP channel in sequence before a TCP FIN or a path change. */
     public void drainToTcp() {
+        drainPendingToTcp();
+    }
+
+    private int drainPendingToTcp() {
         ready = probing = sampling = false;
         nextProbe = clock.getAsLong() + PROBE_INTERVAL;
+        int bytes = 0;
         while (!pending.isEmpty()) {
-            tcpOut.accept(pending.remove());
+            ByteBuf frame = pending.remove();
+            bytes += frame.readableBytes() - HEADER;
+            tcpOut.accept(frame);
         }
+        return bytes;
     }
 
     @Override public void close() {

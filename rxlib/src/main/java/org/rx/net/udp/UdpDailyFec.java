@@ -25,14 +25,15 @@ public final class UdpDailyFec implements AutoCloseable {
 
     private final ByteBufAllocator alloc;
     private final LongSupplier clock;
-    private final UdpDedupWindow delivered = new UdpDedupWindow();
+    private final UdpSequenceWindow delivered = new UdpSequenceWindow(UdpSequenceWindow.FEC_SIZE);
     // At most one accumulator per group. Only XOR bytes are retained, never whole datagrams.
     private final Group sending = new Group();
     private Group[] receiving = new Group[4];
     private int nextSeq, target, cleanWindows, reportSeq, parityCredit;
     private int highestRaw, nextReport;
     private long rawMask, lastReportTime, lastWrite, packetInterval, flushAfter;
-    long sampledData, missingData, recoveredData, paritySent, skippedSmallGroups, evictedGroups;
+    long sentData, protectedData, paritySent, skippedSmallGroups;
+    long sampledData, missingData, recoveredData, evictedGroups;
     private boolean observing, hasReport, closed;
 
     public UdpDailyFec(ByteBufAllocator allocator) {
@@ -60,6 +61,7 @@ public final class UdpDailyFec implements AutoCloseable {
         }
         lastWrite = now;
         int seq = nextSeq++;
+        sentData++;
         if (target == 0 || bytes > MAX_SHARD_BYTES) {
             flush(wire);
             wire.accept(newFrame(5 + bytes).writeByte(DATA).writeInt(seq)
@@ -124,7 +126,7 @@ public final class UdpDailyFec implements AutoCloseable {
             return;
         }
         observe(seq, reply);
-        if (closed || delivered.isDuplicate(Integer.toUnsignedLong(seq))) {
+        if (closed || !delivered.acceptSerial(seq)) {
             return;
         }
         int offset = pos + (shard ? 6 : 5), len = frame.writerIndex() - offset;
@@ -222,7 +224,7 @@ public final class UdpDailyFec implements AutoCloseable {
         if (Integer.bitCount(missing) == 1 && g.lengthXor <= g.parityBytes
                 && g.xor.readableBytes() == g.parityBytes) {
             int seq = g.base + Integer.numberOfTrailingZeros(missing);
-            if (!delivered.isDuplicate(Integer.toUnsignedLong(seq))) {
+            if (delivered.acceptSerial(seq)) {
                 recoveredData++;
                 ByteBuf payload = g.xor.retainedSlice(0, g.lengthXor);
                 g.clear();
@@ -279,6 +281,7 @@ public final class UdpDailyFec implements AutoCloseable {
         int count = Integer.bitCount(sending.mask);
         if (count >= MIN_SHARDS && parityCredit >= target) {
             paritySent++;
+            protectedData += count;
             parityCredit = 0;
             int len = sending.xor.readableBytes();
             ByteBuf frame = newFrame(MAX_OVERHEAD + len).writeByte(PARITY).writeInt(sending.base)
