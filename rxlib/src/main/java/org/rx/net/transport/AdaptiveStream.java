@@ -2,6 +2,7 @@ package org.rx.net.transport;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
+import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.udp.UdpDailyFec;
 
 import java.util.ArrayDeque;
@@ -20,7 +21,7 @@ public final class AdaptiveStream implements AutoCloseable {
     // At most 64 unacknowledged sends and 64 out-of-order receives, each <= 1250 bytes.
     private static final int WINDOW = 64;
     private static final long REORDER_GRACE = TimeUnit.MILLISECONDS.toNanos(40);
-    private static final long MIN_REPAIR = TimeUnit.MILLISECONDS.toNanos(500);
+    private static final long MIN_REPAIR = TimeUnit.MILLISECONDS.toNanos(80);
     private static final long ACK_DELAY = TimeUnit.MILLISECONDS.toNanos(10);
     private static final long PROBE_INTERVAL = TimeUnit.SECONDS.toNanos(2);
 
@@ -34,6 +35,9 @@ public final class AdaptiveStream implements AutoCloseable {
     private int nextTx, nextRx, probeId, sinceAck, buffered;
     private long deadline, nextProbe, gapDeadline, ackDeadline, lastPing;
     private long repairDelay = MIN_REPAIR, reorderGrace = REORDER_GRACE;
+    private long srtt, variation, sampleTime;
+    private int sampleSeq;
+    private boolean sampling;
     private boolean ready, probing, closed, gapRequested;
 
     public AdaptiveStream(ByteBufAllocator alloc, Consumer<ByteBuf> tcp, Consumer<ByteBuf> udp,
@@ -64,6 +68,11 @@ public final class AdaptiveStream implements AutoCloseable {
             ByteBuf frame = alloc.ioBuffer(HEADER + n, HEADER + n)
                     .writeByte(DATA).writeInt(nextTx++).writeBytes(bytes, offset, n);
             if (ready) {
+                if (!sampling) {
+                    sampleSeq = nextTx - 1;
+                    sampleTime = clock.getAsLong();
+                    sampling = true;
+                }
                 if (pending.isEmpty()) {
                     deadline = clock.getAsLong() + repairDelay;
                 }
@@ -90,12 +99,17 @@ public final class AdaptiveStream implements AutoCloseable {
             if (!pending.isEmpty()) {
                 int count = ack - pending.peek().getInt(1);
                 if (count > 0 && count <= pending.size()) {
+                    if (sampling && ack - sampleSeq > 0) {
+                        if (type == ACK) updateRtt(clock.getAsLong() - sampleTime);
+                        sampling = false;
+                    }
                     while (count-- > 0) {
                         pending.remove().release();
                     }
                     deadline = clock.getAsLong() + repairDelay;
                 }
                 if (type == GAP && !pending.isEmpty() && pending.peek().getInt(1) == ack) {
+                    sampling = false;
                     tcpOut.accept(pending.peek().retainedDuplicate());
                 }
             }
@@ -120,15 +134,27 @@ public final class AdaptiveStream implements AutoCloseable {
             if (type == PING) {
                 udpOut.accept(control(PONG, id));
             } else if (probing && probeId == id) {
-                long rtt = Math.max(0L, Math.min(clock.getAsLong() - lastPing, PROBE_INTERVAL));
-                repairDelay = Math.max(MIN_REPAIR, 3 * rtt + REORDER_GRACE);
-                reorderGrace = Math.max(REORDER_GRACE, Math.min(TimeUnit.MILLISECONDS.toNanos(150), rtt / 4));
+                updateRtt(clock.getAsLong() - lastPing);
                 ready = true;
                 probing = false;
             }
         } else {
             fec.read(frame, decoded, udpOut);
         }
+    }
+
+    // Sample one un-repaired frame per cumulative ACK cycle. No per-frame timestamp allocation.
+    private void updateRtt(long elapsed) {
+        long sample = Math.max(1L, Math.min(elapsed, PROBE_INTERVAL));
+        if (srtt == 0) {
+            srtt = sample;
+            variation = sample / 2;
+        } else {
+            variation += (Math.abs(sample - srtt) - variation) / 4;
+            srtt += (sample - srtt) / 8;
+        }
+        reorderGrace = Math.max(REORDER_GRACE, Math.min(TimeUnit.MILLISECONDS.toNanos(150), srtt / 4));
+        repairDelay = Math.min(PROBE_INTERVAL, Math.max(MIN_REPAIR, srtt + 4 * variation + ACK_DELAY));
     }
 
     private void decoded(ByteBuf frame) {
@@ -196,6 +222,7 @@ public final class AdaptiveStream implements AutoCloseable {
         }
         long now = clock.getAsLong();
         if (!pending.isEmpty() && now - deadline >= 0) {
+            DiagnosticMetrics.record("rss.tcp.adaptive.timeoutRepairFrames", pending.size());
             drainToTcp();
         }
         if (!ready && now - nextProbe >= 0) {
@@ -242,7 +269,7 @@ public final class AdaptiveStream implements AutoCloseable {
 
     /** Hand all outstanding bytes to the TCP channel in sequence before a TCP FIN or a path change. */
     public void drainToTcp() {
-        ready = probing = false;
+        ready = probing = sampling = false;
         nextProbe = clock.getAsLong() + PROBE_INTERVAL;
         while (!pending.isEmpty()) {
             tcpOut.accept(pending.remove());

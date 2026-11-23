@@ -2046,10 +2046,12 @@ public class RssTest extends AbstractTester {
         assertFalse(profiles.tcp(b, 12345).isAdaptiveTcp());
         assertTrue(profiles.tcp(a, 12345).getTransportFlags().has(TransportFlags.COMPRESS_BOTH));
         assertSame(profiles.tcp(null, 443), profiles.tcp(b, 12345));
-        assertTrue(profiles.tcp(b, 80).getTransportFlags().has(TransportFlags.RSS_AUTHENTICATED_TLS));
+        assertTrue(profiles.tcp(b, 80).getTransportFlags().has(TransportFlags.RSS_PSK_AES));
         assertFalse(profiles.tcp(a, 53).getTransportFlags().has(TransportFlags.COMPRESS_WRITE));
-        assertEquals(4, profiles.udp(a).getDailyUdpFeatures());
-        assertEquals(0, profiles.udp(b).getDailyUdpFeatures());
+        assertEquals(4, profiles.udp(a, 80).getDailyUdpFeatures());
+        assertEquals(0, profiles.udp(b, 80).getDailyUdpFeatures());
+        assertEquals(6, profiles.udp(a, 53).getDailyUdpFeatures());
+        assertEquals(2, profiles.udp(b, 53).getDailyUdpFeatures());
 
         RssClientConf reload = JSON.parseObject(json, RssClientConf.class);
         RssTransport policy = reload.shadowUsers.get(0).transport;
@@ -2061,8 +2063,10 @@ public class RssTest extends AbstractTester {
             SocksConfig tcp = changed.tcp(a, 80);
             assertEquals((fec & 2) != 0, tcp.isAdaptiveTcp());
             assertTrue(tcp.getTransportFlags().has(TransportFlags.COMPRESS_BOTH));
-            assertTrue(tcp.getTransportFlags().has(TransportFlags.RSS_AUTHENTICATED_TLS));
-            assertEquals(3 | ((fec & 1) << 2), changed.udp(a).getDailyUdpFeatures());
+            assertTrue(tcp.getTransportFlags().has(TransportFlags.RSS_PSK_AES));
+            assertEquals(3 | ((fec & 1) << 2), changed.udp(a, 80).getDailyUdpFeatures());
+            assertEquals((fec & 1) << 2, changed.udp(a, 443).getDailyUdpFeatures());
+            assertSame(changed.udp(a, 443), changed.udp(a, 853));
             assertEquals(0, changed.tcp(a, 993).getTransportFlags().getValue());
         }
         policy.profile = "game";

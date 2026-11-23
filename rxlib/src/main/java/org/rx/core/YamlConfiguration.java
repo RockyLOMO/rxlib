@@ -146,17 +146,18 @@ public class YamlConfiguration implements EventPublisher<YamlConfiguration>, Aut
             try (FileStream fs = new FileStream(outputFile)) {
                 fs.setPosition(0);
                 fs.writeString(dump());
+                fs.setLength(fs.getPosition());
             }
         }
         watcher = new FileWatcher(Files.getFullPath(this.outputFile = outputFile), p -> p.toString().equals(this.outputFile));
         watcher.onChanged.add((s, e) -> {
             String filePath = e.getPath().toString();
-            log.info("Config changing {} {} -> {}", e.isCreate(), filePath, yaml);
+            log.info("Config changing {} {}", e.isCreate(), filePath);
             if (!reloadWatchedYaml(filePath, e.isDelete(), false)) {
                 log.warn("Config change skipped {} {}", e.isCreate(), filePath);
                 return;
             }
-            log.info("Config changed {} {} -> {}", e.isCreate(), filePath, yaml);
+            log.info("Config changed {} {}", e.isCreate(), filePath);
             publishEvent(onChanged, new ChangedEventArgs(filePath));
         });
 

@@ -19,6 +19,20 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class YamlConfigurationTest {
+    @Test
+    public void enableWatchTruncatesPreviousLongerYaml() throws Exception {
+        Path file = Files.createTempFile("yaml-watch-truncate", ".yml");
+        file.toFile().deleteOnExit();
+        Files.write(file, "version: 1\n# old trailing content\n".getBytes(StandardCharsets.UTF_8));
+        YamlConfiguration config = new YamlConfiguration(file.toString());
+        config.enableWatch(file.toString());
+        try {
+            assertEquals(config.dump(), new String(Files.readAllBytes(file), StandardCharsets.UTF_8));
+        } finally {
+            config.disableWatch();
+        }
+    }
+
     static final class MockYamlConfiguration extends YamlConfiguration {
         final Queue<Map<String, Object>> snapshots = new ArrayDeque<>();
 

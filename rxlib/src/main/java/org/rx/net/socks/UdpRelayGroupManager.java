@@ -360,6 +360,11 @@ final class UdpRelayGroupManager extends Disposable {
         DiagnosticMetrics.record("socks.udp.relay.group.relay.count", relays.size(), "action=" + action);
     }
 
+    static boolean encrypted(Channel relay) {
+        UdpRelayEntry entry = relay.attr(ATTR_RELAY_GROUP_ENTRY).get();
+        return entry != null && (entry.group.features & DailyUdpWire.AES) != 0;
+    }
+
     static void touch(Channel relay) {
         UdpRelayEntry entry = relay != null ? relay.attr(ATTR_RELAY_GROUP_ENTRY).get() : null;
         if (entry != null) {

@@ -37,7 +37,8 @@ LOCAL_TIME=$(date +"%Y-%m-%d %H:%M:%S")
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 cd "$SCRIPT_DIR" || exit 1
 if [[ -d transport ]]; then
-    export RSS_TCP_TLS_CERT="$PWD/transport/cert.pem" RSS_TCP_TLS_KEY="$PWD/transport/key.pem"
+    [[ ! -f transport/cert.pem ]] || export RSS_TCP_TLS_CERT="$PWD/transport/cert.pem" RSS_TCP_TLS_KEY="$PWD/transport/key.pem"
+    export RSS_TCP_AES_KEY="$(<transport/tcp-key)"
     export RSS_UDP_AES_KEY="$(<transport/udp-key)"
     RSS_SHADOW_USER=$(<transport/shadow-user)
 fi

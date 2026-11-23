@@ -35,9 +35,11 @@ printf '%s  %s\n' "$digest" "$stage/app.jar" | sha256sum --check --status
 run_private bash "$stage/rss-java21.sh"
 if [[ $role == server ]]; then
     run_private bash "$stage/rss-hops.sh" || { echo "UDP preflight failed. Inspect $log"; exit 1; }
-    openssl x509 -in "$stage/keys/cert.pem" -noout -checkend 86400 >/dev/null
-    cmp <(openssl x509 -in "$stage/keys/cert.pem" -pubkey -noout) <(openssl pkey -in "$stage/keys/key.pem" -pubout)
-else
+    if [[ -f "$stage/keys/cert.pem" ]]; then
+        openssl x509 -in "$stage/keys/cert.pem" -noout -checkend 86400 >/dev/null
+        cmp <(openssl x509 -in "$stage/keys/cert.pem" -pubkey -noout) <(openssl pkey -in "$stage/keys/key.pem" -pubout)
+    fi
+elif [[ -f "$stage/keys/ca.pem" ]]; then
     openssl x509 -in "$stage/keys/ca.pem" -checkend 86400 -noout >/dev/null
 fi
 for file in start.sh rollback.sh; do cp -p "$file" "$stage/previous-$file"; done
@@ -97,6 +99,7 @@ PY
 else
     export REUSEPORT_MIGRATION_FALLBACK=$fallback
     run_private bash start.sh publish "$mode"
+    run_private python3 -c 'import yaml; assert yaml.safe_load(open("conf.yml"))["shadowUsers"]'
 fi
 [[ $(stat -c '%d:%i' app.jar) == "$new_inode" ]]
 echo 'Published verified JAR.'

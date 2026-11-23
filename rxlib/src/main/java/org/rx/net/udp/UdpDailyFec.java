@@ -17,8 +17,9 @@ public final class UdpDailyFec implements AutoCloseable {
     public static final int MAX_OVERHEAD = 8; // parity: type, first sequence, count, XOR of lengths
     public static final int WIRE_HEADROOM = 20;
     public static final int MAX_PAYLOAD = 65507 - WIRE_HEADROOM - 5;
-    private static final int MAX_SHARDS = 16, MIN_SHARDS = 4, MAX_SHARD_BYTES = 1500;
+    private static final int MAX_SHARDS = 16, MIN_SHARDS = 2, MAX_SHARD_BYTES = 1500;
     private static final long FLUSH = TimeUnit.MILLISECONDS.toNanos(15);
+    private static final long MAX_FLUSH = TimeUnit.MILLISECONDS.toNanos(180);
     private static final long EXPIRE = TimeUnit.MILLISECONDS.toNanos(300);
     private static final long REPORT_TIMEOUT = TimeUnit.SECONDS.toNanos(5);
 
@@ -27,11 +28,11 @@ public final class UdpDailyFec implements AutoCloseable {
     private final UdpDedupWindow delivered = new UdpDedupWindow();
     // At most one accumulator per group. Only XOR bytes are retained, never whole datagrams.
     private final Group sending = new Group();
-    private final Group[] receiving = new Group[4];
-    private int nextSeq, target, cleanWindows, reportSeq;
+    private Group[] receiving = new Group[4];
+    private int nextSeq, target, cleanWindows, reportSeq, parityCredit;
     private int highestRaw, nextReport;
-    private long rawMask, lastReportTime;
-    long sampledData, missingData, recoveredData, paritySent;
+    private long rawMask, lastReportTime, lastWrite, packetInterval, flushAfter;
+    long sampledData, missingData, recoveredData, paritySent, skippedSmallGroups, evictedGroups;
     private boolean observing, hasReport, closed;
 
     public UdpDailyFec(ByteBufAllocator allocator) {
@@ -53,6 +54,11 @@ public final class UdpDailyFec implements AutoCloseable {
         }
         long now = clock.getAsLong();
         expireSender(now, wire);
+        if (nextSeq != 0) {
+            long interval = Math.min(MAX_FLUSH, Math.max(0L, now - lastWrite));
+            packetInterval += (interval - packetInterval) / 4;
+        }
+        lastWrite = now;
         int seq = nextSeq++;
         if (target == 0 || bytes > MAX_SHARD_BYTES) {
             flush(wire);
@@ -62,7 +68,10 @@ public final class UdpDailyFec implements AutoCloseable {
         }
         if (sending.xor == null) {
             sending.begin(seq, now, alloc, bytes);
+            // Data always leaves immediately. Give sparse flows time to collect a useful XOR group.
+            flushAfter = Math.min(MAX_FLUSH, Math.max(FLUSH, packetInterval * target + FLUSH));
         }
+        parityCredit = Math.min(target, parityCredit + 1);
         int index = Integer.bitCount(sending.mask);
         sending.add(payload, payload.readerIndex(), bytes);
         sending.mask |= 1 << index;
@@ -169,6 +178,7 @@ public final class UdpDailyFec implements AutoCloseable {
             cleanWindows = 0;
         } else if (target != 0 && ++cleanWindows >= 3) {
             target = 0;
+            parityCredit = 0;
             sending.clear();
         }
     }
@@ -186,6 +196,16 @@ public final class UdpDailyFec implements AutoCloseable {
             }
         }
         Group g = receiving[oldest];
+        if (g != null && g.xor != null && now - g.started < EXPIRE) {
+            // Late parity competes for slots only when several unfinished groups overlap.
+            if (receiving.length < 16) {
+                oldest = receiving.length;
+                receiving = java.util.Arrays.copyOf(receiving, oldest * 2);
+                g = null;
+            } else {
+                evictedGroups++;
+            }
+        }
         if (g == null) {
             receiving[oldest] = g = new Group();
         }
@@ -223,7 +243,7 @@ public final class UdpDailyFec implements AutoCloseable {
     /** Earliest parity flush or receive-buffer expiry. Idle sessions need no scheduled task. */
     public long nextDelayMillis() {
         long now = clock.getAsLong();
-        long delay = sending.xor == null ? Long.MAX_VALUE : FLUSH - (now - sending.started);
+        long delay = sending.xor == null ? Long.MAX_VALUE : flushAfter - (now - sending.started);
         for (Group g : receiving) {
             if (g != null && g.xor != null) {
                 delay = Math.min(delay, EXPIRE - (now - g.started));
@@ -248,22 +268,25 @@ public final class UdpDailyFec implements AutoCloseable {
     private void expireSender(long now, Consumer<ByteBuf> wire) {
         if (target != 0 && now - lastReportTime >= REPORT_TIMEOUT) {
             target = 0;
+            parityCredit = 0;
             sending.clear();
-        } else if (sending.xor != null && now - sending.started >= FLUSH) {
+        } else if (sending.xor != null && now - sending.started >= flushAfter) {
             flush(wire);
         }
     }
 
     private void flush(Consumer<ByteBuf> wire) {
         int count = Integer.bitCount(sending.mask);
-        if (count >= MIN_SHARDS) {
+        if (count >= MIN_SHARDS && parityCredit >= target) {
             paritySent++;
+            parityCredit = 0;
             int len = sending.xor.readableBytes();
             ByteBuf frame = newFrame(MAX_OVERHEAD + len).writeByte(PARITY).writeInt(sending.base)
                     .writeByte(count).writeShort(sending.lengthXor).writeBytes(sending.xor, 0, len);
             sending.clear();
             wire.accept(frame);
         } else {
+            if (count > 0 && count < MIN_SHARDS) skippedSmallGroups++;
             sending.clear();
         }
     }

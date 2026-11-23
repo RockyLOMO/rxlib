@@ -64,7 +64,12 @@ class UdpDailyFecTest {
         }
 
         void introduceLoss() {
+            introduceLoss(0);
+        }
+
+        void introduceLoss(long packetInterval) {
             for (int i = 0; i < 40; i++) {
+                time.addAndGet(packetInterval);
                 send(i);
                 ByteBuf wire = packets.remove();
                 assertEquals(UdpDailyFec.DATA, wire.getByte(wire.readerIndex()));
@@ -85,6 +90,87 @@ class UdpDailyFecTest {
             }
             assertEquals(-1, sender.nextDelayMillis());
             assertEquals(-1, receiver.nextDelayMillis());
+        }
+    }
+
+    @Test
+    void sparseAndFastLossyFlowsRecoverWithoutExceedingParityBudget() {
+        for (int pps : new int[]{20, 50, 100, 200, 300, 1000}) {
+            try (Link link = new Link()) {
+                long interval = TimeUnit.SECONDS.toNanos(1) / pps;
+                link.introduceLoss(interval);
+                // Exercise actual timer wakes between sends, including partial groups.
+                for (int seq = 40; seq < 72; seq++) {
+                    long due = link.sender.nextDelayMillis();
+                    if (due >= 0 && TimeUnit.MILLISECONDS.toNanos(due) < interval) {
+                        link.time.addAndGet(TimeUnit.MILLISECONDS.toNanos(due));
+                        link.sender.tick(link::queue);
+                        link.drain();
+                        link.time.addAndGet(interval - TimeUnit.MILLISECONDS.toNanos(due));
+                    } else {
+                        link.time.addAndGet(interval);
+                    }
+                    link.send(seq);
+                    if (seq == 41) link.packets.remove().release();
+                    link.drain();
+                }
+                assertTrue(link.delivered.contains(41), "pps=" + pps);
+                assertEquals(32, link.delivered.size());
+                assertTrue(link.sender.paritySent <= 8);
+            }
+        }
+    }
+
+    @Test
+    void sparsePartialPairRecoversWithinLossTierBudget() {
+        try (Link link = new Link()) {
+            long interval = TimeUnit.MILLISECONDS.toNanos(100);
+            link.introduceLoss(interval);
+            for (int seq = 40; seq < 45; seq++) {
+                link.time.addAndGet(interval);
+                link.send(seq);
+                if (seq == 43) link.packets.removeLast().release();
+                link.drain();
+            }
+            assertEquals(1, link.receiver.recoveredData);
+            assertEquals(1, link.sender.paritySent);
+            assertEquals(5, link.delivered.size());
+        }
+    }
+
+    @Test
+    void cachePressureEvictsWithinFixedBudget() {
+        try (Link link = new Link()) {
+            for (int i = 0; i < 20; i++) {
+                ByteBuf shard = Unpooled.buffer().writeByte(UdpDailyFec.SHARD).writeInt(i * 2)
+                        .writeByte(0).writeInt(i).writeZero(i % 11);
+                link.receive(shard);
+                link.time.incrementAndGet();
+            }
+            assertEquals(20, link.delivered.size());
+            assertEquals(4, link.receiver.evictedGroups);
+        }
+    }
+
+    @Test
+    void delayedParityRecoversBeyondFourInterleavedGroups() {
+        try (Link link = new Link()) {
+            link.introduceLoss();
+            ArrayDeque<ByteBuf> delayed = new ArrayDeque<>();
+            try {
+                for (int seq = 40; seq < 64; seq++) {
+                    link.send(seq);
+                    if (seq % 4 == 3) delayed.add(link.packets.removeLast());
+                    if (seq % 4 == 1) link.packets.removeFirst().release();
+                    link.drain();
+                }
+                while (!delayed.isEmpty()) link.receive(delayed.removeLast());
+                assertEquals(6, link.receiver.recoveredData);
+                assertEquals(24, link.delivered.size());
+                assertEquals(0, link.receiver.evictedGroups);
+            } finally {
+                while (!delayed.isEmpty()) delayed.remove().release();
+            }
         }
     }
 

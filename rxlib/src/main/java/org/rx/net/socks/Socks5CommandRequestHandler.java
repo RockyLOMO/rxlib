@@ -1,6 +1,7 @@
 package org.rx.net.socks;
 
 import io.netty.handler.ssl.SslHandler;
+import org.rx.net.RssHopAes;
 import io.netty.channel.*;
 import io.netty.channel.local.LocalAddress;
 import io.netty.channel.local.LocalChannel;
@@ -49,8 +50,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         Socks5AddressType dstAddrType = msg.dstAddrType();
         InetSocketAddress dstEp = org.rx.net.Sockets.newUnresolvedEndpoint(msg.dstAddr(), msg.dstPort());
         String dstEpHost = dstEp.getHostString();
-        if (dstEpHost.endsWith(SocksRpcContract.FAKE_HOST_SUFFIX)
-                && !(config.getRssTlsContext() != null && pipeline.get(SslHandler.class) != null)) {
+        if (dstEpHost.endsWith(SocksRpcContract.FAKE_HOST_SUFFIX) && !protectedHop(config, pipeline)) {
             boolean validFakeHost = SocksRpcContract.isFakeHost(dstEpHost);
             InetSocketAddress realEp = validFakeHost ? SocksRpcContract.fakeDict().get(dstEpHost) : null;
             if (realEp == null) {
@@ -77,6 +77,10 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         handleCommand(inbound, server, config, commandType, dstAddrType, dstEp);
     }
 
+    private static boolean protectedHop(SocksConfig config, ChannelPipeline pipeline) {
+        return RssHopAes.authenticated(pipeline) || config.getRssTlsContext() != null && pipeline.get(SslHandler.class) != null;
+    }
+
     private void handleCommand(ChannelHandlerContext inbound, SocksProxyServer server, SocksConfig config,
                                Socks5CommandType commandType, Socks5AddressType dstAddrType, InetSocketAddress dstEp) {
         ChannelPipeline pipeline = inbound.pipeline();
@@ -94,7 +98,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         TrafficUser user = manageHandler != null ? manageHandler.getTrafficUser() : TrafficUser.ANONYMOUS;
         TrafficLoginInfo loginInfo = manageHandler != null ? manageHandler.getInfo() : null;
         if (commandType == Socks5CommandType.CONNECT) {
-            if (config.requiresTls(dstEp.getPort()) && pipeline.get(SslHandler.class) == null) {
+            if (config.requiresTcpCipher(dstEp.getPort()) && !protectedHop(config, pipeline)) {
                 inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FORBIDDEN, dstAddrType))
                         .addListener(ChannelFutureListener.CLOSE);
                 return;

@@ -4128,3 +4128,7 @@ Java 8 本地单线程编码对比取仓库 README 的 256 个 1200 B 片段，�
 ### 2026-11-22 RSS 用户传输策略和跨平台跳跃
 
 当前双端按 `shadowUsers[].transport` 编译并复用配置。普通 UDP 扩展与 TCP/FEC 分别处理各自的载荷。Windows 服务端物理双绑定，Linux 在专用 nft NAT 表中成对转发，按组单绑定。共享内部账号的用户在本地控制通道池中按 SS 用户名隔离。此前章节中的默认参数和应用内双端口做法记录的是历史版本。配置、端口预算、证书与密钥要求以 [RSS 传输配置](../docs/rss-transport.md) 为准。
+
+## 2026-11-23 RSS 内部传输
+
+按实际目的端口和协议选择策略，TCP/UDP 各有强制保护与已加密端口表。TCP 位 2 使用独立部署 PSK 派生的方向密钥做 AES-128-GCM，位 4 单独选择证书 TLS。UDP 按 wire features 隔离协商、租约和同一关联上的多目标处理；Server 对实际目标端口校验保护下限。日常 TCP/FEC 重用已编码的数据流。用户配置、Actions 发布与回退见 [传输配置](../docs/rss-transport.md)，弱网范围见 [FEC review](../docs/rxlib_fec_review.md)。

@@ -321,6 +321,10 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             relay.attr(ATTR_LAST_ROUTE).set(null);
         }
         final InetSocketAddress dstEp = UdpManager.socks5Decode(inBuf);
+        if (config.requiresUdpCipher(dstEp.getPort()) && !UdpRelayGroupManager.encrypted(relay)) {
+            recordDrop("cipher-required", sender, dstEp, config, inBuf.readableBytes());
+            return;
+        }
 
         SocksContext e = routeMap.get(dstEp);
         if (e != null && isRouteReady(relay, e)) {
