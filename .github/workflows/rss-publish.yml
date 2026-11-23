@@ -1,0 +1,46 @@
+name: Publish RSS release
+on:
+  workflow_call:
+    inputs:
+      role:
+        required: true
+        type: string
+      mode:
+        default: replace
+        type: string
+      fallback:
+        default: false
+        type: boolean
+    secrets:
+      deploy:
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: rss-publish-${{ inputs.role }}
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref == 'refs/heads/rss-21' && github.sha || 'rss-21' }}
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Build deployment JAR
+        run: mvn -B -ntp -pl rxlib -am -Dmaven.test.skip=true -Dmaven.javadoc.skip=true clean package
+      - name: Prepare SFTP client
+        run: /usr/bin/python3 -c 'import paramiko' || (sudo apt-get -qq update && sudo apt-get -qq install -y python3-paramiko)
+      - name: Publish and verify
+        env:
+          RSS_DEPLOY: ${{ secrets.deploy }}
+          ROLE: ${{ inputs.role }}
+          MODE: ${{ inputs.mode }}
+          FALLBACK: ${{ inputs.fallback && '1' || '0' }}
+        run: /usr/bin/python3 deploy/rss-publish.py

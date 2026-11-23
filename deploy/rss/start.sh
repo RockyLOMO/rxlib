@@ -15,6 +15,11 @@ fi
 LOCAL_TIME=$(date +"%Y-%m-%d %H:%M:%S")
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 cd "${SCRIPT_DIR}" || exit 1
+if [[ -d transport ]]; then
+    export RSS_TCP_TLS_CA="$PWD/transport/ca.pem"
+    export RSS_UDP_AES_KEY="$(<transport/udp-key)"
+fi
+
 
 PORT=${PORT:-6885}
 HTTP_SERVER_PORT=${HTTP_SERVER_PORT:-8082}
