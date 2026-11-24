@@ -129,6 +129,10 @@ class AdaptiveStreamTest {
                         assertTrue(a.stream.usingUdp());
                         assertTrue(a.tcp.isEmpty());
                         ordered(b, 1);
+                        assertEquals(udp ? 1 : 0, a.stream.udpTailProbes);
+                        assertEquals(udp ? 1 : 0, a.stream.probesAckedBeforeTcp);
+                        assertEquals(0, a.stream.probesHandedToTcp);
+                        assertTrue(b.stream.filteredDuplicates >= 1);
                     } finally { original.release(); }
                 }
             }
@@ -152,6 +156,8 @@ class AdaptiveStreamTest {
             a.stream.tick();
             a.stream.drainToTcp();
             assertEquals(1, a.tcp.size());
+            assertEquals(1, a.stream.probesHandedToTcp);
+            assertEquals(0, a.stream.probesAckedBeforeTcp);
             a.passTcp(b);
             ordered(b, 1);
         }

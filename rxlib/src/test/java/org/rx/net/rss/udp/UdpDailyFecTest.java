@@ -122,12 +122,14 @@ class UdpDailyFecTest {
                 }
                 long afterWarmup = wireBytes[0];
                 for (int i = 0; i < 320; i++) {
-                    fec.write(i % 4 == 0 ? large : small, count);
+                    if (i % 8 == 0) fec.writeTailProbe(large, count);
+                    else fec.write(i % 4 == 0 ? large : small, count);
                     assertTrue(wireBytes[1] * 4 <= wireBytes[0] - afterWarmup);
                 }
                 assertEquals(wireBytes[1], fec.parityBytes);
                 assertEquals(wireBytes[0], fec.dataBytes);
-                assertTrue(fec.parityBytes > 0);
+                assertTrue(fec.probeGroupParityBytes() > 0);
+                assertTrue(fec.probeGroupParityBytes() <= fec.parityBytes);
                 fec.write(small, count);
                 assertTrue(fec.nextDelayMillis() >= 0);
                 fec.cancelPendingParity();
