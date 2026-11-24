@@ -23,7 +23,7 @@ public final class UdpSequenceWindow {
     }
 
     // Extend uint32 FEC serials relative to the newest observed serial, including rollover.
-    boolean acceptSerial(int seq) {
+    public boolean acceptSerial(int seq) {
         long extended = highest < 0 ? Integer.toUnsignedLong(seq) : highest + (seq - (int) highest);
         if (isDuplicate(extended)) return false;
         mark(extended);

@@ -1,9 +1,9 @@
-package org.rx.net.transport;
+package org.rx.net.rss.tcp;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import org.rx.diagnostic.DiagnosticMetrics;
-import org.rx.net.udp.UdpDailyFec;
+import org.rx.net.rss.udp.UdpDailyFec;
 
 import java.util.ArrayDeque;
 import java.util.concurrent.TimeUnit;

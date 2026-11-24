@@ -49,7 +49,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     final ConcurrentMap<Integer, Channel> udpRelayRegistry = new ConcurrentHashMap<>();
     private final UdpRelayGroupManager udpRelayGroupManager;
     private final Udp2rawServerEntryManager udp2rawEntryManager;
-    volatile org.rx.net.transport.AdaptiveUdpPort adaptivePort;
+    volatile org.rx.net.rss.tcp.AdaptiveUdpPort adaptivePort;
     final AtomicInteger activeChannels = new AtomicInteger();
     // 只有压缩时一定要用
     @Setter
@@ -159,8 +159,8 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             try {
                 InetSocketAddress listen = (InetSocketAddress) tcpChannels.get(0).localAddress();
                 int first = config.getDailyPortFirst();
-                adaptivePort = first == 0 ? org.rx.net.transport.AdaptiveUdpPort.listen(listen)
-                        : org.rx.net.transport.AdaptiveUdpPort.listen(new InetSocketAddress(listen.getAddress(), first),
+                adaptivePort = first == 0 ? org.rx.net.rss.tcp.AdaptiveUdpPort.listen(listen)
+                        : org.rx.net.rss.tcp.AdaptiveUdpPort.listen(new InetSocketAddress(listen.getAddress(), first),
                         first + 1, config.isRedirectUdpHops());
             } catch (Exception e) {
                 log.warn("Adaptive UDP listener unavailable, continuing over TCP", e);

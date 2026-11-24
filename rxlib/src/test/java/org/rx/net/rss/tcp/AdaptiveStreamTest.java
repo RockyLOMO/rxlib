@@ -1,4 +1,4 @@
-package org.rx.net.transport;
+package org.rx.net.rss.tcp;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;

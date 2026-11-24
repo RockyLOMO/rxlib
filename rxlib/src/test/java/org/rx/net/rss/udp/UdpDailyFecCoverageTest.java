@@ -1,4 +1,4 @@
-package org.rx.net.udp;
+package org.rx.net.rss.udp;
 
 import io.netty.buffer.ByteBuf;
 import org.junit.jupiter.api.Test;

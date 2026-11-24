@@ -1,5 +1,7 @@
 package org.rx.net.socks;
 
+import org.rx.net.rss.tcp.AdaptiveTcpHandler;
+
 import org.junit.jupiter.api.io.TempDir;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslHandler;
@@ -1411,7 +1413,7 @@ class SocksProxyServerIntegrationTest {
                         "proxyB should allocate RPC managed UDP relay group");
                 if (daily) {
                     assertTrue(proxyB.udpRelayRegistry.values().stream()
-                            .anyMatch(ch -> ch.pipeline().get(org.rx.net.udp.DailyUdpWire.class) != null));
+                            .anyMatch(ch -> ch.pipeline().get(org.rx.net.rss.udp.DailyUdpWire.class) != null));
                 }
                 assertEquals(0, proxyB.activeChannelCount(), "RPC relay group must not create standard SOCKS5 TCP control channels on proxyB");
                 assertShadowsocksUdpEcho(clientSock, ssPort, crypto, "ss-rpc-port-hop-2");
@@ -1965,7 +1967,7 @@ class SocksProxyServerIntegrationTest {
                 if (i == 1) {
                     waitForCondition(() -> hop.get() != null && hop.get().pipeline().get(AdaptiveTcpHandler.class) != null
                             && hop.get().pipeline().get(AdaptiveTcpHandler.class).usingUdp(), 5000, "bidirectional UDP probe");
-                    assertEquals(uplink.getAdaptiveProfile(), hop.get().pipeline().get(AdaptiveTcpHandler.class).profile);
+                    assertEquals(uplink.getAdaptiveProfile(), hop.get().pipeline().get(AdaptiveTcpHandler.class).profile());
                 }
                 if (i == 2) remote.adaptivePort.close();
                 ByteBuf plain = Unpooled.buffer();
@@ -2047,7 +2049,7 @@ class SocksProxyServerIntegrationTest {
                         AdaptiveTcpHandler handler = ch.pipeline().get(AdaptiveTcpHandler.class);
                         if (modern) {
                             assertNotNull(handler);
-                            assertEquals(profile, handler.profile);
+                            assertEquals(profile, handler.profile());
                         } else {
                             assertNull(handler);
                         }

@@ -1,7 +1,7 @@
 package org.rx.util.rss;
 
 import org.rx.net.socks.SocksConfig;
-import org.rx.net.udp.DailyUdpWire;
+import org.rx.net.rss.udp.DailyUdpWire;
 
 import java.io.Serializable;
 

@@ -13,7 +13,7 @@ import org.rx.core.Tasks;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
-import org.rx.net.udp.DailyUdpWire;
+import org.rx.net.rss.udp.DailyUdpWire;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;

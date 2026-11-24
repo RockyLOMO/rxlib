@@ -5,7 +5,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.local.LocalAddress;
 import org.junit.jupiter.api.Test;
-import org.rx.net.udp.DailyUdpWire;
+import org.rx.net.rss.udp.DailyUdpWire;
 import org.rx.net.udp.UdpRedundantEncoder;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
