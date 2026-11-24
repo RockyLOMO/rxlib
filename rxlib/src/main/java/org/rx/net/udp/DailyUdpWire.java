@@ -84,15 +84,15 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
     DailyUdpWire(String token, InetSocketAddress primary, InetSocketAddress alias, Predicate<InetSocketAddress> knownTarget,
                  LongSupplier clock, int features, UUID salt, byte[] key) {
         if (features <= 0 || (features & ~(LZ4 | AES | FEC | GAME | WEAK)) != 0
-                || (features & GAME) != 0 && (features & FEC) != 0
+                || (features & GAME) != 0 && (features & WEAK) != 0
                 || (features & WEAK) != 0 && (features & FEC) == 0) {
             throw new IllegalArgumentException("invalid UDP extension mask");
         }
         UUID id = UUID.fromString(token);
         useFec = (features & FEC) != 0;
         weak = (features & WEAK) != 0;
-        game = (features & GAME) != 0 ? new UdpGameRedundancy() : null;
-        mac = (game != null || weak) && (features & AES) == 0 ? new DailyUdpMac(key, id, features, primary == null) : null;
+        game = !useFec && (features & GAME) != 0 ? new UdpGameRedundancy() : null;
+        mac = (features & (GAME | WEAK)) != 0 && (features & AES) == 0 ? new DailyUdpMac(key, id, features, primary == null) : null;
         cipher = (features & AES) != 0 ? new DailyUdpCipher(key, id, salt, primary == null, features) : null;
         tokenHigh = id.getMostSignificantBits();
         tokenLow = id.getLeastSignificantBits();

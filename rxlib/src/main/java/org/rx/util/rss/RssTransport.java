@@ -46,7 +46,7 @@ public final class RssTransport implements Serializable {
     int udpFeatures() {
         int features = udp != null ? udp : 0;
         if ((fec() & 1) != 0) {
-            return features | DailyUdpWire.FEC | ("weak".equals(profile) ? DailyUdpWire.WEAK : 0);
+            return features | DailyUdpWire.FEC | ("weak".equals(profile) ? DailyUdpWire.WEAK : "game".equals(profile) ? DailyUdpWire.GAME : 0);
         }
         return features | ("game".equals(profile) ? DailyUdpWire.GAME : 0);
     }

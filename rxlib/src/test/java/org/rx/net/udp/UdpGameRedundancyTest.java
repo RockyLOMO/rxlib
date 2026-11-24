@@ -90,6 +90,27 @@ class UdpGameRedundancyTest {
     }
 
     @Test
+    void sustainedFeedbackDelayDisablesExtraCopiesBeforeCongestionCanPromoteThem() {
+        UdpGameRedundancy state = new UdpGameRedundancy();
+        for (int i = 0; i < 104; i++) {
+            long sendTime = i * 10_000_000L;
+            state.begin(sendTime);
+            state.extra(i, 100, true, sendTime);
+            if (i == 39 || i == 71 || i == 103) {
+                ByteBuf report = Unpooled.buffer(8).writeByte(UdpGameRedundancy.REPORT).writeInt(i - 8)
+                        .writeByte(31).writeByte(60).writeByte(30);
+                try {
+                    long delay = i == 39 ? 30_000_000L : 100_000_000L;
+                    state.read(report, report.alloc(), sendTime + delay, true, b -> b.release(), b -> b.release());
+                } finally {
+                    report.release();
+                }
+            }
+        }
+        assertEquals(1, state.copies);
+    }
+
+    @Test
     void missingFeedbackAndLocalPressureBoundExtraTraffic() {
         UdpGameRedundancy game = new UdpGameRedundancy();
         for (int i = 0; i < 64; i++) {
@@ -112,6 +133,6 @@ class UdpGameRedundancyTest {
         assertThrows(IllegalArgumentException.class, () -> DailyUdpWire.server(id, a -> false, DailyUdpWire.GAME, null));
         assertThrows(IllegalArgumentException.class, () -> DailyUdpWire.server(id, a -> false, DailyUdpWire.FEC | DailyUdpWire.WEAK, null));
         assertThrows(IllegalArgumentException.class, () -> DailyUdpWire.server(id, a -> false, DailyUdpWire.WEAK, null, new byte[32]));
-        assertThrows(IllegalArgumentException.class, () -> DailyUdpWire.server(id, a -> false, DailyUdpWire.GAME | DailyUdpWire.FEC, null, new byte[32]));
+        assertThrows(IllegalArgumentException.class, () -> DailyUdpWire.server(id, a -> false, DailyUdpWire.GAME | DailyUdpWire.WEAK | DailyUdpWire.FEC, null, new byte[32]));
     }
 }

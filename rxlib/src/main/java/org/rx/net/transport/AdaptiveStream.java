@@ -116,6 +116,9 @@ public final class AdaptiveStream implements AutoCloseable {
             if (pending.isEmpty()) return;
             int count = ack - pending.peek().getInt(1);
             if (count < 0 || count > pending.size()) return;
+            long received = selective ? frame.getLong(i + HEADER) : 0;
+            if (selective && (received == 0 || (received & 1L) != 0
+                    || Long.SIZE - Long.numberOfLeadingZeros(received) > pending.size() - count)) return;
             if (count > 0) {
                 if (sampling && ack - sampleSeq > 0) {
                     if (type == ACK) updateRtt(clock.getAsLong() - sampleTime);
@@ -132,7 +135,7 @@ public final class AdaptiveStream implements AutoCloseable {
                 }
             }
             if (selective) {
-                repairHoles(ack, frame.getLong(i + HEADER));
+                repairHoles(ack, received);
             } else if (type == GAP) {
                 if (hasReliablePrefix && ack - reliableUntil < 0) return;
                 sampling = false;
@@ -152,8 +155,7 @@ public final class AdaptiveStream implements AutoCloseable {
 
     private void repairHoles(int base, long received) {
         int width = Long.SIZE - Long.numberOfLeadingZeros(received);
-        if (width == 0 || (received & 1) != 0 || width > pending.size()
-                || sackReceived == received && sackBase == base) return;
+        if (sackReceived == received && sackBase == base) return;
         sackBase = base;
         sackReceived = received;
         sampling = false;
@@ -417,7 +419,13 @@ public final class AdaptiveStream implements AutoCloseable {
     }
 
     @Override public void close() {
+        if (closed) return;
         closed = true;
+        if (DiagnosticMetrics.isEnabled()) {
+            DiagnosticMetrics.record("rss.tcp.adaptive.fecDataBytes", fec.dataBytes);
+            DiagnosticMetrics.record("rss.tcp.adaptive.fecParityBytes", fec.parityBytes);
+            DiagnosticMetrics.record("rss.tcp.adaptive.fecRecovered", fec.recoveredPackets());
+        }
         ready = probing = false;
         fec.close();
         while (!pending.isEmpty()) {

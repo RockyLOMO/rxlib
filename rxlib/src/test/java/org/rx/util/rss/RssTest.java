@@ -2091,7 +2091,7 @@ public class RssTest extends AbstractTester {
         policy.tcpCompressionLevel = null;
         policy.profile = "game";
         policy.fec = 1;
-        assertEquals(4, policy.udpFeatures()); // Explicit UDP FEC replaces replication.
+        assertEquals(12, policy.udpFeatures()); // Game authentication stays active when XOR replaces replication.
         policy.profile = "unknown";
         assertThrows(IllegalArgumentException.class, () -> new RssClient.OutboundProfiles(reload, inbound));
         reload.tcpCipherPorts = new int[]{443};

@@ -327,6 +327,10 @@ public final class UdpDailyFec implements AutoCloseable {
         }
     }
 
+    public long recoveredPackets() {
+        return recoveredData;
+    }
+
     /** Drop outstanding send-side parity on path fallback or local backpressure. */
     public void cancelPendingParity() {
         sending.clear();
