@@ -3,6 +3,7 @@ package org.rx.net.rss.udp;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandler;
+import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.ChannelPipeline;
@@ -15,6 +16,8 @@ import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
 
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadMXBean;
 import java.net.InetSocketAddress;
 import java.util.UUID;
 import java.util.concurrent.ScheduledFuture;
@@ -49,7 +52,27 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
     private ScheduledFuture<?> timer;
     private ChannelPromise dataPromise;
     private long started, lastMetrics, lastProbe, payloadBytes, encodedBytes, compressionSavedBytes;
-    private int epoch, wireMtu;
+    private int epoch, wireMtu, authOperations;
+    private final ChannelFutureListener originalWrite = f -> {
+        if (!f.isSuccess()) DiagnosticMetrics.record("rss.udp.game.tx.originalWriteFailure", 1);
+    };
+
+    private static final class AuthCpu {
+        static final ThreadMXBean THREADS = ManagementFactory.getThreadMXBean();
+
+        static long now() {
+            return THREADS.isCurrentThreadCpuTimeSupported() && THREADS.isThreadCpuTimeEnabled()
+                    ? THREADS.getCurrentThreadCpuTime() : -1;
+        }
+    }
+
+    private long sampleAuth() {
+        return game != null && (++authOperations & 255) == 0 && DiagnosticMetrics.isEnabled() ? AuthCpu.now() : -1;
+    }
+
+    private static void recordAuth(long start) {
+        if (start >= 0) DiagnosticMetrics.record("rss.udp.game.authSampleCpuNanos", AuthCpu.now() - start);
+    }
 
     private static final class Key {
         static final byte[] PSK = DailyUdpCipher.configuredKey();
@@ -195,7 +218,9 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
             int generation = b.getInt(pos + 16);
             long authSeq = 0;
             if (cipher != null || mac != null) {
+                long sample = sampleAuth();
                 decoded = cipher != null ? cipher.open(b) : mac.open(b);
+                recordAuth(sample);
                 if (decoded == null) return;
                 authSeq = b.getLong(pos + HEADER_BYTES);
                 b = decoded;
@@ -253,6 +278,7 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
         try {
             if (packet.content().readableBytes() > maxPayload()) {
                 DiagnosticMetrics.record("rss.udp.daily.mtuDrop", 1);
+                if (game != null) DiagnosticMetrics.record("rss.udp.game.tx.originalMtuDrop", 1);
                 promise.trySuccess();
                 return;
             }
@@ -291,21 +317,39 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
 
     private void sendGame(ByteBuf data) {
         long now = clock.getAsLong();
-        int seq = game.begin(now), len = data.readableBytes();
-        int body = UdpGameRedundancy.DATA_HEADER + len;
-        ByteBuf frame = main.alloc().ioBuffer(HEADER_BYTES + body, HEADER_BYTES + body).setIndex(HEADER_BYTES, HEADER_BYTES);
+        int seq = game.begin(now);
+        int body = UdpGameRedundancy.DATA_HEADER + data.readableBytes();
+        ChannelHandlerContext path = returnPath;
+        ByteBuf plain = null;
         try {
-            frame.writeByte(0).writeInt(seq).writeBytes(data, data.readerIndex(), len);
-            // seal() consumes the borrowed bytes synchronously and creates an independent authenticated datagram.
-            sendFrame(frame.retainedDuplicate(), false);
-            for (int copy = 1; copy < game.copies; copy++) {
-                if (!game.extra(seq, wireOverhead() + body, returnPath.channel().isWritable(), now)) break;
-                frame.setByte(HEADER_BYTES, copy);
-                sendFrame(frame.retainedDuplicate(), false);
+            if (mac == null) {
+                plain = main.alloc().ioBuffer(HEADER_BYTES + body, HEADER_BYTES + body);
+                plain.setIndex(HEADER_BYTES, HEADER_BYTES).writeByte(0).writeInt(seq)
+                        .writeBytes(data, data.readerIndex(), data.readableBytes());
+            }
+            for (int copy = 0; copy < game.copies; copy++) {
+                if (copy != 0 && !game.extra(seq, wireOverhead() + body, path.channel().isWritable(), now)) break;
+                if (mac != null) {
+                    ByteBuf wire;
+                    try {
+                        long sample = sampleAuth();
+                        wire = mac.sealGame(data, tokenHigh, tokenLow, epoch, copy, seq);
+                        recordAuth(sample);
+                    } catch (RuntimeException failure) {
+                        main.close();
+                        throw failure;
+                    }
+                    ChannelPromise pending = dataPromise;
+                    dataPromise = null;
+                    writePacket(wire, pending);
+                } else {
+                    plain.setByte(HEADER_BYTES, copy);
+                    sendFrame(plain.retainedDuplicate(), false);
+                }
             }
         } finally {
-            frame.release();
-            returnPath.flush();
+            if (plain != null) plain.release();
+            path.flush();
         }
     }
 
@@ -333,7 +377,9 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
         if (cipher != null || mac != null) {
             ByteBuf plain = frame;
             try {
+                long sample = sampleAuth();
                 frame = cipher != null ? cipher.seal(plain) : mac.seal(plain);
+                recordAuth(sample);
             } catch (RuntimeException failure) {
                 // A fresh association will negotiate new salts / directional keys.
                 main.close();
@@ -342,8 +388,17 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
                 plain.release();
             }
         }
+        writePacket(frame, pending);
+        if (flush) returnPath.flush();
+    }
+
+    private void writePacket(ByteBuf frame, ChannelPromise pending) {
         encodedBytes += frame.readableBytes();
         DatagramPacket packet = new DatagramPacket(frame, physicalPeer);
+        // Caller-observed original writes only. Kernel drops are measured separately at the socket.
+        if (game != null && pending != null && !pending.isVoid() && DiagnosticMetrics.isEnabled()) {
+            pending.addListener(originalWrite);
+        }
         if (pending == null || pending.isVoid()) {
             returnPath.write(packet, returnPath.voidPromise());
         } else if (pending.channel() == returnPath.channel()) {
@@ -358,7 +413,6 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
                 }
             });
         }
-        if (flush) returnPath.flush();
     }
 
     private void deliver(ByteBuf payload) {

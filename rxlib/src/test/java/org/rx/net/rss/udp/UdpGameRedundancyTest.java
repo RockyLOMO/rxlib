@@ -147,6 +147,28 @@ class UdpGameRedundancyTest {
     }
 
     @Test
+    void directGameMacMatchesExistingFrameFormat() {
+        UUID id = UUID.randomUUID();
+        byte[] key = new byte[32];
+        DailyUdpMac original = new DailyUdpMac(key, id, DailyUdpWire.GAME, false);
+        DailyUdpMac direct = new DailyUdpMac(key, id, DailyUdpWire.GAME, false);
+        ByteBuf data = Unpooled.buffer().writeByte(11).writeLong(100);
+        data.readByte();
+        try {
+            for (int copy = 0; copy < 3; copy++) {
+                ByteBuf frame = Unpooled.buffer().writeLong(id.getMostSignificantBits()).writeLong(id.getLeastSignificantBits())
+                        .writeInt(4).writeByte(copy).writeInt(-1).writeLong(100);
+                ByteBuf expected = original.seal(frame);
+                frame.release();
+                ByteBuf actual = direct.sealGame(data, id.getMostSignificantBits(), id.getLeastSignificantBits(), 4, copy, -1);
+                try { assertEquals(expected, actual); }
+                finally { expected.release(); actual.release(); }
+            }
+            assertEquals(1, data.readerIndex());
+        } finally { data.release(); }
+    }
+
+    @Test
     void negotiatedProtectionRequiresIndependentSessionMaterial() {
         String id = UUID.randomUUID().toString();
         assertThrows(IllegalArgumentException.class, () -> DailyUdpWire.server(id, a -> false, DailyUdpWire.GAME, null));

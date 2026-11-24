@@ -56,6 +56,22 @@ final class DailyUdpMac {
         }
     }
 
+    // Encode cleartext game data directly into its final authenticated datagram.
+    ByteBuf sealGame(ByteBuf data, long tokenHigh, long tokenLow, int epoch, int copy, int seq) {
+        if (sent == Long.MAX_VALUE) throw new IllegalStateException("UDP authentication sequence exhausted");
+        int size = HEADER + OVERHEAD + UdpGameRedundancy.DATA_HEADER + data.readableBytes();
+        ByteBuf wire = data.alloc().ioBuffer(size, size);
+        try {
+            wire.writeLong(tokenHigh).writeLong(tokenLow).writeInt(epoch).writeLong(++sent)
+                    .writeByte(copy).writeInt(seq).writeBytes(data, data.readerIndex(), data.readableBytes());
+            sign(tx, wire, 0, wire.readableBytes());
+            return wire.writeBytes(digest, 0, TAG);
+        } catch (RuntimeException failure) {
+            wire.release();
+            throw failure;
+        }
+    }
+
     ByteBuf open(ByteBuf wire) {
         int pos = wire.readerIndex(), len = wire.readableBytes();
         if (len < HEADER + OVERHEAD) return null;
