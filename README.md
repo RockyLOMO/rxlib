@@ -44,6 +44,7 @@ A zero-allocation, low-latency, high-performance protocol stack based on Netty:
 * **[Distributed ID](docs/reference/DistributedId.md)**: A high-performance global unique identifier generator.
 * **[Syntactic Sugar & Extension Methods (Nx / Extends)](docs/reference/Nx.md)**: Provides C# LINQ-like fluent collection processing extensions.
 * **[Common Utilities (Util)](docs/reference/Util.md)**: A suite of infrastructure components including encryption, string processing, reflection caching, etc.
+* **[Config hot reload](docs/reference/Config.md)**: Local YAML sources and RSS `conf.yml` reload.
 
 ---
 
@@ -89,3 +90,4 @@ A zero-allocation, low-latency, high-performance protocol stack based on Netty:
 * **[分布式 ID](docs/reference/DistributedId.md)**：高性能全局唯一标识生成器。
 * **[语法糖与扩展方法 (Nx / Extends)](docs/reference/Nx.md)**：提供近似 C# LINQ 的流式处理集合扩展。
 * **[通用工具类](docs/reference/Util.md)**：加密、字符处理、反射缓存等一系列基建组件。
+* **[配置热加载](docs/reference/Config.md)**：本地 YAML 源，以及 RSS `conf.yml` 的重载。

@@ -29,7 +29,8 @@ public class Socks5PasswordAuthRequestHandler extends SimpleChannelInboundHandle
             return;
         }
         AuthResult result = server.getAuthenticator().loginResult(msg.username(), msg.password());
-        byte[] nonce = Boolean.TRUE.equals(ctx.channel().attr(SocksAdaptiveHandshake.NEGOTIATED).getAndSet(null))
+        Integer profile = ctx.channel().attr(SocksAdaptiveHandshake.NEGOTIATED).getAndSet(null);
+        byte[] nonce = profile != null
                 ? SocksAdaptiveHandshake.sendNonce(ctx, server.adaptivePort) : null;
         if (result == null || nonce != null && (result.getUser() == null || result.getUser().isAnonymous()
                 || msg.password().isEmpty())) {
@@ -42,7 +43,7 @@ public class Socks5PasswordAuthRequestHandler extends SimpleChannelInboundHandle
         if (nonce != null) {
             success.addListener(f -> {
                 if (f.isSuccess()) {
-                    SocksAdaptiveHandshake.install(ctx.channel(), nonce, msg.password(), server.adaptivePort);
+                    SocksAdaptiveHandshake.install(ctx.channel(), nonce, msg.password(), server.adaptivePort, profile);
                 } else {
                     ctx.close();
                 }

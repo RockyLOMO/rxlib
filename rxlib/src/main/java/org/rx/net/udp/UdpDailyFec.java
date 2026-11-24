@@ -25,14 +25,22 @@ public final class UdpDailyFec implements AutoCloseable {
 
     private final ByteBufAllocator alloc;
     private final LongSupplier clock;
-    private final UdpDedupWindow delivered = new UdpDedupWindow();
-    // At most one accumulator per group. Only XOR bytes are retained, never whole datagrams.
+    private final UdpSequenceWindow delivered = new UdpSequenceWindow(UdpSequenceWindow.FEC_SIZE);
+    private final boolean weak;
+    private final int wireOverhead;
+    // Sixteenths of an encoded UDP payload byte. K=4,8,16 all accrue exact credit.
+    private long parityByteCredit;
+    public long parityBytes, dataBytes;
+    // The receiver retains one XOR accumulator per group. Sparse sends may stage a bounded prefix.
     private final Group sending = new Group();
+    private boolean staged;
+    private static final int STAGING_BYTES = 2 * (MAX_SHARD_BYTES + 2);
     private Group[] receiving = new Group[4];
     private int nextSeq, target, cleanWindows, reportSeq, parityCredit;
     private int highestRaw, nextReport;
-    private long rawMask, lastReportTime, lastWrite, packetInterval, flushAfter;
-    long sampledData, missingData, recoveredData, paritySent, skippedSmallGroups, evictedGroups;
+    private long rawMask, recoveredMask, lastReportTime, lastWrite, packetInterval, flushAfter;
+    long sentData, protectedData, paritySent, skippedSmallGroups;
+    long sampledData, missingData, recoveredData, evictedGroups;
     private boolean observing, hasReport, closed;
 
     public UdpDailyFec(ByteBufAllocator allocator) {
@@ -40,6 +48,13 @@ public final class UdpDailyFec implements AutoCloseable {
     }
 
     public UdpDailyFec(ByteBufAllocator allocator, LongSupplier clock) {
+        this(allocator, clock, false, 0);
+    }
+
+    public UdpDailyFec(ByteBufAllocator allocator, LongSupplier clock, boolean weak, int wireOverheadBytes) {
+        if (wireOverheadBytes < 0 || wireOverheadBytes > 65507) throw new IllegalArgumentException("wire overhead");
+        this.weak = weak;
+        this.wireOverhead = wireOverheadBytes;
         this.alloc = allocator;
         this.clock = clock;
     }
@@ -60,20 +75,43 @@ public final class UdpDailyFec implements AutoCloseable {
         }
         lastWrite = now;
         int seq = nextSeq++;
+        sentData++;
         if (target == 0 || bytes > MAX_SHARD_BYTES) {
             flush(wire);
+            dataBytes += wireOverhead + 5 + bytes;
             wire.accept(newFrame(5 + bytes).writeByte(DATA).writeInt(seq)
                     .writeBytes(payload, payload.readerIndex(), bytes));
             return;
         }
         if (sending.xor == null) {
-            sending.begin(seq, now, alloc, bytes);
+            // A sparse group often expires before earning a parity packet. Snapshot its short
+            // prefix and fold only if needed. An unexpected burst follows the same wire grouping.
+            staged = !weak && packetInterval * (target - parityCredit - 1) >= MAX_FLUSH;
+            if (staged) {
+                sending.base = seq;
+                sending.started = now;
+                sending.xor = alloc.ioBuffer(bytes + 2, STAGING_BYTES);
+            } else {
+                sending.begin(seq, now, alloc, bytes);
+            }
             // Data always leaves immediately. Give sparse flows time to collect a useful XOR group.
             flushAfter = Math.min(MAX_FLUSH, Math.max(FLUSH, packetInterval * target + FLUSH));
         }
-        parityCredit = Math.min(target, parityCredit + 1);
+        int encoded = wireOverhead + 6 + bytes;
+        dataBytes += encoded;
+        if (weak) {
+            long cap = 32L * (wireOverhead + MAX_OVERHEAD + MAX_SHARD_BYTES);
+            parityByteCredit = Math.min(cap, parityByteCredit + (long) encoded * (MAX_SHARDS / target));
+        } else {
+            parityCredit = Math.min(target, parityCredit + 1);
+        }
         int index = Integer.bitCount(sending.mask);
-        sending.add(payload, payload.readerIndex(), bytes);
+        if (staged && sending.xor.readableBytes() + 2 + bytes > STAGING_BYTES) foldStaged();
+        if (staged) {
+            sending.xor.writeShort(bytes).writeBytes(payload, payload.readerIndex(), bytes);
+        } else {
+            sending.add(payload, payload.readerIndex(), bytes);
+        }
         sending.mask |= 1 << index;
         wire.accept(newFrame(6 + bytes).writeByte(SHARD).writeInt(seq).writeByte(index)
                 .writeBytes(payload, payload.readerIndex(), bytes));
@@ -90,8 +128,9 @@ public final class UdpDailyFec implements AutoCloseable {
         int type = frame.getUnsignedByte(pos), seq = frame.getInt(pos + 1);
         long now = clock.getAsLong();
         if (type == REPORT) {
-            if (bytes == 6) {
-                acceptReport(seq, frame.getUnsignedByte(pos + 5), now);
+            if (bytes == (weak ? 8 : 6)) {
+                acceptReport(seq, frame.getUnsignedByte(pos + 5), weak ? frame.getUnsignedByte(pos + 6) : 0,
+                        weak ? frame.getUnsignedByte(pos + 7) : 0, now);
             }
             return;
         }
@@ -124,7 +163,7 @@ public final class UdpDailyFec implements AutoCloseable {
             return;
         }
         observe(seq, reply);
-        if (closed || delivered.isDuplicate(Integer.toUnsignedLong(seq))) {
+        if (closed || !delivered.acceptSerial(seq)) {
             return;
         }
         int offset = pos + (shard ? 6 : 5), len = frame.writerIndex() - offset;
@@ -156,30 +195,42 @@ public final class UdpDailyFec implements AutoCloseable {
             return;
         }
         rawMask = (advance >= 64 ? 0 : rawMask << advance) | 1L;
+        if (weak) recoveredMask = advance >= 64 ? 0 : recoveredMask << advance;
         highestRaw = seq;
         if (seq - nextReport >= 0) {
-            int missing = 32 - Integer.bitCount((int) (rawMask >>> 8));
+            int gaps = ~(int) (rawMask >>> 8), missing = Integer.bitCount(gaps);
             sampledData += 32;
             missingData += missing;
             nextReport = seq + 32;
-            reply.accept(newFrame(6).writeByte(REPORT).writeInt(seq).writeByte(missing));
+            ByteBuf report = newFrame(weak ? 8 : 6).writeByte(REPORT).writeInt(seq).writeByte(missing);
+            if (weak) {
+                int isolated = gaps & ~(gaps << 1 | gaps >>> 1);
+                report.writeByte(Integer.bitCount(isolated)).writeByte(Integer.bitCount(gaps & (int) (recoveredMask >>> 8)));
+            }
+            reply.accept(report);
         }
     }
 
-    private void acceptReport(int seq, int missing, long now) {
-        if (missing > 32 || nextSeq - seq <= 0 || hasReport && seq - reportSeq <= 0) {
+    private void acceptReport(int seq, int missing, int isolated, int recovered, long now) {
+        if (missing > 32 || isolated > missing || recovered > missing || nextSeq - seq <= 0 || hasReport && seq - reportSeq <= 0) {
             return;
         }
         hasReport = true;
         reportSeq = seq;
         lastReportTime = now;
         if (missing > 0) {
-            target = missing >= 4 ? 4 : missing >= 2 ? 8 : 16;
+            int requested = missing >= 4 ? 4 : missing >= 2 ? 8 : 16;
+            if (weak) {
+                // Sustain a small trial for burst losses. Spend more only on evidence that XOR can help.
+                if (isolated == 0 && recovered == 0) requested = 16;
+                target = target == 0 ? 16 : Math.max(requested, target / 2);
+            } else {
+                target = requested;
+            }
             cleanWindows = 0;
         } else if (target != 0 && ++cleanWindows >= 3) {
             target = 0;
-            parityCredit = 0;
-            sending.clear();
+            cancelPendingParity();
         }
     }
 
@@ -222,8 +273,10 @@ public final class UdpDailyFec implements AutoCloseable {
         if (Integer.bitCount(missing) == 1 && g.lengthXor <= g.parityBytes
                 && g.xor.readableBytes() == g.parityBytes) {
             int seq = g.base + Integer.numberOfTrailingZeros(missing);
-            if (!delivered.isDuplicate(Integer.toUnsignedLong(seq))) {
+            if (delivered.acceptSerial(seq)) {
                 recoveredData++;
+                int age = highestRaw - seq;
+                if (weak && age >= 0 && age < 64) recoveredMask |= 1L << age;
                 ByteBuf payload = g.xor.retainedSlice(0, g.lengthXor);
                 g.clear();
                 deliver.accept(payload);
@@ -268,17 +321,47 @@ public final class UdpDailyFec implements AutoCloseable {
     private void expireSender(long now, Consumer<ByteBuf> wire) {
         if (target != 0 && now - lastReportTime >= REPORT_TIMEOUT) {
             target = 0;
-            parityCredit = 0;
-            sending.clear();
+            cancelPendingParity();
         } else if (sending.xor != null && now - sending.started >= flushAfter) {
             flush(wire);
         }
     }
 
+    public long recoveredPackets() {
+        return recoveredData;
+    }
+
+    /** Drop outstanding send-side parity on path fallback or local backpressure. */
+    public void cancelPendingParity() {
+        sending.clear();
+        parityCredit = 0;
+        parityByteCredit = 0;
+    }
+
+    private void foldStaged() {
+        ByteBuf prefix = sending.xor;
+        sending.xor = alloc.ioBuffer(prefix.getUnsignedShort(0), MAX_SHARD_BYTES);
+        staged = false;
+        try {
+            while (prefix.isReadable()) {
+                int bytes = prefix.readUnsignedShort();
+                sending.add(prefix, prefix.readerIndex(), bytes);
+                prefix.skipBytes(bytes);
+            }
+        } finally {
+            prefix.release();
+        }
+    }
+
     private void flush(Consumer<ByteBuf> wire) {
         int count = Integer.bitCount(sending.mask);
-        if (count >= MIN_SHARDS && parityCredit >= target) {
+        if (count >= MIN_SHARDS && staged && parityCredit >= target) foldStaged();
+        int encoded = count == 0 ? 0 : wireOverhead + MAX_OVERHEAD + sending.xor.readableBytes();
+        if (count >= MIN_SHARDS && (weak ? parityByteCredit >= 16L * encoded : parityCredit >= target)) {
             paritySent++;
+            parityBytes += encoded;
+            if (weak) parityByteCredit -= 16L * encoded;
+            protectedData += count;
             parityCredit = 0;
             int len = sending.xor.readableBytes();
             ByteBuf frame = newFrame(MAX_OVERHEAD + len).writeByte(PARITY).writeInt(sending.base)
@@ -314,17 +397,16 @@ public final class UdpDailyFec implements AutoCloseable {
         }
 
         void add(ByteBuf in, int offset, int len) {
-            int extra = len - xor.writerIndex();
-            if (extra > 0) {
-                xor.writeZero(extra);
-            }
+            int shared = Math.min(len, xor.writerIndex());
             int i = 0;
-            for (; i + 8 <= len; i += 8) {
+            for (; i + 8 <= shared; i += 8) {
                 xor.setLong(i, xor.getLong(i) ^ in.getLong(offset + i));
             }
-            for (; i < len; i++) {
+            for (; i < shared; i++) {
                 xor.setByte(i, xor.getByte(i) ^ in.getByte(offset + i));
             }
+            // Bytes beyond the existing prefix would be XORed with zero.
+            if (len > shared) xor.writeBytes(in, offset + shared, len - shared);
             lengthXor ^= len;
         }
 

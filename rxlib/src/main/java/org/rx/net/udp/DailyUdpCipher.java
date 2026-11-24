@@ -24,7 +24,8 @@ final class DailyUdpCipher {
     private final Cipher tx, rx;
     private final SecretKeySpec txKey, rxKey;
     private final byte[] nonce = new byte[12];
-    private long sent, sentBytes, highest, seen;
+    private final UdpSequenceWindow replay;
+    private long sent, sentBytes;
 
     static byte[] configuredKey() {
         String encoded = System.getenv("RSS_UDP_AES_KEY");
@@ -42,6 +43,7 @@ final class DailyUdpCipher {
         if (secret == null || salt == null) {
             throw new IllegalArgumentException("UDP AES requires a deployment key and a fresh client salt");
         }
+        replay = new UdpSequenceWindow((features & (DailyUdpWire.FEC | DailyUdpWire.GAME)) != 0 ? UdpSequenceWindow.FEC_SIZE : 64);
         try {
             Mac derive = Mac.getInstance("HmacSHA256");
             derive.init(new SecretKeySpec(secret, "HmacSHA256"));
@@ -95,19 +97,12 @@ final class DailyUdpCipher {
         int pos = wire.readerIndex(), len = wire.readableBytes() - HEADER - SEQ;
         if (len < TAG) return null;
         long seq = wire.getLong(pos + HEADER);
-        if (seq <= 0 || seq > MAX_SEQ || seq <= highest
-                && (highest - seq >= 64 || (seen & (1L << (highest - seq))) != 0)) return null;
+        if (seq <= 0 || seq > MAX_SEQ || replay.isDuplicate(seq)) return null;
         ByteBuf data = wire.alloc().ioBuffer(Math.max(1, len - TAG));
         boolean ok = false;
         try {
             crypt(rx, Cipher.DECRYPT_MODE, rxKey, seq, wire, pos, wire, pos + HEADER + SEQ, len, data);
-            if (seq > highest) {
-                long delta = seq - highest;
-                seen = delta >= 64 ? 1L : (seen << delta) | 1L;
-                highest = seq;
-            } else {
-                seen |= 1L << (highest - seq);
-            }
+            replay.mark(seq);
             ok = true;
             return data;
         } catch (AEADBadTagException invalid) {

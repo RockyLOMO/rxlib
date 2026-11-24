@@ -38,6 +38,8 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
     private final int connectTimeoutMillis;
     private final CompletableFuture<Channel> readyFuture = new CompletableFuture<>();
     @Setter private boolean adaptiveTcp;
+    @Setter private int adaptiveProfile;
+    private int offeredProfile = -1;
     private boolean negotiated;
     private volatile State state = State.INIT;
     @Getter
@@ -144,7 +146,8 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
 
     private Object newInitialMessage() {
         if (adaptiveTcp && password != null && ctx.channel().remoteAddress() instanceof InetSocketAddress) {
-            return SocksAdaptiveHandshake.OFFER;
+            offeredProfile = adaptiveProfile;
+            return SocksAdaptiveHandshake.offer(offeredProfile);
         }
         return socksAuthMethod() == Socks5AuthMethod.PASSWORD ? INIT_REQUEST_PASSWORD : INIT_REQUEST_NO_AUTH;
     }
@@ -152,7 +155,7 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
     private void handleInitial(ChannelHandlerContext ctx, Socks5InitialResponse res) {
         Socks5AuthMethod authMethod = socksAuthMethod();
         Socks5AuthMethod resAuthMethod = res.authMethod();
-        if (adaptiveTcp && password != null && SocksAdaptiveHandshake.METHOD.equals(resAuthMethod)) {
+        if (offeredProfile >= 0 && SocksAdaptiveHandshake.selected(offeredProfile, resAuthMethod)) {
             negotiated = true;
             resAuthMethod = Socks5AuthMethod.PASSWORD;
         }
@@ -176,7 +179,7 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
             return;
         }
         if (negotiated) {
-            SocksAdaptiveHandshake.install(ctx.channel(), ctx.channel().attr(SocksAdaptiveHandshake.NONCE).getAndSet(null), password, null);
+            SocksAdaptiveHandshake.install(ctx.channel(), ctx.channel().attr(SocksAdaptiveHandshake.NONCE).getAndSet(null), password, null, offeredProfile);
             negotiated = false;
         }
         markReady(ctx);

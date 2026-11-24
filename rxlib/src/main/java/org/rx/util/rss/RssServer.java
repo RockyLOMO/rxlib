@@ -68,6 +68,9 @@ public final class RssServer {
 
         SocksConfig outConf = new SocksConfig(port);
         configureOutboundConfig(outConf, debugFlag);
+        int compressionLevel = Integer.parseInt(options.getOrDefault("tcpCompressionLevel", "3"));
+        if (compressionLevel < 1 || compressionLevel > 9) throw new IllegalArgumentException("tcpCompressionLevel must be 1..9");
+        outConf.setTcpCompressionLevel(compressionLevel);
         outConf.setAdaptiveTcp(!"0".equals(options.get("adaptiveTcp")));
         outConf.setDailyPortRange(options.getOrDefault("udpHopPorts", "20000-20127"));
         if (outConf.getDailyPortLast() - outConf.getDailyPortFirst() < 3 || outConf.getDailyPortFirst() == 0
@@ -99,7 +102,9 @@ public final class RssServer {
         rpcConf.getEventBroadcastVersions().add(SocksRpcContract.RPC_EVENT_VERSION);
         WowEndpointRegistry wowEndpoints = WowEndpointRegistry.fromEnvironment();
         RssRpcApp app = new RssRpcApp(outSvr, outUdp2rawSvr, wowEndpoints);
-        rpcConf.setSensitiveMethods(WowEndpointRegistry.SENSITIVE_METHODS);
+        java.util.Set<String> sensitiveMethods = new java.util.HashSet<>(WowEndpointRegistry.SENSITIVE_METHODS);
+        sensitiveMethods.add("openUdpRelayGroup");
+        rpcConf.setSensitiveMethods(sensitiveMethods);
         outSvr.setFakeEndpointResolver(app::recoverFakeEndpoint);
         if (outUdp2rawSvr != null) {
             outUdp2rawSvr.setFakeEndpointResolver(app::recoverFakeEndpoint);
@@ -145,7 +150,7 @@ public final class RssServer {
         config.setOptimalSettings(RssSupport.OUT_OPS);
 
         config.setUdpMtu(UDP2RAW_MTU);
-        config.setDailyUdpFeatures(7);
+        config.setDailyUdpFeatures(31);
     }
 
     static void configureUdp2rawOutboundConfig(SocksConfig config, boolean debugFlag, int udp2rawPort) {

@@ -32,6 +32,8 @@ import java.util.concurrent.TimeUnit;
 final class UdpRelayGroupManager extends Disposable {
     private static final AttributeKey<UdpRelayEntry> ATTR_RELAY_GROUP_ENTRY =
             AttributeKey.valueOf("udpRelayGroupEntry");
+    private static final java.security.SecureRandom RANDOM = new java.security.SecureRandom();
+    private static final int PROFILES = DailyUdpWire.GAME | DailyUdpWire.WEAK;
     private static final int MAX_GROUPS = 4096;
     private static final int BIND_TIMEOUT_MILLIS = 5000;
 
@@ -51,6 +53,7 @@ final class UdpRelayGroupManager extends Disposable {
         SocksRpcCapabilities caps = SocksRpcCapabilities.udpRelayGroup(config.getUdpRelayControlMaxRelaysPerGroup(), MAX_GROUPS);
         if (config.isDailyUdp() && caps.getMaxRelaysPerGroup() >= 2) {
             caps.addFlag(SocksRpcCapabilities.SUPPORT_DAILY_UDP);
+            if ((config.getDailyUdpFeatures() & PROFILES) != 0) caps.addFlag(SocksRpcCapabilities.PROFILE_UDP_V1);
         }
         return caps;
     }
@@ -74,6 +77,13 @@ final class UdpRelayGroupManager extends Disposable {
         int maxRelayCount = clamp(request.getMaxRelayCount(), initialCount, maxAllowed);
         int features = request.getDailyFeatures();
         boolean daily = features != 0;
+        boolean profiled = (features & PROFILES) != 0;
+        if (request.getProfileVersion() != (profiled ? 1 : 0)
+                || profiled && request.getClientSalt() == null
+                || (features & DailyUdpWire.GAME) != 0 && (features & DailyUdpWire.WEAK) != 0
+                || (features & DailyUdpWire.WEAK) != 0 && (features & DailyUdpWire.FEC) == 0) {
+            return UdpRelayGroupOpenResult.fail("PROFILE_UNSUPPORTED", "unsupported UDP profile or version");
+        }
         if (daily) {
             if ((features & config.getDailyUdpFeatures()) != features) {
                 return UdpRelayGroupOpenResult.fail("DAILY_DISABLED", "daily UDP profile is disabled");
@@ -107,7 +117,13 @@ final class UdpRelayGroupManager extends Disposable {
         DiagnosticMetrics.record("socks.udp.relay.group.open.count", 1D,
                 "result=success");
         recordState("open");
-        return UdpRelayGroupOpenResult.success(group.groupId, group.dataPlaneToken, group.expireAtMillis(), opened);
+        UdpRelayGroupOpenResult result = UdpRelayGroupOpenResult.success(group.groupId, group.dataPlaneToken, group.expireAtMillis(), opened);
+        if (profiled) {
+            result.setProfileVersion(1);
+            result.setSelectedFeatures(features);
+            result.setAuthSecret(group.authSecret);
+        }
+        return result;
     }
 
     UdpRelayGroupUpdateResult addUdpRelays(String groupId, int count) {
@@ -216,7 +232,7 @@ final class UdpRelayGroupManager extends Disposable {
                     group.wire = DailyUdpWire.server(group.dataPlaneToken, sender -> {
                         ConcurrentMap<InetSocketAddress, SocksContext> routes = ch.attr(SocksUdpRelayHandler.ATTR_CTX_MAP).get();
                         return routes != null && routes.containsKey(sender);
-                    }, group.features, group.clientSalt);
+                    }, group.features, group.clientSalt, group.authSecret);
                     p.addLast(group.wire);
                 } else if (config.getUdpReadTimeoutSeconds() > 0 || config.getUdpWriteTimeoutSeconds() > 0) {
                     p.addLast(new ProxyChannelIdleHandler(config.getUdpReadTimeoutSeconds(), config.getUdpWriteTimeoutSeconds()));
@@ -393,6 +409,7 @@ final class UdpRelayGroupManager extends Disposable {
         final boolean daily;
         final int features;
         final UUID clientSalt;
+        final byte[] authSecret;
         volatile Channel primary;
         volatile DailyUdpWire wire;
         final InetSocketAddress clientAddr;
@@ -408,6 +425,12 @@ final class UdpRelayGroupManager extends Disposable {
                 InetSocketAddress firstDestination, int maxRelayCount, long idleTimeoutMillis, long now, int features, UUID clientSalt) {
             this.features = features;
             this.clientSalt = clientSalt;
+            if ((features & PROFILES) != 0 && (features & DailyUdpWire.AES) == 0) {
+                authSecret = new byte[32];
+                RANDOM.nextBytes(authSecret);
+            } else {
+                authSecret = null;
+            }
             daily = features != 0;
             this.groupId = groupId;
             this.dataPlaneToken = dataPlaneToken;

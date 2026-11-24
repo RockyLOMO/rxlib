@@ -1,15 +1,16 @@
-# 网络代理
-## 前置
-所有场景考虑dns污染，尽量远程解析dns
-udp associate需要考虑 Full Clone NAT
+# 网络代理测试场景
+
+类名是 `SocksProxyServer`。下面的 A/B 是测试里的两个代理角色，不是类名。DNS 污染场景优先远程解析。UDP associate 要考虑 Full Cone NAT。
+
+RSS `daily` 的 FEC 和 30 秒端口跳跃不在这些场景的默认路径里，见 `docs/rss-transport.md`。
 
 ## 场景1
-socks5 client -> SocksServerProxy A, udp -> dest
+socks5 client -> SocksProxyServer A, udp -> dest
 - 对应用例：
   - `org.rx.net.socks.SocksProxyServerIntegrationTest#socks5UdpRelay_e2e`
 
 ## 场景2
-socks5 client -> SocksServerProxy A(广域网ip a), udp associate -> SocksServerProxy B(广域网ip b), udp -> dest
+socks5 client -> SocksProxyServer A, udp associate -> SocksProxyServer B, udp -> dest
 - 对应用例：
   - `org.rx.net.socks.SocksProxyServerIntegrationTest#socks5UdpRelay_chained_e2e`
   - `org.rx.net.socks.SocksProxyServerIntegrationTest#socks5UdpRelay_chained_withUdpRedundant_plainReplyToClient_e2e`
@@ -18,9 +19,7 @@ socks5 client -> SocksServerProxy A(广域网ip a), udp associate -> SocksServer
   - `org.rx.net.socks.SocksProxyServerIntegrationTest#socks5TcpConnect_chained_withCompressedTunnel_bypassCandidatePort_e2e`
 
 ## 场景3 - udp2raw场景
-ShadowsocksClient(广域网ip c) 
--> ShadowsocksServer(广域网ip a) -> SocksServerProxy A(广域网ip a), udp direct to -> udp2raw client(广域网ip a) 
--> udp2raw server(广域网ip b) -> SocksServerProxy B(广域网ip b), udp -> dest
+ShadowsocksClient -> ShadowsocksServer -> SocksProxyServer A，UDP 进入本机 udp2raw client -> udp2raw server -> SocksProxyServer B -> dest
 - 对应用例：
   - `org.rx.net.socks.SocksProxyServerIntegrationTest#socks5UdpRelay_udp2raw_chained_e2e`
   - `org.rx.net.socks.Udp2rawHandlerTest#udp2raw_clientServerModeE2E`
@@ -28,9 +27,9 @@ ShadowsocksClient(广域网ip c)
   - `org.rx.net.socks.Udp2rawHandlerTest#udp2raw_clientMode_invalidMagicIsDiscarded`
 
 ## 场景4
-ShadowsocksClient(广域网ip c) -> ShadowsocksServer(广域网ip a) -> SocksServerProxy A(广域网ip a), udp associate -> SocksServerProxy B(广域网ip b), udp -> dest
-- RSS Client DNS 路径：仅当 geo 规则确认域名直连时使用直连 DNS Client；其他域名必须通过 RPC 调用 RSS Server，由远程 DNS Client 解析，避免本地 DNS 污染。
-- TCP/UDP 建连路径：直连分支使用 Netty Bootstrap 直连 DNS Client；代理分支保持域名未解析并交给上游/远端处理。
+ShadowsocksClient -> ShadowsocksServer -> SocksProxyServer A, udp associate -> SocksProxyServer B -> dest
+- 域名被 geo 规则判为直连时，RSS Client 用直连 DNS；其余域名经 RPC 交给 RSS Server 解析。
+- 直连建连使用 Netty 异步 DNS。代理分支保持域名 unresolved，交给上游解析。
 - 对应用例：
   - `org.rx.net.socks.ShadowsocksServerIntegrationTest#shadowsocksUdpRelay_e2e`
   - `org.rx.net.socks.SocksProxyServerIntegrationTest#shadowsocksUdpRelay_socks5_chained_e2e`
@@ -45,7 +44,3 @@ ShadowsocksClient(广域网ip c) -> ShadowsocksServer(广域网ip a) -> SocksSer
 - 对应用例：
   - `org.rx.net.udp.UdpCompressTest`
   - `org.rx.net.udp.UdpRedundantTest`
-
-# 缓存
-## dns
-H2StoreCache 主要缓存dns结果，属于热数据

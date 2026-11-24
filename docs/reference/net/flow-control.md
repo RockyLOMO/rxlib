@@ -198,6 +198,14 @@ mvn -pl rxlib -DskipTests=false -Dtest=NetworkFlowControlTest,TcpBackpressureHan
 mvn -pl rxlib -DskipTests=false -Dtest=SocksProxyServerIntegrationTest,Socks5ClientIntegrationTest,ShadowsocksServerIntegrationTest,RemotingTest test
 ```
 
+## RSS 进程覆盖
+
+库默认 `enabled=false`，`udpMaxPendingBytes` 和 `udpMaxPendingPackets` 为 0。部署脚本默认也不打开全局限速。打开后的预设是：Client 上传/下载 4785/23926 KiB/s，UDP pending 262144 字节 / 512 包；Server 上传/下载 6592/0 KiB/s，UDP pending 131072 字节 / 256 包。`FLOW_DEBUG_FLAGS` 默认 0。
+
+`RssServer.launch` 在进程限额仍为 0 时，把 `udpProcessPendingBytes` 设为 4MiB、`udpProcessPendingPackets` 设为 4096，并打开 `shareTcpAcceptLoop`。这是进程级预算，和每 channel 的 `udpMaxPending*` 不是同一个字段。
+
+这些数字只在对应开关打开或 RSS Server 启动路径里生效。不要把脚本里的 KB/s 写成库的默认限速。
+
 ## 风险清单
 
 - `ByteBuf` 所有权必须清晰：`writeUdp` 拒绝路径已释放，调用方不能二次释放。

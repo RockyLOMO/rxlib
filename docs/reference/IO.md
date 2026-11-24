@@ -1,13 +1,13 @@
-## HybridStream - heep/direct buffer & memory/file stream混用BIO
+## HybridStream
 
-内部支持 heep / direct buffer，当memory stream超过阈值后自动切换为file stream。
+堆内或 direct buffer。内存超过 `maxMemorySize` 后切到文件。第二个参数是 `directMemory`，不是 null。
 
 ```java
 @Test
 public void hybridStream() {
     int[] maxSizes = new int[]{35, 70};
     for (int max : maxSizes) {
-        HybridStream stream = new HybridStream(max, null);
+        HybridStream stream = new HybridStream(max, false);
         testSeekStream(stream);
 
         long position = stream.getPosition();

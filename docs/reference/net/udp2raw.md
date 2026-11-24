@@ -1,14 +1,15 @@
-# Udp2raw (UDP over Tunnel)
+# Udp2raw
 
 ## 简介
-`Udp2raw` 是 `rxlib` 网络模块中提供的一种将 UDP 流量伪装、封装和多路复用的隧道实现。
-在常规的 SOCKS5 代理中，`UDP_ASSOCIATE` 依赖于原生的 UDP 传输。然而在很多弱网环境或受限网络中，原生 UDP 会遭遇 QoS 限速、丢包，甚至被完全阻断。`Udp2raw` 机制通过将 UDP 数据包封装在自定义的隧道流中，以提升穿透率、降低丢包率并提高通信稳定性。
+
+`Udp2raw` 把 SOCKS/SS 的 UDP payload 包进自有 UDP 帧，经 `Udp2rawUpstream` 发到对端再解出。帧由 `Udp2rawCodec` 编解码，是定长头的 datagram，不是字节流。`SocksUdpRelayHandler` 仍然存在，udp2raw 不替换它。
 
 ## 特性
-- **客户端/服务端模式**：通过简单的配置项即可在 Proxy 节点上启用 Client 模式或 Server 模式。
-- **数据冗余（Redundancy）与自适应**：结合 `Udp2rawPayloadSupport` 和自适应状态统计（`AdaptiveStats`），支持对丢包率高的网络进行动态包冗余，从而在不增加明显重传延迟的情况下提升交付率。
-- **与 SOCKS5 深度集成**：无缝替换原生的 `SocksUdpRelayHandler`。只要配置开启，上层应用的 SOCKS5 UDP 请求会自动被路由进 udp2raw 隧道，对客户端 App 完全透明。
-- **安全与认证**：内置 `Udp2rawAuthenticator` 及 Session 机制（`Udp2rawSessionKey` / `Udp2rawSession`），防止未授权访问和探测攻击。
+
+- **客户端 / 服务端**：`SocksConfig.enableUdp2raw`。客户端再设置 `udp2rawClient`。默认要求 RPC 协商（`udp2rawRequireRpc=true`），认证默认 `FIRST_PACKET_MAC`。
+- **冗余**：`Udp2rawPayloadSupport.newAdaptiveStats` 创建 `UdpRedundantStats`，按丢包率调整倍率，周期 2 秒。没有 `AdaptiveStats` 这个类。方向默认双向。
+- **能力协商**：只有压缩、冗余等已有能力。没有 FEC，也不会自动装上 `UdpResilience`。
+- **会话**：`Udp2rawAuthenticator`、`Udp2rawSessionKey`、`Udp2rawSeqWindow`。错误认证有熔断，peer 有速率上限。MTU 超限进入 `Udp2rawMtuState`。
 
 ## 使用方式
 
@@ -65,7 +66,8 @@ App (Native UDP)
 3. 封装后的流量穿越公网/受限网络到达 **服务端 Proxy**。
 4. **服务端 Proxy**（启动了 udp2raw Server 模式）接收数据，解包验证并创建真正的 UDP Relay 发往目标地址，返回时同理封装。
 
-## 进阶与调优
-- **冗余参数**：对于丢包极高的环境，可利用 `UdpRedundantStats` 开启的冗余机制，依据 `effectiveMultiplier` 动态增加发包数量来抵抗丢包。
-- **固定入口**：在大型部署中，可以结合 `Udp2rawServerEntryManager` 设置固定的服务端监听入口，统一管理隧道的生命周期。
-- **Session 生命周期**：依靠 `Udp2rawSeqWindow` 维持序列号抗重放，当心跳超时或断线时自动清理和重建。
+## 进阶
+
+- 冗余统计对象是 `UdpRedundantStats`，由 `newAdaptiveStats` 创建。
+- `Udp2rawServerEntryManager` 是服务端入口的内部类，不是单独的公开配置 API。
+- `Udp2rawSeqWindow` 做序号抗重放。空闲会话按 `udp2rawSessionIdleSeconds`（默认 300）回收，`udp2rawMaxSessions` 默认 65536。

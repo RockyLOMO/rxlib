@@ -65,7 +65,7 @@ public void randomList() {
 ```java
 //因为有default method，暂不支持abstract class
 interface PersonMapper {
-    PersonMapper INSTANCE = BeanMapper.INSTANCE.define(PersonMapper.class);
+    PersonMapper INSTANCE = BeanMapper.DEFAULT.define(PersonMapper.class);
 
     //该interface下所有map方法的执行flags
     default FlagsEnum<BeanMapFlag> getFlags() {
@@ -128,7 +128,7 @@ public void normalMapBean() {
 
     //普通用法，属性名一致
     BeanMapper mapper = BeanMapper.INSTANCE;
-      mapper.map(f, t, BeanMapFlag.ThrowOnAllMapFail.flags());  //target对象没有全部set或ignore则会抛出异常
+      mapper.map(f, t, BeanMapFlag.THROW_ON_MISS_MAPPING.flags());  //target对象没有全部set或ignore则会抛出异常
     mapper.map(f, t, BeanMapFlag.LOG_ON_MISS_MAPPING.flags());  //target对象没有全部set或ignore则会记录WARN日志：Map PersonBean to TargetBean missed properties: kids, info, luckyNum
     System.out.println(toJsonString(f));
     System.out.println(toJsonString(t));

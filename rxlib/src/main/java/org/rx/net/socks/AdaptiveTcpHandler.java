@@ -17,13 +17,17 @@ final class AdaptiveTcpHandler extends ChannelDuplexHandler {
     private final boolean server;
     private AdaptiveUdpPort port;
     private final int primaryPort, aliasPort;
+    final int profile;
     private AdaptiveStream stream;
     private ChannelHandlerContext ctx;
     private ScheduledFuture<?> timer;
     private boolean started, closing, udpReady;
-    private long tcpFrameBytes, udpFrameBytes;
+    // On the TCP EventLoop. UDP TX counts frames handed to the port, RX counts its authenticated deliveries.
+    private long tcpTxBytes, tcpRxBytes, udpTxBytes, udpRxBytes;
+    private long tcpTxFrames, tcpRxFrames, udpTxFrames, udpRxFrames;
 
-    AdaptiveTcpHandler(long id, byte[] key, AdaptiveUdpPort port, int primaryPort, int aliasPort) {
+    AdaptiveTcpHandler(long id, byte[] key, AdaptiveUdpPort port, int primaryPort, int aliasPort, int profile) {
+        this.profile = profile;
         this.primaryPort = primaryPort;
         this.aliasPort = aliasPort;
         this.id = id;
@@ -35,7 +39,7 @@ final class AdaptiveTcpHandler extends ChannelDuplexHandler {
     @Override public void handlerAdded(ChannelHandlerContext ctx) {
         this.ctx = ctx;
         stream = new AdaptiveStream(ctx.alloc(), this::writeTcp, this::writeUdp,
-                ctx::fireChannelRead, System::nanoTime);
+                ctx::fireChannelRead, System::nanoTime, profile);
         try {
             if (server) port.register(id, key, ctx.channel(), this::receiveUdp);
             else port = AdaptiveUdpPort.client(id, key, ctx.channel(), primaryPort, aliasPort, this::receiveUdp);
@@ -50,18 +54,22 @@ final class AdaptiveTcpHandler extends ChannelDuplexHandler {
             frame.release();
             return;
         }
-        udpFrameBytes += frame.readableBytes();
+        udpTxFrames++;
+        udpTxBytes += frame.readableBytes();
         port.send(id, frame);
     }
 
     private void writeTcp(ByteBuf frame) {
-        tcpFrameBytes += frame.readableBytes();
+        tcpTxFrames++;
+        tcpTxBytes += frame.readableBytes();
         ctx.write(ctx.alloc().buffer(2, 2).writeShort(frame.readableBytes()), ctx.voidPromise());
         ctx.write(frame, ctx.voidPromise());
     }
 
     private void receiveUdp(ByteBuf frame) {
         try {
+            udpRxFrames++;
+            udpRxBytes += frame.readableBytes();
             if (!started || closing || !ctx.channel().config().isAutoRead()) return;
             stream.udp(frame);
             ctx.fireChannelReadComplete();
@@ -78,6 +86,8 @@ final class AdaptiveTcpHandler extends ChannelDuplexHandler {
     @Override public void channelRead(ChannelHandlerContext ctx, Object msg) {
         ByteBuf frame = (ByteBuf) msg;
         try {
+            tcpRxFrames++;
+            tcpRxBytes += frame.readableBytes();
             started = true;
             stream.tcp(frame);
             ctx.flush();
@@ -147,13 +157,23 @@ final class AdaptiveTcpHandler extends ChannelDuplexHandler {
         ctx.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(f -> ctx.close(promise));
     }
 
+    private static void recordFrames(String path, long txFrames, long txBytes, long rxFrames, long rxBytes) {
+        DiagnosticMetrics.record("rss.tcp.adaptive.tx.frames", txFrames, path);
+        DiagnosticMetrics.record("rss.tcp.adaptive.tx.frameBytes", txBytes, path);
+        DiagnosticMetrics.record("rss.tcp.adaptive.rx.frames", rxFrames, path);
+        DiagnosticMetrics.record("rss.tcp.adaptive.rx.frameBytes", rxBytes, path);
+    }
+
     @Override public void handlerRemoved(ChannelHandlerContext ctx) {
         closing = true;
         if (timer != null) timer.cancel(false);
         if (stream != null) stream.close();
         if (DiagnosticMetrics.isEnabled()) {
-            DiagnosticMetrics.record("rss.tcp.adaptive.tx.frameBytes", tcpFrameBytes, "path=tcp");
-            DiagnosticMetrics.record("rss.tcp.adaptive.tx.frameBytes", udpFrameBytes, "path=udp");
+            recordFrames("path=tcp", tcpTxFrames, tcpTxBytes, tcpRxFrames, tcpRxBytes);
+            recordFrames("path=udp", udpTxFrames, udpTxBytes, udpRxFrames, udpRxBytes);
+            // LengthFieldBasedFrameDecoder strips this prefix before channelRead.
+            DiagnosticMetrics.record("rss.tcp.adaptive.tx.transportBytes", tcpTxBytes + 2 * tcpTxFrames, "path=tcp");
+            DiagnosticMetrics.record("rss.tcp.adaptive.rx.transportBytes", tcpRxBytes + 2 * tcpRxFrames, "path=tcp");
         }
         if (port != null && !server) port.close();
         // Server registrations are removed by the TCP close future using peer identity.

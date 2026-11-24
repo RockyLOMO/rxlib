@@ -19,9 +19,9 @@ public void snowflake() {
 }
 ```
 
-### Ordered UUID
+### ULID
 
-基于[这篇文章](http://www.codeproject.com/Articles/388157/GUIDs-as-fast-primary-keys-under-multiple-database)思路改进。
+`org.rx.bean.ULID` 是 48 bit 时间加 80 bit 随机（或由名字派生）的有序标识。`ULID.randomULID()` 用当前毫秒和安全随机字节；`ULID.nameULID(name)` / `ULID.newULID(name, timestamp)` 由名字生成。没有 `App.orderedUUID`。
 
 ## 随机
 
@@ -34,11 +34,6 @@ CRC64碰撞率低([详见](https://blog.csdn.net/huangyueranbbc/article/details/
 ```java
 @Test
 public void codec() {
-    for (int i = 0; i < 10; i++) {
-        long ts = System.nanoTime();
-        assert App.orderedUUID(ts, i).equals(App.orderedUUID(ts, i));
-    }
-
     EntityDatabase db = EntityDatabase.DEFAULT;
     db.createMapping(CollisionEntity.class);
     db.dropMapping(CollisionEntity.class);
