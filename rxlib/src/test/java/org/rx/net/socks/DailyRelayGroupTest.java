@@ -85,11 +85,11 @@ class DailyRelayGroupTest {
             assertFalse(server.openUdpRelayGroup(req, token).isSuccess());
             req.setProfileVersion(1);
             req.setClientSalt(UUID.randomUUID());
-            req.setDailyFeatures(DailyUdpWire.GAME | DailyUdpWire.FEC);
+            req.setDailyFeatures(DailyUdpWire.GAME | DailyUdpWire.FEC | DailyUdpWire.WEAK);
             assertFalse(server.openUdpRelayGroup(req, token).isSuccess());
             req.setDailyFeatures(DailyUdpWire.WEAK);
             assertFalse(server.openUdpRelayGroup(req, token).isSuccess());
-            for (int features : new int[]{DailyUdpWire.GAME, DailyUdpWire.WEAK | DailyUdpWire.FEC}) {
+            for (int features : new int[]{DailyUdpWire.GAME, DailyUdpWire.GAME | DailyUdpWire.FEC, DailyUdpWire.WEAK | DailyUdpWire.FEC}) {
                 req.setDailyFeatures(features);
                 UdpRelayGroupOpenResult result = server.openUdpRelayGroup(req, token);
                 assertTrue(result.isSuccess(), result.getErrorCode());

@@ -17,10 +17,14 @@ final class UdpGameRedundancy {
     private final UdpSequenceWindow delivered = new UdpSequenceWindow(UdpSequenceWindow.FEC_SIZE);
     private final long[] received = new long[3];
     private final byte[] sent = new byte[HISTORY];
+    private final int[] sentMillis = new int[HISTORY];
+    private int baselineMillis = -1, queuedWindows;
     private long budgetTime, feedbackTime;
     private int warmupCount, extraPackets, extraBytes, next, highest, reportAt, lastReport, clean, lossy;
     private boolean sending, observing, feedback;
-    int copies = 2;
+    // Each sender chooses its initial multiplier. Feedback always uses the actual sent counts.
+    private static final int INITIAL_COPIES = io.netty.util.internal.SystemPropertyUtil.getInt("app.rss.game.initialCopies", 2);
+    int copies = INITIAL_COPIES == 1 ? 1 : 2;
     long sentCopies, sentUnique, receivedCopies, receivedUnique, lost, sampled, suppressed, changes;
 
     int begin(long now) {
@@ -35,6 +39,7 @@ final class UdpGameRedundancy {
         if (warmupCount < 64) warmupCount++;
         int seq = next++;
         sent[seq & (HISTORY - 1)] = 1;
+        sentMillis[seq & (HISTORY - 1)] = (int) TimeUnit.NANOSECONDS.toMillis(now);
         sentUnique++;
         sentCopies++;
         return seq;
@@ -113,7 +118,7 @@ final class UdpGameRedundancy {
 
     private void report(int end, int unique, int physical, int originals, boolean writable, long now) {
         int age = next - 1 - end;
-        if (warmupCount < WINDOW || age < 0 || age > HISTORY - WINDOW || feedback && end - lastReport <= 0
+        if (warmupCount < WINDOW || age < 8 || age > HISTORY - WINDOW || feedback && end - lastReport <= 0
                 || unique > WINDOW || originals > unique || physical < unique || physical > 3 * unique) return;
         int actual = 0;
         for (int i = 0; i < WINDOW; i++) actual += sent[(end - i) & (HISTORY - 1)];
@@ -121,13 +126,24 @@ final class UdpGameRedundancy {
         feedback = true;
         lastReport = end;
         feedbackTime = now;
+        // The report was triggered by end+8. Measure its round trip on this sender's clock.
+        int rtt = (int) TimeUnit.NANOSECONDS.toMillis(now) - sentMillis[(end + 8) & (HISTORY - 1)];
+        if (rtt < 0) return;
+        if (baselineMillis < 0 || rtt < baselineMillis) baselineMillis = rtt;
+        boolean growing = rtt - baselineMillis > Math.max(20, baselineMillis / 2);
+        queuedWindows = growing ? Math.min(2, queuedWindows + 1) : 0;
+        baselineMillis += (rtt - baselineMillis) / 64;
+        if (!writable || queuedWindows >= 2) {
+            change(1);
+            return;
+        }
         if (physical == actual) {
             lossy = 0;
             if (++clean >= 3) change(Math.max(1, copies - 1));
             return;
         }
         clean = 0;
-        if (!writable || unique == 0) {
+        if (growing || unique == 0) {
             lossy = 0;
             return;
         }

@@ -50,6 +50,7 @@ class DailyUdpWireTest {
     @Test
     void gameAndWeakHopWithAuthenticatedFeedback() throws Exception {
         verifyHops(InetAddress.getByName("127.0.0.1"), DailyUdpWire.GAME);
+        verifyHops(InetAddress.getByName("127.0.0.1"), DailyUdpWire.GAME | DailyUdpWire.FEC);
         verifyHops(InetAddress.getByName("::1"), DailyUdpWire.WEAK | DailyUdpWire.FEC | DailyUdpWire.LZ4);
         if (DailyUdpWire.hasCipherKey()) {
             verifyHops(InetAddress.getByName("::1"), DailyUdpWire.GAME | DailyUdpWire.AES);

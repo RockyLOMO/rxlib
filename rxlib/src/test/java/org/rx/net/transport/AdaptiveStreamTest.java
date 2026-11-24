@@ -94,6 +94,23 @@ class AdaptiveStreamTest {
     }
 
     @Test
+    void invalidSelectiveRangesCannotReleaseReliableData() {
+        AtomicLong clock = new AtomicLong();
+        try (End a = new End(clock, AdaptiveStream.WEAK); End b = new End(clock, AdaptiveStream.WEAK)) {
+            probe(a, b);
+            for (int i = 0; i < 6; i++) a.send(i);
+            for (long invalid : new long[]{0L, 1L, 1L << 5}) {
+                ByteBuf bad = Unpooled.buffer().writeByte(AdaptiveStream.SACK).writeInt(2).writeLong(invalid);
+                try { a.stream.tcp(bad); } finally { bad.release(); }
+            }
+            a.stream.drainToTcp();
+            assertEquals(6, a.tcp.size());
+            a.passTcp(b);
+            ordered(b, 6);
+        }
+    }
+
+    @Test
     void weakRepairsTwoHolesWithOneBitmap() {
         AtomicLong clock = new AtomicLong();
         try (End a = new End(clock, AdaptiveStream.WEAK); End b = new End(clock, AdaptiveStream.WEAK)) {

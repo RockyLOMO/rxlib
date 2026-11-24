@@ -80,7 +80,7 @@ final class UdpRelayGroupManager extends Disposable {
         boolean profiled = (features & PROFILES) != 0;
         if (request.getProfileVersion() != (profiled ? 1 : 0)
                 || profiled && request.getClientSalt() == null
-                || (features & DailyUdpWire.GAME) != 0 && (features & (DailyUdpWire.FEC | DailyUdpWire.WEAK)) != 0
+                || (features & DailyUdpWire.GAME) != 0 && (features & DailyUdpWire.WEAK) != 0
                 || (features & DailyUdpWire.WEAK) != 0 && (features & DailyUdpWire.FEC) == 0) {
             return UdpRelayGroupOpenResult.fail("PROFILE_UNSUPPORTED", "unsupported UDP profile or version");
         }
