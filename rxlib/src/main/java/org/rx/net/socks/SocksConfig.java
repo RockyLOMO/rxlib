@@ -1,5 +1,7 @@
 package org.rx.net.socks;
 
+import org.rx.net.rss.profile.RssProfile;
+
 import java.util.Arrays;
 import io.netty.handler.ssl.SslContext;
 import lombok.AccessLevel;
@@ -74,7 +76,7 @@ public class SocksConfig extends SocketConfig {
         }
         dailyUdpFeatures = features;
     }
-    public static final int ADAPTIVE_GAME = 1, ADAPTIVE_WEAK = 2;
+    public static final int ADAPTIVE_GAME = RssProfile.GAME_ID, ADAPTIVE_WEAK = RssProfile.WEAK_ID;
     private boolean adaptiveTcp;
     private int adaptiveProfile;
     @ToString.Exclude
