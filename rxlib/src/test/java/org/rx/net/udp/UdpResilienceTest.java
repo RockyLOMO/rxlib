@@ -242,7 +242,10 @@ public class UdpResilienceTest {
             assertEquals("r0", received.get(0));
             assertEquals("r2", received.get(1));
             assertEquals("r1", received.get(2));
-            assertEquals(1, receiverConfig.stats().recoveredPackets());
+            // The decoder records recovery after the downstream callback releases the latch.
+            long recovered = receiver.eventLoop().submit(receiverConfig.stats()::recoveredPackets)
+                    .get(5, TimeUnit.SECONDS);
+            assertEquals(1L, recovered);
         } finally {
             if (sender != null) {
                 sender.close().syncUninterruptibly();
