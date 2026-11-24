@@ -4136,3 +4136,7 @@ Java 8 本地单线程编码对比取仓库 README 的 256 个 1200 B 片段，�
 ### 2026-11-24 RSS game / weak 传输
 
 TCP 私有认证方法区分 daily/game/weak，预热连接按模式和发送压缩级别隔离。UDP profile v1 通过控制 RPC 回显版本与特性，未启用 AES 的增强会话使用新鲜组密钥认证。普通 UDP 维持数据报语义；有序选择性修复只用于 weak 字节流。详见 [RSS 配置](../docs/rss-transport.md) 和 [UDP 说明](../docs/reference/net/udp.md#game-与-weak)。
+
+### 2026-11-24 RSS 私有数据面拆包和尾包探测
+
+SOCKS 负责协商和密钥派生，net.rss.profile 根据实际协商 ID 构建策略，net.rss.tcp 与 net.rss.udp 实现私有数据面。通用 UCMP 保留原调用门面。weak 默认提前发送一个带新认证的 UDP 尾包探测。game 默认单发起步，副本受平滑预算约束。冷启动与热会话验收分别记录在[架构评审实施记录](../docs/rxlib_net_architecture_review_20261124.md#8-实施与验收记录2026-11-24)。
