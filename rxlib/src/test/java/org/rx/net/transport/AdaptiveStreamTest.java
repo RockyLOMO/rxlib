@@ -24,6 +24,10 @@ class AdaptiveStreamTest {
         }
 
         End(AtomicLong clock, int profile) {
+            this(clock, profile, true);
+        }
+
+        End(AtomicLong clock, int profile, boolean udpTail) {
             stream = new AdaptiveStream(UnpooledByteBufAllocator.DEFAULT, tcp::add, packet -> {
                 assertTrue(packet.readableBytes() <= AdaptiveStream.MAX_UDP_FRAME);
                 udp.add(packet);
@@ -34,7 +38,7 @@ class AdaptiveStreamTest {
                 } finally {
                     bytes.release();
                 }
-            }, clock::get, profile);
+            }, clock::get, profile, udpTail);
         }
 
         void send(int value) {
@@ -90,6 +94,66 @@ class AdaptiveStreamTest {
         assertEquals(count, dest.delivered.size());
         for (int i = 0; i < count; i++) {
             assertEquals(i, dest.delivered.get(i).intValue());
+        }
+    }
+
+    @Test
+    void weakProbesIsolatedTailOnceWithoutDroppingHealthyUdp() {
+        for (boolean udp : new boolean[]{true, false}) {
+            for (boolean ackLost : new boolean[]{true, false}) {
+                AtomicLong now = new AtomicLong();
+                try (End a = new End(now, AdaptiveStream.WEAK, udp); End b = new End(now, AdaptiveStream.WEAK)) {
+                    a.stream.tick();
+                    a.passUdp(b);
+                    now.addAndGet(TimeUnit.MILLISECONDS.toNanos(150));
+                    b.passUdp(a);
+                    a.send(0);
+                    ByteBuf original = a.udp.remove();
+                    try {
+                        if (ackLost) b.stream.udp(original);
+                        now.addAndGet(TimeUnit.MILLISECONDS.toNanos(200));
+                        b.stream.tick();
+                        while (!b.tcp.isEmpty()) b.tcp.remove().release();
+                        a.stream.tick();
+                        assertEquals(1, udp ? a.udp.size() : a.tcp.size());
+                        a.stream.tick();
+                        assertEquals(1, udp ? a.udp.size() : a.tcp.size());
+                        a.passTcp(b);
+                        a.passUdp(b);
+                        b.stream.udp(original);
+                        now.addAndGet(TimeUnit.MILLISECONDS.toNanos(15));
+                        b.stream.tick();
+                        b.passTcp(a);
+                        now.addAndGet(TimeUnit.SECONDS.toNanos(1));
+                        a.stream.tick();
+                        assertTrue(a.stream.usingUdp());
+                        assertTrue(a.tcp.isEmpty());
+                        ordered(b, 1);
+                    } finally { original.release(); }
+                }
+            }
+        }
+    }
+
+    @Test
+    void lostUdpTailProbeHandsOffOnceBeforeFin() {
+        AtomicLong now = new AtomicLong();
+        try (End a = new End(now, AdaptiveStream.WEAK); End b = new End(now, AdaptiveStream.WEAK)) {
+            a.stream.tick();
+            a.passUdp(b);
+            now.addAndGet(TimeUnit.MILLISECONDS.toNanos(150));
+            b.passUdp(a);
+            a.send(0);
+            a.udp.remove().release();
+            now.addAndGet(TimeUnit.MILLISECONDS.toNanos(200));
+            a.stream.tick();
+            a.udp.remove().release();
+            now.addAndGet(TimeUnit.SECONDS.toNanos(1));
+            a.stream.tick();
+            a.stream.drainToTcp();
+            assertEquals(1, a.tcp.size());
+            a.passTcp(b);
+            ordered(b, 1);
         }
     }
 

@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -36,12 +37,12 @@ class UdpGameRedundancyTest {
         EmbeddedChannel client = channel(CLIENT, new DailyUdpWire(id, SERVER, ALIAS, null, now::get, DailyUdpWire.GAME, null, key));
         EmbeddedChannel server = channel(SERVER, new DailyUdpWire(id, null, null, a -> false, now::get, DailyUdpWire.GAME, null, key));
         try {
-            for (int seq = 0; seq < 435; seq++) {
+            for (int seq = 0; seq < 535; seq++) {
                 now.addAndGet(5_000_000L);
                 client.writeOutbound(new DatagramPacket(Unpooled.buffer(4).writeInt(seq), SERVER));
                 int copies = 0;
                 DatagramPacket packet;
-                boolean blocked = (seq < 125 || seq >= 365) && seq % 32 == 8;
+                boolean blocked = (seq < 160 || seq >= 465) && seq % 32 == 8;
                 while ((packet = client.readOutbound()) != null) {
                     int index = copies++;
                     if (seq == 0 && index == 0) {
@@ -50,19 +51,19 @@ class UdpGameRedundancyTest {
                         receive(server, new DatagramPacket(forged, SERVER), CLIENT);
                         assertNull(server.readInbound());
                     }
-                    if (blocked || seq < 125 && seq % 32 == 9 && index == 0) {
+                    if (blocked || seq < 160 && seq % 32 == 9 && index == 0) {
                         packet.release();
                     } else {
-                        if (seq == 0 && index == 1) receive(server, packet.retainedDuplicate(), CLIENT);
+                        if (seq == 80 && index == 1) receive(server, packet.retainedDuplicate(), CLIENT);
                         receive(server, packet, CLIENT);
                     }
                 }
-                if (seq == 0) assertEquals(2, copies);
-                if (seq == 100) assertEquals(3, copies);
-                if (seq == 359) assertEquals(1, copies);
-                if (seq == 434) assertEquals(2, copies, "loss is observable after returning to 1x");
+                if (seq == 0) assertEquals(1, copies);
+                if (seq == 150) assertEquals(3, copies);
+                if (seq == 459) assertEquals(1, copies);
+                if (seq == 534) assertEquals(2, copies, "loss is observable after returning to 1x");
                 DatagramPacket payload = server.readInbound();
-                if (blocked) {
+                if (blocked || copies == 1 && seq < 160 && seq % 32 == 9) {
                     assertNull(payload);
                 } else {
                     assertNotNull(payload);
@@ -76,8 +77,7 @@ class UdpGameRedundancyTest {
             server.writeOutbound(new DatagramPacket(Unpooled.buffer(1).writeByte(42), CLIENT));
             DatagramPacket first = server.readOutbound(), second = server.readOutbound();
             assertNotNull(first);
-            assertNotNull(second);
-            receive(client, second, SERVER);
+            assertNull(second, "return direction starts independently at one copy");
             receive(client, first, SERVER);
             DatagramPacket payload = client.readInbound();
             assertEquals(42, payload.content().readUnsignedByte());
@@ -91,7 +91,7 @@ class UdpGameRedundancyTest {
 
     @Test
     void sustainedFeedbackDelayDisablesExtraCopiesBeforeCongestionCanPromoteThem() {
-        UdpGameRedundancy state = new UdpGameRedundancy();
+        UdpGameRedundancy state = new UdpGameRedundancy(new AtomicLong());
         for (int i = 0; i < 104; i++) {
             long sendTime = i * 10_000_000L;
             state.begin(sendTime);
@@ -112,19 +112,38 @@ class UdpGameRedundancyTest {
 
     @Test
     void missingFeedbackAndLocalPressureBoundExtraTraffic() {
-        UdpGameRedundancy game = new UdpGameRedundancy();
+        UdpGameRedundancy game = new UdpGameRedundancy(new AtomicLong());
         for (int i = 0; i < 64; i++) {
             int seq = game.begin(0);
-            assertEquals(2, game.copies);
+            assertEquals(1, game.copies);
             assertFalse(game.extra(seq, 100, false, 0));
-            if (i < 8) assertTrue(game.extra(seq, 65536, true, 0));
-            else assertFalse(game.extra(seq, 65536, true, 0));
+            if (i < 8) assertTrue(game.extra(seq, 1024, true, 0));
+            else assertFalse(game.extra(seq, 1024, true, 0));
         }
         game.begin(0);
         assertEquals(1, game.copies);
         assertEquals(65, game.sentUnique);
         assertEquals(73, game.sentCopies);
+        assertTrue(game.extra(64, 100, true, TimeUnit.MILLISECONDS.toNanos(2)));
         assertTrue(game.suppressed > 0);
+    }
+
+    @Test
+    void delayedFeedbackCanGrowHistoryAndCountsExpiredWindows() {
+        UdpGameRedundancy state = new UdpGameRedundancy(new AtomicLong());
+        try {
+            for (int i = 0; i < 1000; i++) {
+                state.begin(i * 1_000_000L);
+                if (i != 400 && i != 800 && i != 840) continue;
+                ByteBuf report = Unpooled.buffer(8).writeByte(UdpGameRedundancy.REPORT).writeInt(i - 310)
+                        .writeByte(30).writeByte(30).writeByte(30);
+                try {
+                    state.read(report, report.alloc(), i * 1_000_000L, true, ByteBuf::release, ByteBuf::release);
+                } finally { report.release(); }
+            }
+            assertEquals(1, state.expiredReports);
+            assertEquals(2, state.copies);
+        } finally { state.close(); }
     }
 
     @Test

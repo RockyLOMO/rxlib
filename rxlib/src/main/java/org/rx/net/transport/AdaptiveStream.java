@@ -36,6 +36,11 @@ public final class AdaptiveStream implements AutoCloseable {
     private final LongSupplier clock;
     private final UdpDailyFec fec;
     private final int profile;
+    // Both candidates use existing DATA semantics. Reliable TCP remains the final repair lane.
+    private static final boolean UDP_TAIL = !"tcp".equalsIgnoreCase(System.getProperty("app.rss.weak.tailProbe", "udp"));
+    private final boolean udpTail;
+    private long tailDeadline, nextTailAllowed;
+    private boolean tailArmed, tailSent;
     private int sendSlots, receiveSlots, sackBase, reliableUntil;
     private boolean hasReliablePrefix;
     private long sackReceived, stalledSince;
@@ -47,7 +52,7 @@ public final class AdaptiveStream implements AutoCloseable {
     private long srtt, variation, sampleTime;
     private int sampleSeq;
     private boolean sampling;
-    private boolean ready, probing, closed, gapRequested;
+    private boolean peerProbed, ready, probing, closed, gapRequested;
 
     public AdaptiveStream(ByteBufAllocator alloc, Consumer<ByteBuf> tcp, Consumer<ByteBuf> udp,
                           Consumer<ByteBuf> deliver, LongSupplier nanoClock) {
@@ -56,6 +61,12 @@ public final class AdaptiveStream implements AutoCloseable {
 
     public AdaptiveStream(ByteBufAllocator alloc, Consumer<ByteBuf> tcp, Consumer<ByteBuf> udp,
                           Consumer<ByteBuf> deliver, LongSupplier nanoClock, int profile) {
+        this(alloc, tcp, udp, deliver, nanoClock, profile, UDP_TAIL);
+    }
+
+    AdaptiveStream(ByteBufAllocator alloc, Consumer<ByteBuf> tcp, Consumer<ByteBuf> udp,
+                   Consumer<ByteBuf> deliver, LongSupplier nanoClock, int profile, boolean udpTail) {
+        this.udpTail = udpTail;
         if (profile < 0 || profile > WEAK) throw new IllegalArgumentException("unknown adaptive profile");
         this.profile = profile;
         this.alloc = alloc;
@@ -90,7 +101,9 @@ public final class AdaptiveStream implements AutoCloseable {
                     sampling = true;
                 }
                 if (pending.isEmpty()) {
-                    deadline = clock.getAsLong() + repairDelay;
+                    scheduleRepair();
+                } else {
+                    tailArmed = false;
                 }
                 pending.add(frame);
                 fec.write(frame, udpOut);
@@ -125,7 +138,9 @@ public final class AdaptiveStream implements AutoCloseable {
                     sampling = false;
                 }
                 while (count-- > 0) pending.remove().release();
-                deadline = clock.getAsLong() + repairDelay;
+                tailSent = false;
+                scheduleRepair();
+                tailArmed &= pending.size() == 1;
                 if (ack - sackBase >= Long.SIZE) sackReceived = 0;
                 if (hasReliablePrefix && ack - reliableUntil >= 0) hasReliablePrefix = false;
                 if (pending.isEmpty()) {
@@ -134,6 +149,7 @@ public final class AdaptiveStream implements AutoCloseable {
                     return;
                 }
             }
+            if (selective || type == GAP) tailArmed = false;
             if (selective) {
                 repairHoles(ack, received);
             } else if (type == GAP) {
@@ -231,6 +247,7 @@ public final class AdaptiveStream implements AutoCloseable {
             }
             int id = frame.getInt(i + 1);
             if (type == PING) {
+                peerProbed = true;
                 udpOut.accept(control(PONG, id));
             } else if (probing && probeId == id) {
                 updateRtt(clock.getAsLong() - lastPing);
@@ -253,7 +270,7 @@ public final class AdaptiveStream implements AutoCloseable {
             srtt += (sample - srtt) / 8;
         }
         reorderGrace = Math.max(REORDER_GRACE, Math.min(TimeUnit.MILLISECONDS.toNanos(150), srtt / 4));
-        repairDelay = Math.min(PROBE_INTERVAL, Math.max(MIN_REPAIR, srtt + 4 * variation + ACK_DELAY));
+        repairDelay = Math.min(PROBE_INTERVAL, Math.max(MIN_REPAIR, srtt + Math.max(4 * variation, profile == WEAK ? srtt / 2 : 0) + ACK_DELAY));
     }
 
     private void decoded(ByteBuf frame) {
@@ -271,6 +288,7 @@ public final class AdaptiveStream implements AutoCloseable {
         int i = frame.readerIndex();
         int seq = frame.getInt(i + 1), gap = seq - nextRx;
         if (gap < 0) {
+            if (profile == WEAK) requestAck(1);
             return;
         }
         if (gap > 0) {
@@ -313,15 +331,44 @@ public final class AdaptiveStream implements AutoCloseable {
         if (buffered > 0) {
             gapDeadline = clock.getAsLong() + reorderGrace;
         }
-        if (fromUdp || nextRx - previous > 1) {
-            if (sinceAck == 0) {
-                ackDeadline = clock.getAsLong() + ACK_DELAY;
-            }
-            sinceAck += nextRx - previous;
-            if (sinceAck >= 8 && !closed) {
-                acknowledge();
-            }
+        if (fromUdp || nextRx - previous > 1 || profile == WEAK && peerProbed) requestAck(nextRx - previous);
+    }
+
+    private void requestAck(int count) {
+        if (sinceAck == 0) ackDeadline = clock.getAsLong() + ACK_DELAY;
+        sinceAck += count;
+        if (sinceAck >= 8 && !closed) acknowledge();
+    }
+
+    private void scheduleRepair() {
+        long now = clock.getAsLong();
+        deadline = now + repairDelay;
+        // RTT plus delayed ACK and a jitter margin. Suppress when no useful lead over the RTO remains.
+        long probeAfter = Math.max(MIN_REPAIR / 2, srtt + ACK_DELAY + Math.max(ACK_DELAY, variation / 2));
+        tailDeadline = now + probeAfter;
+        tailArmed = profile == WEAK && !tailSent && probeAfter + ACK_DELAY < repairDelay
+                && (nextTailAllowed == 0 || tailDeadline - nextTailAllowed >= 0);
+    }
+
+    private void probeTail(long now) {
+        tailArmed = false;
+        if (pending.size() != 1 || hasReliablePrefix) return;
+        ByteBuf last = pending.peek();
+        tailSent = true;
+        sampling = false;
+        nextTailAllowed = now + Math.max(MIN_REPAIR, srtt);
+        if (udpTail) {
+            // Same stream sequence, fresh FEC DATA/SHARD sequence and fresh outer authentication.
+            fec.write(last, udpOut);
+            DiagnosticMetrics.record("rss.tcp.adaptive.udpTailProbeBytes", last.readableBytes());
+        } else {
+            hasReliablePrefix = true;
+            reliableUntil = last.getInt(1) + 1;
+            tcpOut.accept(last.retainedDuplicate());
+            recordRepair(1, last.readableBytes() - HEADER, "reason=tail");
         }
+        // Allow the reply one measured round trip before handing the stream back to TCP.
+        deadline = Math.max(deadline, now + srtt + ACK_DELAY + Math.max(ACK_DELAY, variation));
     }
 
     public void tick() {
@@ -331,6 +378,8 @@ public final class AdaptiveStream implements AutoCloseable {
         long now = clock.getAsLong();
         if (!pending.isEmpty() && now - deadline >= 0) {
             drainPendingToTcp("reason=timeout");
+        } else if (tailArmed && now - tailDeadline >= 0) {
+            probeTail(now);
         }
         if (!ready && now - nextProbe >= 0) {
             lastPing = now;
@@ -364,6 +413,7 @@ public final class AdaptiveStream implements AutoCloseable {
         long now = clock.getAsLong();
         long delay = ready ? Long.MAX_VALUE : nextProbe - now;
         if (!pending.isEmpty()) delay = Math.min(delay, deadline - now);
+        if (tailArmed && !pending.isEmpty()) delay = Math.min(delay, tailDeadline - now);
         if (buffered > 0 && !gapRequested) delay = Math.min(delay, gapDeadline - now);
         if (sinceAck > 0) delay = Math.min(delay, ackDeadline - now);
         long fecDelay = fec.nextDelayMillis();
@@ -398,6 +448,7 @@ public final class AdaptiveStream implements AutoCloseable {
     }
 
     private void drainPendingToTcp(String reason) {
+        tailArmed = tailSent = false;
         ready = probing = sampling = false;
         nextProbe = clock.getAsLong() + PROBE_INTERVAL;
         fec.cancelPendingParity();
