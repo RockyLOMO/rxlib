@@ -43,7 +43,7 @@ final class DailyUdpCipher {
         if (secret == null || salt == null) {
             throw new IllegalArgumentException("UDP AES requires a deployment key and a fresh client salt");
         }
-        replay = new UdpSequenceWindow((features & DailyUdpWire.FEC) != 0 ? UdpSequenceWindow.FEC_SIZE : 64);
+        replay = new UdpSequenceWindow((features & (DailyUdpWire.FEC | DailyUdpWire.GAME)) != 0 ? UdpSequenceWindow.FEC_SIZE : 64);
         try {
             Mac derive = Mac.getInstance("HmacSHA256");
             derive.init(new SecretKeySpec(secret, "HmacSHA256"));

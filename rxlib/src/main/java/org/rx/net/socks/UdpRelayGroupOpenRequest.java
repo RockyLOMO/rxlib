@@ -22,6 +22,7 @@ public final class UdpRelayGroupOpenRequest implements Serializable {
     private int maxRelayCount = 1;
     private long idleTimeoutMillis;
     private int dailyFeatures;
+    private int profileVersion;
     private UUID clientSalt;
     private boolean sharedDedupRequired;
 }

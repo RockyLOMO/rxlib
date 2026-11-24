@@ -47,10 +47,19 @@ class DailyUdpWireTest {
         }
     }
 
+    @Test
+    void gameAndWeakHopWithAuthenticatedFeedback() throws Exception {
+        verifyHops(InetAddress.getByName("127.0.0.1"), DailyUdpWire.GAME);
+        verifyHops(InetAddress.getByName("::1"), DailyUdpWire.WEAK | DailyUdpWire.FEC | DailyUdpWire.LZ4);
+        if (DailyUdpWire.hasCipherKey()) {
+            verifyHops(InetAddress.getByName("::1"), DailyUdpWire.GAME | DailyUdpWire.AES);
+        }
+    }
+
     private void verifyHops(InetAddress ip, int flags) throws Exception {
         boolean lz4 = (flags & DailyUdpWire.LZ4) != 0;
         SocksConfig config = new SocksConfig(new LocalAddress(UUID.randomUUID().toString()));
-        config.setDailyUdpFeatures(7);
+        config.setDailyUdpFeatures(31);
         String redirectedRange = System.getenv("RSS_TEST_REDIRECTED_RANGE");
         if (redirectedRange != null) {
             config.setDailyPortRange(redirectedRange);
@@ -62,6 +71,7 @@ class DailyUdpWireTest {
             UdpRelayGroupOpenRequest req = new UdpRelayGroupOpenRequest();
             req.setMaxRelayCount(2);
             req.setDailyFeatures(flags);
+            if ((flags & (DailyUdpWire.GAME | DailyUdpWire.WEAK)) != 0) req.setProfileVersion(1);
             req.setClientSalt(UUID.randomUUID());
             UdpRelayGroupOpenResult result = server.openUdpRelayGroup(req, SocksRpcContract.rpcToken());
             assertTrue(result.isSuccess(), result.getErrorCode());
@@ -72,14 +82,20 @@ class DailyUdpWireTest {
             BlockingQueue<Integer> wireSizes = new LinkedBlockingQueue<>();
             Channel client = Sockets.udpBootstrap(null, ch -> {
                 ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
+                    private int generation = -1;
                     @Override public void channelRead(ChannelHandlerContext ctx, Object msg) {
-                        wirePorts.add(((DatagramPacket) msg).sender().getPort());
-                        wireSizes.add(((DatagramPacket) msg).content().readableBytes());
+                        DatagramPacket pkt = (DatagramPacket) msg;
+                        int hop = pkt.content().getInt(pkt.content().readerIndex() + 16);
+                        if (hop > generation) {
+                            generation = hop;
+                            wirePorts.add(pkt.sender().getPort());
+                            wireSizes.add(pkt.content().readableBytes());
+                        }
                         ctx.fireChannelRead(msg);
                     }
                 });
                 ch.pipeline().addLast(new DailyUdpWire(result.getToken(), primary, alias, null, clock::get, flags, req.getClientSalt(),
-                        (flags & DailyUdpWire.AES) != 0 ? DailyUdpCipher.configuredKey() : null));
+                        (flags & DailyUdpWire.AES) != 0 ? DailyUdpCipher.configuredKey() : result.getAuthSecret()));
                 ch.pipeline().addLast(new SimpleChannelInboundHandler<DatagramPacket>() {
                     @Override protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket packet) {
                         ByteBuf b = packet.content();

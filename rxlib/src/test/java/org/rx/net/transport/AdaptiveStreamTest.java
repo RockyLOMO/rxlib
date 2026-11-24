@@ -20,6 +20,10 @@ class AdaptiveStreamTest {
         final AdaptiveStream stream;
 
         End(AtomicLong clock) {
+            this(clock, 0);
+        }
+
+        End(AtomicLong clock, int profile) {
             stream = new AdaptiveStream(UnpooledByteBufAllocator.DEFAULT, tcp::add, packet -> {
                 assertTrue(packet.readableBytes() <= AdaptiveStream.MAX_UDP_FRAME);
                 udp.add(packet);
@@ -30,7 +34,7 @@ class AdaptiveStreamTest {
                 } finally {
                     bytes.release();
                 }
-            }, clock::get);
+            }, clock::get, profile);
         }
 
         void send(int value) {
@@ -86,6 +90,59 @@ class AdaptiveStreamTest {
         assertEquals(count, dest.delivered.size());
         for (int i = 0; i < count; i++) {
             assertEquals(i, dest.delivered.get(i).intValue());
+        }
+    }
+
+    @Test
+    void weakRepairsTwoHolesWithOneBitmap() {
+        AtomicLong clock = new AtomicLong();
+        try (End a = new End(clock, AdaptiveStream.WEAK); End b = new End(clock, AdaptiveStream.WEAK)) {
+            probe(a, b);
+            for (int i = 0; i < 12; i++) {
+                a.send(i);
+                if (i == 2 || i == 5) a.udp.remove().release();
+                a.passUdp(b);
+            }
+            clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(40));
+            b.stream.tick();
+            assertEquals(1, b.tcp.size());
+            assertEquals(AdaptiveStream.SACK, b.tcp.element().getByte(0));
+            b.passTcp(a);
+            assertEquals(2, a.tcp.size());
+            assertTrue(a.stream.usingUdp());
+            // ACKs are outstanding. A FIN must preserve the two reliable repairs already in flight.
+            a.stream.drainToTcp();
+            assertEquals(2, a.tcp.size());
+            a.passTcp(b);
+            ordered(b, 12);
+        }
+    }
+
+    @Test
+    void enhancedWindowsGrowOnHighRttAndStopAtTheNegotiatedLimit() {
+        for (int profile : new int[]{AdaptiveStream.GAME, AdaptiveStream.WEAK}) {
+            AtomicLong clock = new AtomicLong();
+            try (End a = new End(clock, profile); End b = new End(clock, profile)) {
+                a.stream.tick();
+                a.passUdp(b);
+                clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(150));
+                b.passUdp(a);
+                for (int i = 0; i < 256; i++) a.send(i);
+                assertTrue(a.stream.usingUdp());
+                ByteBuf first = a.udp.remove();
+                try {
+                    a.passUdp(b);
+                    assertTrue(b.delivered.isEmpty());
+                    b.stream.udp(first);
+                    ordered(b, 256);
+                } finally {
+                    first.release();
+                }
+                a.send(256);
+                assertFalse(a.stream.usingUdp());
+                a.passTcp(b);
+                ordered(b, 257);
+            }
         }
     }
 

@@ -4132,3 +4132,7 @@ Java 8 本地单线程编码对比取仓库 README 的 256 个 1200 B 片段，�
 ## 2026-11-23 RSS 内部传输
 
 按实际目的端口和协议选择策略，TCP/UDP 各有强制保护与已加密端口表。TCP 位 2 使用独立部署 PSK 派生的方向密钥做 AES-128-GCM，位 4 单独选择证书 TLS。UDP 按 wire features 隔离协商、租约和同一关联上的多目标处理；Server 对实际目标端口校验保护下限。日常 TCP/FEC 重用已编码的数据流。用户配置、Actions 发布与回退见 [传输配置](../docs/rss-transport.md)，弱网范围见 [FEC review](../docs/rxlib_fec_review.md)。
+
+### 2026-11-24 RSS game / weak 传输
+
+TCP 私有认证方法区分 daily/game/weak，预热连接按模式和发送压缩级别隔离。UDP profile v1 通过控制 RPC 回显版本与特性，未启用 AES 的增强会话使用新鲜组密钥认证。普通 UDP 维持数据报语义；有序选择性修复只用于 weak 字节流。详见 [RSS 配置](../docs/rss-transport.md) 和 [UDP 说明](../docs/reference/net/udp.md#game-与-weak)。

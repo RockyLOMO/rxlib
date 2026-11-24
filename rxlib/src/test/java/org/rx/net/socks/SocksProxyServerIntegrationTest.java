@@ -1901,6 +1901,7 @@ class SocksProxyServerIntegrationTest {
         cfg.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
         SocksConfig uplink = new SocksConfig();
         uplink.setAdaptiveTcp(true);
+        uplink.setAdaptiveProfile(psk ? 2 : tlsServer != null ? 1 : 0);
         uplink.setTransportFlags(cfg.getTransportFlags());
         if (psk) {
             cfg.setRequiredTcpCipherPorts(new int[]{TCP_ECHO_PORT});
@@ -1964,6 +1965,7 @@ class SocksProxyServerIntegrationTest {
                 if (i == 1) {
                     waitForCondition(() -> hop.get() != null && hop.get().pipeline().get(AdaptiveTcpHandler.class) != null
                             && hop.get().pipeline().get(AdaptiveTcpHandler.class).usingUdp(), 5000, "bidirectional UDP probe");
+                    assertEquals(uplink.getAdaptiveProfile(), hop.get().pipeline().get(AdaptiveTcpHandler.class).profile);
                 }
                 if (i == 2) remote.adaptivePort.close();
                 ByteBuf plain = Unpooled.buffer();
@@ -2035,15 +2037,24 @@ class SocksProxyServerIntegrationTest {
             try (SocksProxyServer server = new SocksProxyServer(cfg, new SocksAuthenticator(Collections.singletonList(user)))) {
                 int port = ((InetSocketAddress) server.tcpChannels.get(0).localAddress()).getPort();
                 InetSocketAddress address = new InetSocketAddress("127.0.0.1", port);
-                Socks5WarmupHandler warm = new Socks5WarmupHandler(address, "warm", "test-pass", 4000);
-                warm.setAdaptiveTcp(true);
-                Channel ch = Sockets.bootstrap(cfg, address, c -> c.pipeline().addLast(warm)).connect(address).sync().channel();
-                try {
-                    warm.readyFuture().get(4, java.util.concurrent.TimeUnit.SECONDS);
-                    assertEquals(modern, ch.pipeline().get(AdaptiveTcpHandler.class) != null);
-                    ch.eventLoop().submit(() -> warm.connect(new InetSocketAddress("127.0.0.1", TCP_ECHO_PORT))).get().sync();
-                } finally {
-                    ch.close().sync();
+                for (int profile = 0; profile <= 2; profile++) {
+                    Socks5WarmupHandler warm = new Socks5WarmupHandler(address, "warm", "test-pass", 4000);
+                    warm.setAdaptiveTcp(true);
+                    warm.setAdaptiveProfile(profile);
+                    Channel ch = Sockets.bootstrap(cfg, address, c -> c.pipeline().addLast(warm)).connect(address).sync().channel();
+                    try {
+                        warm.readyFuture().get(4, java.util.concurrent.TimeUnit.SECONDS);
+                        AdaptiveTcpHandler handler = ch.pipeline().get(AdaptiveTcpHandler.class);
+                        if (modern) {
+                            assertNotNull(handler);
+                            assertEquals(profile, handler.profile);
+                        } else {
+                            assertNull(handler);
+                        }
+                        ch.eventLoop().submit(() -> warm.connect(new InetSocketAddress("127.0.0.1", TCP_ECHO_PORT))).get().sync();
+                    } finally {
+                        ch.close().sync();
+                    }
                 }
             }
         }

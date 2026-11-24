@@ -1,6 +1,7 @@
 package org.rx.util.rss;
 
 import org.rx.net.socks.SocksConfig;
+import org.rx.net.udp.DailyUdpWire;
 
 import java.io.Serializable;
 
@@ -10,9 +11,11 @@ public final class RssTransport implements Serializable {
     static final RssTransport DEFAULT = new RssTransport();
     public String profile = "plain";
     public Integer fec, tcp, udp;
+    public Integer tcpCompressionLevel;
 
     boolean valid() {
-        return ("plain".equals(profile) || "daily".equals(profile))
+        return ("plain".equals(profile) || "daily".equals(profile) || adaptiveProfile() != 0)
+                && (tcpCompressionLevel == null || tcpCompressionLevel >= 1 && tcpCompressionLevel <= 9)
                 && inRange(fec, 3) && inRange(tcp, 7) && inRange(udp, 3);
     }
 
@@ -20,16 +23,32 @@ public final class RssTransport implements Serializable {
         return value == null || value >= 0 && value <= max;
     }
 
+    int adaptiveProfile() {
+        if ("game".equals(profile)) return SocksConfig.ADAPTIVE_GAME;
+        if ("weak".equals(profile)) return SocksConfig.ADAPTIVE_WEAK;
+        return 0;
+    }
+
+    int compressionLevel() {
+        return tcpCompressionLevel != null ? tcpCompressionLevel : RssSupport.TCP_COMPRESSION_LEVEL;
+    }
+
     int fec() {
-        return fec != null ? fec : ("daily".equals(profile) ? 3 : 0);
+        if (fec != null) return fec;
+        if ("game".equals(profile)) return 2;
+        return "plain".equals(profile) ? 0 : 3;
     }
 
     int tcp() {
-        return tcp != null ? tcp : ("daily".equals(profile) ? 1 : 0);
+        return tcp != null ? tcp : ("plain".equals(profile) ? 0 : 1);
     }
 
     int udpFeatures() {
-        return (udp != null ? udp : 0) | ((fec() & 1) != 0 ? 4 : 0);
+        int features = udp != null ? udp : 0;
+        if ((fec() & 1) != 0) {
+            return features | DailyUdpWire.FEC | ("weak".equals(profile) ? DailyUdpWire.WEAK : 0);
+        }
+        return features | ("game".equals(profile) ? DailyUdpWire.GAME : 0);
     }
 
     static int[] cipherPorts() {
