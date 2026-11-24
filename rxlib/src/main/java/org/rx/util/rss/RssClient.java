@@ -476,8 +476,8 @@ public final class RssClient {
                 log.warn("Invalid RSS transport profile or mask for user {}", user.getUsername());
                 return false;
             }
-            if (user.transport != null && (user.transport.udpFeatures() & org.rx.net.udp.DailyUdpWire.AES) != 0
-                    && !org.rx.net.udp.DailyUdpWire.hasCipherKey()) {
+            if (user.transport != null && (user.transport.udpFeatures() & org.rx.net.rss.udp.DailyUdpWire.AES) != 0
+                    && !org.rx.net.rss.udp.DailyUdpWire.hasCipherKey()) {
                 log.warn("RSS UDP encryption for user {} requires RSS_UDP_AES_KEY", user.getUsername());
                 return false;
             }
@@ -1802,8 +1802,8 @@ public final class RssClient {
                 passthrough = tcpConfig(base, tcpCache, 0, adaptive, policy);
                 int features = policy.udpFeatures();
                 udp = udpConfig(base, udpCache, features);
-                protectedUdp = udpConfig(base, udpCache, features | org.rx.net.udp.DailyUdpWire.AES);
-                udpPassthrough = udpConfig(base, udpCache, features & ~(org.rx.net.udp.DailyUdpWire.LZ4 | org.rx.net.udp.DailyUdpWire.AES));
+                protectedUdp = udpConfig(base, udpCache, features | org.rx.net.rss.udp.DailyUdpWire.AES);
+                udpPassthrough = udpConfig(base, udpCache, features & ~(org.rx.net.rss.udp.DailyUdpWire.LZ4 | org.rx.net.rss.udp.DailyUdpWire.AES));
             }
 
             private static SocksConfig udpConfig(SocksConfig base, SocksConfig[] udpCache, int features) {

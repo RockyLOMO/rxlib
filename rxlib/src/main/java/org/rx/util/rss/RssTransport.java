@@ -1,7 +1,8 @@
 package org.rx.util.rss;
 
 import org.rx.net.socks.SocksConfig;
-import org.rx.net.udp.DailyUdpWire;
+import org.rx.net.rss.profile.RssProfile;
+import org.rx.net.rss.udp.DailyUdpWire;
 
 import java.io.Serializable;
 
@@ -14,7 +15,7 @@ public final class RssTransport implements Serializable {
     public Integer tcpCompressionLevel;
 
     boolean valid() {
-        return ("plain".equals(profile) || "daily".equals(profile) || adaptiveProfile() != 0)
+        return RssProfile.named(profile) != null
                 && (tcpCompressionLevel == null || tcpCompressionLevel >= 1 && tcpCompressionLevel <= 9)
                 && inRange(fec, 3) && inRange(tcp, 7) && inRange(udp, 3);
     }
@@ -24,9 +25,7 @@ public final class RssTransport implements Serializable {
     }
 
     int adaptiveProfile() {
-        if ("game".equals(profile)) return SocksConfig.ADAPTIVE_GAME;
-        if ("weak".equals(profile)) return SocksConfig.ADAPTIVE_WEAK;
-        return 0;
+        return RssProfile.named(profile).adaptiveId;
     }
 
     int compressionLevel() {
@@ -34,21 +33,20 @@ public final class RssTransport implements Serializable {
     }
 
     int fec() {
-        if (fec != null) return fec;
-        if ("game".equals(profile)) return 2;
-        return "plain".equals(profile) ? 0 : 3;
+        return fec != null ? fec : RssProfile.named(profile).fecMask;
     }
 
     int tcp() {
-        return tcp != null ? tcp : ("plain".equals(profile) ? 0 : 1);
+        return tcp != null ? tcp : RssProfile.named(profile).tcpMask;
     }
 
     int udpFeatures() {
+        RssProfile policy = RssProfile.named(profile);
         int features = udp != null ? udp : 0;
         if ((fec() & 1) != 0) {
-            return features | DailyUdpWire.FEC | ("weak".equals(profile) ? DailyUdpWire.WEAK : "game".equals(profile) ? DailyUdpWire.GAME : 0);
+            return features | DailyUdpWire.FEC | (policy == RssProfile.WEAK ? DailyUdpWire.WEAK : policy == RssProfile.GAME ? DailyUdpWire.GAME : 0);
         }
-        return features | ("game".equals(profile) ? DailyUdpWire.GAME : 0);
+        return features | (policy == RssProfile.GAME ? DailyUdpWire.GAME : 0);
     }
 
     static int[] cipherPorts() {

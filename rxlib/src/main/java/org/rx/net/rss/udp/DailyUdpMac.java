@@ -1,4 +1,6 @@
-package org.rx.net.udp;
+package org.rx.net.rss.udp;
+
+import org.rx.net.udp.UdpSequenceWindow;
 
 import io.netty.buffer.ByteBuf;
 
@@ -51,6 +53,22 @@ final class DailyUdpMac {
         } catch (RuntimeException e) {
             wire.release();
             throw e;
+        }
+    }
+
+    // Encode cleartext game data directly into its final authenticated datagram.
+    ByteBuf sealGame(ByteBuf data, long tokenHigh, long tokenLow, int epoch, int copy, int seq) {
+        if (sent == Long.MAX_VALUE) throw new IllegalStateException("UDP authentication sequence exhausted");
+        int size = HEADER + OVERHEAD + UdpGameRedundancy.DATA_HEADER + data.readableBytes();
+        ByteBuf wire = data.alloc().ioBuffer(size, size);
+        try {
+            wire.writeLong(tokenHigh).writeLong(tokenLow).writeInt(epoch).writeLong(++sent)
+                    .writeByte(copy).writeInt(seq).writeBytes(data, data.readerIndex(), data.readableBytes());
+            sign(tx, wire, 0, wire.readableBytes());
+            return wire.writeBytes(digest, 0, TAG);
+        } catch (RuntimeException failure) {
+            wire.release();
+            throw failure;
         }
     }
 

@@ -1,14 +1,14 @@
 package org.rx.net.socks;
 
+import org.rx.net.rss.tcp.AdaptiveTcpHandler;
+
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import io.netty.handler.codec.ByteToMessageDecoder;
-import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.socksx.v5.*;
 import io.netty.util.AttributeKey;
 import org.rx.diagnostic.DiagnosticMetrics;
-import org.rx.net.transport.AdaptiveStream;
-import org.rx.net.transport.AdaptiveUdpPort;
+import org.rx.net.rss.tcp.AdaptiveUdpPort;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -97,10 +97,7 @@ final class SocksAdaptiveHandshake {
         } catch (GeneralSecurityException e) {
             throw new IllegalStateException(e);
         }
-        AdaptiveTcpHandler handler = new AdaptiveTcpHandler(ByteBuffer.wrap(nonce).getLong(), key, serverPort,
+        AdaptiveTcpHandler.install(tcp, ByteBuffer.wrap(nonce).getLong(), key, serverPort,
                 ByteBuffer.wrap(nonce).getShort(28) & 0xffff, ByteBuffer.wrap(nonce).getShort(30) & 0xffff, profile);
-        tcp.pipeline().addFirst("rssAdaptive", handler);
-        tcp.pipeline().addFirst("rssAdaptiveLength", new LengthFieldBasedFrameDecoder(
-                AdaptiveStream.MAX_TCP_FRAME + 2, 0, 2, 0, 2));
     }
 }

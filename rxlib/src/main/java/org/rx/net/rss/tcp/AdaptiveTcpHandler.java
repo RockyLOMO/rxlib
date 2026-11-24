@@ -1,23 +1,23 @@
-package org.rx.net.socks;
+package org.rx.net.rss.tcp;
+
+import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import org.rx.diagnostic.DiagnosticMetrics;
-import org.rx.net.transport.AdaptiveStream;
-import org.rx.net.transport.AdaptiveUdpPort;
 
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /** Below the RSS transport codecs: both paths carry the original encoded bytes. */
-final class AdaptiveTcpHandler extends ChannelDuplexHandler {
+public final class AdaptiveTcpHandler extends ChannelDuplexHandler {
     private final long id;
     private final byte[] key;
     private final boolean server;
     private AdaptiveUdpPort port;
     private final int primaryPort, aliasPort;
-    final int profile;
+    private final int profile;
     private AdaptiveStream stream;
     private ChannelHandlerContext ctx;
     private ScheduledFuture<?> timer;
@@ -26,7 +26,17 @@ final class AdaptiveTcpHandler extends ChannelDuplexHandler {
     private long tcpTxBytes, tcpRxBytes, udpTxBytes, udpRxBytes;
     private long tcpTxFrames, tcpRxFrames, udpTxFrames, udpRxFrames;
 
-    AdaptiveTcpHandler(long id, byte[] key, AdaptiveUdpPort port, int primaryPort, int aliasPort, int profile) {
+    public static void install(Channel tcp, long id, byte[] key, AdaptiveUdpPort port, int primary, int alias, int profile) {
+        tcp.pipeline().addFirst("rssAdaptive", new AdaptiveTcpHandler(id, key, port, primary, alias, profile));
+        tcp.pipeline().addFirst("rssAdaptiveLength", new LengthFieldBasedFrameDecoder(
+                AdaptiveStream.MAX_TCP_FRAME + 2, 0, 2, 0, 2));
+    }
+
+    public int profile() {
+        return profile;
+    }
+
+    private AdaptiveTcpHandler(long id, byte[] key, AdaptiveUdpPort port, int primaryPort, int aliasPort, int profile) {
         this.profile = profile;
         this.primaryPort = primaryPort;
         this.aliasPort = aliasPort;
@@ -143,7 +153,7 @@ final class AdaptiveTcpHandler extends ChannelDuplexHandler {
         }, delay, TimeUnit.MILLISECONDS);
     }
 
-    boolean usingUdp() {
+    public boolean usingUdp() {
         return stream.usingUdp();
     }
 

@@ -1,4 +1,4 @@
-package org.rx.net.transport;
+package org.rx.net.rss.tcp;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;

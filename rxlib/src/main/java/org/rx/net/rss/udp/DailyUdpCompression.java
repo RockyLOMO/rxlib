@@ -1,4 +1,6 @@
-package org.rx.net.udp;
+package org.rx.net.rss.udp;
+
+import org.rx.net.udp.compress.UdpCompressSupport;
 
 import io.netty.buffer.ByteBuf;
 import net.jpountz.lz4.LZ4Exception;

@@ -26,7 +26,7 @@ shadowUsers:
 - `tcp` 的位 1、2、4 分别为 zlib、共享密钥 AES-128-GCM、校验证书的 TLS。AES 与 TLS 两位同时出现时使用 TLS。`udp` 的位 1、2 分别为 LZ4 和 AES。保留显式 0 和按目的端口覆盖。
 - `tcpCompressionLevel` 取 1～9，默认 3，压缩位开启时生效。Client 上的用户字段控制上行编码，Server 的 `-tcpCompressionLevel=3` 独立控制下行编码。解码允许两端使用不同级别。
 - TCP 新模式通过独立 SOCKS 方法在两端选择。旧 Server 选择常规认证时，该连接继续走 TCP，`rss.tcp.adaptive.negotiationFallback` 按请求的 profile 记录回退。普通 UDP 的新模式要求 RPC 明确确认版本与特性，旧端协商失败。
-- 游戏副本默认从 2 倍起步。某一端使用 JVM 参数 `-Dapp.rss.game.initialCopies=1` 可让本端先单发，后续仍按反馈调节。
+- 游戏副本默认单发起步，按方向反馈升档。可用 `-Dapp.rss.game.initialCopies=2` 对照测试双发起步。weak 尾包探测可用 `-Dapp.rss.weak.tailProbe=tcp` 选择 TCP 候选；UDP 候选使用新认证序号，超时仍由可靠 TCP 接管。
 - 游戏副本和两种增强 profile 的 UDP FEC 都逐包认证。启用 AES 时沿用部署密钥；其余端口由已加密的 RSS 控制 RPC 下发每组独立的认证密钥。认证完成后更新防重放窗口和回程地址；同一组的两个端口共享状态。
 
 ## 按协议选择目标端口

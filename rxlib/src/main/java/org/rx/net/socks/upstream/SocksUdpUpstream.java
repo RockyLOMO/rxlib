@@ -26,7 +26,7 @@ import org.rx.net.socks.UdpRelayGroupUpdateResult;
 import org.rx.net.socks.UdpRelayAttributes;
 import org.rx.net.socks.UdpRedundantSupport;
 import org.rx.net.socks.UdpLeasePoolKey;
-import org.rx.net.udp.DailyUdpWire;
+import org.rx.net.rss.udp.DailyUdpWire;
 import org.rx.net.udp.UdpPortHoppingConfig;
 import org.rx.net.udp.UdpPortHoppingMode;
 import java.net.InetSocketAddress;

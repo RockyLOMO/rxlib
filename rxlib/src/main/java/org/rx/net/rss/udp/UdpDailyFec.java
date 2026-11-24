@@ -1,4 +1,6 @@
-package org.rx.net.udp;
+package org.rx.net.rss.udp;
+
+import org.rx.net.udp.UdpSequenceWindow;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;

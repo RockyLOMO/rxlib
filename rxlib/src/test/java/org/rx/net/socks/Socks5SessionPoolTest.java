@@ -1,5 +1,7 @@
 package org.rx.net.socks;
 
+import org.rx.net.rss.tcp.AdaptiveTcpHandler;
+
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelInboundHandlerAdapter;
