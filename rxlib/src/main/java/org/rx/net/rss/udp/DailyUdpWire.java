@@ -21,6 +21,7 @@ import java.lang.management.ThreadMXBean;
 import java.net.InetSocketAddress;
 import java.util.UUID;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -52,6 +53,7 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
     private ScheduledFuture<?> timer;
     private ChannelPromise dataPromise;
     private long started, lastMetrics, lastProbe, payloadBytes, encodedBytes, compressionSavedBytes;
+    private static final AtomicLong LAST_LOOP_SAMPLE = new AtomicLong(System.nanoTime() - TimeUnit.SECONDS.toNanos(1));
     private int epoch, wireMtu, authOperations;
     private final ChannelFutureListener originalWrite = f -> {
         if (!f.isSuccess()) DiagnosticMetrics.record("rss.udp.game.tx.originalWriteFailure", 1);
@@ -257,6 +259,7 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
                     deliver(b.retainedSlice());
                 }
                 if (clock.getAsLong() - lastMetrics >= TimeUnit.SECONDS.toNanos(30)) {
+                    if (game != null && DiagnosticMetrics.isEnabled()) sampleLoopDelay(path);
                     recordMetrics();
                 }
             }
@@ -433,6 +436,19 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
 
     private int wireOverhead() {
         return HEADER_BYTES + (cipher != null ? DailyUdpCipher.OVERHEAD : mac != null ? DailyUdpMac.OVERHEAD : 0);
+    }
+
+    // At most one extra task per process per second, from already-active metric intervals.
+    private static void sampleLoopDelay(ChannelHandlerContext path) {
+        long start = System.nanoTime();
+        long last = LAST_LOOP_SAMPLE.get();
+        if (start - last < TimeUnit.SECONDS.toNanos(1) || !LAST_LOOP_SAMPLE.compareAndSet(last, start)) return;
+        try {
+            path.executor().execute(() -> DiagnosticMetrics.record("rss.udp.game.eventLoopDelayMillis",
+                    (System.nanoTime() - start) / 1_000_000.0));
+        } catch (RejectedExecutionException closing) {
+            // Closing the event loop supersedes its pending latency measurement.
+        }
     }
 
     private void recordMetrics() {

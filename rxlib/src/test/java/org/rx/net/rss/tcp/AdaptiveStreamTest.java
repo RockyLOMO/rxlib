@@ -158,6 +158,39 @@ class AdaptiveStreamTest {
     }
 
     @Test
+    void cumulativeAckAndTailRepairCrossTheSignedSequenceBoundary() throws Exception {
+        AtomicLong now = new AtomicLong();
+        try (End a = new End(now, AdaptiveStream.WEAK); End b = new End(now, AdaptiveStream.WEAK)) {
+            java.lang.reflect.Field tx = AdaptiveStream.class.getDeclaredField("nextTx");
+            java.lang.reflect.Field rx = AdaptiveStream.class.getDeclaredField("nextRx");
+            tx.setAccessible(true);
+            rx.setAccessible(true);
+            tx.setInt(a.stream, Integer.MAX_VALUE);
+            rx.setInt(b.stream, Integer.MAX_VALUE);
+            a.stream.tick();
+            a.passUdp(b);
+            now.addAndGet(TimeUnit.MILLISECONDS.toNanos(150));
+            b.passUdp(a);
+            a.send(0);
+            a.passUdp(b);
+            now.addAndGet(TimeUnit.MILLISECONDS.toNanos(160));
+            b.stream.tick();
+            b.passTcp(a);
+            a.send(1);
+            a.udp.remove().release();
+            now.addAndGet(TimeUnit.MILLISECONDS.toNanos(210));
+            a.stream.tick();
+            a.passUdp(b);
+            now.addAndGet(TimeUnit.MILLISECONDS.toNanos(15));
+            b.stream.tick();
+            b.passTcp(a);
+            a.stream.drainToTcp();
+            assertTrue(a.tcp.isEmpty());
+            ordered(b, 2);
+        }
+    }
+
+    @Test
     void invalidSelectiveRangesCannotReleaseReliableData() {
         AtomicLong clock = new AtomicLong();
         try (End a = new End(clock, AdaptiveStream.WEAK); End b = new End(clock, AdaptiveStream.WEAK)) {
