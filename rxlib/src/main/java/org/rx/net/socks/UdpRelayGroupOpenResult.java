@@ -21,6 +21,10 @@ public final class UdpRelayGroupOpenResult implements Serializable {
     private String groupId;
     @ToString.Exclude
     private String token;
+    private int profileVersion, selectedFeatures;
+    @ToString.Exclude
+    @com.alibaba.fastjson2.annotation.JSONField(serialize = false)
+    private byte[] authSecret;
     private long expireAtMillis;
     private List<UdpRelayEndpoint> relays = Collections.emptyList();
 

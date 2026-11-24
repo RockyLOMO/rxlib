@@ -72,6 +72,36 @@ class DailyRelayGroupTest {
         }
     }
 
+    @Test
+    void profileNegotiationRejectsMixedFeaturesAndExchangesAnAuthenticatedSession() throws Exception {
+        SocksConfig config = new SocksConfig(new LocalAddress(UUID.randomUUID().toString()));
+        config.setDailyUdpFeatures(31);
+        try (SocksProxyServer server = new SocksProxyServer(config)) {
+            String token = SocksRpcContract.rpcToken();
+            assertTrue(server.socksRpcCapabilities(token).has(SocksRpcCapabilities.PROFILE_UDP_V1));
+            UdpRelayGroupOpenRequest req = new UdpRelayGroupOpenRequest();
+            req.setMaxRelayCount(2);
+            req.setDailyFeatures(DailyUdpWire.GAME);
+            assertFalse(server.openUdpRelayGroup(req, token).isSuccess());
+            req.setProfileVersion(1);
+            req.setClientSalt(UUID.randomUUID());
+            req.setDailyFeatures(DailyUdpWire.GAME | DailyUdpWire.FEC);
+            assertFalse(server.openUdpRelayGroup(req, token).isSuccess());
+            req.setDailyFeatures(DailyUdpWire.WEAK);
+            assertFalse(server.openUdpRelayGroup(req, token).isSuccess());
+            for (int features : new int[]{DailyUdpWire.GAME, DailyUdpWire.WEAK | DailyUdpWire.FEC}) {
+                req.setDailyFeatures(features);
+                UdpRelayGroupOpenResult result = server.openUdpRelayGroup(req, token);
+                assertTrue(result.isSuccess(), result.getErrorCode());
+                assertEquals(1, result.getProfileVersion());
+                assertEquals(features, result.getSelectedFeatures());
+                assertEquals(32, result.getAuthSecret().length);
+                assertFalse(com.alibaba.fastjson2.JSON.toJSONString(result).contains("authSecret"));
+                assertTrue(server.closeUdpRelayGroup(result.getGroupId(), token));
+            }
+        }
+    }
+
     private static void send(Channel channel, SocksUdpUpstream route, DatagramSocket dst, int value) throws Exception {
         channel.writeAndFlush(new io.netty.channel.socket.DatagramPacket(
                 UdpManager.socks5Encode(channel.alloc().buffer(4).writeInt(value), (InetSocketAddress) dst.getLocalSocketAddress()),

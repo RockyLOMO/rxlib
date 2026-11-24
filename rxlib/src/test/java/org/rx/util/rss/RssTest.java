@@ -2069,7 +2069,30 @@ public class RssTest extends AbstractTester {
             assertSame(changed.udp(a, 443), changed.udp(a, 853));
             assertEquals(0, changed.tcp(a, 993).getTransportFlags().getValue());
         }
+        policy.fec = policy.tcp = policy.udp = null;
+        for (String name : new String[]{"game", "weak"}) {
+            policy.profile = name;
+            policy.tcpCompressionLevel = 6;
+            RssClient.OutboundProfiles changed = new RssClient.OutboundProfiles(reload, inbound);
+            boolean game = "game".equals(name);
+            SocksConfig fast = changed.tcp(a, 12345);
+            assertEquals(game ? SocksConfig.ADAPTIVE_GAME : SocksConfig.ADAPTIVE_WEAK, fast.getAdaptiveProfile());
+            assertEquals(6, fast.getTcpCompressionLevel());
+            assertTrue(fast.isAdaptiveTcp());
+            assertFalse(changed.tcp(a, 53).getTransportFlags().has(TransportFlags.COMPRESS_WRITE));
+            assertEquals(0, changed.tcp(a, 443).getTransportFlags().getValue());
+            int udpFeatures = game ? 8 : 20;
+            assertEquals(udpFeatures, changed.udp(a, 80).getDailyUdpFeatures());
+            assertEquals(udpFeatures | 2, changed.udp(a, 53).getDailyUdpFeatures());
+            assertEquals(udpFeatures, changed.udp(a, 443).getDailyUdpFeatures());
+        }
+        policy.tcpCompressionLevel = 10;
+        assertFalse(policy.valid());
+        policy.tcpCompressionLevel = null;
         policy.profile = "game";
+        policy.fec = 1;
+        assertEquals(4, policy.udpFeatures()); // Explicit UDP FEC replaces replication.
+        policy.profile = "unknown";
         assertThrows(IllegalArgumentException.class, () -> new RssClient.OutboundProfiles(reload, inbound));
         reload.tcpCipherPorts = new int[]{443};
         assertFalse(RssTransport.validPortLists(reload.tcpCipherPorts, reload.tcpAlreadyEncryptedPorts));

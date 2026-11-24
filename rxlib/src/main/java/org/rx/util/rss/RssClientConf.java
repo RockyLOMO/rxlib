@@ -151,7 +151,7 @@ public class RssClientConf {
         public AuthenticEndpoint endpoint;
         // 标记该上游作为 udp2raw 入口上游。
         public boolean udp2raw;
-        // TCP 走 kcptun/hysteria 等客户端时仅覆盖 endpoint 地址；账号密码默认沿用当前 socksServer。
+        // TCP 走外部固定隧道时仅覆盖 endpoint 地址；账号密码默认沿用当前 socksServer。
         public AuthenticEndpoint tcpClient;
         // UDP 走 udp2raw/hysteria 等客户端时的固定 UDP 目标。
         public InetSocketAddress udpClient;

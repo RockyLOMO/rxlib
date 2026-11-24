@@ -13,13 +13,20 @@ shadowUsers:
       profile: daily
 ```
 
-| 字段 | 值 | plain | daily |
-| --- | --- | --- | --- |
-| `fec` | 0 关闭，1 仅 UDP，2 仅 TCP，3 两者 | 0 | 3 |
-| `tcp` | 位 1 为 zlib 3，位 2 为共享密钥 AES-128-GCM，位 4 为校验证书的 TLS 1.3。显式同时设置两位时只使用 TLS | 0 | 1 |
-| `udp` | 位 1 为逐包 LZ4 fast，位 2 为 AES-128-GCM，3 为先压缩再加密 | 0 | 0 |
+| `profile` | TCP 默认 | 普通 UDP 默认 |
+| --- | --- | --- |
+| `plain` | 普通 TCP | 单发 |
+| `daily` | zlib 3、自适应 XOR、TCP 修复 | 自适应 XOR |
+| `game` | zlib 3、自适应 XOR、按需扩窗 | 首份认证副本立即交付；按方向自适应 1～3 倍 |
+| `weak` | zlib 3、按编码字节预算的 XOR、按需扩窗、选择性 TCP 修复 | 按编码字节预算的 XOR |
 
-在同一个 `transport` 下写 `fec`、`tcp`、`udp` 可覆盖 profile 对应字段，包括显式 0。`daily` 的 UDP 默认仅 FEC 和跳跃。游戏 profile 尚未开放。热更新影响新建代理连接和 UDP 会话。用户按外部 SS 用户名匹配，内部 SOCKS 账号可复用。旧 `adaptiveTcp` 用户字段已移除。
+在已有用户的 `transport` 下设置 `profile: game` 或 `profile: weak` 即可。热更新影响新建连接和 UDP 会话。用户按外部 SS 用户名匹配，内部 SOCKS 账号可复用。
+
+- `fec` 的 0/1/2/3 分别表示关、仅 UDP、仅 TCP、两者。上述四个 profile 默认依次为 0/3/2/3。`game` 显式开启 UDP FEC 时，该方向改用 XOR，每个原包只发一份。
+- `tcp` 的位 1、2、4 分别为 zlib、共享密钥 AES-128-GCM、校验证书的 TLS。AES 与 TLS 两位同时出现时使用 TLS。`udp` 的位 1、2 分别为 LZ4 和 AES。保留显式 0 和按目的端口覆盖。
+- `tcpCompressionLevel` 取 1～9，默认 3，压缩位开启时生效。Client 上的用户字段控制上行编码，Server 的 `-tcpCompressionLevel=3` 独立控制下行编码。解码允许两端使用不同级别。
+- TCP 新模式通过独立 SOCKS 方法在两端选择。旧 Server 选择常规认证时，该连接继续走 TCP，`rss.tcp.adaptive.negotiationFallback` 按请求的 profile 记录回退。普通 UDP 的新模式要求 RPC 明确确认版本与特性，旧端协商失败。
+- `game` 和 `weak` 普通 UDP 逐包认证。启用 AES 时沿用部署密钥；其余端口由已加密的 RSS 控制 RPC 下发每组独立的认证密钥。认证完成后更新防重放窗口和回程地址；同一组的两个端口共享状态。
 
 ## 按协议选择目标端口
 
@@ -28,7 +35,7 @@ shadowUsers:
 | `tcpCipherPorts` | 21、23、25、53、80、110、143、389、587、1883、8080 | 默认认证加密。覆盖 FTP 控制、Telnet、可明文或 STARTTLS 的邮件和目录协议、DNS、HTTP、MQTT |
 | `tcpAlreadyEncryptedPorts` | 22、443、465、636、853、990、993、995、8883 | 按 SSH、HTTPS、隐式 TLS 邮件、LDAPS、DoT、FTPS 和安全 MQTT 透传，跳过 RSS 压缩和加密；仍可走 TCP FEC |
 | `udpCipherPorts` | 53 | UDP DNS 走共享密钥 AES-128-GCM，并启用端口跳跃 |
-| `udpAlreadyEncryptedPorts` | 443、853 | QUIC、DoQ 跳过额外压缩和加密，保留用户启用的 FEC |
+| `udpAlreadyEncryptedPorts` | 443、853 | QUIC、DoQ 跳过额外压缩和加密，沿用用户的 FEC 或游戏副本策略 |
 
 端口号是策略约定，不能证明业务实际开启了加密。使用非标准端口时调整列表。每种协议的两张表不得重叠。Server 的 `-tcpCipherPorts` 与 `-udpCipherPorts` 可分别覆盖强制保护端口。UDP/80 使用用户的 UDP 策略。TCP 显式组合 `3` 先 zlib 再共享密钥 AES，`5` 先 zlib 再 TLS。日常模式的强制保护 TCP 端口只用共享密钥 AES，避免 HTTP Cookie 与可控输入共享压缩上下文泄漏长度。
 
@@ -38,7 +45,7 @@ TCP 的 AES 模式由两端读取同一个 `RSS_TCP_AES_KEY`（32 个随机字�
 
 ## UDP 和跳跃端口
 
-普通 UDP 的任意一个扩展位（FEC、LZ4、AES）都要求两端成功建立跳跃会话。能力或端口不足时该会话失败。LZ4 对至少 96 B 的包尝试，净省至少 24 B 且 12% 才使用，否则原包进入后续传输。UDP AES 要求两端通过环境变量 `RSS_UDP_AES_KEY` 提供相同的 32 个随机字节的 Base64 编码。每次会话按双方随机值派生方向密钥；认证覆盖跳跃代数、序号及数据，接收端检查重放。TCP/FEC 不使用普通 UDP 的 LZ4 或 AES 管线。
+普通 UDP 的任意扩展（FEC、副本、LZ4、AES）都要求两端成功建立跳跃会话。能力或端口不足时该会话失败。LZ4 对至少 96 B 的包尝试，净省至少 24 B 且 12% 才使用，否则原包进入后续传输。UDP AES 要求两端通过环境变量 `RSS_UDP_AES_KEY` 提供相同的 32 个随机字节的 Base64 编码。每次会话按双方随机值派生方向密钥；认证覆盖跳跃代数、序号及数据，接收端检查重放。TCP/FEC 不使用普通 UDP 的 LZ4 或 AES 管线。
 
 默认专用 UDP 范围为 `20000-20127`，Server 通过 `-udpHopPorts=起始-结束` 覆盖。范围长度必须为偶数，最少四端口。首对由全部 TCP/FEC 流共用，剩余端口每个普通 UDP 扩展会话占用一对，默认最多 63 组。两端按 30 秒轮换。外部安全组、主机过滤规则以及容器或 NAT 的 UDP 映射需放行整段范围。
 

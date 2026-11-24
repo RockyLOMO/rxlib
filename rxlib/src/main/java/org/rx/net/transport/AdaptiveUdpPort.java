@@ -6,6 +6,7 @@ import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import org.rx.net.Sockets;
+import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.net.udp.UdpSequenceWindow;
 
 import javax.crypto.Mac;
@@ -34,6 +35,8 @@ public final class AdaptiveUdpPort implements AutoCloseable {
     private final ChannelFuture bind, aliasBind;
     private final int virtualAlias;
     private volatile boolean closed;
+    // Both sockets share one UDP EventLoop. Includes authenticated port-hop probes and framing.
+    private long txPackets, txBytes, rxPackets, rxBytes;
 
     private AdaptiveUdpPort(boolean server, InetSocketAddress local, int alias, boolean redirect, boolean hopping) {
         this.server = server;
@@ -45,9 +48,11 @@ public final class AdaptiveUdpPort implements AutoCloseable {
         })).option(ChannelOption.SO_REUSEADDR, false)
                 .option(ChannelOption.RCVBUF_ALLOCATOR, new FixedRecvByteBufAllocator(MAX_PACKET + 1));
         bind = bootstrap.bind(local);
+        bind.channel().closeFuture().addListener(f -> recordTraffic());
         try {
             aliasBind = hopping && !redirect ? bootstrap.clone(bind.channel().eventLoop())
                     .bind(new InetSocketAddress(local.getAddress(), alias)) : null;
+            if (aliasBind != null) aliasBind.channel().closeFuture().addListener(f -> recordTraffic());
         } catch (RuntimeException e) {
             bind.channel().close();
             throw e;
@@ -162,6 +167,9 @@ public final class AdaptiveUdpPort implements AutoCloseable {
                     wire = null;
                     submitted = true;
                     write.addListener(sendComplete);
+                    txBytes += PREFIX + length + TAG;
+                    txPackets++;
+                    if (txPackets + rxPackets >= 256) recordTraffic();
                 } finally {
                     if (wire != null) wire.release();
                 }
@@ -191,6 +199,9 @@ public final class AdaptiveUdpPort implements AutoCloseable {
         if (peer.replay.isDuplicate(seq)) return;
         boolean newest = seq > peer.replay.highest();
         peer.replay.mark(seq);
+        rxBytes += bytes;
+        rxPackets++;
+        if (txPackets + rxPackets >= 256) recordTraffic();
         if (server && newest) {
             peer.address = packet.sender();
             peer.returnPath = path;
@@ -213,6 +224,17 @@ public final class AdaptiveUdpPort implements AutoCloseable {
                 pendingReads.decrementAndGet();
             }
         }, frame, pendingReads);
+    }
+
+    private void recordTraffic() {
+        if ((txPackets | rxPackets) != 0 && DiagnosticMetrics.isEnabled()) {
+            // TX is submitted to Netty. RX passed authentication and replay checks. Excludes IP/UDP headers.
+            DiagnosticMetrics.record("rss.tcp.adaptive.tx.transportBytes", txBytes, "path=udp");
+            DiagnosticMetrics.record("rss.tcp.adaptive.tx.datagrams", txPackets, "path=udp");
+            DiagnosticMetrics.record("rss.tcp.adaptive.rx.transportBytes", rxBytes, "path=udp");
+            DiagnosticMetrics.record("rss.tcp.adaptive.rx.datagrams", rxPackets, "path=udp");
+        }
+        txPackets = txBytes = rxPackets = rxBytes = 0;
     }
 
     private static void execute(EventLoop loop, Runnable task, ByteBuf frame, AtomicInteger budget) {

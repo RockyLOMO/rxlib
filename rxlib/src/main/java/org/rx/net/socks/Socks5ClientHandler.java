@@ -47,6 +47,8 @@ public final class Socks5ClientHandler extends ProxyHandler {
     private final String password;
     private final Socks5CommandType commandType;
     @Setter private boolean adaptiveTcp;
+    @Setter private int adaptiveProfile;
+    private int offeredProfile = -1;
     private boolean negotiated;
     private String decoderName;
     private String encoderName;
@@ -127,7 +129,8 @@ public final class Socks5ClientHandler extends ProxyHandler {
     @Override
     protected Object newInitialMessage(ChannelHandlerContext ctx) throws Exception {
         if (adaptiveTcp && commandType == Socks5CommandType.CONNECT && password != null && ctx.channel().remoteAddress() instanceof InetSocketAddress) {
-            return SocksAdaptiveHandshake.OFFER;
+            offeredProfile = adaptiveProfile;
+            return SocksAdaptiveHandshake.offer(offeredProfile);
         }
         return socksAuthMethod() == Socks5AuthMethod.PASSWORD ? INIT_REQUEST_PASSWORD : INIT_REQUEST_NO_AUTH;
     }
@@ -139,7 +142,7 @@ public final class Socks5ClientHandler extends ProxyHandler {
             Socks5InitialResponse res = (Socks5InitialResponse) response;
             Socks5AuthMethod authMethod = socksAuthMethod();
             Socks5AuthMethod resAuthMethod = res.authMethod();
-            if (adaptiveTcp && password != null && commandType == Socks5CommandType.CONNECT && SocksAdaptiveHandshake.METHOD.equals(resAuthMethod)) {
+            if (offeredProfile >= 0 && SocksAdaptiveHandshake.selected(offeredProfile, resAuthMethod)) {
                 negotiated = true;
                 resAuthMethod = Socks5AuthMethod.PASSWORD;
             }
@@ -172,7 +175,7 @@ public final class Socks5ClientHandler extends ProxyHandler {
             }
 
             if (negotiated) {
-                SocksAdaptiveHandshake.install(ctx.channel(), ctx.channel().attr(SocksAdaptiveHandshake.NONCE).getAndSet(null), password, null);
+                SocksAdaptiveHandshake.install(ctx.channel(), ctx.channel().attr(SocksAdaptiveHandshake.NONCE).getAndSet(null), password, null, offeredProfile);
                 negotiated = false;
             }
             sendCommand(ctx);

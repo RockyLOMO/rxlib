@@ -349,10 +349,18 @@ public class SocksUdpUpstream extends Upstream {
                     throw new IllegalStateException("Upstream does not support UDP extensions");
                 }
                 request.setDailyFeatures(features);
+                if ((features & (DailyUdpWire.GAME | DailyUdpWire.WEAK)) != 0) {
+                    if (!capabilities.has(SocksRpcCapabilities.PROFILE_UDP_V1)) {
+                        throw new IllegalStateException("RSS UDP profile v1 is required");
+                    }
+                    request.setProfileVersion(1);
+                }
                 if ((features & DailyUdpWire.AES) != 0) {
                     if (!DailyUdpWire.hasCipherKey()) {
                         throw new IllegalStateException("RSS_UDP_AES_KEY is required");
                     }
+                }
+                if (request.getProfileVersion() == 1 || (features & DailyUdpWire.AES) != 0) {
                     request.setClientSalt(java.util.UUID.randomUUID());
                 }
                 // One logical relay with two physical ingress ports.
@@ -423,7 +431,11 @@ public class SocksUdpUpstream extends Upstream {
             primary = Sockets.resolveUdpEndpointAsync(primary, config).get();
         }
         alias = new InetSocketAddress(primary.getAddress(), alias.getPort());
-        control.dailyWire = DailyUdpWire.client(result.getToken(), primary, alias, config.getUdpMtu(), request.getDailyFeatures(), request.getClientSalt());
+        if (request.getProfileVersion() != 0 && (result.getProfileVersion() != request.getProfileVersion()
+                || result.getSelectedFeatures() != request.getDailyFeatures())) {
+            throw new IllegalStateException("Upstream did not negotiate the requested UDP profile");
+        }
+        control.dailyWire = DailyUdpWire.client(result.getToken(), primary, alias, config.getUdpMtu(), request.getDailyFeatures(), request.getClientSalt(), result.getAuthSecret());
         SessionGroup group = new SessionGroup(new SessionHolder[]{SessionHolder.rpc(control, result.getGroupId(), primary)},
                 UdpPortHoppingMode.ROUND_ROBIN, 1, control);
         onRpcRelayGroupSuccess(poolKey());

@@ -96,6 +96,50 @@ class UdpDailyFecTest {
     }
 
     @Test
+    void weakChargesVariableParityAtItsEncodedByteCostAndCanCancelTail() {
+        AtomicLong time = new AtomicLong();
+        final int authHeader = 44;
+        long[] wireBytes = new long[2];
+        java.util.function.Consumer<ByteBuf> count = frame -> {
+            try {
+                int kind = frame.getUnsignedByte(frame.readerIndex()) == UdpDailyFec.PARITY ? 1 : 0;
+                wireBytes[kind] += frame.readableBytes() + authHeader;
+            } finally {
+                frame.release();
+            }
+        };
+        try (UdpDailyFec fec = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, time::get, true, authHeader)) {
+            ByteBuf small = Unpooled.buffer(10).writeZero(10), large = Unpooled.buffer(1400).writeZero(1400);
+            try {
+                for (int i = 0; i < 40; i++) fec.write(small, count);
+                assertEquals(0, fec.paritySent);
+                ByteBuf report = Unpooled.buffer(8).writeByte(UdpDailyFec.REPORT).writeInt(39)
+                        .writeByte(4).writeByte(4).writeByte(0);
+                try {
+                    fec.read(report, count, count);
+                } finally {
+                    report.release();
+                }
+                long afterWarmup = wireBytes[0];
+                for (int i = 0; i < 320; i++) {
+                    fec.write(i % 4 == 0 ? large : small, count);
+                    assertTrue(wireBytes[1] * 4 <= wireBytes[0] - afterWarmup);
+                }
+                assertEquals(wireBytes[1], fec.parityBytes);
+                assertEquals(wireBytes[0], fec.dataBytes);
+                assertTrue(fec.parityBytes > 0);
+                fec.write(small, count);
+                assertTrue(fec.nextDelayMillis() >= 0);
+                fec.cancelPendingParity();
+                assertEquals(-1, fec.nextDelayMillis());
+            } finally {
+                small.release();
+                large.release();
+            }
+        }
+    }
+
+    @Test
     void sparseAndFastLossyFlowsRecoverWithoutExceedingParityBudget() {
         for (int pps : new int[]{20, 50, 100, 200, 300, 1000}) {
             try (Link link = new Link()) {
@@ -137,6 +181,47 @@ class UdpDailyFecTest {
             assertEquals(1, link.receiver.recoveredData);
             assertEquals(1, link.sender.paritySent);
             assertEquals(5, link.delivered.size());
+        }
+    }
+
+    @Test
+    void sparsePredictionStillProtectsAnUnexpectedBurstOfLongShards() {
+        try (Link link = new Link()) {
+            link.fixedMissing = 1;
+            link.introduceLoss(TimeUnit.MILLISECONDS.toNanos(50));
+            ByteBuf payload = Unpooled.buffer(1400);
+            boolean[] seen = new boolean[16];
+            try {
+                for (int i = 0; i < 16; i++) {
+                    payload.clear().writeInt(i).writeZero(1200 + i).writeByte(77 + i);
+                    link.sender.write(payload, link::queue);
+                    payload.setZero(0, payload.writerIndex()); // input belongs to the caller
+                    if (i == 3) link.packets.remove().release();
+                    while (!link.packets.isEmpty()) {
+                        ByteBuf frame = link.packets.remove();
+                        try {
+                            link.receiver.read(frame, data -> {
+                                try {
+                                    int value = data.readInt();
+                                    assertFalse(seen[value]);
+                                    seen[value] = true;
+                                    assertEquals(1201 + value, data.readableBytes());
+                                    assertEquals(77 + value, data.getUnsignedByte(data.writerIndex() - 1));
+                                } finally {
+                                    data.release();
+                                }
+                            }, ByteBuf::release);
+                        } finally {
+                            frame.release();
+                        }
+                    }
+                }
+                assertEquals(1, link.sender.paritySent);
+                assertEquals(1, link.receiver.recoveredData);
+                for (boolean value : seen) assertTrue(value);
+            } finally {
+                payload.release();
+            }
         }
     }
 

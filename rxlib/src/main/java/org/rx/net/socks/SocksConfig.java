@@ -69,12 +69,14 @@ public class SocksConfig extends SocketConfig {
     }
 
     public void setDailyUdpFeatures(int features) {
-        if (features < 0 || features > 7) {
-            throw new IllegalArgumentException("UDP features must be in 0..7");
+        if (features < 0 || features > 31) {
+            throw new IllegalArgumentException("UDP features must be in 0..31");
         }
         dailyUdpFeatures = features;
     }
+    public static final int ADAPTIVE_GAME = 1, ADAPTIVE_WEAK = 2;
     private boolean adaptiveTcp;
+    private int adaptiveProfile;
     @ToString.Exclude
     private transient SslContext rssTlsContext;
     private int[] requiredTcpCipherPorts;
