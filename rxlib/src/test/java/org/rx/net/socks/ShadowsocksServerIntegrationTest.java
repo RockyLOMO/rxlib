@@ -8,6 +8,8 @@ import io.netty.channel.*;
 import io.netty.channel.socket.DatagramPacket;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.api.*;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
@@ -71,16 +73,17 @@ class ShadowsocksServerIntegrationTest {
         if (udpAltEchoChannel != null) udpAltEchoChannel.close();
     }
 
-    @Test
+    @ParameterizedTest
+    @EnumSource(CipherKind.class)
     @SneakyThrows
     @Timeout(value = 15)
-    void shadowsocksTcpConnect_e2e() {
-        int proxyPort = 16280;
-        String method = CipherKind.AES_256_GCM.getCipherName();
+    void shadowsocksTcpConnect_e2e(CipherKind kind) {
+        String method = kind.getCipherName();
         String password = "test-password";
-        ShadowsocksConfig config = new ShadowsocksConfig(Sockets.newAnyEndpoint(proxyPort), method, password);
+        ShadowsocksConfig config = new ShadowsocksConfig(Sockets.newLoopbackEndpoint(0), method, password);
         config.setDebug(true); // 开启 debug
         ShadowsocksServer server = new ShadowsocksServer(config);
+        int proxyPort = ((InetSocketAddress) server.tcpChannels.get(0).localAddress()).getPort();
 
         try {
             Thread.sleep(300);
@@ -129,16 +132,17 @@ class ShadowsocksServerIntegrationTest {
         }
     }
 
-    @Test
+    @ParameterizedTest
+    @EnumSource(CipherKind.class)
     @SneakyThrows
     @Timeout(value = 15)
-    void shadowsocksUdpRelay_e2e() {
-        int proxyPort = 16281;
-        String method = CipherKind.AES_256_GCM.getCipherName();
+    void shadowsocksUdpRelay_e2e(CipherKind kind) {
+        String method = kind.getCipherName();
         String password = "test-password";
-        ShadowsocksConfig config = new ShadowsocksConfig(Sockets.newAnyEndpoint(proxyPort), method, password);
+        ShadowsocksConfig config = new ShadowsocksConfig(Sockets.newLoopbackEndpoint(0), method, password);
         config.setDebug(true);
         ShadowsocksServer server = new ShadowsocksServer(config);
+        int proxyPort = ((InetSocketAddress) server.udpChannels.get(0).localAddress()).getPort();
 
         try {
             Thread.sleep(300);

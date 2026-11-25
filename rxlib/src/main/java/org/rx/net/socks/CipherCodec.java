@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.socket.ChannelInputShutdownEvent;
 import io.netty.channel.socket.DatagramChannel;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.codec.MessageToMessageCodec;
@@ -12,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.io.Bytes;
 import org.rx.net.Sockets;
+import org.rx.net.socks.encryption.AeadCrypto;
 import org.rx.net.socks.encryption.ICrypto;
 
 import javax.crypto.BadPaddingException;
@@ -105,6 +107,19 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
             }
             throw e;
         }
+    }
+
+    @Override
+    public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
+        if (evt instanceof ChannelInputShutdownEvent) {
+            ICrypto crypt = ctx.channel().attr(ShadowsocksConfig.CIPHER).get();
+            if (crypt instanceof AeadCrypto && ((AeadCrypto) crypt).hasIncompleteRecord()) {
+                recordRejection();
+                ctx.close();
+                return;
+            }
+        }
+        super.userEventTriggered(ctx, evt);
     }
 
     @Override

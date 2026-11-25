@@ -1,6 +1,9 @@
 package org.rx.net.socks;
 
+import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
+import io.netty.channel.local.LocalAddress;
+import io.netty.channel.socket.ChannelInputShutdownEvent;
 import io.netty.util.ReferenceCountUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
@@ -14,6 +17,15 @@ import java.net.InetSocketAddress;
 @ChannelHandler.Sharable
 public class SSTcpProxyHandler extends ChannelInboundHandlerAdapter {
     public static final SSTcpProxyHandler DEFAULT = new SSTcpProxyHandler();
+
+    @Override
+    public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
+        if (evt instanceof ChannelInputShutdownEvent) {
+            ctx.close();
+            return;
+        }
+        super.userEventTriggered(ctx, evt);
+    }
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
@@ -40,9 +52,13 @@ public class SSTcpProxyHandler extends ChannelInboundHandlerAdapter {
         InetSocketAddress upDstEp = upstream.getDestination();
 
         inbound.pipeline().addLast(SocksTcpFrontendRelayHandler.DEFAULT);
-        ChannelFuture outboundFuture = Sockets.bootstrap(inbound.eventLoop(), upstream.getConfig(), upstream.connectAddressHint(), outbound -> {
+        Bootstrap outboundBootstrap = Sockets.bootstrap(inbound.eventLoop(), upstream.getConfig(), upstream.connectAddressHint(), outbound -> {
             upstream.initChannel(outbound);
-        }).connect(upDstEp).addListener((ChannelFutureListener) f -> {
+        });
+        if (!(upstream.connectAddressHint() instanceof LocalAddress)) {
+            outboundBootstrap.option(ChannelOption.ALLOW_HALF_CLOSURE, true);
+        }
+        ChannelFuture outboundFuture = outboundBootstrap.connect(upDstEp).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 logConnectFailure(upDstEp, dstEp, f.cause());
                 Sockets.closeOnFlushed(inbound);

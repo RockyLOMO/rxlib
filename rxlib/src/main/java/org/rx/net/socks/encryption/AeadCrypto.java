@@ -28,4 +28,8 @@ public abstract class AeadCrypto implements ICrypto {
     protected final boolean reserveLocalSalt(byte[] salt, int length) {
         return history == null || history.record(salt, length);
     }
+
+    public boolean hasIncompleteRecord() {
+        return false;
+    }
 }

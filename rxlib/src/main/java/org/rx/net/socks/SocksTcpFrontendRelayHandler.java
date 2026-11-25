@@ -1,7 +1,10 @@
 package org.rx.net.socks;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
+import io.netty.channel.socket.ChannelInputShutdownEvent;
+import io.netty.channel.socket.DuplexChannel;
 import io.netty.util.AttributeKey;
 import io.netty.util.ReferenceCountUtil;
 
@@ -21,7 +24,7 @@ public class SocksTcpFrontendRelayHandler extends ChannelInboundHandlerAdapter {
     private static final class PendingConnect {
         final ArrayDeque<Object> messages = new ArrayDeque<>();
         int bytes;
-        boolean resumeReads;
+        boolean resumeReads, inputShutdown;
 
         void finish(Channel inbound, ChannelFuture connect) {
             if (!inbound.attr(PENDING).compareAndSet(this, null)) {
@@ -40,13 +43,62 @@ public class SocksTcpFrontendRelayHandler extends ChannelInboundHandlerAdapter {
             if (connected) {
                 Channel outbound = connect.channel();
                 outbound.flush();
-                if (resumeReads && (outbound.isWritable() || outbound.pipeline().get(TcpBackpressureHandler.class) == null)) {
+                if (inputShutdown) {
+                    halfClosePeer(inbound, outbound);
+                } else if (resumeReads && (outbound.isWritable() || outbound.pipeline().get(TcpBackpressureHandler.class) == null)) {
                     Sockets.enableAutoRead(inbound);
                 }
+            } else if (inputShutdown) {
+                inbound.close();
             } else if (resumeReads && inbound.isActive()) {
                 Sockets.enableAutoRead(inbound);
             }
         }
+    }
+
+    static void halfClosePeer(Channel source, Channel peer) {
+        if (peer == null || !peer.isActive()) {
+            source.close();
+            return;
+        }
+        if (!(peer instanceof DuplexChannel)) {
+            Sockets.closeOnFlushed(peer);
+            return;
+        }
+        DuplexChannel duplexPeer = (DuplexChannel) peer;
+        peer.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener((ChannelFutureListener) f -> {
+            if (!peer.isActive()) {
+                source.close();
+                return;
+            }
+            if (duplexPeer.isInputShutdown()) {
+                peer.close();
+                source.close();
+            } else {
+                duplexPeer.shutdownOutput().addListener((ChannelFutureListener) sf -> {
+                    if (duplexPeer.isInputShutdown() || !peer.isActive()) {
+                        peer.close();
+                        source.close();
+                    }
+                });
+            }
+        });
+    }
+
+    @Override
+    public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
+        if (evt instanceof ChannelInputShutdownEvent) {
+            Channel inbound = ctx.channel();
+            PendingConnect pending = inbound.attr(PENDING).get();
+            if (pending != null) {
+                pending.inputShutdown = true;
+                return;
+            }
+            SocksContext sc = SocksContext.ctx(inbound, false);
+            halfClosePeer(inbound, sc != null && sc.outbound != null ? sc.outbound.channel() : null);
+            return;
+        }
+        super.userEventTriggered(ctx, evt);
     }
 
     @Override

@@ -2,6 +2,8 @@ package org.rx.net.socks;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelOption;
+import io.netty.channel.FixedRecvByteBufAllocator;
 import io.netty.util.concurrent.DefaultEventExecutorGroup;
 import io.netty.util.concurrent.EventExecutorGroup;
 import lombok.Getter;
@@ -31,6 +33,8 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
     final List<Channel> tcpChannels;
     final List<Channel> udpChannels;
     final AtomicInteger activeChannels = new AtomicInteger();
+    // UDP cannot retrieve the remainder of a truncated datagram on the next read.
+    static final FixedRecvByteBufAllocator UDP_RECV = new FixedRecvByteBufAllocator(65536);
     private static EventExecutorGroup SHARED_CRYPTO_GROUP;
 
     private static synchronized EventExecutorGroup sharedCryptoGroup() {
@@ -60,7 +64,7 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
             } else {
                 channel.pipeline().addLast(CipherCodec.DEFAULT, new SSProtocolCodec(), SSTcpProxyHandler.DEFAULT);
             }
-        });
+        }).childOption(ChannelOption.ALLOW_HALF_CLOSURE, true);
         tcpChannels = Sockets.bindChannels(bootstrap.attr(ShadowsocksConfig.SVR, this), config.getServerEndpoint(), config);
 
         //udp server
@@ -73,7 +77,7 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
             } else {
                 ctx.pipeline().addLast(CipherCodec.DEFAULT, new SSProtocolCodec(), SSUdpProxyHandler.DEFAULT);
             }
-        }).attr(ShadowsocksConfig.SVR, this), config.getServerEndpoint(), config);
+        }).option(ChannelOption.RCVBUF_ALLOCATOR, UDP_RECV).attr(ShadowsocksConfig.SVR, this), config.getServerEndpoint(), config);
     }
 
     /**

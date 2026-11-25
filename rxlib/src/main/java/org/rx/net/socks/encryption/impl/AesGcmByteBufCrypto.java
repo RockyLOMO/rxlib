@@ -446,6 +446,11 @@ abstract class AesGcmByteBufCrypto extends AeadCrypto implements AutoCloseable {
     }
 
     @Override
+    public boolean hasIncompleteRecord() {
+        return saltBytesRead != 0 || phaseBytesRead != 0 || !readingLengthPhase;
+    }
+
+    @Override
     public void close() {
         closed = true;
         Bytes.release(pendingEncrypted);
