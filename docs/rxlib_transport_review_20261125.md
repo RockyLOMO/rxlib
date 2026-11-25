@@ -284,6 +284,6 @@ mvn -f rxlib/pom.xml -DskipTests=false \
 
 在 Temurin JDK `21.0.12.1` 与 Temurin JDK `1.8.0_504` 下分别执行候选测试集（补充 `SaltHistoryTest`）：
 
-1. **RSS 传输回归集**（`AdaptiveStreamTest,AdaptiveUdpPortTest,UdpDailyFecTest,UdpDailyFecCoverageTest,UdpGameRedundancyTest,DailyUdpWireTest,UdpSequenceWindowTest`，含 `-Dio.netty.leakDetection.level=PARANOID`）：JDK 21 与 JDK 8 全部通过，0 失败、0 跳过、0 泄漏。
-2. **Shadowsocks AEAD 单元、编解码与独立客户端集成集**（`ChaCha20Poly1305SupportTest,Aes256GcmByteBufCryptoTest,CipherCodecTest,SSProtocolCodecTest,SaltHistoryTest,ShadowsocksServerIntegrationTest,ShadowsocksPythonClientIntegrationTest,ShadowsocksTcpDownloadIntegrationTest`）：JDK 21 与 JDK 8 全部通过，0 失败、0 跳过（Python `cryptography` 互操作用例实际执行，未跳过）。
+1. **RSS 传输回归集**（`AdaptiveStreamTest,AdaptiveUdpPortTest,UdpDailyFecTest,UdpDailyFecCoverageTest,UdpGameRedundancyTest,DailyUdpWireTest,UdpSequenceWindowTest`）：JDK 21 与 JDK 8 各运行 **50 项（49 通过、0 失败、1 跳过：`DailyUdpWireTest` 中仅限 Linux 的用例在 Windows 跳过）**，启用 `-Dio.netty.leakDetection.level=PARANOID` 检查 0 泄漏。
+2. **Shadowsocks AEAD 单元、编解码与独立客户端集成集**（`ChaCha20Poly1305SupportTest,Aes256GcmByteBufCryptoTest,CipherCodecTest,SSProtocolCodecTest,SaltHistoryTest,ShadowsocksServerIntegrationTest,ShadowsocksPythonClientIntegrationTest,ShadowsocksTcpDownloadIntegrationTest`）：JDK 21 与 JDK 8 各运行 **51 项（51 通过、0 失败、0 跳过，其中 `org.rx.net.socks.*` 49 项 + `org.rx.net.CipherCodecTest` 2 项；Python `cryptography` 独立客户端互操作实际执行）**。两集合计 **101 项（100 通过、1 跳过、0 失败）**。
 3. **环境与未验证边界**：本轮基准与回归均在单机 Windows 环境通过本地回路及模拟丢包/延迟链路完成；Linux `nft` 端口重定向、1 vCPU / 768 MiB cgroup 容器整机峰值内存，以及跨公网长时连接和 WoW 实机体验未在本机 Windows 环境执行，留待 Linux 部署环境按相同指标核验。
