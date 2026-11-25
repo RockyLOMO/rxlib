@@ -43,6 +43,9 @@ public final class AdaptiveStream implements AutoCloseable {
     private long tailDeadline, nextTailAllowed;
     private boolean tailArmed, tailSent, udpProbeOutstanding;
     long udpTailProbes, probesAckedBeforeTcp, probesHandedToTcp, filteredDuplicates;
+    private static final int ACK_FOR_UDP = 1, ACK_FOR_TCP = 2;
+    private int ackOrigins;
+    private long udpAcks, tcpAcks, mixedAcks, gapsSent, sacksSent, ignoredAcks, ordinaryTcpFrames;
     private int sendSlots, receiveSlots, sackBase, reliableUntil;
     private boolean hasReliablePrefix;
     private long sackReceived, stalledSince;
@@ -127,7 +130,10 @@ public final class AdaptiveStream implements AutoCloseable {
         boolean selective = type == SACK && policy == RssProfile.WEAK && size == HEADER + Long.BYTES;
         if ((type == ACK || type == GAP) && size == HEADER || selective) {
             int ack = frame.getInt(i + 1);
-            if (pending.isEmpty()) return;
+            if (pending.isEmpty()) {
+                if (type == ACK) ignoredAcks++;
+                return;
+            }
             int count = ack - pending.peek().getInt(1);
             if (count < 0 || count > pending.size()) return;
             long received = selective ? frame.getLong(i + HEADER) : 0;
@@ -296,7 +302,7 @@ public final class AdaptiveStream implements AutoCloseable {
         int seq = frame.getInt(i + 1), gap = seq - nextRx;
         if (gap < 0) {
             filteredDuplicates++;
-            if (policy == RssProfile.WEAK) requestAck(1);
+            if (policy == RssProfile.WEAK) requestAck(1, fromUdp);
             return;
         }
         if (gap > 0) {
@@ -341,10 +347,18 @@ public final class AdaptiveStream implements AutoCloseable {
         if (buffered > 0) {
             gapDeadline = clock.getAsLong() + reorderGrace;
         }
-        if (fromUdp || nextRx - previous > 1 || policy == RssProfile.WEAK && peerProbed) requestAck(nextRx - previous);
+        // Only payloads that fit an original fast-path frame can be TCP repairs.
+        // Keep acknowledging ambiguous small frames, including peers running the original weak method.
+        if (fromUdp || nextRx - previous > 1 || policy == RssProfile.WEAK && peerProbed
+                && (wasBlocked || frame.readableBytes() <= HEADER + CHUNK)) {
+            requestAck(nextRx - previous, fromUdp);
+        } else if (policy == RssProfile.WEAK && peerProbed) {
+            ordinaryTcpFrames++;
+        }
     }
 
-    private void requestAck(int count) {
+    private void requestAck(int count, boolean fromUdp) {
+        ackOrigins |= fromUdp ? ACK_FOR_UDP : ACK_FOR_TCP;
         if (sinceAck == 0) ackDeadline = clock.getAsLong() + ACK_DELAY;
         sinceAck += count;
         if (sinceAck >= 8 && !closed) acknowledge();
@@ -403,13 +417,15 @@ public final class AdaptiveStream implements AutoCloseable {
         if (buffered > 0 && !gapRequested && now - gapDeadline >= 0) {
             // Give FEC/reordering time first. Repair an isolated gap without switching the stream off UDP.
             gapRequested = true;
-            sinceAck = 0;
+            sinceAck = ackOrigins = 0;
             long received = 0;
             if (policy == RssProfile.WEAK) {
                 for (int offset = 1; offset < Long.SIZE; offset++) {
                     if (reordered[(nextRx + offset) & (reordered.length - 1)] != null) received |= 1L << offset;
                 }
             }
+            if (received == 0) gapsSent++;
+            else sacksSent++;
             tcpOut.accept(received == 0 ? control(GAP, nextRx) : alloc.ioBuffer(HEADER + Long.BYTES, HEADER + Long.BYTES)
                     .writeByte(SACK).writeInt(nextRx).writeLong(received));
         } else if (sinceAck > 0 && now - ackDeadline >= 0) {
@@ -435,7 +451,10 @@ public final class AdaptiveStream implements AutoCloseable {
     }
 
     private void acknowledge() {
-        sinceAck = 0;
+        if (ackOrigins == ACK_FOR_UDP) udpAcks++;
+        else if (ackOrigins == ACK_FOR_TCP) tcpAcks++;
+        else mixedAcks++;
+        sinceAck = ackOrigins = 0;
         tcpOut.accept(control(ACK, nextRx));
     }
 
@@ -494,6 +513,13 @@ public final class AdaptiveStream implements AutoCloseable {
         closed = true;
         if (DiagnosticMetrics.isEnabled()) {
             if (policy == RssProfile.WEAK) {
+                DiagnosticMetrics.record("rss.tcp.weak.ackSent", udpAcks, "dataPath=udp");
+                DiagnosticMetrics.record("rss.tcp.weak.ackSent", tcpAcks, "dataPath=tcp");
+                DiagnosticMetrics.record("rss.tcp.weak.ackSent", mixedAcks, "dataPath=mixed");
+                DiagnosticMetrics.record("rss.tcp.weak.gapSent", gapsSent);
+                DiagnosticMetrics.record("rss.tcp.weak.sackSent", sacksSent);
+                DiagnosticMetrics.record("rss.tcp.weak.ackIgnoredNoPending", ignoredAcks);
+                DiagnosticMetrics.record("rss.tcp.weak.untrackedTcpFrames", ordinaryTcpFrames);
                 DiagnosticMetrics.record("rss.tcp.weak.udpTailProbes", udpTailProbes);
                 DiagnosticMetrics.record("rss.tcp.weak.probeAckedBeforeTcp", probesAckedBeforeTcp);
                 DiagnosticMetrics.record("rss.tcp.weak.probeHandedToTcp", probesHandedToTcp);
