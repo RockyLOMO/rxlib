@@ -7,13 +7,41 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
 import org.junit.jupiter.api.Test;
 import java.net.InetSocketAddress;
-
-import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class SSProtocolCodecTest {
+
+    @Test
+    void assemblesOnlyTheFirstAddressAcrossPlaintextRecords() {
+        for (String host : new String[]{"192.0.2.1", "2001:db8::1", "example.test"}) {
+            ByteBuf address = Unpooled.buffer();
+            try {
+                UdpManager.encode(address, host, 443);
+                for (int split = 1; split < address.readableBytes(); split++) {
+                    EmbeddedChannel channel = new EmbeddedChannel(new SSProtocolCodec());
+                    try {
+                        assertFalse(channel.writeInbound(address.retainedSlice(0, split)));
+                        ByteBuf last = Unpooled.buffer().writeBytes(address, split, address.readableBytes() - split).writeInt(42);
+                        assertTrue(channel.writeInbound(last));
+                        ByteBuf payload = channel.readInbound();
+                        try {
+                            assertEquals(4, payload.readableBytes());
+                            assertEquals(42, payload.readInt());
+                            assertEquals(UdpManager.decode(address.duplicate()), channel.attr(ShadowsocksConfig.REMOTE_DEST).get());
+                        } finally {
+                            payload.release();
+                        }
+                    } finally {
+                        channel.finishAndReleaseAll();
+                    }
+                }
+            } finally {
+                address.release();
+            }
+        }
+    }
 
     @Test
     void decode_preservesShortTcpPayloadsAfterAddress() {

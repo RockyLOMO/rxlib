@@ -196,24 +196,18 @@ public final class UdpManager {
     }
 
     private static boolean isValidAddressPayload(ByteBuf buf, int index, int readableBytes) {
-        if (readableBytes < 1) {
-            return false;
-        }
+        int length = addressHeaderLength(buf, index, readableBytes);
+        return length > 0 && readableBytes >= length;
+    }
 
-        short atyp = buf.getUnsignedByte(index);
-        switch (atyp) {
-            case 0x01:
-                return readableBytes >= 1 + 4 + 2;
-            case 0x04:
-                return readableBytes >= 1 + 16 + 2;
-            case 0x03:
-                if (readableBytes < 2) {
-                    return false;
-                }
-                int domainLength = buf.getUnsignedByte(index + 1);
-                return readableBytes >= 1 + 1 + domainLength + 2;
-            default:
-                return false;
+    // Zero means the type or domain length has not arrived yet. Negative means invalid.
+    static int addressHeaderLength(ByteBuf buf, int index, int readableBytes) {
+        if (readableBytes == 0) return 0;
+        switch (buf.getUnsignedByte(index)) {
+            case 1: return 7;
+            case 4: return 19;
+            case 3: return readableBytes < 2 ? 0 : 4 + buf.getUnsignedByte(index + 1);
+            default: return -1;
         }
     }
 

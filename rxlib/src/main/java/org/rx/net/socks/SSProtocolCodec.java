@@ -1,15 +1,12 @@
 package org.rx.net.socks;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.socket.DatagramChannel;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.codec.MessageToMessageCodec;
-import lombok.extern.slf4j.Slf4j;
 import org.rx.net.Sockets;
-import java.net.InetSocketAddress;
 
 import java.util.List;
 
@@ -22,9 +19,9 @@ import java.util.List;
  * 0x04: host is a 16-byte IPv6 address.
  * The port number is a 2-byte big-endian unsigned integer.
  **/
-@Slf4j
 public class SSProtocolCodec extends MessageToMessageCodec<Object, Object> {
     private boolean tcpAddressed;
+    private ByteBuf prefix;
 
     @Override
     protected void encode(ChannelHandlerContext ctx, Object msg, List<Object> out) throws Exception {
@@ -51,28 +48,49 @@ public class SSProtocolCodec extends MessageToMessageCodec<Object, Object> {
         boolean isUdp = inbound instanceof DatagramChannel;
 
         if (isUdp || !tcpAddressed) {
-            if (buf.readableBytes() < 1 + 1 + 2) {// [1-byte type][variable-length host][2-byte port]
-                return;
-            }
-            InetSocketAddress addrRequest;
+            ByteBuf header = buf;
             try {
-                addrRequest = UdpManager.decode(buf);
-            } catch (Exception e) {
-                log.warn("protocol error, fail to decode address request from {}, pls check client's cipher setting", inbound.remoteAddress(), e);
                 if (!isUdp) {
-                    inbound.close();
+                    int length = UdpManager.addressHeaderLength(buf, buf.readerIndex(), buf.readableBytes());
+                    if (prefix != null || length == 0 || length > buf.readableBytes()) {
+                        if (!buf.isReadable()) return;
+                        if (prefix == null) prefix = ctx.alloc().buffer(19, 259);
+                        while (true) {
+                            length = UdpManager.addressHeaderLength(prefix, 0, prefix.readableBytes());
+                            if (length < 0) throw new IllegalArgumentException("invalid SS address type");
+                            if (length > 0 && prefix.readableBytes() == length) break;
+                            if (!buf.isReadable()) return;
+                            int needed = length == 0 ? 1 : length - prefix.readableBytes();
+                            prefix.writeBytes(buf, Math.min(needed, buf.readableBytes()));
+                        }
+                        header = prefix;
+                    }
                 }
+                inbound.attr(ShadowsocksConfig.REMOTE_DEST).set(UdpManager.decode(header));
+                releasePrefix();
+            } catch (IllegalArgumentException e) {
+                releasePrefix();
+                if (!isUdp) inbound.close();
                 return;
             }
-            //IDN.toUnicode(this.host);
-
-            inbound.attr(ShadowsocksConfig.REMOTE_DEST).set(addrRequest);
-
             if (!isUdp) {
                 tcpAddressed = true;
             }
         }
         buf.retain();
         out.add(msg);
+    }
+
+    private void releasePrefix() {
+        if (prefix != null) {
+            prefix.release();
+            prefix = null;
+        }
+    }
+
+    @Override
+    public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
+        releasePrefix();
+        super.handlerRemoved(ctx);
     }
 }
