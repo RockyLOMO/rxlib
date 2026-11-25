@@ -43,12 +43,12 @@ public final class UdpDailyFec implements AutoCloseable {
         return probeGroupParityBytes;
     }
     private Group[] receiving = new Group[4];
-    private int nextSeq, target, cleanWindows, reportSeq, parityCredit;
-    private int highestRaw, nextReport;
-    private long rawMask, recoveredMask, lastReportTime, lastWrite, lastRx, packetInterval, flushAfter;
+    private int nextSeq, target, cleanSampled, reportSeq, parityCredit;
+    private int highestRaw, nextReport, lastObservedReportSeq;
+    private long rawMask, recoveredMask, lastReportTime, lastObservedReportTime, lastObservedRxTime, lastWrite, lastRx, packetInterval, flushAfter;
     long sentData, protectedData, paritySent, skippedSmallGroups, unprotectedTxGroups;
     long sampledData, missingData, recoveredData, evictedGroups, unprotectedRxGroups;
-    private boolean observing, hasReport, closed;
+    private boolean observing, hasReport, hadClosePair, closed;
 
     public UdpDailyFec(ByteBufAllocator allocator) {
         this(allocator, System::nanoTime);
@@ -170,7 +170,7 @@ public final class UdpDailyFec implements AutoCloseable {
         if (index >= MAX_SHARDS) {
             return;
         }
-        observe(seq, reply);
+        observe(seq, now, reply);
         if (closed || !delivered.acceptSerial(seq)) {
             return;
         }
@@ -187,14 +187,20 @@ public final class UdpDailyFec implements AutoCloseable {
     }
 
     // Report physical arrivals before recovery. Allow eight subsequent packets for reordering.
-    private void observe(int seq, Consumer<ByteBuf> reply) {
+    private void observe(int seq, long now, Consumer<ByteBuf> reply) {
         if (!observing) {
             observing = true;
             highestRaw = seq;
+            lastObservedReportSeq = seq - 1;
+            lastObservedReportTime = lastObservedRxTime = now;
             nextReport = seq + 39;
             rawMask = 1L;
             return;
         }
+        if (weak && now - lastObservedRxTime < MAX_FLUSH) {
+            hadClosePair = true;
+        }
+        lastObservedRxTime = now;
         int advance = seq - highestRaw;
         if (advance <= 0) {
             if (advance > -64) {
@@ -205,14 +211,22 @@ public final class UdpDailyFec implements AutoCloseable {
         rawMask = (advance >= 64 ? 0 : rawMask << advance) | 1L;
         if (weak) recoveredMask = advance >= 64 ? 0 : recoveredMask << advance;
         highestRaw = seq;
-        if (seq - nextReport >= 0) {
-            int gaps = ~(int) (rawMask >>> 8), missing = Integer.bitCount(gaps);
-            sampledData += 32;
+        int readyCount = (seq - 8) - lastObservedReportSeq;
+        boolean fullWindow = seq - nextReport >= 0;
+        if (fullWindow || weak && hadClosePair && readyCount >= 4
+                && now - lastObservedReportTime >= TimeUnit.SECONDS.toNanos(3)) {
+            int window = fullWindow ? 32 : Math.min(32, readyCount);
+            int windowMask = window == 32 ? -1 : (1 << window) - 1;
+            int gaps = (~(int) (rawMask >>> 8)) & windowMask, missing = Integer.bitCount(gaps);
+            sampledData += window;
             missingData += missing;
+            lastObservedReportSeq = seq - 8;
+            lastObservedReportTime = now;
+            hadClosePair = false;
             nextReport = seq + 32;
             ByteBuf report = newFrame(weak ? 8 : 6).writeByte(REPORT).writeInt(seq).writeByte(missing);
             if (weak) {
-                int isolated = gaps & ~(gaps << 1 | gaps >>> 1);
+                int isolated = gaps & ~((gaps << 1 | gaps >>> 1) & windowMask);
                 report.writeByte(Integer.bitCount(isolated)).writeByte(Integer.bitCount(gaps & (int) (recoveredMask >>> 8)));
             }
             reply.accept(report);
@@ -223,6 +237,7 @@ public final class UdpDailyFec implements AutoCloseable {
         if (missing > 32 || isolated > missing || recovered > missing || nextSeq - seq <= 0 || hasReport && seq - reportSeq <= 0) {
             return;
         }
+        int covered = hasReport ? Math.min(32, Math.max(1, seq - reportSeq)) : 32;
         hasReport = true;
         reportSeq = seq;
         lastReportTime = now;
@@ -235,8 +250,8 @@ public final class UdpDailyFec implements AutoCloseable {
             } else {
                 target = requested;
             }
-            cleanWindows = 0;
-        } else if (target != 0 && ++cleanWindows >= 3) {
+            cleanSampled = 0;
+        } else if (target != 0 && (cleanSampled += covered) >= 96) {
             target = 0;
             cancelPendingParity();
         }
@@ -298,7 +313,7 @@ public final class UdpDailyFec implements AutoCloseable {
 
     private ByteBuf newFrame(int len) {
         int capacity = WIRE_HEADROOM + len;
-        return alloc.ioBuffer(capacity, capacity).setIndex(WIRE_HEADROOM, WIRE_HEADROOM);
+        return alloc.ioBuffer(capacity, capacity + 16).setIndex(WIRE_HEADROOM, WIRE_HEADROOM);
     }
 
     /** Earliest parity flush or receive-buffer expiry. Idle sessions need no scheduled task. */

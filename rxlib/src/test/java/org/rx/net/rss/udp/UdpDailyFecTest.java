@@ -203,6 +203,67 @@ class UdpDailyFecTest {
     }
 
     @Test
+    void weakLowPpsPairsSustainFeedbackWithoutIdleHeartbeats() {
+        AtomicLong clock = new AtomicLong(1_000_000L);
+        ArrayDeque<ByteBuf> q = new ArrayDeque<>(), rq = new ArrayDeque<>();
+        ByteBuf payload = Unpooled.buffer(32).writeZero(32);
+        try (UdpDailyFec tx = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, clock::get, true, 44);
+             UdpDailyFec rx = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, clock::get, true, 44)) {
+            // 2 PPS in 20ms pairs (980ms gap between pairs): 32 packets take 16s (> 5s REPORT_TIMEOUT),
+            // so activity-gated 3s weak reports must sustain target and recover paired losses.
+            for (int i = 0; i < 80; i++) {
+                long step = (i & 1) == 1 ? TimeUnit.MILLISECONDS.toNanos(20) : TimeUnit.MILLISECONDS.toNanos(980);
+                long due = tx.nextDelayMillis();
+                if (due >= 0 && TimeUnit.MILLISECONDS.toNanos(due) <= step) {
+                    clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(due));
+                    tx.tick(q::add);
+                    while (!q.isEmpty()) {
+                        ByteBuf f = q.remove();
+                        try { rx.read(f, ByteBuf::release, rq::add); } finally { f.release(); }
+                    }
+                    clock.addAndGet(step - TimeUnit.MILLISECONDS.toNanos(due));
+                } else {
+                    clock.addAndGet(step);
+                }
+                rx.tick(rq::add);
+                tx.write(payload, q::add);
+                while (!q.isEmpty()) {
+                    ByteBuf f = q.remove();
+                    if (f.getUnsignedByte(f.readerIndex()) != UdpDailyFec.PARITY && i % 20 == 6) {
+                        f.release();
+                    } else {
+                        try { rx.read(f, ByteBuf::release, rq::add); } finally { f.release(); }
+                    }
+                }
+                while (!rq.isEmpty()) {
+                    ByteBuf r = rq.remove();
+                    try { tx.read(r, ByteBuf::release, q::add); } finally { r.release(); }
+                }
+            }
+            clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(200));
+            tx.tick(q::add);
+            while (!q.isEmpty()) {
+                ByteBuf f = q.remove();
+                try { rx.read(f, ByteBuf::release, rq::add); } finally { f.release(); }
+            }
+            assertTrue(tx.paritySent > 0, "weak low-PPS pairs must sustain FEC parity");
+            assertTrue(rx.recoveredData >= 1, "weak low-PPS pairs must recover lost shard");
+            // Idle silence produces zero heartbeats or timers.
+            while (!rq.isEmpty()) rq.remove().release();
+            clock.addAndGet(TimeUnit.MINUTES.toNanos(5));
+            tx.tick(q::add);
+            rx.tick(rq::add);
+            assertTrue(q.isEmpty() && rq.isEmpty());
+            assertEquals(-1, tx.nextDelayMillis());
+            assertEquals(-1, rx.nextDelayMillis());
+        } finally {
+            payload.release();
+            while (!q.isEmpty()) q.remove().release();
+            while (!rq.isEmpty()) rq.remove().release();
+        }
+    }
+
+    @Test
     void weakChargesVariableParityAtItsEncodedByteCostAndCanCancelTail() {
         AtomicLong time = new AtomicLong();
         final int authHeader = 44;

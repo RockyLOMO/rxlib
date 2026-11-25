@@ -169,6 +169,70 @@ class UdpGameRedundancyTest {
     }
 
     @Test
+    void mildResidualLossStepsDownFromTripleWithHysteresis() {
+        UdpGameRedundancy state = new UdpGameRedundancy(new AtomicLong());
+        try {
+            long now = 1_000_000L;
+            int lastSeq = 0;
+            // Promote 1x -> 2x -> 3x via lossy windows where 2nd copy helped.
+            for (int w = 0; w < 5; w++) {
+                int stepCopies = state.copies;
+                for (int i = 0; i < 40; i++) {
+                    now += 5_000_000L;
+                    lastSeq = state.begin(now);
+                    for (int c = 1; c < state.copies; c++) state.extra(lastSeq, 100, true, now);
+                }
+                int phys = stepCopies == 1 ? 30 : 52;
+                int orig = stepCopies == 1 ? 30 : 26;
+                ByteBuf rep = Unpooled.buffer(8).writeByte(UdpGameRedundancy.REPORT).writeInt(lastSeq - 8)
+                        .writeByte(30).writeByte(phys).writeByte(orig);
+                try {
+                    state.read(rep, rep.alloc(), now + 20_000_000L, true, ByteBuf::release, ByteBuf::release);
+                } finally {
+                    rep.release();
+                }
+            }
+            assertEquals(3, state.copies);
+
+            // Mild ~2% physical loss (1 original + 1 extra lost out of 96, unique=32): steps down 3x -> 2x after 4 windows.
+            for (int w = 0; w < 4; w++) {
+                for (int i = 0; i < 32; i++) {
+                    now += 5_000_000L;
+                    lastSeq = state.begin(now);
+                    for (int c = 1; c < state.copies; c++) state.extra(lastSeq, 100, true, now);
+                }
+                ByteBuf rep = Unpooled.buffer(8).writeByte(UdpGameRedundancy.REPORT).writeInt(lastSeq - 8)
+                        .writeByte(32).writeByte(94).writeByte(31);
+                try {
+                    state.read(rep, rep.alloc(), now + 20_000_000L, true, ByteBuf::release, ByteBuf::release);
+                } finally {
+                    rep.release();
+                }
+            }
+            assertEquals(2, state.copies);
+
+            // At 2x, losing 1 original (originals=31, unique=32) proves 2nd copy is still needed: must NOT drop to 1x.
+            for (int w = 0; w < 8; w++) {
+                for (int i = 0; i < 32; i++) {
+                    now += 5_000_000L;
+                    lastSeq = state.begin(now);
+                    for (int c = 1; c < state.copies; c++) state.extra(lastSeq, 100, true, now);
+                }
+                ByteBuf rep = Unpooled.buffer(8).writeByte(UdpGameRedundancy.REPORT).writeInt(lastSeq - 8)
+                        .writeByte(32).writeByte(63).writeByte(31);
+                try {
+                    state.read(rep, rep.alloc(), now + 20_000_000L, true, ByteBuf::release, ByteBuf::release);
+                } finally {
+                    rep.release();
+                }
+            }
+            assertEquals(2, state.copies);
+        } finally {
+            state.close();
+        }
+    }
+
+    @Test
     void negotiatedProtectionRequiresIndependentSessionMaterial() {
         String id = UUID.randomUUID().toString();
         assertThrows(IllegalArgumentException.class, () -> DailyUdpWire.server(id, a -> false, DailyUdpWire.GAME, null));

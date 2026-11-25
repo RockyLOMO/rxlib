@@ -587,6 +587,47 @@ class AdaptiveStreamTest {
     }
 
     @Test
+    void reliableSackRepairCancelsRedundantPendingParity() {
+        AtomicLong clock = new AtomicLong(1_000_000L);
+        try (End a = new End(clock, AdaptiveStream.WEAK); End b = new End(clock, AdaptiveStream.WEAK)) {
+            probe(a, b);
+            // Prime loss so weak enables FEC parity credit.
+            for (int i = 0; i < 40; i++) {
+                clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(10));
+                a.send(i);
+                if (i == 12) a.udp.remove().release();
+                a.passUdp(b);
+                b.passUdp(a);
+                clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(45));
+                b.stream.tick();
+                b.passTcp(a);
+                a.passTcp(b);
+            }
+            ordered(b, 40);
+            // Send a 3-packet sparse group where packet 40 is lost and packets 41, 42 arrive.
+            clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(30));
+            a.send(40);
+            a.udp.remove().release();
+            clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(30));
+            a.send(41);
+            a.passUdp(b);
+            clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(30));
+            a.send(42);
+            a.passUdp(b);
+            // Receiver emits SACK(40, mask=0b110) before sender's 180ms FEC flush fires.
+            clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(45));
+            b.stream.tick();
+            b.passTcp(a);
+            a.passTcp(b);
+            ordered(b, 43);
+            // Advance past 180ms FEC flush: pending parity must have been cancelled since all frames were covered.
+            clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(200));
+            a.stream.tick();
+            assertTrue(a.udp.isEmpty(), "SACK covering all pending frames must cancel redundant FEC parity");
+        }
+    }
+
+    @Test
     void repeatedWindowExhaustionExtendsTcpResidence() {
         AtomicLong clock = new AtomicLong(1);
         try (End a = new End(clock); End b = new End(clock)) {

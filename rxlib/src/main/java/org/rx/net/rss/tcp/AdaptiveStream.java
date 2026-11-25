@@ -203,6 +203,7 @@ public final class AdaptiveStream implements AutoCloseable {
                 tcpOut.accept(repair);
                 reliableUntil = ack + 1;
                 hasReliablePrefix = true;
+                if (nextTx - reliableUntil <= 0) fec.cancelPendingParity();
                 recordRepair(1, payload, "reason=gap");
             }
         } else if (type == DATA && size > HEADER) {
@@ -231,6 +232,7 @@ public final class AdaptiveStream implements AutoCloseable {
         // Every preceding slot is either buffered at the receiver or already on this TCP channel.
         if (!hasReliablePrefix || base + width - reliableUntil > 0) reliableUntil = base + width;
         hasReliablePrefix = true;
+        if (nextTx - reliableUntil <= 0) fec.cancelPendingParity();
         recordRepair(frames, bytes, "reason=sack");
     }
 
