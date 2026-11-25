@@ -9,17 +9,21 @@ import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.codec.MessageToMessageCodec;
 import io.netty.util.ReferenceCountUtil;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.io.Bytes;
 import org.rx.net.Sockets;
 import org.rx.net.socks.encryption.ICrypto;
 
 import javax.crypto.BadPaddingException;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Slf4j
 @ChannelHandler.Sharable
 public class CipherCodec extends MessageToMessageCodec<Object, Object> {
+    private static final AtomicLong REJECTED = new AtomicLong();
+    private static final AtomicLong LAST_WARNING = new AtomicLong();
     public static final CipherCodec DEFAULT = new CipherCodec();
 
     @Override
@@ -93,7 +97,7 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
             }
         } catch (Exception e) {
             if (isAuthenticationFailure(e)) {
-                log.warn("cipher decode fail {}", rootMessage(e)); // 可能是密码错误或协议嗅探
+                recordRejection();
                 if (!isUdp) {
                     inbound.close();
                 }
@@ -125,12 +129,13 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
         }
     }
 
-    private static String rootMessage(Throwable e) {
-        Throwable root = ExceptionUtils.getRootCause(e);
-        if (root == null) {
-            root = e;
+    private static void recordRejection() {
+        REJECTED.incrementAndGet();
+        long now = System.nanoTime(), last = LAST_WARNING.get();
+        if ((last == 0 || now - last >= TimeUnit.SECONDS.toNanos(30)) && LAST_WARNING.compareAndSet(last, now)) {
+            long count = REJECTED.getAndSet(0);
+            DiagnosticMetrics.record("ss.aead.rejected", count);
+            log.warn("Rejected {} invalid Shadowsocks AEAD records since previous warning", count);
         }
-        String message = root.getMessage();
-        return message != null ? message : root.toString();
     }
 }

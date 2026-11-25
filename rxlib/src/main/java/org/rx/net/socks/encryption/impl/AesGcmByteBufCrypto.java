@@ -6,9 +6,10 @@ import io.netty.handler.codec.DecoderException;
 import io.netty.util.concurrent.FastThreadLocal;
 import org.rx.codec.CodecUtil;
 import org.rx.io.Bytes;
-import org.rx.net.socks.encryption.ICrypto;
+import org.rx.net.socks.encryption.AeadCrypto;
 import org.rx.net.socks.encryption.ShadowSocksKey;
 
+import javax.crypto.AEADBadTagException;
 import javax.crypto.Cipher;
 import javax.crypto.Mac;
 import javax.crypto.spec.GCMParameterSpec;
@@ -18,7 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.util.Arrays;
 
-abstract class AesGcmByteBufCrypto implements ICrypto, AutoCloseable {
+abstract class AesGcmByteBufCrypto extends AeadCrypto implements AutoCloseable {
     private static final String CIPHER_NAME = "AES/GCM/NoPadding";
     private static final String AES = "AES";
     private static final String HKDF_ALGORITHM = "HmacSHA1";
@@ -255,6 +256,7 @@ abstract class AesGcmByteBufCrypto implements ICrypto, AutoCloseable {
             saltBytesRead = 0;
         }
         decSubkey = new byte[keyLength];
+        receivedTcpSalt(salt, saltLength);
         genSubkey(salt, decSubkey);
         decCipher = Cipher.getInstance(CIPHER_NAME);
         resetDecryptState();
@@ -273,7 +275,7 @@ abstract class AesGcmByteBufCrypto implements ICrypto, AutoCloseable {
 
             currentPayloadLength = ((decLenBytes[0] & 0xFF) << 8) | (decLenBytes[1] & 0xFF);
             if (currentPayloadLength > PAYLOAD_SIZE_MASK) {
-                throw new DecoderException("Payload too large: " + currentPayloadLength);
+                throw new AEADBadTagException("Invalid authenticated record length");
             }
             readingLengthPhase = false;
             return;
@@ -284,6 +286,7 @@ abstract class AesGcmByteBufCrypto implements ICrypto, AutoCloseable {
         if (written != currentPayloadLength) {
             throw new DecoderException("Invalid payload chunk");
         }
+        authenticatedTcpPayload();
         increment(decNonce);
         readingLengthPhase = true;
         currentPayloadLength = 0;
@@ -309,7 +312,7 @@ abstract class AesGcmByteBufCrypto implements ICrypto, AutoCloseable {
     private void decryptUdp(ByteBuf in, ByteBuf out) {
         try {
             if (in.readableBytes() < saltLength + TAG_LENGTH) {
-                throw new DecoderException("Packet too short");
+                throw new AEADBadTagException("Truncated datagram");
             }
             byte[] salt = SALT_BUF.get();
             in.readBytes(salt, 0, saltLength);
@@ -320,6 +323,7 @@ abstract class AesGcmByteBufCrypto implements ICrypto, AutoCloseable {
             int len = in.readableBytes();
             int readerIndex = in.readerIndex();
             applyCipher(cipher, in, readerIndex, len, out, Math.max(0, len - TAG_LENGTH));
+            authenticatedSalt(salt, saltLength);
             in.readerIndex(readerIndex + len);
         } catch (GeneralSecurityException e) {
             throw new DecoderException(cipherName + " UDP decrypt failed", e);
@@ -407,7 +411,9 @@ abstract class AesGcmByteBufCrypto implements ICrypto, AutoCloseable {
 
     private byte[] randomSalt() {
         byte[] salt = SALT_BUF.get();
-        CodecUtil.threadLocalSecureRandom().nextBytes(salt);
+        do {
+            CodecUtil.threadLocalSecureRandom().nextBytes(salt);
+        } while (!reserveLocalSalt(salt, saltLength));
         return salt;
     }
 

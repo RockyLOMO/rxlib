@@ -6,7 +6,7 @@ import io.netty.handler.codec.DecoderException;
 import io.netty.util.concurrent.FastThreadLocal;
 import org.rx.codec.CodecUtil;
 import org.rx.io.Bytes;
-import org.rx.net.socks.encryption.ICrypto;
+import org.rx.net.socks.encryption.AeadCrypto;
 import org.rx.net.socks.encryption.ShadowSocksKey;
 
 import javax.crypto.AEADBadTagException;
@@ -17,7 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.util.Arrays;
 
-public class ChaCha20Poly1305ByteBufCrypto implements ICrypto, AutoCloseable {
+public class ChaCha20Poly1305ByteBufCrypto extends AeadCrypto implements AutoCloseable {
     public static final String AEAD_CHACHA20_POLY1305 = "chacha20-ietf-poly1305";
     private static final String HKDF_ALGORITHM = "HmacSHA1";
     private static final byte[] INFO = "ss-subkey".getBytes(StandardCharsets.US_ASCII);
@@ -229,6 +229,7 @@ public class ChaCha20Poly1305ByteBufCrypto implements ICrypto, AutoCloseable {
             saltBytesRead = 0;
         }
         decSubkey = new byte[KEY_LENGTH];
+        receivedTcpSalt(salt, SALT_LENGTH);
         genSubkey(salt, decSubkey);
         decSessionStarted = true;
         resetDecryptState();
@@ -245,7 +246,7 @@ public class ChaCha20Poly1305ByteBufCrypto implements ICrypto, AutoCloseable {
             increment(decNonce);
             currentPayloadLength = ((decLenBytes[0] & 0xFF) << 8) | (decLenBytes[1] & 0xFF);
             if (currentPayloadLength > PAYLOAD_SIZE_MASK) {
-                throw new DecoderException("Payload too large: " + currentPayloadLength);
+                throw new AEADBadTagException("Invalid authenticated record length");
             }
             readingLengthPhase = false;
             return;
@@ -255,6 +256,7 @@ public class ChaCha20Poly1305ByteBufCrypto implements ICrypto, AutoCloseable {
         if (written != currentPayloadLength) {
             throw new DecoderException("Invalid payload chunk");
         }
+        authenticatedTcpPayload();
         increment(decNonce);
         readingLengthPhase = true;
         currentPayloadLength = 0;
@@ -278,7 +280,7 @@ public class ChaCha20Poly1305ByteBufCrypto implements ICrypto, AutoCloseable {
     private void decryptUdp(ByteBuf in, ByteBuf out) {
         try {
             if (in.readableBytes() < SALT_LENGTH + TAG_LENGTH) {
-                throw new DecoderException("Packet too short");
+                throw new AEADBadTagException("Truncated datagram");
             }
             byte[] salt = SALT_BUF.get();
             in.readBytes(salt, 0, SALT_LENGTH);
@@ -287,6 +289,7 @@ public class ChaCha20Poly1305ByteBufCrypto implements ICrypto, AutoCloseable {
             int len = in.readableBytes();
             int readerIndex = in.readerIndex();
             ChaCha20Poly1305Support.decrypt(subkey, ZERO_NONCE, in, readerIndex, len, out);
+            authenticatedSalt(salt, SALT_LENGTH);
             in.readerIndex(readerIndex + len);
         } catch (GeneralSecurityException e) {
             throw new DecoderException("ChaCha20-Poly1305 UDP decrypt failed", e);
@@ -324,7 +327,9 @@ public class ChaCha20Poly1305ByteBufCrypto implements ICrypto, AutoCloseable {
 
     private byte[] randomSalt() {
         byte[] salt = SALT_BUF.get();
-        CodecUtil.threadLocalSecureRandom().nextBytes(salt);
+        do {
+            CodecUtil.threadLocalSecureRandom().nextBytes(salt);
+        } while (!reserveLocalSalt(salt, SALT_LENGTH));
         return salt;
     }
 
