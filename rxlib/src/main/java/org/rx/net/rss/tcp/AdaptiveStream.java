@@ -31,6 +31,10 @@ public final class AdaptiveStream implements AutoCloseable {
     private static final long ACK_DELAY = TimeUnit.MILLISECONDS.toNanos(10);
     private static final long PROBE_INTERVAL = TimeUnit.SECONDS.toNanos(2);
 
+    private static final long MAX_PROBE_DELAY = TimeUnit.SECONDS.toNanos(30);
+    private long windowDelay, lastWindow, pathSince, tcpNanos;
+    private long toUdp, toTcp, tcpDelivered, udpDelivered;
+    private int peakPending;
     private final ByteBufAllocator alloc;
     private final Consumer<ByteBuf> tcpOut, udpOut, deliver;
     private final Consumer<ByteBuf> decoded = this::decoded;
@@ -78,7 +82,7 @@ public final class AdaptiveStream implements AutoCloseable {
         this.udpOut = udp;
         this.deliver = deliver;
         this.clock = nanoClock;
-        this.nextProbe = clock.getAsLong();
+        pathSince = this.nextProbe = clock.getAsLong();
         this.fec = new UdpDailyFec(alloc, nanoClock, policy == RssProfile.WEAK, 32);
     }
 
@@ -110,6 +114,7 @@ public final class AdaptiveStream implements AutoCloseable {
                     tailArmed = false;
                 }
                 pending.add(frame);
+                peakPending = Math.max(peakPending, pending.size());
                 fec.write(frame, udpOut);
             } else {
                 tcpOut.accept(frame);
@@ -264,6 +269,10 @@ public final class AdaptiveStream implements AutoCloseable {
                 udpOut.accept(control(PONG, id));
             } else if (probing && probeId == id) {
                 updateRtt(clock.getAsLong() - lastPing);
+                long now = clock.getAsLong();
+                tcpNanos += now - pathSince;
+                pathSince = now;
+                toUdp++;
                 ready = true;
                 probing = false;
             }
@@ -325,7 +334,10 @@ public final class AdaptiveStream implements AutoCloseable {
 
         boolean wasBlocked = buffered > 0;
         int previous = nextRx++;
-        deliver.accept(frame.retainedSlice(i + HEADER, frame.readableBytes() - HEADER));
+        int payloadBytes = frame.readableBytes() - HEADER;
+        if (fromUdp) udpDelivered += payloadBytes;
+        else tcpDelivered += payloadBytes;
+        deliver.accept(frame.retainedSlice(i + HEADER, payloadBytes));
         while (!closed) {
             int slot = nextRx & (reordered.length - 1);
             ByteBuf next = reordered[slot];
@@ -335,6 +347,7 @@ public final class AdaptiveStream implements AutoCloseable {
             reordered[slot] = null;
             buffered--;
             nextRx++;
+            udpDelivered += next.readableBytes();
             deliver.accept(next);
         }
         if (wasBlocked) {
@@ -488,8 +501,20 @@ public final class AdaptiveStream implements AutoCloseable {
     private void drainPendingToTcp(String reason) {
         probeHandedToTcp();
         tailArmed = tailSent = false;
+        long now = clock.getAsLong();
+        if (ready) {
+            toTcp++;
+            pathSince = now;
+        }
         ready = probing = sampling = false;
-        nextProbe = clock.getAsLong() + PROBE_INTERVAL;
+        if ("reason=window".equals(reason)) {
+            windowDelay = windowDelay != 0 && now - lastWindow < TimeUnit.MINUTES.toNanos(1)
+                    ? Math.min(MAX_PROBE_DELAY, windowDelay * 2) : PROBE_INTERVAL;
+            lastWindow = now;
+            nextProbe = now + windowDelay;
+        } else {
+            nextProbe = now + PROBE_INTERVAL;
+        }
         fec.cancelPendingParity();
         int bytes = 0, frames = 0;
         while (!pending.isEmpty()) {
@@ -527,6 +552,13 @@ public final class AdaptiveStream implements AutoCloseable {
                 DiagnosticMetrics.record("rss.tcp.weak.filteredDuplicates", filteredDuplicates);
                 DiagnosticMetrics.record("rss.tcp.weak.probeGroupParityBytes", fec.probeGroupParityBytes());
             }
+            DiagnosticMetrics.record("rss.tcp.adaptive.transitions", toUdp, "to=udp");
+            DiagnosticMetrics.record("rss.tcp.adaptive.transitions", toTcp, "to=tcp");
+            DiagnosticMetrics.record("rss.tcp.adaptive.tcpMillis", TimeUnit.NANOSECONDS.toMillis(
+                    tcpNanos + (ready ? 0 : clock.getAsLong() - pathSince)));
+            DiagnosticMetrics.record("rss.tcp.adaptive.peakPendingFrames", peakPending);
+            DiagnosticMetrics.record("rss.tcp.adaptive.deliveredBytes", tcpDelivered, "path=tcp");
+            DiagnosticMetrics.record("rss.tcp.adaptive.deliveredBytes", udpDelivered, "path=udp");
             DiagnosticMetrics.record("rss.tcp.adaptive.fecDataBytes", fec.dataBytes);
             DiagnosticMetrics.record("rss.tcp.adaptive.fecParityBytes", fec.parityBytes);
             DiagnosticMetrics.record("rss.tcp.adaptive.fecRecovered", fec.recoveredPackets());

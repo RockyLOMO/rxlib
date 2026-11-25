@@ -466,6 +466,23 @@ class AdaptiveStreamTest {
     }
 
     @Test
+    void repeatedWindowExhaustionExtendsTcpResidence() {
+        AtomicLong clock = new AtomicLong(1);
+        try (End a = new End(clock); End b = new End(clock)) {
+            for (int round = 0; round < 2; round++) {
+                probe(a, b);
+                for (int i = 0; i < 65; i++) a.send(round * 65 + i);
+                assertFalse(a.stream.usingUdp());
+                a.passTcp(b);
+                a.passUdp(b);
+                ordered(b, (round + 1) * 65);
+                assertEquals(2000L << round, a.stream.nextDelayMillis());
+                clock.addAndGet(TimeUnit.SECONDS.toNanos(2L << round));
+            }
+        }
+    }
+
+    @Test
     void senderWindowLimitsMemoryAndFinDrainsOutstandingData() {
         AtomicLong clock = new AtomicLong();
         try (End a = new End(clock); End b = new End(clock)) {
