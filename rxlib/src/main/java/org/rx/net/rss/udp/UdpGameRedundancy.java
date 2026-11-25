@@ -32,7 +32,7 @@ final class UdpGameRedundancy {
     UdpGameRedundancy(AtomicLong processBudget) {
         this.processBudget = processBudget;
     }
-    private int warmupCount, next, highest, reportAt, lastReport, clean, lossy;
+    private int warmupCount, next, highest, reportAt, lastReport, clean, lossy, overprovisioned;
     private boolean sending, observing, feedback;
     // Each sender chooses its initial multiplier. Feedback always uses the actual sent counts.
     private static final int INITIAL_COPIES = io.netty.util.internal.SystemPropertyUtil.getInt("app.rss.game.initialCopies", 1);
@@ -183,11 +183,18 @@ final class UdpGameRedundancy {
             return;
         }
         if (physical == actual) {
-            lossy = 0;
+            lossy = overprovisioned = 0;
             if (++clean >= 3) change(Math.max(1, copies - 1));
             return;
         }
         clean = 0;
+        if (!growing && copies > 1 && unique == WINDOW
+                && (originals == WINDOW || copies == 3 && originals >= WINDOW - 1 && physical >= actual - 2)) {
+            lossy = 0;
+            if (++overprovisioned >= (copies == 3 ? 4 : 6)) change(copies - 1);
+            return;
+        }
+        overprovisioned = 0;
         if (growing || unique == 0) {
             lossy = 0;
             return;
@@ -207,6 +214,6 @@ final class UdpGameRedundancy {
     private void change(int count) {
         if (count != copies) changes++;
         copies = count;
-        clean = lossy = 0;
+        clean = lossy = overprovisioned = 0;
     }
 }

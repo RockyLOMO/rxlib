@@ -63,13 +63,16 @@ TCP 的 AES 模式由两端读取同一个 `RSS_TCP_AES_KEY`（32 个随机字�
 
 [Hysteria 2 的 Linux 端口重定向](https://v2.hysteria.network/docs/advanced/Port-Hopping/) · [IANA 端口登记](https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xhtml)
 
-启用诊断后，weak 在流关闭时汇总以下指标。前缀均为 `rss.tcp.weak.`。
+启用诊断后，流关闭及周期性汇总会记录以下核心指标：
 
 | 指标 | 含义 |
 | --- | --- |
-| `udpTailProbes`、`probeAckedBeforeTcp`、`probeHandedToTcp`、`probeOutstandingAtClose` | 单次 UDP 尾包探测次数，以及在 TCP 接管前收到累计确认、交给 TCP、关闭时仍待确认的次数。累计确认无法区分原包、探测副本和 FEC 恢复。 |
-| `probeGroupParityBytes`、`filteredDuplicates` | 含探测分片的组实际发出的校验字节（按 FEC 配置的封装开销计费），以及流接收端滤除的重复 DATA 次数。 |
-| `ackSent`、`ackIgnoredNoPending` | 累计 ACK 帧数按触发数据来源 `dataPath=tcp/udp/mixed` 分类。ACK 在 TCP 上发送。另记发送端收到 ACK 时待修复队列为空的次数。 |
-| `untrackedTcpFrames`、`gapSent`、`sackSent` | 顺序交付且超过 UDP 分片上限的普通 TCP 帧数、请求修复的 GAP 和 SACK 帧数。 |
+| `rss.tcp.weak.udpTailProbes`、`probeAckedBeforeTcp`、`probeHandedToTcp`、`probeOutstandingAtClose` | 单次 UDP 尾包探测次数，以及在 TCP 接管前收到累计确认、交给 TCP、关闭时仍待确认的次数。累计确认无法区分原包、探测副本和 FEC 恢复。 |
+| `rss.tcp.weak.probeGroupParityBytes`、`filteredDuplicates` | 含探测分片的组实际发出的校验字节（按 FEC 配置的封装开销计费），以及流接收端滤除的重复 DATA 次数。 |
+| `rss.tcp.weak.ackSent`、`ackIgnoredNoPending` | 累计 ACK 帧数按触发数据来源 `dataPath=tcp/udp/mixed` 分类。ACK 在 TCP 上发送。另记发送端收到 ACK 时待修复队列为空的次数。 |
+| `rss.tcp.weak.untrackedTcpFrames`、`gapSent`、`sackSent` | 顺序交付且超过 UDP 分片上限的普通 TCP 帧数、请求修复的 GAP 和 SACK 帧数。 |
+| `rss.tcp.adaptive.probes`、`transitions`、`fallbacks`、`tcpMillis`、`peakPendingFrames`、`deliveredBytes` | 自适应流关闭汇总：UDP 探测次数、`to=udp/tcp` 路径切换次数、`reason=window/timeout/fin` 回退次数、TCP 驻留毫秒数、待确认队列峰值及 `path=tcp/udp` 有效交付字节。 |
+| `rss.udp.daily.tx.unprotectedGroups`、`rx.unprotectedGroups` | 发送端未发校验即切组、接收端未收到校验即过期的分片组计数（30 秒周期汇总，按 `side=client/server` 区分）。 |
+| `ss.aead.rejected` | 外部经典 Shadowsocks AEAD 认证失败、重放 salt 或半关闭截断记录拒绝计数（30 秒限速汇总）。 |
 
 比较链路开销时，按方向在丢包点之前计量实际 IP 字节，并同时记录业务交付率、P99、最长停顿、吞吐、活动连接、EventLoop 排队、Netty 堆外内存和进程 RSS。

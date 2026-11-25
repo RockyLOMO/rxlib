@@ -4,22 +4,28 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.socket.ChannelInputShutdownEvent;
 import io.netty.channel.socket.DatagramChannel;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.handler.codec.MessageToMessageCodec;
 import io.netty.util.ReferenceCountUtil;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.io.Bytes;
 import org.rx.net.Sockets;
+import org.rx.net.socks.encryption.AeadCrypto;
 import org.rx.net.socks.encryption.ICrypto;
 
 import javax.crypto.BadPaddingException;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Slf4j
 @ChannelHandler.Sharable
 public class CipherCodec extends MessageToMessageCodec<Object, Object> {
+    private static final AtomicLong REJECTED = new AtomicLong();
+    private static final AtomicLong LAST_WARNING = new AtomicLong();
     public static final CipherCodec DEFAULT = new CipherCodec();
 
     @Override
@@ -93,7 +99,7 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
             }
         } catch (Exception e) {
             if (isAuthenticationFailure(e)) {
-                log.warn("cipher decode fail {}", rootMessage(e)); // 可能是密码错误或协议嗅探
+                recordRejection();
                 if (!isUdp) {
                     inbound.close();
                 }
@@ -101,6 +107,19 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
             }
             throw e;
         }
+    }
+
+    @Override
+    public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
+        if (evt instanceof ChannelInputShutdownEvent) {
+            ICrypto crypt = ctx.channel().attr(ShadowsocksConfig.CIPHER).get();
+            if (crypt instanceof AeadCrypto && ((AeadCrypto) crypt).hasIncompleteRecord()) {
+                recordRejection();
+                ctx.close();
+                return;
+            }
+        }
+        super.userEventTriggered(ctx, evt);
     }
 
     @Override
@@ -125,12 +144,13 @@ public class CipherCodec extends MessageToMessageCodec<Object, Object> {
         }
     }
 
-    private static String rootMessage(Throwable e) {
-        Throwable root = ExceptionUtils.getRootCause(e);
-        if (root == null) {
-            root = e;
+    private static void recordRejection() {
+        REJECTED.incrementAndGet();
+        long now = System.nanoTime(), last = LAST_WARNING.get();
+        if ((last == 0 || now - last >= TimeUnit.SECONDS.toNanos(30)) && LAST_WARNING.compareAndSet(last, now)) {
+            long count = REJECTED.getAndSet(0);
+            DiagnosticMetrics.record("ss.aead.rejected", count);
+            log.warn("Rejected {} invalid Shadowsocks AEAD records since previous warning", count);
         }
-        String message = root.getMessage();
-        return message != null ? message : root.toString();
     }
 }

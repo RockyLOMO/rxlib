@@ -96,6 +96,174 @@ class UdpDailyFecTest {
     }
 
     @Test
+    void lateParityForCompleteGroupReleasesAccumulator() {
+        AtomicLong clock = new AtomicLong();
+        try (UdpDailyFec fec = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, clock::get)) {
+            AtomicLong deliveries = new AtomicLong();
+            for (int index = 0; index < 3; index++) {
+                ByteBuf wire = Unpooled.buffer();
+                if (index < 2) wire.writeByte(UdpDailyFec.SHARD).writeInt(index).writeByte(index).writeByte(7);
+                else wire.writeByte(UdpDailyFec.PARITY).writeInt(0).writeByte(2).writeShort(0).writeByte(0);
+                try {
+                    fec.read(wire, payload -> { deliveries.incrementAndGet(); payload.release(); }, ByteBuf::release);
+                } finally {
+                    wire.release();
+                }
+            }
+            assertEquals(2, deliveries.get());
+            assertEquals(0, fec.recoveredPackets());
+            assertEquals(-1, fec.nextDelayMillis());
+        }
+    }
+
+    @Test
+    void reusedAccumulatorsIsolateRetainedRecoveriesAndCountUnprotectedGroups() {
+        AtomicLong clock = new AtomicLong();
+        ArrayDeque<ByteBuf> retained = new ArrayDeque<>(), wire = new ArrayDeque<>();
+        try (UdpDailyFec tx = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, clock::get);
+             UdpDailyFec rx = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, clock::get)) {
+            ByteBuf input = Unpooled.buffer(16);
+            try {
+                for (int i = 0; i < 40; i++) {
+                    clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(50));
+                    input.clear().writeInt(i);
+                    tx.write(input, wire::add);
+                    ByteBuf f = wire.remove();
+                    if (i == 12) f.release();
+                    else {
+                        try {
+                            rx.read(f, ByteBuf::release, r -> {
+                                try { tx.read(r, ByteBuf::release, wire::add); } finally { r.release(); }
+                            });
+                        } finally {
+                            f.release();
+                        }
+                    }
+                }
+                // First sparse 4-shard group at 50ms has credit 4 < 16: flushed without parity.
+                for (int i = 40; i < 44; i++) {
+                    clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(50));
+                    input.clear().writeInt(i);
+                    tx.write(input, wire::add);
+                    ByteBuf f = wire.remove();
+                    try { rx.read(f, ByteBuf::release, ByteBuf::release); } finally { f.release(); }
+                }
+                clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(300));
+                tx.tick(wire::add);
+                rx.tick(wire::add);
+                assertEquals(1, tx.unprotectedTxGroups);
+                assertEquals(1, rx.unprotectedRxGroups);
+
+                // Burst two full K=16 groups, dropping one shard in each and holding recovered slices open.
+                for (int round = 0; round < 2; round++) {
+                    final int expected = 100 + round * 16 + 5;
+                    for (int i = 0; i < 16; i++) {
+                        int val = 100 + round * 16 + i;
+                        input.clear().writeInt(val).writeLong(0x1122334455667788L ^ val);
+                        tx.write(input, wire::add);
+                        while (!wire.isEmpty()) {
+                            ByteBuf f = wire.remove();
+                            if (f.getUnsignedByte(f.readerIndex()) == UdpDailyFec.SHARD && i == 5) {
+                                f.release();
+                            } else {
+                                try {
+                                    rx.read(f, payload -> {
+                                        if (payload.readInt() == expected) retained.add(payload);
+                                        else payload.release();
+                                    }, ByteBuf::release);
+                                } finally {
+                                    f.release();
+                                }
+                            }
+                        }
+                    }
+                }
+                assertEquals(2, retained.size());
+                ByteBuf firstRecovered = retained.remove();
+                ByteBuf secondRecovered = retained.remove();
+                try {
+                    assertEquals(0x1122334455667788L ^ 105, firstRecovered.readLong());
+                    assertEquals(0x1122334455667788L ^ 121, secondRecovered.readLong());
+                } finally {
+                    firstRecovered.release();
+                    secondRecovered.release();
+                }
+                clock.addAndGet(TimeUnit.SECONDS.toNanos(6));
+                tx.tick(ByteBuf::release);
+                rx.tick(ByteBuf::release);
+                assertEquals(-1, tx.nextDelayMillis());
+                assertEquals(-1, rx.nextDelayMillis());
+            } finally {
+                input.release();
+            }
+        } finally {
+            while (!retained.isEmpty()) retained.remove().release();
+            while (!wire.isEmpty()) wire.remove().release();
+        }
+    }
+
+    @Test
+    void weakLowPpsPairsSustainFeedbackWithoutIdleHeartbeats() {
+        AtomicLong clock = new AtomicLong(1_000_000L);
+        ArrayDeque<ByteBuf> q = new ArrayDeque<>(), rq = new ArrayDeque<>();
+        ByteBuf payload = Unpooled.buffer(32).writeZero(32);
+        try (UdpDailyFec tx = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, clock::get, true, 44);
+             UdpDailyFec rx = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, clock::get, true, 44)) {
+            // 2 PPS in 20ms pairs (980ms gap between pairs): 32 packets take 16s (> 5s REPORT_TIMEOUT),
+            // so activity-gated 3s weak reports must sustain target and recover paired losses.
+            for (int i = 0; i < 80; i++) {
+                long step = (i & 1) == 1 ? TimeUnit.MILLISECONDS.toNanos(20) : TimeUnit.MILLISECONDS.toNanos(980);
+                long due = tx.nextDelayMillis();
+                if (due >= 0 && TimeUnit.MILLISECONDS.toNanos(due) <= step) {
+                    clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(due));
+                    tx.tick(q::add);
+                    while (!q.isEmpty()) {
+                        ByteBuf f = q.remove();
+                        try { rx.read(f, ByteBuf::release, rq::add); } finally { f.release(); }
+                    }
+                    clock.addAndGet(step - TimeUnit.MILLISECONDS.toNanos(due));
+                } else {
+                    clock.addAndGet(step);
+                }
+                rx.tick(rq::add);
+                tx.write(payload, q::add);
+                while (!q.isEmpty()) {
+                    ByteBuf f = q.remove();
+                    if (f.getUnsignedByte(f.readerIndex()) != UdpDailyFec.PARITY && i % 20 == 6) {
+                        f.release();
+                    } else {
+                        try { rx.read(f, ByteBuf::release, rq::add); } finally { f.release(); }
+                    }
+                }
+                while (!rq.isEmpty()) {
+                    ByteBuf r = rq.remove();
+                    try { tx.read(r, ByteBuf::release, q::add); } finally { r.release(); }
+                }
+            }
+            clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(200));
+            tx.tick(q::add);
+            while (!q.isEmpty()) {
+                ByteBuf f = q.remove();
+                try { rx.read(f, ByteBuf::release, rq::add); } finally { f.release(); }
+            }
+            assertTrue(tx.paritySent > 0, "weak low-PPS pairs must sustain FEC parity");
+            assertTrue(rx.recoveredData >= 1, "weak low-PPS pairs must recover lost shard");
+            // Idle silence produces zero heartbeats or timers.
+            while (!rq.isEmpty()) rq.remove().release();
+            clock.addAndGet(TimeUnit.MINUTES.toNanos(5));
+            tx.tick(q::add);
+            rx.tick(rq::add);
+            assertTrue(q.isEmpty() && rq.isEmpty());
+            assertEquals(-1, tx.nextDelayMillis());
+            assertEquals(-1, rx.nextDelayMillis());
+        } finally {
+            payload.release();
+            while (!q.isEmpty()) q.remove().release();
+            while (!rq.isEmpty()) rq.remove().release();
+        }
+    }
+
+    @Test
     void weakChargesVariableParityAtItsEncodedByteCostAndCanCancelTail() {
         AtomicLong time = new AtomicLong();
         final int authHeader = 44;

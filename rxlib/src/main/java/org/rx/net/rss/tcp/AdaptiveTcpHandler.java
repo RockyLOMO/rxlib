@@ -142,7 +142,14 @@ public final class AdaptiveTcpHandler extends ChannelDuplexHandler {
             DiagnosticMetrics.record("rss.tcp.adaptive.transition", 1, ready ? "path=udp" : "path=tcp");
         }
         long delay = stream.nextDelayMillis();
-        if (delay < 0 || timer != null && timer.getDelay(TimeUnit.MILLISECONDS) <= delay) return;
+        if (delay < 0) {
+            if (timer != null) {
+                timer.cancel(false);
+                timer = null;
+            }
+            return;
+        }
+        if (timer != null && timer.getDelay(TimeUnit.MILLISECONDS) <= delay) return;
         if (timer != null) timer.cancel(false);
         timer = ctx.executor().schedule(() -> {
             timer = null;

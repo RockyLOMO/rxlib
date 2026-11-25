@@ -146,6 +146,30 @@ class Aes256GcmByteBufCryptoTest {
     }
 
     @Test
+    void chachaUdpOpensIndependentIpv6VectorAtNonzeroReaderIndex() {
+        // Python cryptography HKDF(SHA1, info=ss-subkey) and ChaCha20Poly1305, 96-bit zero nonce.
+        byte[] packet = CodecUtil.fromHex("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+                + "ddebd47f81abb82f7d4d4b794bfd6a147e9caca56ac4e8c75128320a66314884"
+                + "52b604ad8a62de2b156fb719f9c8da93");
+        ICrypto dec = ICrypto.get(CipherKind.CHACHA20_IETF_POLY1305.getCipherName(), "deterministic-password");
+        dec.setForUdp(true);
+        CompositeByteBuf input = PooledByteBufAllocator.DEFAULT.compositeDirectBuffer(2);
+        ByteBuf out = null;
+        try {
+            input.addComponent(true, Unpooled.buffer(10).writeByte(0).writeBytes(packet, 0, 9));
+            input.addComponent(true, PooledByteBufAllocator.DEFAULT.directBuffer(packet.length - 9)
+                    .writeBytes(packet, 9, packet.length - 9));
+            input.skipBytes(1);
+            out = dec.decrypt(input);
+            assertArrayEquals(CodecUtil.fromHex("04000000000000000000000000000000011f9073732d7564702d766563746f72"),
+                    readBytes(out));
+        } finally {
+            release(input, out);
+            close(dec);
+        }
+    }
+
+    @Test
     void udpRoundTrip_acceptsCompositeInput() {
         Aes256GcmByteBufCrypto enc = new Aes256GcmByteBufCrypto(CipherKind.AES_256_GCM.getCipherName(), "pwd");
         Aes256GcmByteBufCrypto dec = new Aes256GcmByteBufCrypto(CipherKind.AES_256_GCM.getCipherName(), "pwd");

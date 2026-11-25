@@ -2,6 +2,8 @@ package org.rx.net.socks;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelOption;
+import io.netty.channel.FixedRecvByteBufAllocator;
 import io.netty.util.concurrent.DefaultEventExecutorGroup;
 import io.netty.util.concurrent.EventExecutorGroup;
 import lombok.Getter;
@@ -11,6 +13,7 @@ import org.rx.core.Disposable;
 import org.rx.core.EventPublisher;
 import org.rx.net.Sockets;
 import org.rx.net.socks.encryption.ICrypto;
+import org.rx.net.socks.encryption.SaltHistory;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.util.function.TripleAction;
 import org.rx.core.RxConfig;
@@ -30,6 +33,8 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
     final List<Channel> tcpChannels;
     final List<Channel> udpChannels;
     final AtomicInteger activeChannels = new AtomicInteger();
+    // UDP cannot retrieve the remainder of a truncated datagram on the next read.
+    static final FixedRecvByteBufAllocator UDP_RECV = new FixedRecvByteBufAllocator(65536);
     private static EventExecutorGroup SHARED_CRYPTO_GROUP;
 
     private static synchronized EventExecutorGroup sharedCryptoGroup() {
@@ -42,13 +47,13 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
 
     public ShadowsocksServer(@NonNull ShadowsocksConfig config) {
         this.config = config;
+        SaltHistory salts = new SaltHistory(config.getMethod(), config.getPassword());
         EventExecutorGroup cryptoGroup = config.isUseDedicatedCryptoGroup() ? sharedCryptoGroup() : null;
 
         bootstrap = Sockets.serverBootstrap(config, channel -> {
             activeChannels.incrementAndGet();
             channel.closeFuture().addListener(f -> activeChannels.decrementAndGet());
-            ICrypto _crypto = ICrypto.get(config.getMethod(), config.getPassword());
-            _crypto.setForUdp(false);
+            ICrypto _crypto = salts.newCrypto(false);
             channel.attr(ShadowsocksConfig.CIPHER).set(_crypto);
 
             if (config.getReadTimeoutSeconds() > 0 || config.getWriteTimeoutSeconds() > 0) {
@@ -59,13 +64,12 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
             } else {
                 channel.pipeline().addLast(CipherCodec.DEFAULT, new SSProtocolCodec(), SSTcpProxyHandler.DEFAULT);
             }
-        });
+        }).childOption(ChannelOption.ALLOW_HALF_CLOSURE, true);
         tcpChannels = Sockets.bindChannels(bootstrap.attr(ShadowsocksConfig.SVR, this), config.getServerEndpoint(), config);
 
         //udp server
         udpChannels = Sockets.bindChannels(Sockets.udpBootstrap(config, ctx -> {
-            ICrypto _crypto = ICrypto.get(config.getMethod(), config.getPassword());
-            _crypto.setForUdp(true);
+            ICrypto _crypto = salts.newCrypto(true);
             ctx.attr(ShadowsocksConfig.CIPHER).set(_crypto);
 
             if (config.isUseDedicatedCryptoGroup()) {
@@ -73,7 +77,7 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
             } else {
                 ctx.pipeline().addLast(CipherCodec.DEFAULT, new SSProtocolCodec(), SSUdpProxyHandler.DEFAULT);
             }
-        }).attr(ShadowsocksConfig.SVR, this), config.getServerEndpoint(), config);
+        }).option(ChannelOption.RCVBUF_ALLOCATOR, UDP_RECV).attr(ShadowsocksConfig.SVR, this), config.getServerEndpoint(), config);
     }
 
     /**

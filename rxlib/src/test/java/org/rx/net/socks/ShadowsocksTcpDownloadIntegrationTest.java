@@ -2,9 +2,11 @@ package org.rx.net.socks;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.api.Timeout;
 import org.rx.net.Sockets;
+import org.rx.net.socks.encryption.CipherKind;
 import org.rx.net.socks.encryption.ICrypto;
 
 import java.io.ByteArrayOutputStream;
@@ -19,9 +21,10 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ShadowsocksTcpDownloadIntegrationTest {
-    @Test
+    @ParameterizedTest
+    @EnumSource(CipherKind.class)
     @Timeout(20)
-    void slowReader_receivesCompleteEncryptedDownloadBeforeEof() throws Exception {
+    void slowReader_receivesCompleteEncryptedDownloadBeforeEof(CipherKind kind) throws Exception {
         byte[] payload = new byte[512 * 1024];
         for (int i = 0; i < payload.length; i++) {
             payload[i] = (byte) (i * 31);
@@ -38,7 +41,7 @@ class ShadowsocksTcpDownloadIntegrationTest {
                 }
             });
             ShadowsocksConfig config = new ShadowsocksConfig(Sockets.newLoopbackEndpoint(0),
-                    "aes-256-gcm", "slow-download-password");
+                    kind.getCipherName(), "slow-download-password");
             config.setReadTimeoutSeconds(0);
             ShadowsocksServer server = new ShadowsocksServer(config);
             ICrypto crypto = ICrypto.get(config.getMethod(), config.getPassword());

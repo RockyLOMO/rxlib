@@ -160,20 +160,52 @@ public final class ChaCha20Engine {
 
     public static void xor(byte[] key, byte[] nonce12, int counter, ByteBuf input, int inputOffset,
                            int length, ByteBuf output, int outputOffset) {
-        byte[] block = XOR_BLOCK.get();
+        checkKey(key, "ChaCha20");
+        if (nonce12 == null || nonce12.length != IETF_NONCE_SIZE_BYTES) {
+            throw new IllegalArgumentException("ChaCha20-IETF requires a 96 bit nonce");
+        }
+        if (length <= 0) {
+            return;
+        }
+        checkBuffer(input, inputOffset, length, "Input too short");
+        checkBuffer(output, outputOffset, length, "Output too short");
+        int[] state = STATE.get();
+        int[] working = WORKING.get();
+        initBlockState(state, key, nonce12, counter);
         int remaining = length;
         int in = inputOffset;
         int out = outputOffset;
         int blockCounter = counter;
         while (remaining > 0) {
-            block(key, nonce12, blockCounter++, block);
-            int n = Math.min(remaining, BLOCK_SIZE_BYTES);
-            for (int i = 0; i < n; i++) {
-                output.setByte(out + i, (byte) (input.getByte(in + i) ^ block[i]));
+            state[12] = blockCounter++;
+            System.arraycopy(state, 0, working, 0, 16);
+            rounds(working);
+            int w = 0;
+            while (remaining >= 8 && w < 16) {
+                long ks = ((working[w] + state[w]) & 0xFFFFFFFFL)
+                        | ((long) (working[w + 1] + state[w + 1]) << 32);
+                output.setLongLE(out, input.getLongLE(in) ^ ks);
+                in += 8;
+                out += 8;
+                remaining -= 8;
+                w += 2;
             }
-            in += n;
-            out += n;
-            remaining -= n;
+            if (remaining > 0 && w < 16) {
+                if (remaining >= 4) {
+                    output.setIntLE(out, input.getIntLE(in) ^ (working[w] + state[w]));
+                    in += 4;
+                    out += 4;
+                    remaining -= 4;
+                    w++;
+                }
+                if (remaining > 0) {
+                    int tail = working[w] + state[w];
+                    for (int b = 0; b < remaining; b++) {
+                        output.setByte(out + b, input.getByte(in + b) ^ (tail >>> (b << 3)));
+                    }
+                    remaining = 0;
+                }
+            }
         }
     }
 
@@ -267,10 +299,7 @@ public final class ChaCha20Engine {
     }
 
     private static int littleEndianToInt(ByteBuf b, int off) {
-        return (b.getByte(off) & 0xFF)
-                | ((b.getByte(off + 1) & 0xFF) << 8)
-                | ((b.getByte(off + 2) & 0xFF) << 16)
-                | (b.getByte(off + 3) << 24);
+        return b.getIntLE(off);
     }
 
     public static void intToLittleEndian(int value, byte[] out, int off) {
@@ -281,10 +310,7 @@ public final class ChaCha20Engine {
     }
 
     public static void intToLittleEndian(int value, ByteBuf out, int off) {
-        out.setByte(off, value);
-        out.setByte(off + 1, value >>> 8);
-        out.setByte(off + 2, value >>> 16);
-        out.setByte(off + 3, value >>> 24);
+        out.setIntLE(off, value);
     }
 
     private static void checkKey(byte[] key, String name) {

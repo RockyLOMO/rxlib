@@ -68,7 +68,7 @@ class AdaptiveUdpPortTest {
                     frame.release();
                 }
             });
-            byte[] corrupt = packet(key, 1, 10);
+            byte[] corrupt = packet(key, 1, 2);
             corrupt[17] ^= 1;
             first.send(new DatagramPacket(corrupt, corrupt.length, target));
             send(first, target, packet(key, 2, 11));
@@ -80,7 +80,10 @@ class AdaptiveUdpPortTest {
             assertEquals(Integer.valueOf(260), frames.poll(2, TimeUnit.SECONDS));
             send(first, target, packet(key, 1, 4));
             assertEquals(Integer.valueOf(4), frames.poll(2, TimeUnit.SECONDS));
-            server.send(7, Unpooled.buffer(4).writeInt(99));
+            send(first, target, packet(key, 1, 2));
+            assertEquals(Integer.valueOf(2), frames.poll(2, TimeUnit.SECONDS));
+            ByteBuf headroomFrame = Unpooled.buffer(24, 40).setIndex(20, 20).writeInt(99);
+            server.send(7, headroomFrame);
             next.setSoTimeout(2000);
             DatagramPacket reply = new DatagramPacket(new byte[100], 100);
             next.receive(reply);

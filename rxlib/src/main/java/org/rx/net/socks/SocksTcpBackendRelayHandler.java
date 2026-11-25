@@ -4,6 +4,7 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.socket.ChannelInputShutdownEvent;
 import io.netty.handler.proxy.ProxyConnectException;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Strings;
@@ -13,6 +14,17 @@ import org.rx.net.Sockets;
 @ChannelHandler.Sharable
 public class SocksTcpBackendRelayHandler extends ChannelInboundHandlerAdapter {
     public static final SocksTcpBackendRelayHandler DEFAULT = new SocksTcpBackendRelayHandler();
+
+    @Override
+    public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
+        if (evt instanceof ChannelInputShutdownEvent) {
+            Channel outbound = ctx.channel();
+            SocksContext sc = SocksContext.ctx(outbound, false);
+            SocksTcpFrontendRelayHandler.halfClosePeer(outbound, sc != null ? sc.inbound : null);
+            return;
+        }
+        super.userEventTriggered(ctx, evt);
+    }
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {

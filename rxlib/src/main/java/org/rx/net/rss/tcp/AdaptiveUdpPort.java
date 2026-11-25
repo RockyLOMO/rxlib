@@ -158,11 +158,21 @@ public final class AdaptiveUdpPort implements AutoCloseable {
                 InetSocketAddress recipient = alternate ? peer.alias : peer.address;
                 if (!output.isActive() || !output.isWritable()) return;
                 int length = frame.readableBytes();
-                ByteBuf wire = udp.alloc().ioBuffer(PREFIX + length + TAG, PREFIX + length + TAG);
+                ByteBuf wire = null;
                 try {
-                    wire.writeLong(id).writeLong(++peer.sent).writeBytes(frame, frame.readerIndex(), length);
-                    peer.sign(server ? SERVER : CLIENT, wire, 0, PREFIX + length);
-                    wire.writeBytes(peer.digest, 0, TAG);
+                    if (frame.refCnt() == 1 && !frame.isReadOnly()
+                            && frame.readerIndex() >= PREFIX && frame.maxWritableBytes() >= TAG) {
+                        int start = frame.readerIndex() - PREFIX;
+                        wire = frame.retain();
+                        wire.setLong(start, id).setLong(start + 8, ++peer.sent).readerIndex(start);
+                        peer.sign(server ? SERVER : CLIENT, wire, start, PREFIX + length);
+                        wire.ensureWritable(TAG).writeBytes(peer.digest, 0, TAG);
+                    } else {
+                        wire = udp.alloc().ioBuffer(PREFIX + length + TAG, PREFIX + length + TAG);
+                        wire.writeLong(id).writeLong(++peer.sent).writeBytes(frame, frame.readerIndex(), length);
+                        peer.sign(server ? SERVER : CLIENT, wire, 0, PREFIX + length);
+                        wire.writeBytes(peer.digest, 0, TAG);
+                    }
                     ChannelFuture write = output.writeAndFlush(new DatagramPacket(wire, recipient));
                     wire = null;
                     submitted = true;
@@ -188,7 +198,8 @@ public final class AdaptiveUdpPort implements AutoCloseable {
         long id = wire.getLong(i), seq = wire.getLong(i + 8);
         Peer peer = peers.get(id);
         if (peer == null || !peer.ip.equals(packet.sender().getAddress())
-                || !server && !packet.sender().equals(peer.address) && !packet.sender().equals(peer.alias) || seq <= 0) return;
+                || !server && !packet.sender().equals(peer.address) && !packet.sender().equals(peer.alias)
+                || seq <= 0 || peer.replay.isDuplicate(seq)) return;
 
         peer.sign(server ? CLIENT : SERVER, wire, i, bytes - TAG);
         int difference = 0;
@@ -196,7 +207,6 @@ public final class AdaptiveUdpPort implements AutoCloseable {
             difference |= wire.getByte(i + bytes - TAG + n) ^ peer.digest[n];
         }
         if (difference != 0) return;
-        if (peer.replay.isDuplicate(seq)) return;
         boolean newest = seq > peer.replay.highest();
         peer.replay.mark(seq);
         rxBytes += bytes;

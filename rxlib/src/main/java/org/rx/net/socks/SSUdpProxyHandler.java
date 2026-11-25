@@ -445,7 +445,7 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
             ensureRelayResponseDecoder(ob.pipeline(), upstream);
             installOutboundIdleHandler(ob.pipeline(), server.config);
             ob.pipeline().addLast(UdpBackendRelayHandler.DEFAULT);
-        }).attr(ShadowsocksConfig.SVR, server).bind(0);
+        }).option(ChannelOption.RCVBUF_ALLOCATOR, ShadowsocksServer.UDP_RECV).attr(ShadowsocksConfig.SVR, server).bind(0);
         return chf;
     }
 

@@ -2,25 +2,20 @@ package org.rx.net.socks.encryption.impl;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
+import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.DecoderException;
 import io.netty.util.concurrent.FastThreadLocal;
 import org.rx.codec.CodecUtil;
 import org.rx.io.Bytes;
-import org.rx.net.socks.encryption.ICrypto;
+import org.rx.net.socks.encryption.AeadCrypto;
 import org.rx.net.socks.encryption.ShadowSocksKey;
 
 import javax.crypto.AEADBadTagException;
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.util.Arrays;
 
-public class ChaCha20Poly1305ByteBufCrypto implements ICrypto, AutoCloseable {
+public class ChaCha20Poly1305ByteBufCrypto extends AeadCrypto implements AutoCloseable {
     public static final String AEAD_CHACHA20_POLY1305 = "chacha20-ietf-poly1305";
-    private static final String HKDF_ALGORITHM = "HmacSHA1";
-    private static final byte[] INFO = "ss-subkey".getBytes(StandardCharsets.US_ASCII);
     private static final int KEY_LENGTH = 32;
     private static final int SALT_LENGTH = 32;
     private static final int TAG_LENGTH = 16;
@@ -30,28 +25,10 @@ public class ChaCha20Poly1305ByteBufCrypto implements ICrypto, AutoCloseable {
     private static final int LEN_TAG_SIZE = LEN_SIZE + TAG_LENGTH;
     private static final byte[] ZERO_NONCE = new byte[NONCE_LENGTH];
 
-    private static final FastThreadLocal<Mac> HKDF_MAC = new FastThreadLocal<Mac>() {
-        @Override
-        protected Mac initialValue() throws Exception {
-            return Mac.getInstance(HKDF_ALGORITHM);
-        }
-    };
     private static final FastThreadLocal<byte[]> SALT_BUF = new FastThreadLocal<byte[]>() {
         @Override
         protected byte[] initialValue() {
             return new byte[SALT_LENGTH];
-        }
-    };
-    private static final FastThreadLocal<byte[]> HKDF_BLOCK = new FastThreadLocal<byte[]>() {
-        @Override
-        protected byte[] initialValue() {
-            return new byte[20];
-        }
-    };
-    private static final FastThreadLocal<byte[]> HKDF_PRK = new FastThreadLocal<byte[]>() {
-        @Override
-        protected byte[] initialValue() {
-            return new byte[20];
         }
     };
     private static final FastThreadLocal<byte[]> UDP_SUBKEY = new FastThreadLocal<byte[]>() {
@@ -61,7 +38,6 @@ public class ChaCha20Poly1305ByteBufCrypto implements ICrypto, AutoCloseable {
         }
     };
 
-    private final ShadowSocksKey ssKey;
     private final boolean directBuf;
     private boolean forUdp;
     private byte[] encSubkey;
@@ -70,8 +46,8 @@ public class ChaCha20Poly1305ByteBufCrypto implements ICrypto, AutoCloseable {
     private byte[] decNonce;
     private final byte[] encLenBytes = new byte[LEN_SIZE];
     private final byte[] decLenBytes = new byte[LEN_SIZE];
-    private final ByteBuffer encLenBuffer = ByteBuffer.wrap(encLenBytes);
-    private final ByteBuffer decLenBuffer = ByteBuffer.wrap(decLenBytes);
+    private final ByteBuf encLenBuf = Unpooled.wrappedBuffer(encLenBytes);
+    private final ByteBuf decLenBuf = Unpooled.wrappedBuffer(decLenBytes);
     private boolean encSessionStarted;
     private boolean decSessionStarted;
     private boolean readingLengthPhase = true;
@@ -86,10 +62,14 @@ public class ChaCha20Poly1305ByteBufCrypto implements ICrypto, AutoCloseable {
     }
 
     public ChaCha20Poly1305ByteBufCrypto(String name, String password, boolean directBuf) {
+        this(name, new ShadowSocksKey(password, KEY_LENGTH), directBuf);
+    }
+
+    public ChaCha20Poly1305ByteBufCrypto(String name, ShadowSocksKey masterKey, boolean directBuf) {
+        super(masterKey);
         if (!AEAD_CHACHA20_POLY1305.equalsIgnoreCase(name)) {
             throw new IllegalArgumentException("Unsupported cipher: " + name);
         }
-        this.ssKey = new ShadowSocksKey(password, KEY_LENGTH);
         this.directBuf = directBuf;
     }
 
@@ -153,15 +133,14 @@ public class ChaCha20Poly1305ByteBufCrypto implements ICrypto, AutoCloseable {
                 byte[] salt = randomSalt();
                 out.writeBytes(salt);
                 encSubkey = new byte[KEY_LENGTH];
-                genSubkey(salt, encSubkey);
+                deriveSubkey(salt, SALT_LENGTH, encSubkey, KEY_LENGTH);
                 encSessionStarted = true;
             }
             while (in.isReadable()) {
                 int chunkSize = Math.min(in.readableBytes(), PAYLOAD_SIZE_MASK);
                 encLenBytes[0] = (byte) (chunkSize >>> 8);
                 encLenBytes[1] = (byte) chunkSize;
-                encLenBuffer.clear();
-                ChaCha20Poly1305Support.encrypt(encSubkey, encNonce, encLenBuffer, LEN_SIZE, out);
+                ChaCha20Poly1305Support.encrypt(encSubkey, encNonce, encLenBuf, 0, LEN_SIZE, out);
                 increment(encNonce);
 
                 int readerIndex = in.readerIndex();
@@ -229,7 +208,8 @@ public class ChaCha20Poly1305ByteBufCrypto implements ICrypto, AutoCloseable {
             saltBytesRead = 0;
         }
         decSubkey = new byte[KEY_LENGTH];
-        genSubkey(salt, decSubkey);
+        receivedTcpSalt(salt, SALT_LENGTH);
+        deriveSubkey(salt, SALT_LENGTH, decSubkey, KEY_LENGTH);
         decSessionStarted = true;
         resetDecryptState();
         return true;
@@ -237,15 +217,15 @@ public class ChaCha20Poly1305ByteBufCrypto implements ICrypto, AutoCloseable {
 
     private void decryptTcpPhase(ByteBuf in, int index, int length, ByteBuf out) throws AEADBadTagException {
         if (readingLengthPhase) {
-            decLenBuffer.clear();
-            int written = ChaCha20Poly1305Support.decrypt(decSubkey, decNonce, in, index, length, decLenBuffer);
+            decLenBuf.clear();
+            int written = ChaCha20Poly1305Support.decrypt(decSubkey, decNonce, in, index, length, decLenBuf);
             if (written != LEN_SIZE) {
                 throw new DecoderException("Invalid length chunk");
             }
             increment(decNonce);
             currentPayloadLength = ((decLenBytes[0] & 0xFF) << 8) | (decLenBytes[1] & 0xFF);
             if (currentPayloadLength > PAYLOAD_SIZE_MASK) {
-                throw new DecoderException("Payload too large: " + currentPayloadLength);
+                throw new AEADBadTagException("Invalid authenticated record length");
             }
             readingLengthPhase = false;
             return;
@@ -255,6 +235,7 @@ public class ChaCha20Poly1305ByteBufCrypto implements ICrypto, AutoCloseable {
         if (written != currentPayloadLength) {
             throw new DecoderException("Invalid payload chunk");
         }
+        authenticatedTcpPayload();
         increment(decNonce);
         readingLengthPhase = true;
         currentPayloadLength = 0;
@@ -265,7 +246,7 @@ public class ChaCha20Poly1305ByteBufCrypto implements ICrypto, AutoCloseable {
             byte[] salt = randomSalt();
             out.writeBytes(salt);
             byte[] subkey = UDP_SUBKEY.get();
-            genSubkey(salt, subkey);
+            deriveSubkey(salt, SALT_LENGTH, subkey, KEY_LENGTH);
             int len = in.readableBytes();
             int readerIndex = in.readerIndex();
             ChaCha20Poly1305Support.encrypt(subkey, ZERO_NONCE, in, readerIndex, len, out);
@@ -278,53 +259,27 @@ public class ChaCha20Poly1305ByteBufCrypto implements ICrypto, AutoCloseable {
     private void decryptUdp(ByteBuf in, ByteBuf out) {
         try {
             if (in.readableBytes() < SALT_LENGTH + TAG_LENGTH) {
-                throw new DecoderException("Packet too short");
+                throw new AEADBadTagException("Truncated datagram");
             }
             byte[] salt = SALT_BUF.get();
             in.readBytes(salt, 0, SALT_LENGTH);
             byte[] subkey = UDP_SUBKEY.get();
-            genSubkey(salt, subkey);
+            deriveSubkey(salt, SALT_LENGTH, subkey, KEY_LENGTH);
             int len = in.readableBytes();
             int readerIndex = in.readerIndex();
             ChaCha20Poly1305Support.decrypt(subkey, ZERO_NONCE, in, readerIndex, len, out);
+            authenticatedSalt(salt, SALT_LENGTH);
             in.readerIndex(readerIndex + len);
         } catch (GeneralSecurityException e) {
             throw new DecoderException("ChaCha20-Poly1305 UDP decrypt failed", e);
         }
     }
 
-    private void genSubkey(byte[] salt, byte[] okm) throws GeneralSecurityException {
-        Mac mac = HKDF_MAC.get();
-        byte[] prk = HKDF_PRK.get();
-        mac.init(new SecretKeySpec(salt, HKDF_ALGORITHM));
-        mac.update(ssKey.getEncoded());
-        mac.doFinal(prk, 0);
-
-        byte[] block = HKDF_BLOCK.get();
-        Arrays.fill(okm, (byte) 0);
-        int copied = 0;
-        int counter = 1;
-        int blockLen = 0;
-        while (copied < KEY_LENGTH) {
-            mac.init(new SecretKeySpec(prk, HKDF_ALGORITHM));
-            if (blockLen > 0) {
-                mac.update(block, 0, blockLen);
-            }
-            mac.update(INFO);
-            mac.update((byte) counter++);
-            mac.doFinal(block, 0);
-            blockLen = mac.getMacLength();
-            int copy = Math.min(blockLen, KEY_LENGTH - copied);
-            System.arraycopy(block, 0, okm, copied, copy);
-            copied += copy;
-        }
-        Arrays.fill(prk, (byte) 0);
-        Arrays.fill(block, (byte) 0);
-    }
-
     private byte[] randomSalt() {
         byte[] salt = SALT_BUF.get();
-        CodecUtil.threadLocalSecureRandom().nextBytes(salt);
+        do {
+            CodecUtil.threadLocalSecureRandom().nextBytes(salt);
+        } while (!reserveLocalSalt(salt, SALT_LENGTH));
         return salt;
     }
 
@@ -352,6 +307,11 @@ public class ChaCha20Poly1305ByteBufCrypto implements ICrypto, AutoCloseable {
         if (closed) {
             throw new IllegalStateException("crypto closed");
         }
+    }
+
+    @Override
+    public boolean hasIncompleteRecord() {
+        return saltBytesRead != 0 || phaseBytesRead != 0 || !readingLengthPhase;
     }
 
     @Override
