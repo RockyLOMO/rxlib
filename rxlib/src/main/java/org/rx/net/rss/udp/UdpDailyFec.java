@@ -35,7 +35,13 @@ public final class UdpDailyFec implements AutoCloseable {
     public long parityBytes, dataBytes;
     // The receiver retains one XOR accumulator per group. Sparse sends may stage a bounded prefix.
     private final Group sending = new Group();
-    private boolean staged;
+    private boolean staged, containsTailProbe;
+    private long probeGroupParityBytes;
+
+    /** Full encoded parity bytes from groups containing at least one retransmitted stream frame. */
+    public long probeGroupParityBytes() {
+        return probeGroupParityBytes;
+    }
     private static final int STAGING_BYTES = 2 * (MAX_SHARD_BYTES + 2);
     private Group[] receiving = new Group[4];
     private int nextSeq, target, cleanWindows, reportSeq, parityCredit;
@@ -62,6 +68,14 @@ public final class UdpDailyFec implements AutoCloseable {
     }
 
     public void write(ByteBuf payload, Consumer<ByteBuf> wire) {
+        write(payload, wire, false);
+    }
+
+    public void writeTailProbe(ByteBuf payload, Consumer<ByteBuf> wire) {
+        write(payload, wire, true);
+    }
+
+    private void write(ByteBuf payload, Consumer<ByteBuf> wire, boolean probe) {
         if (closed) {
             throw new IllegalStateException("FEC session closed");
         }
@@ -99,6 +113,7 @@ public final class UdpDailyFec implements AutoCloseable {
             // Data always leaves immediately. Give sparse flows time to collect a useful XOR group.
             flushAfter = Math.min(MAX_FLUSH, Math.max(FLUSH, packetInterval * target + FLUSH));
         }
+        containsTailProbe |= probe;
         int encoded = wireOverhead + 6 + bytes;
         dataBytes += encoded;
         if (weak) {
@@ -335,6 +350,7 @@ public final class UdpDailyFec implements AutoCloseable {
 
     /** Drop outstanding send-side parity on path fallback or local backpressure. */
     public void cancelPendingParity() {
+        containsTailProbe = false;
         sending.clear();
         parityCredit = 0;
         parityByteCredit = 0;
@@ -356,12 +372,15 @@ public final class UdpDailyFec implements AutoCloseable {
     }
 
     private void flush(Consumer<ByteBuf> wire) {
+        boolean probeGroup = containsTailProbe;
+        containsTailProbe = false;
         int count = Integer.bitCount(sending.mask);
         if (count >= MIN_SHARDS && staged && parityCredit >= target) foldStaged();
         int encoded = count == 0 ? 0 : wireOverhead + MAX_OVERHEAD + sending.xor.readableBytes();
         if (count >= MIN_SHARDS && (weak ? parityByteCredit >= 16L * encoded : parityCredit >= target)) {
             paritySent++;
             parityBytes += encoded;
+            if (probeGroup) probeGroupParityBytes += encoded;
             if (weak) parityByteCredit -= 16L * encoded;
             protectedData += count;
             parityCredit = 0;

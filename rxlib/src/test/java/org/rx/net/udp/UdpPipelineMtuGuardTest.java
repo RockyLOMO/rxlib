@@ -1,5 +1,7 @@
 package org.rx.net.udp;
 
+import org.rx.net.udp.compress.UdpCompressSupport;
+import org.rx.net.udp.compress.UdpCompressEncoder;
 import org.rx.net.NetworkFlowControl;
 import org.rx.net.NetworkTrafficConfig;
 import io.netty.buffer.ByteBuf;
