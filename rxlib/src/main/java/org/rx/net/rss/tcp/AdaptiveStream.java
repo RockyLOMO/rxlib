@@ -8,6 +8,7 @@ import org.rx.net.rss.profile.RssProfile;
 
 import java.util.ArrayDeque;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
@@ -32,8 +33,11 @@ public final class AdaptiveStream implements AutoCloseable {
     private static final long PROBE_INTERVAL = TimeUnit.SECONDS.toNanos(2);
 
     private static final long MAX_PROBE_DELAY = TimeUnit.SECONDS.toNanos(30);
+    private static final long PROBE_IDLE = TimeUnit.SECONDS.toNanos(4);
+    private long probeInterval = PROBE_INTERVAL, lastWrite, probeCount;
+    private boolean wroteData, probePaused;
     private long windowDelay, lastWindow, pathSince, tcpNanos;
-    private long toUdp, toTcp, tcpDelivered, udpDelivered;
+    private long toUdp, toTcp, windowFallbacks, timeoutFallbacks, finFallbacks, tcpDelivered, udpDelivered;
     private int peakPending;
     private final ByteBufAllocator alloc;
     private final Consumer<ByteBuf> tcpOut, udpOut, deliver;
@@ -93,6 +97,28 @@ public final class AdaptiveStream implements AutoCloseable {
     public void write(ByteBuf bytes) {
         if (closed) {
             throw new IllegalStateException("closed stream");
+        }
+        if (!ready && bytes.isReadable()) {
+            long now = clock.getAsLong();
+            if (probePaused) {
+                boolean longIdle = !wroteData || now - lastWrite >= MAX_PROBE_DELAY;
+                if (longIdle) {
+                    probeInterval = PROBE_INTERVAL;
+                }
+                long cooldown = windowDelay != 0 ? lastWindow + windowDelay : 0;
+                long earliest = Math.max(cooldown, lastPing + (longIdle ? PROBE_INTERVAL : probeInterval));
+                nextProbe = Math.max(now, earliest);
+                probePaused = false;
+            }
+            wroteData = true;
+            lastWrite = now;
+        } else if (ready && bytes.isReadable()) {
+            int chunks = (bytes.readableBytes() + CHUNK - 1) / CHUNK;
+            int maxSlots = policy.maxWindow == WINDOW || srtt < REORDER_GRACE
+                    ? Math.max(WINDOW, sendSlots) : policy.maxWindow;
+            if (pending.size() + chunks > maxSlots) {
+                drainPendingToTcp("reason=window");
+            }
         }
         int offset = bytes.readerIndex();
         while (offset < bytes.writerIndex()) {
@@ -268,10 +294,12 @@ public final class AdaptiveStream implements AutoCloseable {
                 peerProbed = true;
                 udpOut.accept(control(PONG, id));
             } else if (probing && probeId == id) {
-                updateRtt(clock.getAsLong() - lastPing);
                 long now = clock.getAsLong();
+                updateRtt(now - lastPing);
                 tcpNanos += now - pathSince;
                 pathSince = now;
+                probeInterval = PROBE_INTERVAL;
+                probePaused = false;
                 toUdp++;
                 ready = true;
                 probing = false;
@@ -420,11 +448,18 @@ public final class AdaptiveStream implements AutoCloseable {
         } else if (tailArmed && now - tailDeadline >= 0) {
             probeTail(now);
         }
-        if (!ready && now - nextProbe >= 0) {
-            lastPing = now;
-            nextProbe = now + PROBE_INTERVAL;
-            probing = true;
-            udpOut.accept(control(PING, ++probeId));
+        if (!ready && !probePaused && now - nextProbe >= 0) {
+            if (probeCount != 0 && (!wroteData || lastWrite < lastPing && now - lastWrite >= PROBE_IDLE)) {
+                probePaused = true;
+            } else {
+                lastPing = now;
+                long lower = Math.min(probeInterval, MAX_PROBE_DELAY - MAX_PROBE_DELAY / 8);
+                nextProbe = now + lower + ThreadLocalRandom.current().nextLong(probeInterval / 8);
+                probeInterval = Math.min(MAX_PROBE_DELAY, probeInterval * 2);
+                probing = true;
+                probeCount++;
+                udpOut.accept(control(PING, ++probeId));
+            }
         }
         fec.tick(udpOut);
         if (buffered > 0 && !gapRequested && now - gapDeadline >= 0) {
@@ -452,7 +487,7 @@ public final class AdaptiveStream implements AutoCloseable {
             return -1;
         }
         long now = clock.getAsLong();
-        long delay = ready ? Long.MAX_VALUE : nextProbe - now;
+        long delay = ready || probePaused ? Long.MAX_VALUE : nextProbe - now;
         if (!pending.isEmpty()) delay = Math.min(delay, deadline - now);
         if (tailArmed && !pending.isEmpty()) delay = Math.min(delay, tailDeadline - now);
         if (buffered > 0 && !gapRequested) delay = Math.min(delay, gapDeadline - now);
@@ -502,8 +537,16 @@ public final class AdaptiveStream implements AutoCloseable {
         probeHandedToTcp();
         tailArmed = tailSent = false;
         long now = clock.getAsLong();
-        if (ready) {
+        boolean wasReady = ready;
+        if (wasReady) {
+            // Recent UDP writes justify one reprobe after handing pending data to TCP.
+            wroteData = true;
+            lastWrite = now;
+            probePaused = false;
             toTcp++;
+            if ("reason=window".equals(reason)) windowFallbacks++;
+            else if ("reason=timeout".equals(reason)) timeoutFallbacks++;
+            else if ("reason=fin".equals(reason)) finFallbacks++;
             pathSince = now;
         }
         ready = probing = sampling = false;
@@ -512,7 +555,7 @@ public final class AdaptiveStream implements AutoCloseable {
                     ? Math.min(MAX_PROBE_DELAY, windowDelay * 2) : PROBE_INTERVAL;
             lastWindow = now;
             nextProbe = now + windowDelay;
-        } else {
+        } else if (wasReady) {
             nextProbe = now + PROBE_INTERVAL;
         }
         fec.cancelPendingParity();
@@ -552,8 +595,12 @@ public final class AdaptiveStream implements AutoCloseable {
                 DiagnosticMetrics.record("rss.tcp.weak.filteredDuplicates", filteredDuplicates);
                 DiagnosticMetrics.record("rss.tcp.weak.probeGroupParityBytes", fec.probeGroupParityBytes());
             }
+            DiagnosticMetrics.record("rss.tcp.adaptive.probes", probeCount);
             DiagnosticMetrics.record("rss.tcp.adaptive.transitions", toUdp, "to=udp");
             DiagnosticMetrics.record("rss.tcp.adaptive.transitions", toTcp, "to=tcp");
+            DiagnosticMetrics.record("rss.tcp.adaptive.fallbacks", windowFallbacks, "reason=window");
+            DiagnosticMetrics.record("rss.tcp.adaptive.fallbacks", timeoutFallbacks, "reason=timeout");
+            DiagnosticMetrics.record("rss.tcp.adaptive.fallbacks", finFallbacks, "reason=fin");
             DiagnosticMetrics.record("rss.tcp.adaptive.tcpMillis", TimeUnit.NANOSECONDS.toMillis(
                     tcpNanos + (ready ? 0 : clock.getAsLong() - pathSince)));
             DiagnosticMetrics.record("rss.tcp.adaptive.peakPendingFrames", peakPending);

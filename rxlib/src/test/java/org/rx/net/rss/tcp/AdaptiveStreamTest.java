@@ -466,6 +466,127 @@ class AdaptiveStreamTest {
     }
 
     @Test
+    void blockedProbeSleepsUntilApplicationWritesAgain() {
+        AtomicLong clock = new AtomicLong();
+        try (End a = new End(clock); End b = new End(clock)) {
+            a.stream.tick();
+            assertEquals(1, a.udp.size());
+            ByteBuf lateProbe = a.udp.remove();
+            long delay = a.stream.nextDelayMillis();
+            assertTrue(delay >= 2000 && delay <= 2250);
+            clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(delay));
+            a.stream.tick();
+            assertEquals(-1, a.stream.nextDelayMillis());
+            // A delayed PONG arriving after probePaused still transitions cleanly without extra probes.
+            try (End late = new End(clock)) {
+                try { b.stream.udp(lateProbe); } finally { lateProbe.release(); }
+                // Discard b's PONG here so we can test 1h idle sleep first, then resume on write.
+                b.udp.remove().release();
+            }
+            clock.addAndGet(TimeUnit.HOURS.toNanos(1));
+            a.stream.tick();
+            assertTrue(a.udp.isEmpty());
+            a.send(0);
+            assertEquals(0, a.stream.nextDelayMillis());
+            a.stream.tick();
+            a.passUdp(b);
+            b.passUdp(a);
+            assertTrue(a.stream.usingUdp());
+            a.passTcp(b);
+            ordered(b, 1);
+        }
+    }
+
+    @Test
+    void periodicBlockedWritesBackOffToCapAndLatePongStillActivates() {
+        AtomicLong clock = new AtomicLong();
+        try (End a = new End(clock); End b = new End(clock)) {
+            long[] minExpectedMillis = {2000, 4000, 8000, 16000, 26250};
+            int seq = 0;
+            ByteBuf lastProbe = null;
+            try {
+                for (long expectedMin : minExpectedMillis) {
+                    a.send(seq++);
+                    a.passTcp(b);
+                    a.stream.tick();
+                    assertEquals(1, a.udp.size());
+                    if (lastProbe != null) lastProbe.release();
+                    lastProbe = a.udp.remove();
+                    long wait = a.stream.nextDelayMillis();
+                    assertTrue(wait >= expectedMin && wait <= 30000, "backoff wait=" + wait + " expected>=" + expectedMin);
+                    // Simulate sparse periodic writes every ~6 seconds during long backoffs.
+                    long elapsed = 0;
+                    while (elapsed < wait) {
+                        long step = Math.min(6000, wait - elapsed);
+                        clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(step));
+                        elapsed += step;
+                        if (elapsed < wait) {
+                            a.send(seq++);
+                            a.passTcp(b);
+                        }
+                    }
+                }
+                // One more quiet backoff interval with no writes pauses active probing, while late PONG still activates UDP.
+                a.stream.tick();
+                if (lastProbe != null) lastProbe.release();
+                lastProbe = a.udp.remove();
+                long quietWait = a.stream.nextDelayMillis();
+                assertTrue(quietWait >= 26250 && quietWait <= 30000);
+                clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(quietWait));
+                a.stream.tick();
+                assertEquals(-1, a.stream.nextDelayMillis());
+                b.stream.udp(lastProbe);
+                b.passUdp(a);
+                assertTrue(a.stream.usingUdp());
+                ordered(b, seq);
+            } finally {
+                if (lastProbe != null) lastProbe.release();
+            }
+        }
+    }
+
+    @Test
+    void oversizedSingleWriteAvoidsDuplicateUdpBurst() {
+        AtomicLong clock = new AtomicLong(1);
+        List<Integer> received = new ArrayList<>();
+        ArrayDeque<ByteBuf> tcp = new ArrayDeque<>(), udp = new ArrayDeque<>();
+        try (AdaptiveStream sender = new AdaptiveStream(UnpooledByteBufAllocator.DEFAULT, tcp::add, udp::add, ByteBuf::release, clock::get);
+             AdaptiveStream receiver = new AdaptiveStream(UnpooledByteBufAllocator.DEFAULT, ByteBuf::release, sender::udp, bytes -> {
+                 try {
+                     while (bytes.isReadable()) received.add(bytes.readInt());
+                 } finally {
+                     bytes.release();
+                 }
+             }, clock::get)) {
+            sender.tick();
+            while (!udp.isEmpty()) {
+                ByteBuf p = udp.remove();
+                try { receiver.udp(p); } finally { p.release(); }
+            }
+            assertTrue(sender.usingUdp());
+            ByteBuf bulk = Unpooled.buffer(100 * 1024);
+            try {
+                for (int i = 0; i < 25600; i++) bulk.writeInt(i);
+                sender.write(bulk);
+            } finally {
+                bulk.release();
+            }
+            assertFalse(sender.usingUdp());
+            assertTrue(udp.isEmpty(), "single write exceeding window must not emit doomed UDP frames");
+            while (!tcp.isEmpty()) {
+                ByteBuf f = tcp.remove();
+                try { receiver.tcp(f); } finally { f.release(); }
+            }
+            assertEquals(25600, received.size());
+            for (int i = 0; i < 25600; i++) assertEquals(i, received.get(i));
+            assertEquals(2000L, sender.nextDelayMillis());
+        } finally {
+            while (!tcp.isEmpty()) tcp.remove().release();
+            while (!udp.isEmpty()) udp.remove().release();
+        }
+    }
+
+    @Test
     void repeatedWindowExhaustionExtendsTcpResidence() {
         AtomicLong clock = new AtomicLong(1);
         try (End a = new End(clock); End b = new End(clock)) {
