@@ -1898,7 +1898,8 @@ class SocksProxyServerIntegrationTest {
     }
 
     private void verifyAdaptiveHop(SslContext tlsServer, SslContext tlsClient, boolean psk) throws Exception {
-        SocksConfig cfg = new SocksConfig(0);
+        // Reserve a test port per profile outside the ephemeral range: the hop binds both TCP and UDP.
+        SocksConfig cfg = new SocksConfig(psk ? 15795 : tlsServer == null ? 15796 : 15797);
         cfg.setAdaptiveTcp(true);
         cfg.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
         SocksConfig uplink = new SocksConfig();

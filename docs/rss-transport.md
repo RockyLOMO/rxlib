@@ -62,3 +62,14 @@ TCP 的 AES 模式由两端读取同一个 `RSS_TCP_AES_KEY`（32 个随机字�
 协议变更时先用 `rss-21` 手动发布主 Server，再发布 Gateway。两端各自的发布目录下保存本次 `.release-<run id>-<attempt>/deploy.log`、原启动脚本及变更过的用户配置；目录仅部署账号可访问。Server 的工作流在切换前验证 nft 权限并合并预留 UDP 端口；firewalld 活跃时同时放行运行时和永久端口。主 Server 当前的 nft INPUT 策略允许这段流量。上游安全组或 NAT 在主机权限之外，发布后需从 Client 走真实业务验证。工作流在本地监听以外还检查首尾 nft 映射和公网 TCP 入口。
 
 [Hysteria 2 的 Linux 端口重定向](https://v2.hysteria.network/docs/advanced/Port-Hopping/) · [IANA 端口登记](https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xhtml)
+
+启用诊断后，weak 在流关闭时汇总以下指标。前缀均为 `rss.tcp.weak.`。
+
+| 指标 | 含义 |
+| --- | --- |
+| `udpTailProbes`、`probeAckedBeforeTcp`、`probeHandedToTcp`、`probeOutstandingAtClose` | 单次 UDP 尾包探测次数，以及在 TCP 接管前收到累计确认、交给 TCP、关闭时仍待确认的次数。累计确认无法区分原包、探测副本和 FEC 恢复。 |
+| `probeGroupParityBytes`、`filteredDuplicates` | 含探测分片的组实际发出的校验字节（按 FEC 配置的封装开销计费），以及流接收端滤除的重复 DATA 次数。 |
+| `ackSent`、`ackIgnoredNoPending` | 累计 ACK 帧数按触发数据来源 `dataPath=tcp/udp/mixed` 分类。ACK 在 TCP 上发送。另记发送端收到 ACK 时待修复队列为空的次数。 |
+| `untrackedTcpFrames`、`gapSent`、`sackSent` | 顺序交付且超过 UDP 分片上限的普通 TCP 帧数、请求修复的 GAP 和 SACK 帧数。 |
+
+比较链路开销时，按方向在丢包点之前计量实际 IP 字节，并同时记录业务交付率、P99、最长停顿、吞吐、活动连接、EventLoop 排队、Netty 堆外内存和进程 RSS。
