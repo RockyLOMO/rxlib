@@ -129,6 +129,10 @@ class AdaptiveStreamTest {
                         assertTrue(a.stream.usingUdp());
                         assertTrue(a.tcp.isEmpty());
                         ordered(b, 1);
+                        assertEquals(udp ? 1 : 0, a.stream.udpTailProbes);
+                        assertEquals(udp ? 1 : 0, a.stream.probesAckedBeforeTcp);
+                        assertEquals(0, a.stream.probesHandedToTcp);
+                        assertTrue(b.stream.filteredDuplicates >= 1);
                     } finally { original.release(); }
                 }
             }
@@ -152,6 +156,8 @@ class AdaptiveStreamTest {
             a.stream.tick();
             a.stream.drainToTcp();
             assertEquals(1, a.tcp.size());
+            assertEquals(1, a.stream.probesHandedToTcp);
+            assertEquals(0, a.stream.probesAckedBeforeTcp);
             a.passTcp(b);
             ordered(b, 1);
         }
@@ -187,6 +193,63 @@ class AdaptiveStreamTest {
             a.stream.drainToTcp();
             assertTrue(a.tcp.isEmpty());
             ordered(b, 2);
+        }
+    }
+
+    @Test
+    void onlyUnambiguousFallbackFramesSuppressAckAfterPeerProbe() {
+        AtomicLong clock = new AtomicLong(), delivered = new AtomicLong();
+        ArrayDeque<ByteBuf> replies = new ArrayDeque<>();
+        try (AdaptiveStream receiver = new AdaptiveStream(UnpooledByteBufAllocator.DEFAULT, replies::add, ByteBuf::release,
+                b -> { delivered.addAndGet(b.readableBytes()); b.release(); }, clock::get, AdaptiveStream.WEAK)) {
+            ByteBuf ping = Unpooled.buffer().writeByte(AdaptiveStream.PING).writeInt(1);
+            try { receiver.udp(ping); } finally { ping.release(); }
+            int small = AdaptiveStream.MAX_UDP_FRAME - org.rx.net.rss.udp.UdpDailyFec.MAX_OVERHEAD - 5;
+            int seq = 0;
+            for (; seq < 64; seq++) {
+                ByteBuf tcp = Unpooled.buffer().writeByte(AdaptiveStream.DATA).writeInt(seq).writeZero(small + 1);
+                try { receiver.tcp(tcp); } finally { tcp.release(); }
+            }
+            clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(20));
+            receiver.tick();
+            assertTrue(replies.isEmpty(), "ordinary TCP cannot be an enqueued UDP repair at this size");
+            ByteBuf possibleRepair = Unpooled.buffer().writeByte(AdaptiveStream.DATA).writeInt(seq).writeZero(small);
+            try { receiver.tcp(possibleRepair); } finally { possibleRepair.release(); }
+            clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(20));
+            receiver.tick();
+            assertEquals(1, replies.size());
+            assertEquals(seq + 1, replies.element().getInt(1));
+            assertEquals(64L * (small + 1) + small, delivered.get());
+        } finally {
+            while (!replies.isEmpty()) replies.remove().release();
+        }
+    }
+
+    @Test
+    void parityRecoveryAndTailProbeDeliverOnlyOnceInEitherOrder() {
+        for (boolean parityFirst : new boolean[]{true, false}) {
+            try (End receiver = new End(new AtomicLong(), AdaptiveStream.WEAK)) {
+                // FEC group [0,1]: shard 0 is lost, shard 1 contains stream frame/value 1.
+                ByteBuf shard = Unpooled.buffer().writeByte(1).writeInt(1).writeByte(1)
+                        .writeByte(AdaptiveStream.DATA).writeInt(1).writeInt(1);
+                ByteBuf parity = Unpooled.buffer().writeByte(2).writeInt(0).writeByte(2).writeShort(0)
+                        .writeByte(0).writeInt(1).writeInt(1);
+                // The probe uses a new FEC serial and the original stream serial/value 0.
+                ByteBuf retry = Unpooled.buffer().writeByte(0).writeInt(2)
+                        .writeByte(AdaptiveStream.DATA).writeInt(0).writeInt(0);
+                try {
+                    receiver.stream.udp(shard);
+                    receiver.stream.udp(parityFirst ? parity : retry);
+                    ordered(receiver, 2);
+                    receiver.stream.udp(parityFirst ? retry : parity);
+                    ordered(receiver, 2);
+                    assertEquals(1, receiver.stream.filteredDuplicates);
+                } finally {
+                    shard.release();
+                    parity.release();
+                    retry.release();
+                }
+            }
         }
     }
 

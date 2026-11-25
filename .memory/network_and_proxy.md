@@ -4140,3 +4140,7 @@ TCP 私有认证方法区分 daily/game/weak，预热连接按模式和发送压
 ### 2026-11-24 RSS 私有数据面拆包和尾包探测
 
 SOCKS 负责协商和密钥派生，net.rss.profile 根据实际协商 ID 构建策略，net.rss.tcp 与 net.rss.udp 实现私有数据面。通用 UCMP 保留原调用门面。weak 默认提前发送一个带新认证的 UDP 尾包探测。game 默认单发起步，副本受平滑预算约束。冷启动与热会话验收分别记录在[架构评审实施记录](../docs/rxlib_net_architecture_review_20261124.md#8-实施与验收记录2026-11-24)。
+
+### 2026-11-25 weak 回退确认与 UDP 压缩入口
+
+通用 UCMP 的编码器、解码器、静态工具统一使用 `org.rx.net.udp.compress`。weak 仅对确定无法来自 UDP 修复队列的顺序 TCP 大帧省略累计确认，小帧和填洞仍确认，兼容既有对端。独立 UDP 尾包修复帧和进程级 game 预热均已做双端或冷/热对照，继续使用现有 wire 和默认单发。测量条件、结果和边界见[后续评审验收记录](../docs/rxlib_transport_review_20261124_followup.md#7-实施与验收记录)。

@@ -1,5 +1,8 @@
 package org.rx.net.udp;
 
+import org.rx.net.udp.compress.UdpCompressSupport;
+import org.rx.net.udp.compress.UdpCompressDecoder;
+import org.rx.net.udp.compress.UdpCompressEncoder;
 import org.rx.net.socks.UdpRelayAttributes;
 
 import io.netty.buffer.ByteBuf;

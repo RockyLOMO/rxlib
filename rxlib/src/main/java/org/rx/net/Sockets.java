@@ -1,5 +1,8 @@
 package org.rx.net;
 
+import org.rx.net.udp.compress.UdpCompressDecoder;
+import org.rx.net.udp.compress.UdpCompressEncoder;
+
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.bootstrap.ServerBootstrapConfig;
@@ -1287,9 +1290,9 @@ public final class Sockets {
                 if (pipeline.get(org.rx.net.udp.UdpRedundantDecoder.class.getSimpleName()) == null) {
                     pipeline.addLast(org.rx.net.udp.UdpRedundantDecoder.class.getSimpleName(), new org.rx.net.udp.UdpRedundantDecoder(stats));
                 }
-                if (compressEnabled && pipeline.get(org.rx.net.udp.UdpCompressDecoder.class.getSimpleName()) == null) {
-                    pipeline.addLast(org.rx.net.udp.UdpCompressDecoder.class.getSimpleName(),
-                            new org.rx.net.udp.UdpCompressDecoder());
+                if (compressEnabled && pipeline.get(UdpCompressDecoder.class.getSimpleName()) == null) {
+                    pipeline.addLast(UdpCompressDecoder.class.getSimpleName(),
+                            new UdpCompressDecoder());
                 }
                 if (pipeline.get(org.rx.net.udp.UdpRedundantEncoder.class.getSimpleName()) == null) {
                     pipeline.addLast(org.rx.net.udp.UdpRedundantEncoder.class.getSimpleName(), new org.rx.net.udp.UdpRedundantEncoder(stats, resolver));
@@ -1298,23 +1301,23 @@ public final class Sockets {
                 if (pipeline.get(org.rx.net.udp.UdpRedundantDecoder.class.getSimpleName()) == null) {
                     pipeline.addLast(org.rx.net.udp.UdpRedundantDecoder.class.getSimpleName(), new org.rx.net.udp.UdpRedundantDecoder());
                 }
-                if (compressEnabled && pipeline.get(org.rx.net.udp.UdpCompressDecoder.class.getSimpleName()) == null) {
-                    pipeline.addLast(org.rx.net.udp.UdpCompressDecoder.class.getSimpleName(),
-                            new org.rx.net.udp.UdpCompressDecoder());
+                if (compressEnabled && pipeline.get(UdpCompressDecoder.class.getSimpleName()) == null) {
+                    pipeline.addLast(UdpCompressDecoder.class.getSimpleName(),
+                            new UdpCompressDecoder());
                 }
                 if (pipeline.get(org.rx.net.udp.UdpRedundantEncoder.class.getSimpleName()) == null) {
                     pipeline.addLast(org.rx.net.udp.UdpRedundantEncoder.class.getSimpleName(),
                             new org.rx.net.udp.UdpRedundantEncoder(multiplier, config.getUdpRedundantIntervalMicros(), resolver));
                 }
             }
-        } else if (compressEnabled && pipeline.get(org.rx.net.udp.UdpCompressDecoder.class.getSimpleName()) == null) {
-            pipeline.addLast(org.rx.net.udp.UdpCompressDecoder.class.getSimpleName(),
-                    new org.rx.net.udp.UdpCompressDecoder());
+        } else if (compressEnabled && pipeline.get(UdpCompressDecoder.class.getSimpleName()) == null) {
+            pipeline.addLast(UdpCompressDecoder.class.getSimpleName(),
+                    new UdpCompressDecoder());
         }
 
-        if (compressEnabled && pipeline.get(org.rx.net.udp.UdpCompressEncoder.class.getSimpleName()) == null) {
-            pipeline.addLast(org.rx.net.udp.UdpCompressEncoder.class.getSimpleName(),
-                    new org.rx.net.udp.UdpCompressEncoder(org.rx.net.udp.UdpCompressConfig.fromSocketConfig(config)));
+        if (compressEnabled && pipeline.get(UdpCompressEncoder.class.getSimpleName()) == null) {
+            pipeline.addLast(UdpCompressEncoder.class.getSimpleName(),
+                    new UdpCompressEncoder(org.rx.net.udp.UdpCompressConfig.fromSocketConfig(config)));
         }
     }
 

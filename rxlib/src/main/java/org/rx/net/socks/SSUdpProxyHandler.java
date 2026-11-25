@@ -1,5 +1,6 @@
 package org.rx.net.socks;
 
+import org.rx.net.udp.compress.UdpCompressDecoder;
 import org.rx.net.udp.*;
 
 import io.netty.buffer.ByteBuf;
