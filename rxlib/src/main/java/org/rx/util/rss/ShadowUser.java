@@ -10,6 +10,7 @@ import org.rx.core.Linq;
 import org.rx.core.Strings;
 import org.rx.net.socks.TrafficLoginInfo;
 import org.rx.net.socks.TrafficUser;
+import org.rx.net.socks.encryption.CipherKind;
 
 import java.io.Serializable;
 import java.net.InetAddress;
@@ -26,6 +27,8 @@ public class ShadowUser implements Serializable, TrafficUser {
     int ssPort;
     @ToString.Exclude
     String ssPwd;
+    /** Empty keeps aes-256-gcm. Resolved when the SS listener is created, not per packet. */
+    String ssCipher;
     String username;
     // 内部转发仍复用少量 socks 用户，统计与公网 IP 限制挂在外部 SS 用户上。
     String socksUser;
@@ -44,6 +47,14 @@ public class ShadowUser implements Serializable, TrafficUser {
 
     public Map<String, TrafficLoginInfo> snapshotLoginIps() {
         return Linq.from(loginIps.entrySet()).toMap(p -> p.getKey().getHostAddress(), Map.Entry::getValue);
+    }
+
+    String cipherName() {
+        String name = ssCipher;
+        if (name == null || (name = name.trim()).isEmpty()) {
+            return CipherKind.AES_256_GCM.getCipherName();
+        }
+        return CipherKind.canonical(name);
     }
 
     @Override

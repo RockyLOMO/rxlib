@@ -476,6 +476,12 @@ public final class RssClient {
                 log.warn("Invalid RSS transport profile or mask for user {}", user.getUsername());
                 return false;
             }
+            try {
+                user.cipherName();
+            } catch (IllegalArgumentException e) {
+                log.warn("Invalid ssCipher for user {}", user.getUsername());
+                return false;
+            }
             if (user.transport != null && (user.transport.udpFeatures() & org.rx.net.rss.udp.DailyUdpWire.AES) != 0
                     && !org.rx.net.rss.udp.DailyUdpWire.hasCipherKey()) {
                 log.warn("RSS UDP encryption for user {} requires RSS_UDP_AES_KEY", user.getUsername());
