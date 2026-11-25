@@ -303,10 +303,13 @@ org.rx.net.socks.upstream.Udp2rawUpstream
 
 ```text
 org.rx.net.udp.UdpCompressConfig
-org.rx.net.udp.UdpCompressEncoder
-org.rx.net.udp.UdpCompressDecoder
+org.rx.net.udp.compress.UdpCompressEncoder
+org.rx.net.udp.compress.UdpCompressDecoder
+org.rx.net.udp.compress.UdpCompressSupport
 org.rx.net.udp.UdpCompressStats
 ```
+
+直接引用旧编码器、解码器或静态工具类的应用需更新 import 并重新编译。配置、统计对象与 UCMP 包头沿用原定义。
 
 协议头：
 
