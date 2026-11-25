@@ -2,7 +2,6 @@ package org.rx.net.socks;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
-import io.netty.channel.local.LocalAddress;
 import io.netty.channel.socket.ChannelInputShutdownEvent;
 import io.netty.util.ReferenceCountUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -55,9 +54,6 @@ public class SSTcpProxyHandler extends ChannelInboundHandlerAdapter {
         Bootstrap outboundBootstrap = Sockets.bootstrap(inbound.eventLoop(), upstream.getConfig(), upstream.connectAddressHint(), outbound -> {
             upstream.initChannel(outbound);
         });
-        if (!(upstream.connectAddressHint() instanceof LocalAddress)) {
-            outboundBootstrap.option(ChannelOption.ALLOW_HALF_CLOSURE, true);
-        }
         ChannelFuture outboundFuture = outboundBootstrap.connect(upDstEp).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
                 logConnectFailure(upDstEp, dstEp, f.cause());
