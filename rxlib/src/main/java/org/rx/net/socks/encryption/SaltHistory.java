@@ -13,7 +13,7 @@ public final class SaltHistory {
     private static final int SHARDS = 16;
     private static final Table SHARED = new Table(65536, TimeUnit.MINUTES.toNanos(2), System::nanoTime);
     private final CipherKind kind;
-    private final String password;
+    private final ShadowSocksKey masterKey;
     private final byte[] domain;
     private final int domainHash;
     private final Table table;
@@ -25,21 +25,16 @@ public final class SaltHistory {
     @SneakyThrows
     SaltHistory(String method, String password, Table table) {
         kind = CipherKind.forName(method);
-        this.password = password;
-        byte[] key = new ShadowSocksKey(password, kind == CipherKind.AES_128_GCM ? 16 : 32).getEncoded();
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            digest.update((byte) kind.ordinal());
-            domain = digest.digest(key);
-        } finally {
-            Arrays.fill(key, (byte) 0);
-        }
+        masterKey = new ShadowSocksKey(password, kind.keyLength());
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        digest.update((byte) kind.ordinal());
+        domain = digest.digest(masterKey.keyBytes());
         domainHash = Arrays.hashCode(domain);
         this.table = table;
     }
 
     public ICrypto newCrypto(boolean udp) {
-        AeadCrypto crypto = kind.newAead(password);
+        AeadCrypto crypto = kind.newAead(masterKey);
         crypto.history = this;
         crypto.setForUdp(udp);
         return crypto;

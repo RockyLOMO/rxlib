@@ -28,11 +28,19 @@ public enum CipherKind {
         throw new IllegalArgumentException("Unsupported cipher: " + name);
     }
 
+    int keyLength() {
+        return this == AES_128_GCM ? 16 : 32;
+    }
+
     AeadCrypto newAead(String password) {
+        return newAead(new ShadowSocksKey(password, keyLength()));
+    }
+
+    AeadCrypto newAead(ShadowSocksKey masterKey) {
         switch (this) {
-            case AES_128_GCM: return new Aes128GcmByteBufCrypto(cipherName, password);
-            case AES_256_GCM: return new Aes256GcmByteBufCrypto(cipherName, password);
-            case CHACHA20_IETF_POLY1305: return new ChaCha20Poly1305ByteBufCrypto(cipherName, password);
+            case AES_128_GCM: return new Aes128GcmByteBufCrypto(cipherName, masterKey, true);
+            case AES_256_GCM: return new Aes256GcmByteBufCrypto(cipherName, masterKey, true);
+            case CHACHA20_IETF_POLY1305: return new ChaCha20Poly1305ByteBufCrypto(cipherName, masterKey, true);
             default: throw new AssertionError(this);
         }
     }

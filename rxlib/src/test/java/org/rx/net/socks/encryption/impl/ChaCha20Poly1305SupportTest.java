@@ -1,13 +1,19 @@
 package org.rx.net.socks.encryption.impl;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.CompositeByteBuf;
+import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import javax.crypto.AEADBadTagException;
+import javax.crypto.Cipher;
+import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.Test;
 import org.rx.codec.CodecUtil;
 import org.rx.io.Bytes;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -117,6 +123,74 @@ class ChaCha20Poly1305SupportTest {
             input.release();
             encrypted.release();
             decrypted.release();
+        }
+    }
+
+    @Test
+    void randomizedDifferentialAndEveryTagBitTamperCheck() throws Exception {
+        Cipher jce = null;
+        try {
+            jce = Cipher.getInstance("ChaCha20-Poly1305");
+        } catch (Exception ignored) {
+            // JDK 8 lacks built-in ChaCha20-Poly1305; differential check activates automatically on JDK 11+.
+        }
+        Random rng = new Random(20261125L);
+        for (int round = 0; round < 160; round++) {
+            byte[] key = new byte[32];
+            byte[] nonce = new byte[12];
+            byte[] aadBytes = new byte[rng.nextInt(49)];
+            byte[] plainBytes = new byte[round < 20 ? round : rng.nextInt(2050)];
+            rng.nextBytes(key);
+            rng.nextBytes(nonce);
+            rng.nextBytes(aadBytes);
+            rng.nextBytes(plainBytes);
+
+            int pad = rng.nextInt(7);
+            ByteBuf aad = Unpooled.buffer(pad + aadBytes.length).writeZero(pad).writeBytes(aadBytes).skipBytes(pad);
+            ByteBuf in;
+            if ((round & 3) == 0 && plainBytes.length > 5) {
+                int split = 1 + rng.nextInt(plainBytes.length - 1);
+                CompositeByteBuf comp = PooledByteBufAllocator.DEFAULT.compositeDirectBuffer(2);
+                comp.addComponent(true, Unpooled.buffer(split).writeBytes(plainBytes, 0, split));
+                comp.addComponent(true, Bytes.directBuffer(plainBytes.length - split)
+                        .writeBytes(plainBytes, split, plainBytes.length - split));
+                in = comp;
+            } else {
+                in = ((round & 1) == 0 ? Bytes.directBuffer(pad + plainBytes.length) : Unpooled.buffer(pad + plainBytes.length))
+                        .writeZero(pad).writeBytes(plainBytes).skipBytes(pad);
+            }
+            ByteBuf encrypted = Bytes.directBuffer(plainBytes.length + 16);
+            ByteBuf decrypted = Bytes.directBuffer(plainBytes.length);
+            try {
+                ChaCha20Poly1305Support.encrypt(key, nonce, aad, aad.readerIndex(), aad.readableBytes(),
+                        in, in.readerIndex(), in.readableBytes(), encrypted);
+                if (jce != null) {
+                    jce.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(key, "ChaCha20"), new IvParameterSpec(nonce));
+                    if (aadBytes.length > 0) jce.updateAAD(aadBytes);
+                    byte[] expectedCipher = jce.doFinal(plainBytes);
+                    assertArrayEquals(expectedCipher, readBytes(encrypted.slice()), "round=" + round);
+                }
+                if (round == 0) {
+                    for (int bit = 0; bit < 128; bit++) {
+                        int byteIdx = encrypted.writerIndex() - 16 + (bit >>> 3);
+                        int mask = 1 << (bit & 7);
+                        encrypted.setByte(byteIdx, encrypted.getByte(byteIdx) ^ mask);
+                        assertThrows(AEADBadTagException.class, () -> ChaCha20Poly1305Support.decrypt(
+                                key, nonce, aad, aad.readerIndex(), aad.readableBytes(),
+                                encrypted, encrypted.readerIndex(), encrypted.readableBytes(), decrypted));
+                        assertEquals(0, decrypted.readableBytes());
+                        encrypted.setByte(byteIdx, encrypted.getByte(byteIdx) ^ mask);
+                    }
+                }
+                ChaCha20Poly1305Support.decrypt(key, nonce, aad, aad.readerIndex(), aad.readableBytes(),
+                        encrypted, encrypted.readerIndex(), encrypted.readableBytes(), decrypted);
+                assertArrayEquals(plainBytes, readBytes(decrypted), "round=" + round);
+            } finally {
+                aad.release();
+                in.release();
+                encrypted.release();
+                decrypted.release();
+            }
         }
     }
 

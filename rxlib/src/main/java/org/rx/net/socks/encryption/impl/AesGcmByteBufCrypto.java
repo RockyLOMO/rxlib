@@ -14,16 +14,14 @@ import javax.crypto.Cipher;
 import javax.crypto.Mac;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import java.nio.Buffer;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.util.Arrays;
 
 abstract class AesGcmByteBufCrypto extends AeadCrypto implements AutoCloseable {
     private static final String CIPHER_NAME = "AES/GCM/NoPadding";
     private static final String AES = "AES";
-    private static final String HKDF_ALGORITHM = "HmacSHA1";
-    private static final byte[] INFO = "ss-subkey".getBytes(StandardCharsets.US_ASCII);
     private static final int MAX_KEY_LENGTH = 32;
     private static final int MAX_SALT_LENGTH = 32;
     private static final int TAG_LENGTH = 16;
@@ -34,28 +32,10 @@ abstract class AesGcmByteBufCrypto extends AeadCrypto implements AutoCloseable {
     private static final int LEN_TAG_SIZE = LEN_SIZE + TAG_LENGTH;
     private static final byte[] ZERO_NONCE = new byte[NONCE_LENGTH];
 
-    private static final FastThreadLocal<Mac> HKDF_MAC = new FastThreadLocal<Mac>() {
-        @Override
-        protected Mac initialValue() throws Exception {
-            return Mac.getInstance(HKDF_ALGORITHM);
-        }
-    };
     private static final FastThreadLocal<byte[]> SALT_BUF = new FastThreadLocal<byte[]>() {
         @Override
         protected byte[] initialValue() {
             return new byte[MAX_SALT_LENGTH];
-        }
-    };
-    private static final FastThreadLocal<byte[]> HKDF_BLOCK = new FastThreadLocal<byte[]>() {
-        @Override
-        protected byte[] initialValue() {
-            return new byte[20];
-        }
-    };
-    private static final FastThreadLocal<byte[]> HKDF_PRK = new FastThreadLocal<byte[]>() {
-        @Override
-        protected byte[] initialValue() {
-            return new byte[20];
         }
     };
     private static final FastThreadLocal<byte[]> UDP_SUBKEY = new FastThreadLocal<byte[]>() {
@@ -80,7 +60,6 @@ abstract class AesGcmByteBufCrypto extends AeadCrypto implements AutoCloseable {
     private final String cipherName;
     private final int keyLength;
     private final int saltLength;
-    private final ShadowSocksKey ssKey;
     private final boolean directBuf;
     private boolean forUdp;
 
@@ -88,6 +67,8 @@ abstract class AesGcmByteBufCrypto extends AeadCrypto implements AutoCloseable {
     private Cipher decCipher;
     private byte[] encSubkey;
     private byte[] decSubkey;
+    private SecretKeySpec encKeySpec;
+    private SecretKeySpec decKeySpec;
     private byte[] encNonce;
     private byte[] decNonce;
 
@@ -103,14 +84,14 @@ abstract class AesGcmByteBufCrypto extends AeadCrypto implements AutoCloseable {
     private ByteBuf pendingEncrypted;
     private boolean closed;
 
-    AesGcmByteBufCrypto(String name, String cipherName, String password, int keyLength, int saltLength, boolean directBuf) {
+    AesGcmByteBufCrypto(String name, String cipherName, ShadowSocksKey masterKey, int keyLength, int saltLength, boolean directBuf) {
+        super(masterKey);
         if (!cipherName.equalsIgnoreCase(name)) {
             throw new IllegalArgumentException("Unsupported cipher: " + name);
         }
         this.cipherName = cipherName;
         this.keyLength = keyLength;
         this.saltLength = saltLength;
-        this.ssKey = new ShadowSocksKey(password, keyLength);
         this.directBuf = directBuf;
     }
 
@@ -176,7 +157,8 @@ abstract class AesGcmByteBufCrypto extends AeadCrypto implements AutoCloseable {
                 byte[] salt = randomSalt();
                 out.writeBytes(salt, 0, saltLength);
                 encSubkey = new byte[keyLength];
-                genSubkey(salt, encSubkey);
+                deriveSubkey(salt, saltLength, encSubkey, keyLength);
+                encKeySpec = new SecretKeySpec(encSubkey, 0, keyLength, AES);
                 encCipher = Cipher.getInstance(CIPHER_NAME);
             }
 
@@ -184,13 +166,13 @@ abstract class AesGcmByteBufCrypto extends AeadCrypto implements AutoCloseable {
                 int chunkSize = Math.min(in.readableBytes(), PAYLOAD_SIZE_MASK);
                 encLenBytes[0] = (byte) (chunkSize >>> 8);
                 encLenBytes[1] = (byte) chunkSize;
-                initCipher(encCipher, Cipher.ENCRYPT_MODE, encSubkey, encNonce);
-                encLenBuffer.clear();
+                initCipher(encCipher, Cipher.ENCRYPT_MODE, encKeySpec, encNonce);
+                ((Buffer) encLenBuffer).clear();
                 applyCipher(encCipher, encLenBuffer, out, LEN_TAG_SIZE);
                 increment(encNonce);
 
                 int readerIndex = in.readerIndex();
-                initCipher(encCipher, Cipher.ENCRYPT_MODE, encSubkey, encNonce);
+                initCipher(encCipher, Cipher.ENCRYPT_MODE, encKeySpec, encNonce);
                 applyCipher(encCipher, in, readerIndex, chunkSize, out, chunkSize + TAG_LENGTH);
                 in.readerIndex(readerIndex + chunkSize);
                 increment(encNonce);
@@ -257,7 +239,8 @@ abstract class AesGcmByteBufCrypto extends AeadCrypto implements AutoCloseable {
         }
         decSubkey = new byte[keyLength];
         receivedTcpSalt(salt, saltLength);
-        genSubkey(salt, decSubkey);
+        deriveSubkey(salt, saltLength, decSubkey, keyLength);
+        decKeySpec = new SecretKeySpec(decSubkey, 0, keyLength, AES);
         decCipher = Cipher.getInstance(CIPHER_NAME);
         resetDecryptState();
         return true;
@@ -265,8 +248,8 @@ abstract class AesGcmByteBufCrypto extends AeadCrypto implements AutoCloseable {
 
     private void decryptTcpPhase(ByteBuf in, int index, int length, ByteBuf out) throws GeneralSecurityException {
         if (readingLengthPhase) {
-            initCipher(decCipher, Cipher.DECRYPT_MODE, decSubkey, decNonce);
-            decLenBuffer.clear();
+            initCipher(decCipher, Cipher.DECRYPT_MODE, decKeySpec, decNonce);
+            ((Buffer) decLenBuffer).clear();
             int written = applyCipher(decCipher, in, index, length, decLenBuffer);
             if (written != LEN_SIZE) {
                 throw new DecoderException("Invalid length chunk");
@@ -281,7 +264,7 @@ abstract class AesGcmByteBufCrypto extends AeadCrypto implements AutoCloseable {
             return;
         }
 
-        initCipher(decCipher, Cipher.DECRYPT_MODE, decSubkey, decNonce);
+        initCipher(decCipher, Cipher.DECRYPT_MODE, decKeySpec, decNonce);
         int written = applyCipher(decCipher, in, index, length, out, currentPayloadLength);
         if (written != currentPayloadLength) {
             throw new DecoderException("Invalid payload chunk");
@@ -297,9 +280,9 @@ abstract class AesGcmByteBufCrypto extends AeadCrypto implements AutoCloseable {
             byte[] salt = randomSalt();
             out.writeBytes(salt, 0, saltLength);
             byte[] subkey = UDP_SUBKEY.get();
-            genSubkey(salt, subkey);
+            deriveSubkey(salt, saltLength, subkey, keyLength);
             Cipher cipher = UDP_ENC_CIPHER.get();
-            initCipher(cipher, Cipher.ENCRYPT_MODE, subkey, ZERO_NONCE);
+            initCipher(cipher, Cipher.ENCRYPT_MODE, new SecretKeySpec(subkey, 0, keyLength, AES), ZERO_NONCE);
             int len = in.readableBytes();
             int readerIndex = in.readerIndex();
             applyCipher(cipher, in, readerIndex, len, out, len + TAG_LENGTH);
@@ -317,9 +300,9 @@ abstract class AesGcmByteBufCrypto extends AeadCrypto implements AutoCloseable {
             byte[] salt = SALT_BUF.get();
             in.readBytes(salt, 0, saltLength);
             byte[] subkey = UDP_SUBKEY.get();
-            genSubkey(salt, subkey);
+            deriveSubkey(salt, saltLength, subkey, keyLength);
             Cipher cipher = UDP_DEC_CIPHER.get();
-            initCipher(cipher, Cipher.DECRYPT_MODE, subkey, ZERO_NONCE);
+            initCipher(cipher, Cipher.DECRYPT_MODE, new SecretKeySpec(subkey, 0, keyLength, AES), ZERO_NONCE);
             int len = in.readableBytes();
             int readerIndex = in.readerIndex();
             applyCipher(cipher, in, readerIndex, len, out, Math.max(0, len - TAG_LENGTH));
@@ -376,37 +359,8 @@ abstract class AesGcmByteBufCrypto extends AeadCrypto implements AutoCloseable {
         return output.position() - start;
     }
 
-    private void initCipher(Cipher cipher, int mode, byte[] key, byte[] nonce) throws GeneralSecurityException {
-        cipher.init(mode, new SecretKeySpec(key, 0, keyLength, AES), new GCMParameterSpec(TAG_BITS, nonce));
-    }
-
-    private void genSubkey(byte[] salt, byte[] okm) throws GeneralSecurityException {
-        Mac mac = HKDF_MAC.get();
-        byte[] prk = HKDF_PRK.get();
-        mac.init(new SecretKeySpec(salt, 0, saltLength, HKDF_ALGORITHM));
-        mac.update(ssKey.getEncoded());
-        mac.doFinal(prk, 0);
-
-        byte[] block = HKDF_BLOCK.get();
-        Arrays.fill(okm, 0, keyLength, (byte) 0);
-        int copied = 0;
-        int counter = 1;
-        int blockLen = 0;
-        while (copied < keyLength) {
-            mac.init(new SecretKeySpec(prk, HKDF_ALGORITHM));
-            if (blockLen > 0) {
-                mac.update(block, 0, blockLen);
-            }
-            mac.update(INFO);
-            mac.update((byte) counter++);
-            mac.doFinal(block, 0);
-            blockLen = mac.getMacLength();
-            int copy = Math.min(blockLen, keyLength - copied);
-            System.arraycopy(block, 0, okm, copied, copy);
-            copied += copy;
-        }
-        Arrays.fill(prk, (byte) 0);
-        Arrays.fill(block, (byte) 0);
+    private void initCipher(Cipher cipher, int mode, SecretKeySpec keySpec, byte[] nonce) throws GeneralSecurityException {
+        cipher.init(mode, keySpec, new GCMParameterSpec(TAG_BITS, nonce));
     }
 
     private byte[] randomSalt() {

@@ -66,6 +66,10 @@ public class ShadowSocksKey implements SecretKey {
 
     @Override
     public byte[] getEncoded() {
+        return _key.clone();
+    }
+
+    byte[] keyBytes() {
         return _key;
     }
 }

@@ -97,10 +97,8 @@ final class ChaCha20Poly1305Support {
                                ByteBuf in, int cipherIndex, int cipherLen, int tagIndex) throws AEADBadTagException {
         ByteBuf expected = scratch(TAG_BUF, TAG_LENGTH);
         writeTag(key, nonce, aad, aadIndex, aadLength, in, cipherIndex, cipherLen, expected, 0);
-        int diff = 0;
-        for (int i = 0; i < TAG_LENGTH; i++) {
-            diff |= expected.getByte(i) ^ in.getByte(tagIndex + i);
-        }
+        long diff = (expected.getLongLE(0) ^ in.getLongLE(tagIndex))
+                | (expected.getLongLE(8) ^ in.getLongLE(tagIndex + 8));
         if (diff != 0) {
             throw new AEADBadTagException("Tag mismatch");
         }
@@ -123,21 +121,7 @@ final class ChaCha20Poly1305Support {
     }
 
     private static void xor(byte[] key, byte[] nonce, ByteBuf in, int index, int length, ByteBuf out, int outIndex) {
-        ByteBuf block = scratch(CHACHA_BLOCK, BLOCK_SIZE);
-        int remaining = length;
-        int counter = 1;
-        int src = index;
-        int dst = outIndex;
-        while (remaining > 0) {
-            ChaCha20Engine.block(key, nonce, counter++, block, 0);
-            int n = Math.min(remaining, BLOCK_SIZE);
-            for (int i = 0; i < n; i++) {
-                out.setByte(dst + i, (byte) (in.getByte(src + i) ^ block.getByte(i)));
-            }
-            src += n;
-            dst += n;
-            remaining -= n;
-        }
+        ChaCha20Engine.xor(key, nonce, 1, in, index, length, out, outIndex);
     }
 
     private static void xor(byte[] key, byte[] nonce, ByteBuf in, int index, int length, ByteBuffer out) {
@@ -178,23 +162,15 @@ final class ChaCha20Poly1305Support {
     }
 
     private static void writeLongLE(long value, ByteBuf out, int off) {
-        for (int i = 0; i < 8; i++) {
-            out.setByte(off + i, (int) (value >>> (i << 3)));
-        }
+        out.setLongLE(off, value);
     }
 
     private static long le32(ByteBuf in, int off) {
-        return ((long) in.getByte(off) & 0xFF)
-                | (((long) in.getByte(off + 1) & 0xFF) << 8)
-                | (((long) in.getByte(off + 2) & 0xFF) << 16)
-                | (((long) in.getByte(off + 3) & 0xFF) << 24);
+        return in.getUnsignedIntLE(off);
     }
 
     private static void writeIntLE(long value, ByteBuf out, int off) {
-        out.setByte(off, (int) value);
-        out.setByte(off + 1, (int) (value >>> 8));
-        out.setByte(off + 2, (int) (value >>> 16));
-        out.setByte(off + 3, (int) (value >>> 24));
+        out.setIntLE(off, (int) value);
     }
 
     private static FastThreadLocal<ByteBuf> pooledBuffer(final int capacity) {
