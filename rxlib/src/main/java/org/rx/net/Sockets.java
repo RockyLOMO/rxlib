@@ -1688,11 +1688,11 @@ public final class Sockets {
 
     // ctx.channel()会为null
     public static void closeOnFlushed(Channel channel) {
-        if (channel == null || !channel.isActive()) {
+        if (channel == null || !channel.isOpen()) {
             return;
         }
-        // ServerChannel 没有可刷出的出站缓冲，直接 close 避免对监听通道执行 writeAndFlush。
-        if (channel instanceof ServerChannel) {
+        // 非活跃通道或 ServerChannel 没有可刷出的出站缓冲，直接 close 避免残留打开句柄或对监听通道执行 writeAndFlush。
+        if (!channel.isActive() || channel instanceof ServerChannel) {
             channel.close();
             return;
         }

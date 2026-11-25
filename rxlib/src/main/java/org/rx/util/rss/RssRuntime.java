@@ -18,7 +18,6 @@ import org.rx.net.socks.SocksConfig;
 import org.rx.net.socks.SocksContext;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.SocksRpcContract;
-import org.rx.net.socks.encryption.CipherKind;
 import org.rx.net.socks.upstream.SocksTcpUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import java.net.InetSocketAddress;
@@ -540,6 +539,7 @@ final class RssRuntime implements AutoCloseable {
             user.setUsername(oldRef.username);
             user.setSsPort(oldRef.ssPort);
             user.setSsPwd(oldRef.ssPwd);
+            user.setSsCipher(oldRef.ssCipher);
             user.setRouteMatcher(oldRef.routeMatcher);
             UserRule route = new UserRule();
             route.setSrcSteeringTTL(oldRef.srcSteeringTTL);
@@ -594,14 +594,15 @@ final class RssRuntime implements AutoCloseable {
     }
 
     private ShadowServerRef createShadowServer(RssClientConf conf, ShadowUser usr, ShadowRoutePlan routePlan) {
+        String cipher = usr.cipherName();
         ShadowsocksConfig ssConf = new ShadowsocksConfig(Sockets.newAnyEndpoint(usr.getSsPort()),
-                CipherKind.AES_256_GCM.getCipherName(), usr.getSsPwd());
+                cipher, usr.getSsPwd());
         configureShadowConfig(conf, ssConf);
         enableShadowIngressReusePort(ssConf);
         ShadowsocksServer ssSvr = new ShadowsocksServer(ssConf);
         SocksConfig toInConf = new SocksConfig();
         toInConf.setOptimalSettings(RssSupport.IN_OPS);
-        ShadowServerRef ref = new ShadowServerRef(usr.getUsername(), usr.getSsPort(), usr.getSsPwd(),
+        ShadowServerRef ref = new ShadowServerRef(usr.getUsername(), usr.getSsPort(), usr.getSsPwd(), cipher,
                 routePlan, ssSvr, usr.getRouteMatcher(), sourceSteeringTtl(usr, conf));
         ssSvr.onTcpRoute.replace((s, e) -> {
             InetSocketAddress dstEp = e.getFirstDestination();
@@ -798,16 +799,18 @@ final class RssRuntime implements AutoCloseable {
         final String username;
         final int ssPort;
         final String ssPwd;
+        final String ssCipher;
         final ShadowRoutePlan routePlan;
         final ShadowsocksServer server;
         volatile UserRuleMatcher routeMatcher;
         volatile int srcSteeringTTL;
 
-        ShadowServerRef(String username, int ssPort, String ssPwd, ShadowRoutePlan routePlan,
+        ShadowServerRef(String username, int ssPort, String ssPwd, String ssCipher, ShadowRoutePlan routePlan,
                         ShadowsocksServer server, UserRuleMatcher routeMatcher, int srcSteeringTTL) {
             this.username = username;
             this.ssPort = ssPort;
             this.ssPwd = ssPwd;
+            this.ssCipher = ssCipher;
             this.routePlan = routePlan;
             this.server = server;
             this.routeMatcher = routeMatcher;
@@ -824,6 +827,7 @@ final class RssRuntime implements AutoCloseable {
                     && user != null
                     && ssPort == user.getSsPort()
                     && Strings.hashEquals(ssPwd, user.getSsPwd())
+                    && Strings.hashEquals(ssCipher, user.cipherName())
                     && Strings.hashEquals(routePlan.signature, nextRouteSignature);
         }
     }

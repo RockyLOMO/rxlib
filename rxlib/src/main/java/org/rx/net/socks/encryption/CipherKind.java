@@ -21,6 +21,11 @@ public enum CipherKind {
         return forName(name).newAead(password);
     }
 
+    /** Canonical SS method name. Empty input is not accepted. */
+    public static String canonical(String name) {
+        return forName(name).cipherName;
+    }
+
     static CipherKind forName(String name) {
         for (CipherKind kind : METHODS) {
             if (kind.cipherName.equalsIgnoreCase(name)) return kind;

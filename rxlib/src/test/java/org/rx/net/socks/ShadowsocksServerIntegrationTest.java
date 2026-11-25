@@ -409,6 +409,74 @@ class ShadowsocksServerIntegrationTest {
         }
     }
 
+    @Test
+    @SneakyThrows
+    @Timeout(value = 20)
+    void backendClosesFirstWhileClientIdle_flushesTailAndClosesFrontendChannel() {
+        String method = CipherKind.CHACHA20_IETF_POLY1305.getCipherName();
+        String password = "backend-close-first-password";
+        byte[] tailPayload = "tail-bytes-before-upstream-idle-close".getBytes(StandardCharsets.UTF_8);
+
+        int socksPort = 16289;
+        SocksConfig proxyConfig = new SocksConfig(socksPort);
+        proxyConfig.getWhiteList();
+        SocksProxyServer socksUpstream = new SocksProxyServer(proxyConfig);
+
+        ShadowsocksConfig ssConfig = new ShadowsocksConfig(Sockets.newLoopbackEndpoint(0), method, password);
+        ssConfig.setReadTimeoutSeconds(0);
+        ShadowsocksServer ssServer = new ShadowsocksServer(ssConfig);
+        UpstreamSupport support = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", socksPort), null, null), null);
+        ssServer.onTcpRoute.replace((s, e) -> e.setUpstream(new org.rx.net.socks.upstream.SocksTcpUpstream(e.getFirstDestination(), new SocksConfig(0), support)));
+
+        try (java.net.ServerSocket backend = new java.net.ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"));
+             Socket client = new Socket()) {
+            backend.setSoTimeout(5000);
+            client.connect(ssServer.tcpChannels.get(0).localAddress(), 5000);
+            client.setSoTimeout(5000);
+
+            ICrypto crypto = ICrypto.get(method, password);
+            try {
+                ByteBuf req = Unpooled.buffer();
+                UdpManager.encode(req, "127.0.0.1", backend.getLocalPort());
+                req.writeByte('Q');
+                client.getOutputStream().write(toBytes(crypto.encrypt(req)));
+                client.getOutputStream().flush();
+
+                try (Socket accepted = backend.accept()) {
+                    assertEquals('Q', accepted.getInputStream().read());
+                    accepted.getOutputStream().write(tailPayload);
+                    accepted.getOutputStream().flush();
+                }
+
+                // Client intentionally keeps its write side open (simulating idle mobile NAT peer).
+                waitForCondition(() -> ssServer.activeChannelCount() == 0, 5000,
+                        "SS frontend channel must close when upstream/backend closes first");
+
+                java.io.ByteArrayOutputStream plainOut = new java.io.ByteArrayOutputStream();
+                byte[] buf = new byte[256];
+                int n;
+                while ((n = client.getInputStream().read(buf)) != -1) {
+                    ByteBuf dec = crypto.decrypt(Unpooled.wrappedBuffer(buf, 0, n));
+                    try {
+                        byte[] chunk = new byte[dec.readableBytes()];
+                        dec.readBytes(chunk);
+                        plainOut.write(chunk);
+                    } finally {
+                        dec.release();
+                    }
+                }
+                assertArrayEquals(tailPayload, plainOut.toByteArray());
+            } finally {
+                if (crypto instanceof AutoCloseable) {
+                    ((AutoCloseable) crypto).close();
+                }
+            }
+        } finally {
+            ssServer.close();
+            socksUpstream.close();
+        }
+    }
+
     static byte[] readAtLeast(InputStream in, int minLen, int maxLen, int timeoutMs) throws Exception {
         byte[] buf = new byte[maxLen];
         int read = 0;

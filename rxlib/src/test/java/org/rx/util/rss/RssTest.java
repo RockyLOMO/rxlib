@@ -1405,6 +1405,21 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
+    public void shadowUserCipherDefaultsToAesAndRejectsUnknown() {
+        ShadowUser user = new ShadowUser();
+        user.setSsPwd("pwd");
+        assertEquals(CipherKind.AES_256_GCM.getCipherName(), user.cipherName());
+        user.setSsCipher(" chacha20-ietf-poly1305 ");
+        assertEquals(CipherKind.CHACHA20_IETF_POLY1305.getCipherName(), user.cipherName());
+
+        RssClientConf conf = validRssConf();
+        conf.shadowUsers.get(0).setSsCipher("chacha20-ietf-poly1305");
+        assertTrue(RssClient.normalizeAndValidateRssConfig(conf));
+        conf.shadowUsers.get(0).setSsCipher("rc4-md5");
+        assertTrue(!RssClient.normalizeAndValidateRssConfig(conf));
+    }
+
+    @Test
     public void normalizeAndValidateRssConfig_AcceptsShadowUserScopedSocksServers() {
         RssClientConf conf = validRssConf();
         RssClientConf.SocksServer first = new RssClientConf.SocksServer("primary", 1,
