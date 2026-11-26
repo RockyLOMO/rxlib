@@ -49,6 +49,7 @@ public final class Socks5ClientHandler extends ProxyHandler {
     @Setter private boolean adaptiveTcp;
     @Setter private int adaptiveProfile;
     @Setter private boolean udpHop = true;
+    @Setter private InetSocketAddress adaptiveUdpAddress;
     private int offeredProfile = -1;
     private boolean negotiated;
     private String decoderName;
@@ -176,7 +177,8 @@ public final class Socks5ClientHandler extends ProxyHandler {
             }
 
             if (negotiated) {
-                SocksAdaptiveHandshake.install(ctx.channel(), ctx.channel().attr(SocksAdaptiveHandshake.NONCE).getAndSet(null), password, null, offeredProfile, udpHop);
+                SocksAdaptiveHandshake.install(ctx.channel(), ctx.channel().attr(SocksAdaptiveHandshake.NONCE).getAndSet(null),
+                        password, null, offeredProfile, udpHop, adaptiveUdpAddress);
                 negotiated = false;
             }
             sendCommand(ctx);

@@ -82,8 +82,12 @@ public class SocksTcpUpstream extends Upstream {
         return next.getEndpoint();
     }
 
+    public InetSocketAddress getAdaptiveUdpClient() {
+        return next.getAdaptiveUdpClient();
+    }
+
     public TcpWarmPoolKey warmPoolKey() {
-        return TcpWarmPoolKey.from(next.getEndpoint(), config, config.getReactorName());
+        return TcpWarmPoolKey.from(next.getEndpoint(), config, config.getReactorName(), next.getAdaptiveUdpClient());
     }
 
     public InetSocketAddress prepareDestination() {
@@ -306,6 +310,7 @@ public class SocksTcpUpstream extends Upstream {
         proxyHandler.setAdaptiveTcp(((SocksConfig) config).isAdaptiveTcp());
         proxyHandler.setAdaptiveProfile(((SocksConfig) config).getAdaptiveProfile());
         proxyHandler.setUdpHop(((SocksConfig) config).isUdpHop());
+        proxyHandler.setAdaptiveUdpAddress(next.getAdaptiveUdpClient());
         proxyHandler.setConnectTimeoutMillis(config.getConnectTimeoutMillis());
         channel.pipeline().addLast(proxyHandler);
     }

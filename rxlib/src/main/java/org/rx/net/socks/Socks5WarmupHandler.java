@@ -40,6 +40,7 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
     @Setter private boolean adaptiveTcp;
     @Setter private int adaptiveProfile;
     @Setter private boolean udpHop = true;
+    @Setter private InetSocketAddress adaptiveUdpAddress;
     private int offeredProfile = -1;
     private boolean negotiated;
     private volatile State state = State.INIT;
@@ -180,7 +181,8 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
             return;
         }
         if (negotiated) {
-            SocksAdaptiveHandshake.install(ctx.channel(), ctx.channel().attr(SocksAdaptiveHandshake.NONCE).getAndSet(null), password, null, offeredProfile, udpHop);
+            SocksAdaptiveHandshake.install(ctx.channel(), ctx.channel().attr(SocksAdaptiveHandshake.NONCE).getAndSet(null),
+                    password, null, offeredProfile, udpHop, adaptiveUdpAddress);
             negotiated = false;
         }
         markReady(ctx);

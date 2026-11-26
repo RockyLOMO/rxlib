@@ -35,6 +35,7 @@ public class RssClientConf {
                     server.setUdp2raw(Boolean.TRUE.equals(obj.getBoolean("udp2raw")));
                     server.setTcpClient(readSocksServerEndpoint(obj.get("tcpClient")));
                     server.setUdpClient(readSocketAddress(obj.get("udpClient")));
+                    server.setAdaptiveUdpClient(readSocketAddress(obj.get("adaptiveUdpClient")));
                     return server;
                 });
     }
@@ -157,6 +158,8 @@ public class RssClientConf {
         public AuthenticEndpoint tcpClient;
         // UDP 走 udp2raw/hysteria 等客户端时的固定 UDP 目标。
         public InetSocketAddress udpClient;
+        // Adaptive TCP/UDP (udpHop=false) 走外部单口 UDP 隧道（如 udp2raw）时的固定 UDP 目标。
+        public InetSocketAddress adaptiveUdpClient;
 
         public SocksServer() {
         }

@@ -2,6 +2,7 @@ package org.rx.net.rss.udp;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.CompositeByteBuf;
 import org.rx.net.udp.UdpSequenceWindow;
 
 import javax.crypto.Mac;
@@ -27,11 +28,14 @@ final class DailyUdpFragmenter implements AutoCloseable {
     static final int MAX_CONCURRENT_ASSEMBLIES = 16;
     static final int MAX_SESSION_BYTES = 256 * 1024;
     private static final int SLOT_OVERHEAD_BYTES = 64;
+    private static final int ASSEMBLY_BASE_OVERHEAD_BYTES = 128;
+    private static final int COMPACT_SLACK_BYTES = 128;
     static final long DEFAULT_TIMEOUT_MILLIS = Math.max(100L,
             Long.getLong("rx.rss.udp.reassemblyTimeoutMillis", 750L));
     static final long DEFAULT_GLOBAL_BUDGET_BYTES = Math.max(1024L * 1024L,
             Long.getLong("rx.rss.udp.reassemblyGlobalBytes", 24L * 1024L * 1024L));
     static final AtomicLong GLOBAL_BUFFERED_BYTES = new AtomicLong();
+    static final AtomicLong GLOBAL_PEAK_BYTES = new AtomicLong();
     private static final byte[] AUTH_LABEL = "RSS UDP FRAG MAC v1".getBytes(StandardCharsets.US_ASCII);
 
     private final boolean innerAuth;
@@ -117,15 +121,19 @@ final class DailyUdpFragmenter implements AutoCloseable {
     }
 
     boolean canFragment(int totalLen, int maxUnitPayload) {
+        return fragmentCount(totalLen, maxUnitPayload) > 0;
+    }
+
+    int fragmentCount(int totalLen, int maxUnitPayload) {
         if (totalLen <= 0 || totalLen > MAX_DATAGRAM_BYTES) {
-            return false;
+            return 0;
         }
         int maxSlice = maxSliceBytes(maxUnitPayload);
         if (maxSlice <= 0) {
-            return false;
+            return 0;
         }
         int count = (totalLen + maxSlice - 1) / maxSlice;
-        return count >= 1 && count <= MAX_FRAGMENTS;
+        return count >= 1 && count <= MAX_FRAGMENTS ? count : 0;
     }
 
     void fragment(ByteBufAllocator alloc, ByteBuf data, int maxUnitPayload, FrameEmitter emitter) {
@@ -243,30 +251,71 @@ final class DailyUdpFragmenter implements AutoCloseable {
                 return frame.retainedSlice(sliceStart, sliceLen);
             }
 
-            Assembly slot = findOrAllocate(msgId, fragCount, totalLen, now);
-            if (slot == null) {
-                return null;
-            }
-            if (slot.fragCount != fragCount || slot.totalLen != totalLen) {
-                rxInvalid++;
-                return null;
+            Assembly slot = null;
+            int freeIdx = -1;
+            for (int i = 0; i < assemblies.length; i++) {
+                Assembly a = assemblies[i];
+                if (a != null && a.active && a.msgId == msgId) {
+                    slot = a;
+                    break;
+                }
+                if (freeIdx < 0 && (a == null || !a.active)) {
+                    freeIdx = i;
+                }
             }
             long bit = 1L << fragIndex;
-            if ((slot.receivedMask & bit) != 0L) {
-                rxDuplicates++;
+            if (slot != null) {
+                if (slot.fragCount != fragCount || slot.totalLen != totalLen) {
+                    rxInvalid++;
+                    return null;
+                }
+                if ((slot.receivedMask & bit) != 0L) {
+                    rxDuplicates++;
+                    return null;
+                }
+                if (slot.receivedBytes + sliceLen > totalLen) {
+                    releaseSlot(slot);
+                    rxInvalid++;
+                    return null;
+                }
+            } else if (freeIdx < 0) {
+                rxBudgetRejected++;
                 return null;
             }
-            if (slot.receivedBytes + sliceLen > totalLen) {
-                releaseSlot(slot);
-                rxInvalid++;
-                return null;
-            }
-            int charge = SLOT_OVERHEAD_BYTES + sliceLen;
+
+            // Detach slices backed by oversized receive buffers (e.g. 64 KiB FixedRecvByteBufAllocator)
+            // so pending fragments never pin ~50x more direct memory than budgeted.
+            int rootCap = backingCapacity(frame);
+            boolean compact = rootCap > sliceLen + COMPACT_SLACK_BYTES;
+            int heldBytes = compact ? sliceLen : Math.max(sliceLen, rootCap);
+            int charge = (slot == null ? assemblyOverhead(fragCount) : 0) + SLOT_OVERHEAD_BYTES + heldBytes;
             if (!reserveBytes(charge)) {
                 rxBudgetRejected++;
                 return null;
             }
-            slot.parts[fragIndex] = frame.retainedSlice(sliceStart, sliceLen);
+            ByteBuf stored = null;
+            try {
+                if (compact) {
+                    stored = alloc.ioBuffer(sliceLen, sliceLen);
+                    stored.writeBytes(frame, sliceStart, sliceLen);
+                } else {
+                    stored = frame.retainedSlice(sliceStart, sliceLen);
+                }
+            } catch (Throwable t) {
+                if (stored != null) {
+                    stored.release();
+                }
+                releaseBytes(charge);
+                throw t;
+            }
+            if (slot == null) {
+                slot = assemblies[freeIdx];
+                if (slot == null) {
+                    assemblies[freeIdx] = slot = new Assembly();
+                }
+                slot.begin(msgId, fragCount, totalLen, now);
+            }
+            slot.parts[fragIndex] = stored;
             slot.receivedMask |= bit;
             slot.receivedBytes += sliceLen;
             slot.chargedBytes += charge;
@@ -280,9 +329,10 @@ final class DailyUdpFragmenter implements AutoCloseable {
                 rxInvalid++;
                 return null;
             }
-            ByteBuf assembled = alloc.ioBuffer(totalLen, totalLen);
+            ByteBuf assembled = null;
             boolean ok = false;
             try {
+                assembled = alloc.ioBuffer(totalLen, totalLen);
                 for (int i = 0; i < fragCount; i++) {
                     ByteBuf part = slot.parts[i];
                     assembled.writeBytes(part, part.readerIndex(), part.readableBytes());
@@ -293,7 +343,7 @@ final class DailyUdpFragmenter implements AutoCloseable {
                 return assembled;
             } finally {
                 releaseSlot(slot);
-                if (!ok) {
+                if (!ok && assembled != null) {
                     assembled.release();
                 }
             }
@@ -328,6 +378,24 @@ final class DailyUdpFragmenter implements AutoCloseable {
         return sessionBytes;
     }
 
+    int activeAssemblies() {
+        int count = 0;
+        for (Assembly slot : assemblies) {
+            if (slot != null && slot.active) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    static long globalBufferedBytes() {
+        return GLOBAL_BUFFERED_BYTES.get();
+    }
+
+    static long globalPeakBytes() {
+        return GLOBAL_PEAK_BYTES.get();
+    }
+
     @Override
     public void close() {
         closed = true;
@@ -338,27 +406,22 @@ final class DailyUdpFragmenter implements AutoCloseable {
         }
     }
 
-    private Assembly findOrAllocate(long msgId, int fragCount, int totalLen, long now) {
-        int freeIdx = -1;
-        for (int i = 0; i < assemblies.length; i++) {
-            Assembly a = assemblies[i];
-            if (a != null && a.active && a.msgId == msgId) {
-                return a;
+    private static int assemblyOverhead(int fragCount) {
+        return ASSEMBLY_BASE_OVERHEAD_BYTES + (fragCount << 3);
+    }
+
+    private static int backingCapacity(ByteBuf buf) {
+        if (buf instanceof CompositeByteBuf) {
+            return Integer.MAX_VALUE;
+        }
+        ByteBuf root = buf;
+        while (root.unwrap() != null) {
+            root = root.unwrap();
+            if (root instanceof CompositeByteBuf) {
+                return Integer.MAX_VALUE;
             }
-            if (freeIdx < 0 && (a == null || !a.active)) {
-                freeIdx = i;
-            }
         }
-        if (freeIdx < 0) {
-            rxBudgetRejected++;
-            return null;
-        }
-        Assembly slot = assemblies[freeIdx];
-        if (slot == null) {
-            assemblies[freeIdx] = slot = new Assembly();
-        }
-        slot.begin(msgId, fragCount, totalLen, now);
-        return slot;
+        return root.capacity();
     }
 
     private boolean reserveBytes(int bytes) {
@@ -367,11 +430,18 @@ final class DailyUdpFragmenter implements AutoCloseable {
         }
         for (;;) {
             long current = globalBudget.get();
-            if (current + bytes > maxGlobalBytes) {
+            long next = current + bytes;
+            if (next > maxGlobalBytes) {
                 return false;
             }
-            if (globalBudget.compareAndSet(current, current + bytes)) {
+            if (globalBudget.compareAndSet(current, next)) {
                 sessionBytes += bytes;
+                if (globalBudget == GLOBAL_BUFFERED_BYTES) {
+                    long peak = GLOBAL_PEAK_BYTES.get();
+                    while (next > peak && !GLOBAL_PEAK_BYTES.compareAndSet(peak, next)) {
+                        peak = GLOBAL_PEAK_BYTES.get();
+                    }
+                }
                 return true;
             }
         }

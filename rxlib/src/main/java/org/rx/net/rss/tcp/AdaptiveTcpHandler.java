@@ -7,6 +7,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import org.rx.diagnostic.DiagnosticMetrics;
 
+import java.net.InetSocketAddress;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -18,6 +19,8 @@ public final class AdaptiveTcpHandler extends ChannelDuplexHandler {
     private AdaptiveUdpPort port;
     private final int primaryPort, aliasPort;
     private final int profile;
+    private final boolean udpHop;
+    private final InetSocketAddress udpTarget;
     private AdaptiveStream stream;
     private ChannelHandlerContext ctx;
     private ScheduledFuture<?> timer;
@@ -27,7 +30,12 @@ public final class AdaptiveTcpHandler extends ChannelDuplexHandler {
     private long tcpTxFrames, tcpRxFrames, udpTxFrames, udpRxFrames;
 
     public static void install(Channel tcp, long id, byte[] key, AdaptiveUdpPort port, int primary, int alias, int profile) {
-        tcp.pipeline().addFirst("rssAdaptive", new AdaptiveTcpHandler(id, key, port, primary, alias, profile));
+        install(tcp, id, key, port, primary, alias, profile, primary != alias, null);
+    }
+
+    public static void install(Channel tcp, long id, byte[] key, AdaptiveUdpPort port, int primary, int alias, int profile,
+                               boolean udpHop, InetSocketAddress udpTarget) {
+        tcp.pipeline().addFirst("rssAdaptive", new AdaptiveTcpHandler(id, key, port, primary, alias, profile, udpHop, udpTarget));
         tcp.pipeline().addFirst("rssAdaptiveLength", new LengthFieldBasedFrameDecoder(
                 AdaptiveStream.MAX_TCP_FRAME + 2, 0, 2, 0, 2));
     }
@@ -36,10 +44,13 @@ public final class AdaptiveTcpHandler extends ChannelDuplexHandler {
         return profile;
     }
 
-    private AdaptiveTcpHandler(long id, byte[] key, AdaptiveUdpPort port, int primaryPort, int aliasPort, int profile) {
+    private AdaptiveTcpHandler(long id, byte[] key, AdaptiveUdpPort port, int primaryPort, int aliasPort, int profile,
+                               boolean udpHop, InetSocketAddress udpTarget) {
         this.profile = profile;
         this.primaryPort = primaryPort;
         this.aliasPort = aliasPort;
+        this.udpHop = udpHop;
+        this.udpTarget = udpTarget;
         this.id = id;
         this.key = key;
         this.port = port;
@@ -51,8 +62,9 @@ public final class AdaptiveTcpHandler extends ChannelDuplexHandler {
         stream = new AdaptiveStream(ctx.alloc(), this::writeTcp, this::writeUdp,
                 ctx::fireChannelRead, System::nanoTime, profile);
         try {
-            if (server) port.register(id, key, ctx.channel(), this::receiveUdp);
-            else port = AdaptiveUdpPort.client(id, key, ctx.channel(), primaryPort, aliasPort, this::receiveUdp);
+            if (server) port.register(id, key, ctx.channel(), udpHop, this::receiveUdp);
+            else port = AdaptiveUdpPort.client(id, key, ctx.channel(), primaryPort, aliasPort,
+                    udpHop ? null : udpTarget, this::receiveUdp);
         } catch (RuntimeException unavailable) {
             port = null;
             DiagnosticMetrics.record("rss.tcp.adaptive.udpUnavailable", 1);
@@ -166,6 +178,10 @@ public final class AdaptiveTcpHandler extends ChannelDuplexHandler {
 
     public boolean isUdpHopping() {
         return port != null && port.isHopping();
+    }
+
+    public InetSocketAddress udpPeerAddress() {
+        return port == null ? null : port.peerAddress(id);
     }
 
     @Override public void close(ChannelHandlerContext ctx, ChannelPromise promise) {

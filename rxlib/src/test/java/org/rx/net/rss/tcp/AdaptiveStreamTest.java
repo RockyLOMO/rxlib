@@ -551,7 +551,13 @@ class AdaptiveStreamTest {
         List<Integer> received = new ArrayList<>();
         ArrayDeque<ByteBuf> tcp = new ArrayDeque<>(), udp = new ArrayDeque<>();
         try (AdaptiveStream sender = new AdaptiveStream(UnpooledByteBufAllocator.DEFAULT, tcp::add, udp::add, ByteBuf::release, clock::get);
-             AdaptiveStream receiver = new AdaptiveStream(UnpooledByteBufAllocator.DEFAULT, ByteBuf::release, sender::udp, bytes -> {
+             AdaptiveStream receiver = new AdaptiveStream(UnpooledByteBufAllocator.DEFAULT, ByteBuf::release, b -> {
+                 try {
+                     sender.udp(b);
+                 } finally {
+                     b.release();
+                 }
+             }, bytes -> {
                  try {
                      while (bytes.isReadable()) received.add(bytes.readInt());
                  } finally {

@@ -896,7 +896,7 @@ class SocksProxyServerIntegrationTest {
         SocksProxyServer proxyA = null;
         SocksProxyServer proxyB = null;
         try {
-            SocksConfig configB = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            SocksConfig configB = new SocksConfig(Sockets.newLoopbackEndpoint(freeLoopbackTcpUdpPort()));
             configB.setEnableUdp2raw(true);
             configB.setUdp2rawAuthMode(Udp2rawAuthMode.FIRST_PACKET_MAC);
             proxyB = new SocksProxyServer(configB, null);
@@ -938,7 +938,7 @@ class SocksProxyServerIntegrationTest {
         SocksProxyServer proxyB = null;
         Channel udpClient = null;
         try {
-            SocksConfig configB = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            SocksConfig configB = new SocksConfig(Sockets.newLoopbackEndpoint(freeLoopbackTcpUdpPort()));
             configB.setEnableUdp2raw(true);
             configB.setUdp2rawAuthMode(Udp2rawAuthMode.FIRST_PACKET_MAC);
             proxyB = new SocksProxyServer(configB, null);
@@ -1004,7 +1004,7 @@ class SocksProxyServerIntegrationTest {
         SocksProxyServer proxyA = null;
         SocksProxyServer proxyB = null;
         try {
-            SocksConfig configB = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            SocksConfig configB = new SocksConfig(Sockets.newLoopbackEndpoint(freeLoopbackTcpUdpPort()));
             configB.setEnableUdp2raw(true);
             configB.setUdp2rawAuthMode(Udp2rawAuthMode.FIRST_PACKET_MAC);
             configB.setUdpCompressEnabled(true);
@@ -1058,7 +1058,7 @@ class SocksProxyServerIntegrationTest {
         ShadowsocksServer ssServer = null;
         DatagramSocket clientSock = null;
         try {
-            SocksConfig configB = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            SocksConfig configB = new SocksConfig(Sockets.newLoopbackEndpoint(freeLoopbackTcpUdpPort()));
             configB.setEnableUdp2raw(true);
             configB.setUdp2rawAuthMode(Udp2rawAuthMode.FIRST_PACKET_MAC);
             proxyB = new SocksProxyServer(configB, null);
@@ -1156,7 +1156,7 @@ class SocksProxyServerIntegrationTest {
         ShadowsocksServer ssServer = null;
         DatagramSocket clientSock = null;
         try {
-            SocksConfig configB = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            SocksConfig configB = new SocksConfig(Sockets.newLoopbackEndpoint(freeLoopbackTcpUdpPort()));
             configB.setEnableUdp2raw(true);
             configB.setUdp2rawAuthMode(Udp2rawAuthMode.FIRST_PACKET_MAC);
             configB.setUdpCompressEnabled(true);
@@ -1259,12 +1259,17 @@ class SocksProxyServerIntegrationTest {
                 for (int i = 0; i < 15; i++) {
                     // Pack UDP Echo Request
                     ByteBuf addrBuf = Unpooled.buffer(64);
-                    UdpManager.encode(addrBuf, new InetSocketAddress("127.0.0.1", UDP_ECHO_PORT));
-                    byte[] payload = "ss-to-socks-chained".getBytes(StandardCharsets.UTF_8);
-                    addrBuf.writeBytes(payload);
+                    byte[] encrypted;
+                    try {
+                        UdpManager.encode(addrBuf, new InetSocketAddress("127.0.0.1", UDP_ECHO_PORT));
+                        byte[] payload = "ss-to-socks-chained".getBytes(StandardCharsets.UTF_8);
+                        addrBuf.writeBytes(payload);
 
-                    ByteBuf encryptedBuf = crypto.encrypt(addrBuf);
-                    byte[] encrypted = toBytes(encryptedBuf);
+                        ByteBuf encryptedBuf = crypto.encrypt(addrBuf);
+                        encrypted = toBytes(encryptedBuf);
+                    } finally {
+                        addrBuf.release();
+                    }
 
                     clientSock.send(new java.net.DatagramPacket(encrypted, encrypted.length, InetAddress.getByName("127.0.0.1"), ssPort));
 
@@ -1280,15 +1285,24 @@ class SocksProxyServerIntegrationTest {
                     byte[] receivedEncrypted = new byte[p.getLength()];
                     System.arraycopy(respBuf, 0, receivedEncrypted, 0, p.getLength());
 
-                    ByteBuf decBuf = crypto.decrypt(Unpooled.wrappedBuffer(receivedEncrypted));
-                    InetSocketAddress srcEp = UdpManager.decode(decBuf); // The real sender!
+                    ByteBuf encIn = Unpooled.wrappedBuffer(receivedEncrypted);
+                    ByteBuf decBuf = null;
+                    try {
+                        decBuf = crypto.decrypt(encIn);
+                        InetSocketAddress srcEp = UdpManager.decode(decBuf); // The real sender!
 
-                    byte[] echoed = new byte[decBuf.readableBytes()];
-                    decBuf.readBytes(echoed);
-                    assertEquals("ss-to-socks-chained", new String(echoed, StandardCharsets.UTF_8));
-                    assertEquals(UDP_ECHO_PORT, srcEp.getPort());
+                        byte[] echoed = new byte[decBuf.readableBytes()];
+                        decBuf.readBytes(echoed);
+                        assertEquals("ss-to-socks-chained", new String(echoed, StandardCharsets.UTF_8));
+                        assertEquals(UDP_ECHO_PORT, srcEp.getPort());
 
-                    log.info("Shadowsocks chained UDP relay success: src={}", srcEp);
+                        log.info("Shadowsocks chained UDP relay success: src={}", srcEp);
+                    } finally {
+                        encIn.release();
+                        if (decBuf != null) {
+                            decBuf.release();
+                        }
+                    }
                     ok = true;
                     break;
                 }
@@ -2115,6 +2129,177 @@ class SocksProxyServerIntegrationTest {
 
     @Test
     @Timeout(value = 15)
+    void adaptiveNoHopRoutesThroughUdp2rawForwarderWithoutKcptunWhileHoppingCoexists() throws Exception {
+        SocksConfig cfg = new SocksConfig(15810);
+        cfg.setAdaptiveTcp(true);
+        cfg.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
+        SocksUser user = new SocksUser("warm");
+        user.setPassword("test-pass");
+        java.util.concurrent.atomic.AtomicInteger rawC2S = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger rawS2C = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicBoolean running = new java.util.concurrent.atomic.AtomicBoolean(true);
+        try (SocksProxyServer server = new SocksProxyServer(cfg, new SocksAuthenticator(Collections.singletonList(user)));
+             DatagramSocket rawClientSide = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+             DatagramSocket rawServerSide = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0))) {
+            assertTrue(server.adaptivePort.isHopping());
+            rawClientSide.setSoTimeout(200);
+            rawServerSide.setSoTimeout(200);
+            InetSocketAddress rawEntry = (InetSocketAddress) rawClientSide.getLocalSocketAddress();
+            InetSocketAddress serverAdaptiveUdp = new InetSocketAddress("127.0.0.1", server.adaptivePort.port());
+            java.util.concurrent.atomic.AtomicReference<InetSocketAddress> lastClientPeer = new java.util.concurrent.atomic.AtomicReference<>();
+            Thread t1 = new Thread(() -> {
+                byte[] buf = new byte[2048];
+                while (running.get()) {
+                    try {
+                        java.net.DatagramPacket p = new java.net.DatagramPacket(buf, buf.length);
+                        rawClientSide.receive(p);
+                        lastClientPeer.set((InetSocketAddress) p.getSocketAddress());
+                        rawC2S.incrementAndGet();
+                        rawServerSide.send(new java.net.DatagramPacket(p.getData(), p.getLength(), serverAdaptiveUdp));
+                    } catch (java.net.SocketTimeoutException ignored) {
+                    } catch (Exception e) {
+                        if (running.get()) break;
+                    }
+                }
+            });
+            Thread t2 = new Thread(() -> {
+                byte[] buf = new byte[2048];
+                while (running.get()) {
+                    try {
+                        java.net.DatagramPacket p = new java.net.DatagramPacket(buf, buf.length);
+                        rawServerSide.receive(p);
+                        InetSocketAddress cli = lastClientPeer.get();
+                        if (cli != null) {
+                            rawS2C.incrementAndGet();
+                            rawClientSide.send(new java.net.DatagramPacket(p.getData(), p.getLength(), cli));
+                        }
+                    } catch (java.net.SocketTimeoutException ignored) {
+                    } catch (Exception e) {
+                        if (running.get()) break;
+                    }
+                }
+            });
+            t1.setDaemon(true);
+            t2.setDaemon(true);
+            t1.start();
+            t2.start();
+
+            int port = ((InetSocketAddress) server.tcpChannels.get(0).localAddress()).getPort();
+            InetSocketAddress address = new InetSocketAddress("127.0.0.1", port);
+
+            // 1. 6896-like no-hop stream: direct TCP + Adaptive UDP via udp2raw forwarder (no kcptun).
+            SocksConfig noHopCfg = new SocksConfig();
+            noHopCfg.setAdaptiveTcp(true);
+            noHopCfg.setUdpHop(false);
+            noHopCfg.setTransportFlags(cfg.getTransportFlags());
+            Socks5WarmupHandler noHopWarm = new Socks5WarmupHandler(address, "warm", "test-pass", 4000);
+            noHopWarm.setAdaptiveTcp(true);
+            noHopWarm.setUdpHop(false);
+            noHopWarm.setAdaptiveUdpAddress(rawEntry);
+            Channel chNoHop = Sockets.bootstrap(noHopCfg, address, c -> {
+                Sockets.addTcpClientHandler(c, noHopCfg, address);
+                c.pipeline().addLast(noHopWarm);
+            }).connect(address).sync().channel();
+            try {
+                noHopWarm.readyFuture().get(4, TimeUnit.SECONDS);
+                AdaptiveTcpHandler handler = chNoHop.pipeline().get(AdaptiveTcpHandler.class);
+                assertNotNull(handler);
+                assertFalse(handler.isUdpHopping());
+                assertEquals(rawEntry, handler.udpPeerAddress());
+                chNoHop.eventLoop().submit(() -> noHopWarm.connect(new InetSocketAddress("127.0.0.1", TCP_ECHO_PORT))).get().sync();
+                java.util.concurrent.BlockingQueue<String> echoed = new java.util.concurrent.LinkedBlockingQueue<>();
+                chNoHop.pipeline().addLast(new SimpleChannelInboundHandler<ByteBuf>() {
+                    @Override protected void channelRead0(ChannelHandlerContext ctx, ByteBuf msg) {
+                        echoed.add(msg.toString(StandardCharsets.UTF_8));
+                    }
+                });
+                chNoHop.writeAndFlush(Unpooled.copiedBuffer("probe-raw", StandardCharsets.UTF_8)).sync();
+                assertEquals("probe-raw", echoed.poll(4, TimeUnit.SECONDS));
+                waitForCondition(handler::usingUdp, 4000, "no-hop adaptive UDP via udp2raw forwarder must activate");
+                chNoHop.writeAndFlush(Unpooled.copiedBuffer("data-over-udp2raw", StandardCharsets.UTF_8)).sync();
+                assertEquals("data-over-udp2raw", echoed.poll(4, TimeUnit.SECONDS));
+                assertTrue(rawC2S.get() > 0 && rawS2C.get() > 0,
+                        "adaptive UDP must traverse udp2raw forwarder c2s=" + rawC2S.get() + " s2c=" + rawS2C.get());
+            } finally {
+                chNoHop.close().sync();
+            }
+
+            // 2. 6898-like hopping stream on the same server stays direct and does not touch the udp2raw forwarder.
+            int c2sBefore = rawC2S.get();
+            SocksConfig hopCfg = new SocksConfig();
+            hopCfg.setAdaptiveTcp(true);
+            hopCfg.setUdpHop(true);
+            hopCfg.setTransportFlags(cfg.getTransportFlags());
+            Socks5WarmupHandler hopWarm = new Socks5WarmupHandler(address, "warm", "test-pass", 4000);
+            hopWarm.setAdaptiveTcp(true);
+            hopWarm.setUdpHop(true);
+            Channel chHop = Sockets.bootstrap(hopCfg, address, c -> {
+                Sockets.addTcpClientHandler(c, hopCfg, address);
+                c.pipeline().addLast(hopWarm);
+            }).connect(address).sync().channel();
+            try {
+                hopWarm.readyFuture().get(4, TimeUnit.SECONDS);
+                AdaptiveTcpHandler handler = chHop.pipeline().get(AdaptiveTcpHandler.class);
+                assertNotNull(handler);
+                assertTrue(handler.isUdpHopping());
+                chHop.eventLoop().submit(() -> hopWarm.connect(new InetSocketAddress("127.0.0.1", TCP_ECHO_PORT))).get().sync();
+                java.util.concurrent.BlockingQueue<String> echoed = new java.util.concurrent.LinkedBlockingQueue<>();
+                chHop.pipeline().addLast(new SimpleChannelInboundHandler<ByteBuf>() {
+                    @Override protected void channelRead0(ChannelHandlerContext ctx, ByteBuf msg) {
+                        echoed.add(msg.toString(StandardCharsets.UTF_8));
+                    }
+                });
+                chHop.writeAndFlush(Unpooled.copiedBuffer("probe-hop", StandardCharsets.UTF_8)).sync();
+                assertEquals("probe-hop", echoed.poll(4, TimeUnit.SECONDS));
+                waitForCondition(handler::usingUdp, 4000, "hopping adaptive UDP must activate");
+                chHop.writeAndFlush(Unpooled.copiedBuffer("data-hop", StandardCharsets.UTF_8)).sync();
+                assertEquals("data-hop", echoed.poll(4, TimeUnit.SECONDS));
+                assertEquals(c2sBefore, rawC2S.get(), "hopping stream must not route through udp2raw forwarder");
+            } finally {
+                chHop.close().sync();
+                running.set(false);
+            }
+        }
+    }
+
+    @Test
+    @Timeout(value = 15)
+    void udp2rawServerEntrySocketSurvivesIdleTimeoutWithoutClosing() throws Exception {
+        String prevRtoken = RxConfig.INSTANCE.getRtoken();
+        RxConfig.INSTANCE.setRtoken("udp2raw-idle-entry-token");
+        SocksConfig serverCfg = new SocksConfig(15815);
+        serverCfg.setEnableUdp2raw(true);
+        serverCfg.setUdpReadTimeoutSeconds(1);
+        serverCfg.setUdpWriteTimeoutSeconds(1);
+        try (SocksProxyServer serverB = new SocksProxyServer(serverCfg)) {
+            // Wait past the 1s udpReadTimeoutSeconds: fixed entry socket must stay open.
+            Thread.sleep(1500);
+            SocksRpcContract facade = new SocksRpcContract() {
+                @Override public boolean fakeEndpoint(String fakeHost, String realEndpoint, String token) { return true; }
+                @Override public void addWhiteList(InetAddress endpoint, String token) {}
+                @Override public java.util.List<InetAddress> resolveHost(InetAddress srcIp, String host) { return Collections.emptyList(); }
+                @Override public SocksRpcCapabilities capabilities(String token) { return serverB.socksRpcCapabilities(token); }
+                @Override public Udp2rawOpenResult openUdp2rawTunnel(Udp2rawOpenRequest request, String token) { return serverB.openUdp2rawTunnel(request, token); }
+                @Override public boolean heartbeatUdp2rawTunnel(String tunnelId, String token) { return serverB.heartbeatUdp2rawTunnel(tunnelId, token); }
+                @Override public boolean closeUdp2rawTunnel(String tunnelId, String token) { return serverB.closeUdp2rawTunnel(tunnelId, token); }
+            };
+            SocksConfig proxyACfg = new SocksConfig(15816);
+            try (SocksProxyServer proxyA = new SocksProxyServer(proxyACfg)) {
+                UpstreamSupport support = new UpstreamSupport(
+                        new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 15815), null, null), facade);
+                support.setUdp2raw(true);
+                SocksConfig routeCfg = new SocksConfig();
+                routeCfg.setUdpMtu(1300);
+                proxyA.onUdpRoute.replace((s, e) -> e.setUpstream(new org.rx.net.socks.upstream.Udp2rawUpstream(e.getFirstDestination(), routeCfg, support)));
+                assertTrue(sendUdpViaProxy(15816, "udp2raw-entry-still-open", 5));
+            }
+        } finally {
+            RxConfig.INSTANCE.setRtoken(prevRtoken);
+        }
+    }
+
+    @Test
+    @Timeout(value = 15)
     void plainUdpPassthroughAllowsLargeDatagramsWhileExplicitMtuStillGuards() throws Exception {
         SocksConfig upstreamCfg = new SocksConfig(0);
         try (SocksProxyServer upstreamProxy = new SocksProxyServer(upstreamCfg);
@@ -2448,6 +2633,27 @@ class SocksProxyServerIntegrationTest {
         byte[] out = new byte[read];
         System.arraycopy(buf, 0, out, 0, read);
         return out;
+    }
+
+    static int freeLoopbackTcpUdpPort() throws Exception {
+        for (int i = 0; i < 64; i++) {
+            try (ServerSocket tcp = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
+                int port = tcp.getLocalPort();
+                DatagramSocket udp = new DatagramSocket(null);
+                try {
+                    udp.setReuseAddress(false);
+                    udp.bind(new InetSocketAddress("127.0.0.1", port));
+                    return port;
+                } catch (java.net.SocketException busy) {
+                    // Retry if Windows already has a UDP socket bound to this port.
+                } finally {
+                    udp.close();
+                }
+            }
+        }
+        try (ServerSocket tcp = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
+            return tcp.getLocalPort();
+        }
     }
 
     static byte[] toBytes(ByteBuf buf) {

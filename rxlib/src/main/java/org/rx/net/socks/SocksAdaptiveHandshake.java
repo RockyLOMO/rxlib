@@ -12,6 +12,7 @@ import org.rx.net.rss.tcp.AdaptiveUdpPort;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
@@ -102,10 +103,15 @@ final class SocksAdaptiveHandshake {
     }
 
     static void install(Channel tcp, byte[] nonce, String password, AdaptiveUdpPort serverPort, int profile) {
-        install(tcp, nonce, password, serverPort, profile, true);
+        install(tcp, nonce, password, serverPort, profile, true, null);
     }
 
     static void install(Channel tcp, byte[] nonce, String password, AdaptiveUdpPort serverPort, int profile, boolean udpHop) {
+        install(tcp, nonce, password, serverPort, profile, udpHop, null);
+    }
+
+    static void install(Channel tcp, byte[] nonce, String password, AdaptiveUdpPort serverPort, int profile,
+                        boolean udpHop, InetSocketAddress udpTarget) {
         byte[] key;
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
@@ -120,6 +126,6 @@ final class SocksAdaptiveHandshake {
         int primary = ByteBuffer.wrap(nonce).getShort(28) & 0xffff;
         int alias = udpHop ? (ByteBuffer.wrap(nonce).getShort(30) & 0xffff) : primary;
         AdaptiveTcpHandler.install(tcp, ByteBuffer.wrap(nonce).getLong(), key, serverPort,
-                primary, alias, profile);
+                primary, alias, profile, udpHop, udpTarget);
     }
 }

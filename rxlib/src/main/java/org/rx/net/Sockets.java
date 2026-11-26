@@ -1698,6 +1698,12 @@ public final class Sockets {
             channel.close();
             return;
         }
+        // Unconnected DatagramChannel cannot write Unpooled.EMPTY_BUFFER without a recipient (EDESTADDRREQ).
+        if (channel instanceof DatagramChannel && !((DatagramChannel) channel).isConnected()) {
+            channel.flush();
+            channel.close();
+            return;
+        }
         channel.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
     }
 

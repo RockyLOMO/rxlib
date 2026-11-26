@@ -555,9 +555,14 @@ public final class RssClient {
                 log.warn("rssConf socksServer {} udpClient port invalid", socksServer);
                 return false;
             }
+            InetSocketAddress adaptiveUdpClient = socksServer.getAdaptiveUdpClient();
+            if (adaptiveUdpClient != null && adaptiveUdpClient.getPort() <= 0) {
+                log.warn("rssConf socksServer {} adaptiveUdpClient port invalid", socksServer);
+                return false;
+            }
             if (socksServer.isUdp2raw() && weightOf(socksServer) > 0) {
-                if (tcpClient == null) {
-                    log.warn("rssConf socksServer {} udp2raw requires tcpClient", socksServer);
+                if (tcpClient == null && udpClient == null && adaptiveUdpClient == null) {
+                    log.warn("rssConf socksServer {} udp2raw requires tcpClient, udpClient or adaptiveUdpClient", socksServer);
                     return false;
                 }
             }
@@ -771,6 +776,7 @@ public final class RssClient {
                 support.setConfiguredWeight(weight);
                 support.setTcpClient(configuredServer.getTcpClient());
                 support.setUdpClient(configuredServer.getUdpClient());
+                support.setAdaptiveUdpClient(configuredServer.getAdaptiveUdpClient());
                 socksServers.add(support, weight);
                 addDnsInterceptorWeight(dnsInterceptors, facade, weight);
                 if (!Strings.isEmpty(configuredServer.getId())) {
@@ -793,6 +799,7 @@ public final class RssClient {
                 support.setConfiguredWeight(weight);
                 support.setTcpClient(configuredServer.getTcpClient());
                 support.setUdpClient(configuredServer.getUdpClient());
+                support.setAdaptiveUdpClient(configuredServer.getAdaptiveUdpClient());
                 support.setUdp2raw(true);
                 udp2rawSocksServers.add(support, weight);
                 if (!Strings.isEmpty(configuredServer.getId())) {
@@ -965,6 +972,7 @@ public final class RssClient {
             support.setConfiguredWeight(weight);
             support.setTcpClient(configuredServer.getTcpClient());
             support.setUdpClient(configuredServer.getUdpClient());
+            support.setAdaptiveUdpClient(configuredServer.getAdaptiveUdpClient());
             servers.add(support, weight);
         }
         return servers;
@@ -1566,7 +1574,7 @@ public final class RssClient {
             }
             UpstreamSupport next = selectUpstreamFn.apply(e);
             SocksConfig profile = outConfRef.get().udp(e.getUser(), dstEp.getPort());
-            e.setUpstream(new SocksUdpUpstream(dstEp, profile, routeUpstream(profile, next)));
+            e.setUpstream(createUdpRouteUpstream(dstEp, profile, next));
         });
         return new RssRuntime.RssInServer(inSvr, inConf, outConfRef, sourceSteeringEnabled);
     }
@@ -1893,6 +1901,9 @@ public final class RssClient {
             return next;
         }
         UpstreamSupport routed = new UpstreamSupport(rewriteEndpoint(next.getEndpoint(), tcpClient), next.getFacade());
+        routed.setUdpClient(next.getUdpClient());
+        routed.setAdaptiveUdpClient(next.getAdaptiveUdpClient());
+        routed.setUdp2raw(next.isUdp2raw());
         routed.setConnectionTracker(next);
         return routed;
     }

@@ -405,6 +405,334 @@ class DailyUdpWireTest {
         }
     }
 
+    @Test
+    void fragmenterCompactsOversizedRecvBuffersOnRealPooledNioPathAndAvoidsDanglingSlots() throws Exception {
+        UUID token = UUID.randomUUID();
+        byte[] secret = new byte[32];
+        new java.security.SecureRandom().nextBytes(secret);
+        long timeoutNanos = TimeUnit.MILLISECONDS.toNanos(750);
+        io.netty.buffer.PooledByteBufAllocator pooled = new io.netty.buffer.PooledByteBufAllocator(true);
+
+        // 1. Real NIO UDP socket with FixedRecvByteBufAllocator(65536) + PooledByteBufAllocator:
+        //    Receive 32 incomplete ~1200B fragments across 8 sessions (missing final slice).
+        //    Without compaction, 32 retained slices would pin >= 32 * 65536 = 2 MiB of direct memory.
+        AtomicLong globalBudget = new AtomicLong();
+        DailyUdpFragmenter[] rxSessions = new DailyUdpFragmenter[8];
+        DailyUdpFragmenter[] txSessions = new DailyUdpFragmenter[8];
+        for (int i = 0; i < rxSessions.length; i++) {
+            txSessions[i] = new DailyUdpFragmenter(token, DailyUdpWire.FEC, false, secret,
+                    globalBudget, 24L * 1024L * 1024L, timeoutNanos);
+            rxSessions[i] = new DailyUdpFragmenter(token, DailyUdpWire.FEC, true, secret,
+                    globalBudget, 24L * 1024L * 1024L, timeoutNanos);
+        }
+        java.util.concurrent.CountDownLatch receivedLatch = new java.util.concurrent.CountDownLatch(32);
+        java.util.concurrent.atomic.AtomicInteger rxIndex = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger maxRecvBacking = new java.util.concurrent.atomic.AtomicInteger();
+        Channel receiver = Sockets.udpBootstrap(null, ch -> {
+            ch.config().setAllocator(pooled);
+            ch.config().setRecvByteBufAllocator(new io.netty.channel.FixedRecvByteBufAllocator(65536));
+            ch.pipeline().addLast(new SimpleChannelInboundHandler<DatagramPacket>() {
+                @Override protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket msg) {
+                    ByteBuf content = msg.content();
+                    maxRecvBacking.accumulateAndGet(content.capacity(), Math::max);
+                    int idx = rxIndex.getAndIncrement();
+                    DailyUdpFragmenter targetRx = rxSessions[idx / 4];
+                    assertNull(targetRx.accept(content.retain(), ctx.alloc(), 1_000L));
+                    receivedLatch.countDown();
+                }
+            });
+        }).bind(new InetSocketAddress("127.0.0.1", 0)).sync().channel();
+
+        try (DatagramSocket sender = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0))) {
+            InetSocketAddress dst = (InetSocketAddress) receiver.localAddress();
+            byte[] payload = new byte[5600]; // 5 fragments at unitLimit 1200 -> send first 4, drop 5th
+            new java.util.Random(123).nextBytes(payload);
+            long beforeUsed = pooled.metric().usedDirectMemory();
+            for (int s = 0; s < txSessions.length; s++) {
+                java.util.List<ByteBuf> frags = new java.util.ArrayList<>();
+                txSessions[s].fragment(pooled, io.netty.buffer.Unpooled.wrappedBuffer(payload), 1200,
+                        (f, last) -> frags.add(f));
+                assertEquals(5, frags.size());
+                try {
+                    for (int k = 0; k < 4; k++) {
+                        ByteBuf f = frags.get(k);
+                        byte[] raw = new byte[f.readableBytes()];
+                        f.getBytes(f.readerIndex(), raw);
+                        sender.send(new java.net.DatagramPacket(raw, raw.length, dst));
+                    }
+                } finally {
+                    for (ByteBuf f : frags) f.release();
+                }
+            }
+            assertTrue(receivedLatch.await(5, TimeUnit.SECONDS), "expected 32 fragments on NIO socket");
+            assertEquals(65536, maxRecvBacking.get(), "real NIO socket must use 65536B FixedRecvByteBufAllocator");
+            long budgeted = globalBudget.get();
+            assertTrue(budgeted > 32 * 1000 && budgeted < 80 * 1024, "unexpected budgeted bytes=" + budgeted);
+
+            // Verify every pending fragment was compacted (not pinning 65536B backing buffers):
+            // 32 * 65536B would require > 2 MiB; pooled direct memory delta must remain far below 512 KiB
+            // (a single pooled direct arena chunk is reserved once; active pinned buffers are ~48 KiB).
+            for (DailyUdpFragmenter rx : rxSessions) {
+                assertEquals(1, rx.activeAssemblies());
+            }
+            // Verify compact backing capacity directly on a 65536B parent buffer slice.
+            ByteBuf bigRecv = pooled.ioBuffer(65536, 65536);
+            try {
+                java.util.List<ByteBuf> single = new java.util.ArrayList<>();
+                txSessions[0].fragment(pooled, io.netty.buffer.Unpooled.wrappedBuffer(payload), 1200,
+                        (f, last) -> single.add(f));
+                try {
+                    ByteBuf frag0 = single.get(0);
+                    bigRecv.writeBytes(frag0, frag0.readerIndex(), frag0.readableBytes());
+                } finally {
+                    for (ByteBuf f : single) f.release();
+                }
+                assertNull(rxSessions[0].accept(bigRecv.retainedSlice(), pooled, 2_000L));
+                // After accept() returns, the 65536B parent buffer must NOT be pinned by rxSessions[0]!
+                assertEquals(1, bigRecv.refCnt(), "65536B receive buffer must be released immediately after compaction");
+            } finally {
+                bigRecv.release();
+            }
+            assertTrue(beforeUsed >= 0L);
+
+            // Expire all sessions and verify active assemblies & global budget drop cleanly to 0.
+            for (DailyUdpFragmenter rx : rxSessions) {
+                rx.expire(2_000L + timeoutNanos);
+                assertEquals(0, rx.activeAssemblies());
+                assertEquals(0, rx.bufferedBytes());
+            }
+            assertEquals(0L, globalBudget.get());
+        } finally {
+            receiver.close().sync();
+            for (DailyUdpFragmenter rx : rxSessions) rx.close();
+            for (DailyUdpFragmenter tx : txSessions) tx.close();
+        }
+
+        // 2. First-fragment budget rejection must NOT leave a dangling empty Assembly slot active,
+        //    and allocation failure during compact copy or final reassembly must release slot & budget cleanly.
+        AtomicLong tinyBudget = new AtomicLong();
+        try (DailyUdpFragmenter tx = new DailyUdpFragmenter(token, DailyUdpWire.FEC, false, secret,
+                tinyBudget, 500L, timeoutNanos);
+             DailyUdpFragmenter rx = new DailyUdpFragmenter(token, DailyUdpWire.FEC, true, secret,
+                     tinyBudget, 500L, timeoutNanos)) {
+            byte[] data = new byte[2500];
+            new java.util.Random(55).nextBytes(data);
+            java.util.List<ByteBuf> frags = new java.util.ArrayList<>();
+            tx.fragment(pooled, io.netty.buffer.Unpooled.wrappedBuffer(data), 1200, (f, last) -> frags.add(f));
+            assertNull(rx.accept(frags.get(0), pooled, 10_000L));
+            for (int i = 1; i < frags.size(); i++) frags.get(i).release();
+            assertEquals(1, rx.rxBudgetRejected);
+            assertEquals(0, rx.activeAssemblies(), "rejected first fragment must not occupy an active assembly slot");
+            assertEquals(0, rx.bufferedBytes());
+            assertEquals(0L, tinyBudget.get());
+        }
+
+        // 3. Simulated allocation failure during both fragment copy and final reassembly output.
+        AtomicLong failBudget = new AtomicLong();
+        try (DailyUdpFragmenter tx = new DailyUdpFragmenter(token, DailyUdpWire.FEC, false, secret,
+                failBudget, 1024 * 1024L, timeoutNanos);
+             DailyUdpFragmenter rx = new DailyUdpFragmenter(token, DailyUdpWire.FEC, true, secret,
+                     failBudget, 1024 * 1024L, timeoutNanos)) {
+            byte[] data = new byte[2500];
+            new java.util.Random(77).nextBytes(data);
+            java.util.List<ByteBuf> frags = new java.util.ArrayList<>();
+            tx.fragment(pooled, io.netty.buffer.Unpooled.wrappedBuffer(data), 1200, (f, last) -> frags.add(f));
+            io.netty.buffer.ByteBufAllocator failingAlloc = new io.netty.buffer.AbstractByteBufAllocator(false) {
+                @Override public boolean isDirectBufferPooled() { return false; }
+                @Override protected ByteBuf newHeapBuffer(int initialCapacity, int maxCapacity) {
+                    throw new OutOfMemoryError("simulated heap OOM");
+                }
+                @Override protected ByteBuf newDirectBuffer(int initialCapacity, int maxCapacity) {
+                    throw new OutOfMemoryError("simulated direct OOM");
+                }
+            };
+            // Copy path OOM on 65536B backing buffer -> must roll back budget and keep 0 active assemblies.
+            ByteBuf big = pooled.ioBuffer(65536, 65536);
+            big.writeBytes(frags.get(0), frags.get(0).readerIndex(), frags.get(0).readableBytes());
+            assertThrows(OutOfMemoryError.class, () -> rx.accept(big, failingAlloc, 1_000L));
+            assertEquals(0, big.refCnt());
+            assertEquals(0, rx.activeAssemblies());
+            assertEquals(0, rx.bufferedBytes());
+            assertEquals(0L, failBudget.get());
+
+            // Final reassembly output OOM -> must release all stored parts and reset budget to 0.
+            // Use fresh fragments so authSeq is distinct from the earlier copy-path OOM check.
+            for (ByteBuf f : frags) f.release();
+            java.util.List<ByteBuf> frags2 = new java.util.ArrayList<>();
+            tx.fragment(pooled, io.netty.buffer.Unpooled.wrappedBuffer(data), 1200, (f, last) -> frags2.add(f));
+            for (int i = 0; i < frags2.size() - 1; i++) {
+                assertNull(rx.accept(frags2.get(i), pooled, 2_000L));
+            }
+            assertEquals(1, rx.activeAssemblies());
+            assertTrue(failBudget.get() > 0L);
+            // Last fragment is already compact (allocated exact size by fragment()), so only final assembled alloc fails.
+            ByteBuf lastFrag = frags2.get(frags2.size() - 1);
+            assertThrows(OutOfMemoryError.class, () -> rx.accept(lastFrag, failingAlloc, 2_000L));
+            assertEquals(0, lastFrag.refCnt());
+            assertEquals(0, rx.activeAssemblies());
+            assertEquals(0, rx.bufferedBytes());
+            assertEquals(0L, failBudget.get());
+        }
+    }
+
+    @Test
+    void multiFragmentWriteAggregatesLocalFailuresAndIgnoresParityOrExtraCopyFailures() {
+        UUID token = UUID.randomUUID();
+        byte[] secret = new byte[32];
+        new java.security.SecureRandom().nextBytes(secret);
+        InetSocketAddress peer = new InetSocketAddress("127.0.0.1", 19998);
+        byte[] oversized = new byte[4096];
+        new java.util.Random(314).nextBytes(oversized);
+
+        // 1. Failing fragment index 0, 1, or last (3) must fail the original write promise exactly once.
+        for (int failAt : new int[]{0, 1, 3}) {
+            java.util.concurrent.atomic.AtomicInteger writeSeq = new java.util.concurrent.atomic.AtomicInteger();
+            java.util.concurrent.atomic.AtomicInteger completions = new java.util.concurrent.atomic.AtomicInteger();
+            io.netty.channel.embedded.EmbeddedChannel ch = new io.netty.channel.embedded.EmbeddedChannel(
+                    new io.netty.channel.ChannelOutboundHandlerAdapter() {
+                        @Override public void write(ChannelHandlerContext ctx, Object msg, io.netty.channel.ChannelPromise promise) {
+                            io.netty.util.ReferenceCountUtil.release(msg);
+                            if (writeSeq.getAndIncrement() == failAt) {
+                                promise.tryFailure(new java.io.IOException("simulated-frag-fail-" + failAt));
+                            } else {
+                                promise.trySuccess();
+                            }
+                        }
+                    },
+                    DailyUdpWire.client(token.toString(), peer, peer, 1300, DailyUdpWire.FEC, null, secret, true));
+            try {
+                io.netty.channel.ChannelPromise promise = ch.newPromise();
+                promise.addListener(f -> completions.incrementAndGet());
+                ch.writeAndFlush(new DatagramPacket(io.netty.buffer.Unpooled.wrappedBuffer(oversized), peer), promise);
+                assertTrue(promise.isDone());
+                assertFalse(promise.isSuccess(), "failing fragment " + failAt + " must fail original promise");
+                assertTrue(promise.cause().getMessage().contains("simulated-frag-fail-" + failAt));
+                assertEquals(1, completions.get(), "promise must complete exactly once");
+            } finally {
+                ch.finishAndReleaseAll();
+            }
+        }
+
+        // 2. All original fragments succeed, while FEC parity write fails -> original promise MUST succeed!
+        AtomicLong clock = new AtomicLong(1_000_000L);
+        java.util.concurrent.atomic.AtomicInteger parityFails = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger dataWrites = new java.util.concurrent.atomic.AtomicInteger();
+        io.netty.channel.embedded.EmbeddedChannel fecCh = new io.netty.channel.embedded.EmbeddedChannel(
+                new io.netty.channel.ChannelOutboundHandlerAdapter() {
+                    @Override public void write(ChannelHandlerContext ctx, Object msg, io.netty.channel.ChannelPromise promise) {
+                        DatagramPacket pkt = (DatagramPacket) msg;
+                        ByteBuf b = pkt.content();
+                        int fecType = b.readableBytes() > DailyUdpWire.HEADER_BYTES
+                                ? b.getUnsignedByte(b.readerIndex() + DailyUdpWire.HEADER_BYTES) : -1;
+                        pkt.release();
+                        if (fecType == UdpDailyFec.PARITY) {
+                            parityFails.incrementAndGet();
+                            promise.tryFailure(new java.io.IOException("parity-drop"));
+                        } else {
+                            dataWrites.incrementAndGet();
+                            promise.trySuccess();
+                        }
+                    }
+                },
+                new DailyUdpWire(token.toString(), peer, peer, null, clock::get, DailyUdpWire.FEC, null, secret, 1300, true),
+                new ChannelInboundHandlerAdapter() {
+                    @Override public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+                        // Swallow voidPromise failure notification for non-critical FEC parity packets.
+                    }
+                });
+        try {
+            // Trigger FEC parity generation by feeding a loss report from the remote peer.
+            ByteBuf small = io.netty.buffer.Unpooled.buffer(16).writeZero(16);
+            for (int i = 0; i < 40; i++) {
+                fecCh.writeAndFlush(new DatagramPacket(small.retainedDuplicate(), peer));
+            }
+            small.release();
+            // Inject an authenticated-free daily FEC report: header(20) + REPORT(3) + seq(4) + missing(1).
+            ByteBuf report = io.netty.buffer.Unpooled.buffer(26)
+                    .writeLong(token.getMostSignificantBits()).writeLong(token.getLeastSignificantBits()).writeInt(0)
+                    .writeByte(3).writeInt(35).writeByte(4);
+            fecCh.writeInbound(new DatagramPacket(report, new InetSocketAddress("127.0.0.1", 19997), peer));
+            dataWrites.set(0);
+            parityFails.set(0);
+
+            io.netty.channel.ChannelPromise promise = fecCh.newPromise();
+            fecCh.writeAndFlush(new DatagramPacket(io.netty.buffer.Unpooled.wrappedBuffer(oversized), peer), promise);
+            assertTrue(promise.isDone());
+            assertTrue(promise.isSuccess(), "parity write failure must not fail original datagram promise");
+            assertEquals(4, dataWrites.get());
+            assertTrue(parityFails.get() >= 1, "expected at least one FEC parity write to fail");
+        } finally {
+            fecCh.finishAndReleaseAll();
+        }
+
+        // 3. GAME mode with copies=2: failing extra copies (copy >= 1) must NOT fail original promise,
+        //    whereas failing an original copy (copy == 0) MUST fail the original promise!
+        UUID salt = UUID.randomUUID();
+        DailyUdpWire gameWire = DailyUdpWire.client(token.toString(), peer, peer, 1300, DailyUdpWire.GAME, salt, secret, true);
+        try {
+            java.lang.reflect.Field gf = DailyUdpWire.class.getDeclaredField("game");
+            gf.setAccessible(true);
+            ((UdpGameRedundancy) gf.get(gameWire)).copies = 2;
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
+        java.util.concurrent.atomic.AtomicInteger extraFails = new java.util.concurrent.atomic.AtomicInteger();
+        io.netty.channel.embedded.EmbeddedChannel gameCh = new io.netty.channel.embedded.EmbeddedChannel(
+                new io.netty.channel.ChannelOutboundHandlerAdapter() {
+                    @Override public void write(ChannelHandlerContext ctx, Object msg, io.netty.channel.ChannelPromise promise) {
+                        DatagramPacket pkt = (DatagramPacket) msg;
+                        ByteBuf b = pkt.content();
+                        // Game + MAC: header(20) + macSeq(8) + copyByte(1)
+                        int copyIdx = b.getUnsignedByte(b.readerIndex() + DailyUdpWire.HEADER_BYTES + 8);
+                        pkt.release();
+                        if (copyIdx > 0) {
+                            extraFails.incrementAndGet();
+                            promise.tryFailure(new java.io.IOException("extra-copy-drop"));
+                        } else {
+                            promise.trySuccess();
+                        }
+                    }
+                },
+                gameWire,
+                new ChannelInboundHandlerAdapter() {
+                    @Override public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+                        // Swallow voidPromise failure notification for optional game extra copies.
+                    }
+                });
+        try {
+            io.netty.channel.ChannelPromise promise = gameCh.newPromise();
+            gameCh.writeAndFlush(new DatagramPacket(io.netty.buffer.Unpooled.wrappedBuffer(oversized), peer), promise);
+            assertTrue(promise.isDone());
+            assertTrue(promise.isSuccess(), "game extra copy failure must not fail original datagram promise");
+            assertTrue(extraFails.get() >= 1, "expected extra game copies to be sent and failed");
+        } finally {
+            gameCh.finishAndReleaseAll();
+        }
+
+        // 4. Synchronous failure on fragment 2 inside outbound handler fails original promise cleanly without leak.
+        java.util.concurrent.atomic.AtomicInteger syncCount = new java.util.concurrent.atomic.AtomicInteger();
+        io.netty.channel.embedded.EmbeddedChannel syncFailCh = new io.netty.channel.embedded.EmbeddedChannel(
+                new io.netty.channel.ChannelOutboundHandlerAdapter() {
+                    @Override public void write(ChannelHandlerContext ctx, Object msg, io.netty.channel.ChannelPromise promise) {
+                        io.netty.util.ReferenceCountUtil.release(msg);
+                        if (syncCount.getAndIncrement() == 2) {
+                            throw new IllegalStateException("sync-write-boom");
+                        }
+                        promise.trySuccess();
+                    }
+                },
+                DailyUdpWire.client(token.toString(), peer, peer, 1300, DailyUdpWire.FEC, null, secret, true));
+        try {
+            io.netty.channel.ChannelPromise promise = syncFailCh.newPromise();
+            syncFailCh.writeAndFlush(new DatagramPacket(io.netty.buffer.Unpooled.wrappedBuffer(oversized), peer), promise);
+            assertTrue(promise.isDone());
+            assertFalse(promise.isSuccess());
+            assertTrue(promise.cause().getMessage().contains("sync-write-boom"));
+        } finally {
+            syncFailCh.finishAndReleaseAll();
+        }
+    }
+
     private void verifyHops(InetAddress ip, int flags) throws Exception {
         boolean lz4 = (flags & DailyUdpWire.LZ4) != 0;
         SocksConfig config = new SocksConfig(new LocalAddress(UUID.randomUUID().toString()));

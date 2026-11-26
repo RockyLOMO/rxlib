@@ -1747,6 +1747,303 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
+    public void normalizeAndValidateRssConfig_AcceptsUdp2rawNoKcptunWithAdaptiveUdpClient() {
+        RssClientConf conf = validRssConf();
+        RssClientConf.SocksServer udp2raw = new RssClientConf.SocksServer("main-tun", 1,
+                AuthenticEndpoint.valueOf("u:p@127.0.0.1:9900"));
+        udp2raw.setUdp2raw(true);
+        udp2raw.setAdaptiveUdpClient(new InetSocketAddress("127.0.0.1", 4080));
+        udp2raw.setUdpClient(new InetSocketAddress("127.0.0.1", 4090));
+        conf.socksServers = Arrays.asList(conf.socksServers.get(0), udp2raw);
+        conf.shadowUsers.get(0).setSocksServers(Collections.singletonList("main-tun"));
+
+        assertTrue(RssClient.normalizeAndValidateRssConfig(conf));
+        RssClientConf parsed = com.alibaba.fastjson2.JSON.parseObject(
+                "{\"socksServers\":[{\"id\":\"main-tun\",\"weight\":1,\"endpoint\":\"u:p@127.0.0.1:9900\","
+                        + "\"udp2raw\":true,\"adaptiveUdpClient\":\"127.0.0.1:4080\",\"udpClient\":\"127.0.0.1:4090\"}]}",
+                RssClientConf.class);
+        assertEquals(new InetSocketAddress("127.0.0.1", 4080), parsed.socksServers.get(0).getAdaptiveUdpClient());
+        assertEquals(new InetSocketAddress("127.0.0.1", 4090), parsed.socksServers.get(0).getUdpClient());
+        assertNull(parsed.socksServers.get(0).getTcpClient());
+    }
+
+    @Test
+    public void rssClient6896_noHopDailyOverUdp2rawWithoutKcptun_verifiesAdaptiveUdpAndOrdinaryUdpPaths() throws Exception {
+        int[] ports = freeTcpUdpPorts(9);
+        int outPort = ports[0];
+        int udp2rawPort = ports[1];
+        int rpcPort = ports[2];
+        int ssPort6896 = ports[3];
+        int ssPort6898 = ports[4];
+        int dnsPort = ports[5];
+        int nsRegPort = ports[6];
+        int nsSyncPort = ports[7];
+        int inPort = ports[8];
+
+        SocksUser socksUsr = new SocksUser("youfanX");
+        socksUsr.setPassword("test-pass");
+        org.rx.net.socks.Authenticator auth = (u, p) -> "youfanX".equals(u) && "test-pass".equals(p) ? socksUsr : SocksUser.ANONYMOUS;
+
+        SocksConfig outConf = new SocksConfig(outPort);
+        RssServer.configureOutboundConfig(outConf, false);
+        outConf.setWhiteListEnabled(false);
+        outConf.setAdaptiveTcp(true);
+        outConf.setUdpHop(true);
+        outConf.setRequiredTcpCipherPorts(new int[0]);
+        outConf.setRequiredUdpCipherPorts(new int[0]);
+        int hopBase = freeUdpPortRange(6);
+        outConf.setDailyPortRange(hopBase + "-" + (hopBase + 5));
+
+        SocksConfig outTunConf = org.rx.core.Sys.deepClone(outConf);
+        RssServer.configureUdp2rawOutboundConfig(outTunConf, false, udp2rawPort);
+        outTunConf.setWhiteListEnabled(false);
+
+        SocksProxyServer outSvr = new SocksProxyServer(outConf, auth);
+        SocksProxyServer outUdp2rawSvr = new SocksProxyServer(outTunConf, auth);
+        org.rx.net.rpc.RpcServerConfig rpcServerCfg = new org.rx.net.rpc.RpcServerConfig(
+                new org.rx.net.transport.TcpServerConfig(rpcPort));
+        rpcServerCfg.getTcpConfig().setTransportFlags(
+                org.rx.net.TransportFlags.GFW.flags(org.rx.net.TransportFlags.CIPHER_BOTH).flags());
+        rpcServerCfg.setEventComputeVersion(org.rx.net.rpc.RpcServerConfig.EVENT_LATEST_COMPUTE);
+        rpcServerCfg.getEventBroadcastVersions().add(org.rx.net.socks.SocksRpcContract.RPC_EVENT_VERSION);
+        RssRpcApp rpcApp = new RssRpcApp(outSvr, outUdp2rawSvr, null);
+        AutoCloseable rpcServer = org.rx.net.rpc.Remoting.register(rpcApp, rpcServerCfg);
+
+        ServerSocket tcpEcho = new ServerSocket(0, 8, InetAddress.getByName("127.0.0.1"));
+        java.net.DatagramSocket udpEcho = new java.net.DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+        java.net.DatagramSocket rawAdaptiveCli = new java.net.DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+        java.net.DatagramSocket rawAdaptiveSvr = new java.net.DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+        java.net.DatagramSocket rawUdpCli = new java.net.DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+        java.net.DatagramSocket rawUdpSvr = new java.net.DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+        java.util.concurrent.atomic.AtomicBoolean running = new java.util.concurrent.atomic.AtomicBoolean(true);
+        java.util.concurrent.atomic.AtomicInteger adaptiveRawC2S = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger adaptiveRawS2C = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger ordinaryRawC2S = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger ordinaryRawS2C = new java.util.concurrent.atomic.AtomicInteger();
+
+        // Start TCP/UDP echo servers + two simulated udp2raw tunnels (4080 -> adaptivePort, 4090 -> 9910).
+        startLoopThread(running, () -> {
+            java.net.Socket s = tcpEcho.accept();
+            Thread w = new Thread(() -> {
+                try (java.net.Socket sock = s) {
+                    byte[] b = new byte[1024];
+                    int n;
+                    while ((n = sock.getInputStream().read(b)) != -1) {
+                        sock.getOutputStream().write(b, 0, n);
+                        sock.getOutputStream().flush();
+                    }
+                } catch (Exception ignored) {
+                }
+            });
+            w.setDaemon(true);
+            w.start();
+        });
+        startLoopThread(running, () -> {
+            byte[] b = new byte[2048];
+            java.net.DatagramPacket p = new java.net.DatagramPacket(b, b.length);
+            udpEcho.receive(p);
+            udpEcho.send(new java.net.DatagramPacket(p.getData(), p.getLength(), p.getSocketAddress()));
+        });
+        int adaptiveServerUdpPort = getAdaptiveUdpPortNumber(outSvr);
+        assertTrue(adaptiveServerUdpPort > 0);
+        startUdpForwarder(running, rawAdaptiveCli, rawAdaptiveSvr,
+                new InetSocketAddress("127.0.0.1", adaptiveServerUdpPort), adaptiveRawC2S, adaptiveRawS2C);
+        startUdpForwarder(running, rawUdpCli, rawUdpSvr,
+                new InetSocketAddress("127.0.0.1", outUdp2rawSvr.getUdp2rawEntryAddress().getPort()),
+                ordinaryRawC2S, ordinaryRawS2C);
+
+        RssClientConf oldGlobalConf = RssClient.rssConf;
+        RssRuntime runtime = null;
+        try {
+            RssClientConf conf = new RssClientConf();
+            conf.socksPwd = "inner-socks-pwd";
+            conf.rpcPort = rpcPort;
+            conf.shadowDnsPort = dnsPort;
+            conf.publicIpEndpoints = new String[]{"http://127.0.0.1:1/ip"};
+            conf.rpcAutoWhiteListSeconds = 0;
+            conf.upstreamHealthCheckSeconds = 60;
+            conf.udpLeasePoolEnabled = false;
+            conf.tcpCipherPorts = new int[0];
+            conf.udpCipherPorts = new int[0];
+            conf.defaultRoute = new UserRule();
+            conf.defaultRoute.setEnabled(Boolean.TRUE);
+            conf.defaultRoute.setRules(Collections.singletonList("default proxy"));
+            conf.nameserver = new NameserverConfig();
+            conf.nameserver.setRegisterPort(nsRegPort);
+            conf.nameserver.setSyncPort(nsSyncPort);
+
+            AuthenticEndpoint mainEp = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", outPort), "youfanX", "test-pass");
+            RssClientConf.SocksServer mainServer = new RssClientConf.SocksServer("main", 9, mainEp);
+            RssClientConf.SocksServer mainTun = new RssClientConf.SocksServer("main-tun", 1, mainEp);
+            mainTun.setUdp2raw(true);
+            mainTun.setAdaptiveUdpClient((InetSocketAddress) rawAdaptiveCli.getLocalSocketAddress());
+            mainTun.setUdpClient((InetSocketAddress) rawUdpCli.getLocalSocketAddress());
+            conf.socksServers = Arrays.asList(mainServer, mainTun);
+
+            ShadowUser u6896 = new ShadowUser();
+            u6896.setUsername("rGrey");
+            u6896.setSocksUser("rGrey");
+            u6896.setSsPort(ssPort6896);
+            u6896.setSsPwd("pwd6896");
+            u6896.setSsCipher(CipherKind.CHACHA20_IETF_POLY1305.getCipherName());
+            u6896.transport = new RssTransport();
+            u6896.transport.profile = "daily";
+            u6896.transport.udpHop = Boolean.FALSE;
+            u6896.setSocksServers(Collections.singletonList("main-tun"));
+
+            ShadowUser u6898 = new ShadowUser();
+            u6898.setUsername("zangshuyuan");
+            u6898.setSocksUser("zangshuyuan");
+            u6898.setSsPort(ssPort6898);
+            u6898.setSsPwd("pwd6898");
+            u6898.transport = new RssTransport();
+            u6898.transport.profile = "daily";
+            u6898.setSocksServers(Collections.singletonList("main"));
+
+            conf.shadowUsers = Arrays.asList(u6896, u6898);
+            assertTrue(RssClient.normalizeAndValidateRssConfig(conf));
+            runtime = new RssRuntime(inPort, conf);
+
+            // 1. 6896 TCP + Adaptive UDP (no kcptun!): TCP connects directly to outSvr,
+            //    while Adaptive UDP activates through rawAdaptiveCli (udp2raw 4080 -> 20000).
+            org.rx.net.socks.encryption.ICrypto crypto6896 = org.rx.net.socks.encryption.ICrypto.get(
+                    CipherKind.CHACHA20_IETF_POLY1305.getCipherName(), "pwd6896");
+            try (java.net.Socket s = new java.net.Socket("127.0.0.1", ssPort6896)) {
+                s.setSoTimeout(5000);
+                ByteBuf init = io.netty.buffer.Unpooled.buffer();
+                org.rx.net.socks.UdpManager.encode(init, "127.0.0.1", tcpEcho.getLocalPort());
+                init.writeBytes("probe-6896".getBytes(StandardCharsets.UTF_8));
+                s.getOutputStream().write(drainBuf(crypto6896.encrypt(init)));
+                s.getOutputStream().flush();
+                assertEquals("probe-6896", readDecryptedString(s, crypto6896, 10));
+
+                long deadline = System.currentTimeMillis() + 4000L;
+                while (System.currentTimeMillis() < deadline && (adaptiveRawC2S.get() == 0 || adaptiveRawS2C.get() == 0)) {
+                    Thread.sleep(30);
+                }
+                assertTrue(adaptiveRawC2S.get() > 0 && adaptiveRawS2C.get() > 0,
+                        "6896 Adaptive UDP PING/PONG must traverse udp2raw tunnel c2s="
+                                + adaptiveRawC2S.get() + " s2c=" + adaptiveRawS2C.get());
+
+                int c2sBeforeData = adaptiveRawC2S.get();
+                ByteBuf payload = io.netty.buffer.Unpooled.copiedBuffer("adaptive-over-udp2raw-6896", StandardCharsets.UTF_8);
+                s.getOutputStream().write(drainBuf(crypto6896.encrypt(payload)));
+                s.getOutputStream().flush();
+                assertEquals("adaptive-over-udp2raw-6896", readDecryptedString(s, crypto6896, 26));
+                assertTrue(adaptiveRawC2S.get() > c2sBeforeData,
+                        "6896 TCP data must flow over Adaptive UDP through udp2raw");
+            } finally {
+                if (crypto6896 instanceof AutoCloseable) ((AutoCloseable) crypto6896).close();
+            }
+
+            // 2. 6896 Ordinary UDP: inUdp2rawServer must use Udp2rawUpstream -> rawUdpCli (4090 -> 9910),
+            //    NOT bypass udp2raw to raw SocksUdpUpstream!
+            assertSsUdpEcho(ssPort6896, CipherKind.CHACHA20_IETF_POLY1305.getCipherName(), "pwd6896",
+                    udpEcho.getLocalPort(), true);
+            assertTrue(ordinaryRawC2S.get() > 0 && ordinaryRawS2C.get() > 0,
+                    "6896 ordinary UDP must traverse udp2raw tunnel c2s="
+                            + ordinaryRawC2S.get() + " s2c=" + ordinaryRawS2C.get());
+
+            // 3. 6898 (daily hopping on main) continues working cleanly without touching 6896's udp2raw tunnels.
+            int adaptBefore6898 = adaptiveRawC2S.get();
+            int ordBefore6898 = ordinaryRawC2S.get();
+            assertSsTcpEcho(ssPort6898, CipherKind.AES_256_GCM.getCipherName(), "pwd6898", tcpEcho.getLocalPort(), true);
+            assertSsUdpEcho(ssPort6898, CipherKind.AES_256_GCM.getCipherName(), "pwd6898", udpEcho.getLocalPort(), true);
+            assertEquals(adaptBefore6898, adaptiveRawC2S.get(), "6898 must not use 6896 adaptive udp2raw tunnel");
+            assertEquals(ordBefore6898, ordinaryRawC2S.get(), "6898 must not use 6896 ordinary udp2raw tunnel");
+        } finally {
+            running.set(false);
+            if (runtime != null) runtime.close();
+            RssClient.rssConf = oldGlobalConf;
+            tcpEcho.close();
+            udpEcho.close();
+            rawAdaptiveCli.close();
+            rawAdaptiveSvr.close();
+            rawUdpCli.close();
+            rawUdpSvr.close();
+            rpcServer.close();
+            outUdp2rawSvr.close();
+            outSvr.close();
+        }
+    }
+
+    private static int freeUdpPortRange(int count) throws Exception {
+        for (int base = 24000; base < 60000; base += count) {
+            java.util.List<java.net.DatagramSocket> opened = new java.util.ArrayList<>(count);
+            try {
+                for (int i = 0; i < count; i++) {
+                    opened.add(new java.net.DatagramSocket(base + i));
+                }
+                return base;
+            } catch (java.net.BindException ignored) {
+            } finally {
+                for (java.net.DatagramSocket s : opened) {
+                    s.close();
+                }
+            }
+        }
+        throw new IllegalStateException("No free UDP port range of size " + count);
+    }
+
+    private static int getAdaptiveUdpPortNumber(SocksProxyServer server) throws Exception {
+        java.lang.reflect.Field f = SocksProxyServer.class.getDeclaredField("adaptivePort");
+        f.setAccessible(true);
+        org.rx.net.rss.tcp.AdaptiveUdpPort port = (org.rx.net.rss.tcp.AdaptiveUdpPort) f.get(server);
+        return port == null ? 0 : port.port();
+    }
+
+    private static void startLoopThread(java.util.concurrent.atomic.AtomicBoolean running, org.rx.util.function.Action body) {
+        Thread t = new Thread(() -> {
+            while (running.get()) {
+                try {
+                    body.invoke();
+                } catch (Throwable ignored) {
+                    if (!running.get()) break;
+                }
+            }
+        });
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private static void startUdpForwarder(java.util.concurrent.atomic.AtomicBoolean running,
+                                          java.net.DatagramSocket cliSide,
+                                          java.net.DatagramSocket svrSide,
+                                          InetSocketAddress serverTarget,
+                                          java.util.concurrent.atomic.AtomicInteger c2sCount,
+                                          java.util.concurrent.atomic.AtomicInteger s2cCount) throws Exception {
+        cliSide.setSoTimeout(200);
+        svrSide.setSoTimeout(200);
+        java.util.concurrent.atomic.AtomicReference<InetSocketAddress> lastCli = new java.util.concurrent.atomic.AtomicReference<>();
+        startLoopThread(running, () -> {
+            byte[] buf = new byte[4096];
+            java.net.DatagramPacket p = new java.net.DatagramPacket(buf, buf.length);
+            try {
+                cliSide.receive(p);
+            } catch (java.net.SocketTimeoutException e) {
+                return;
+            }
+            lastCli.set((InetSocketAddress) p.getSocketAddress());
+            c2sCount.incrementAndGet();
+            svrSide.send(new java.net.DatagramPacket(p.getData(), p.getLength(), serverTarget));
+        });
+        startLoopThread(running, () -> {
+            byte[] buf = new byte[4096];
+            java.net.DatagramPacket p = new java.net.DatagramPacket(buf, buf.length);
+            try {
+                svrSide.receive(p);
+            } catch (java.net.SocketTimeoutException e) {
+                return;
+            }
+            InetSocketAddress cli = lastCli.get();
+            if (cli != null) {
+                s2cCount.incrementAndGet();
+                cliSide.send(new java.net.DatagramPacket(p.getData(), p.getLength(), cli));
+            }
+        });
+    }
+
+    @Test
     public void normalizeAndValidateRssConfig_AcceptsMixedUdp2rawAndNormalSocksServers() {
         RssClientConf conf = validRssConf();
         RssClientConf.SocksServer udp2raw = new RssClientConf.SocksServer("tun-a", 1,
@@ -2643,7 +2940,59 @@ public class RssTest extends AbstractTester {
         frontSvr.onUdpRoute.replace((s, e) -> e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), inConf, new UpstreamSupport(inSrvEp, null))));
     }
 
+    private static int[] freeTcpUdpPorts(int count) throws Exception {
+        java.util.List<ServerSocket> tcpHeld = new java.util.ArrayList<>(count);
+        java.util.List<java.net.DatagramSocket> udpHeld = new java.util.ArrayList<>(count);
+        int[] result = new int[count];
+        try {
+            int found = 0;
+            for (int attempt = 0; attempt < count * 32 && found < count; attempt++) {
+                ServerSocket tcp = new ServerSocket(0);
+                int port = tcp.getLocalPort();
+                java.net.DatagramSocket udp = null;
+                try {
+                    udp = new java.net.DatagramSocket(null);
+                    udp.setReuseAddress(false);
+                    udp.bind(new InetSocketAddress(port));
+                } catch (java.net.SocketException busy) {
+                    tcp.close();
+                    if (udp != null) udp.close();
+                    continue;
+                }
+                tcpHeld.add(tcp);
+                udpHeld.add(udp);
+                result[found++] = port;
+            }
+            if (found < count) {
+                throw new IllegalStateException("Unable to allocate " + count + " free TCP+UDP ports");
+            }
+            return result;
+        } finally {
+            for (java.net.DatagramSocket u : udpHeld) {
+                u.close();
+            }
+            for (ServerSocket t : tcpHeld) {
+                t.close();
+            }
+        }
+    }
+
     private static int freePort() throws Exception {
+        for (int i = 0; i < 32; i++) {
+            try (ServerSocket socket = new ServerSocket(0)) {
+                int port = socket.getLocalPort();
+                java.net.DatagramSocket udp = new java.net.DatagramSocket(null);
+                try {
+                    udp.setReuseAddress(false);
+                    udp.bind(new InetSocketAddress(port));
+                    return port;
+                } catch (java.net.SocketException busy) {
+                    // Retry when Windows already has a UDP socket on this port.
+                } finally {
+                    udp.close();
+                }
+            }
+        }
         try (ServerSocket socket = new ServerSocket(0)) {
             return socket.getLocalPort();
         }

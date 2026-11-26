@@ -85,12 +85,47 @@ public final class AdaptiveUdpPort implements AutoCloseable {
     }
 
     public static AdaptiveUdpPort client(long id, byte[] key, Channel tcp, int primary, int alias, Consumer<ByteBuf> recv) {
-        InetAddress ip = remoteIp(tcp);
-        InetSocketAddress local = (InetSocketAddress) tcp.localAddress();
-        AdaptiveUdpPort port = new AdaptiveUdpPort(false, new InetSocketAddress(local.getAddress(), 0), 0, false, primary != alias);
+        return client(id, key, tcp, primary, alias, null, recv);
+    }
+
+    public static AdaptiveUdpPort client(long id, byte[] key, Channel tcp, int primary, int alias,
+                                         InetSocketAddress udpTarget, Consumer<ByteBuf> recv) {
+        InetSocketAddress local = tcp.localAddress() instanceof InetSocketAddress
+                ? (InetSocketAddress) tcp.localAddress() : null;
+        boolean hopping = primary != alias;
+        InetAddress targetIp;
+        InetSocketAddress primaryAddr;
+        InetSocketAddress aliasAddr;
+        InetSocketAddress bindAddr;
+        if (!hopping && udpTarget != null) {
+            InetSocketAddress resolved = udpTarget.isUnresolved()
+                    ? new InetSocketAddress(udpTarget.getHostString(), udpTarget.getPort())
+                    : udpTarget;
+            if (resolved.isUnresolved() || resolved.getAddress() == null || resolved.getPort() <= 0) {
+                throw new IllegalArgumentException("Invalid adaptive UDP target: " + udpTarget);
+            }
+            targetIp = resolved.getAddress();
+            primaryAddr = aliasAddr = resolved;
+            if (targetIp.isLoopbackAddress()) {
+                bindAddr = new InetSocketAddress(targetIp, 0);
+            } else if (local != null && local.getAddress() != null
+                    && local.getAddress().getClass() == targetIp.getClass()) {
+                bindAddr = new InetSocketAddress(local.getAddress(), 0);
+            } else {
+                bindAddr = new InetSocketAddress(0);
+            }
+        } else {
+            targetIp = remoteIp(tcp);
+            primaryAddr = new InetSocketAddress(targetIp, primary);
+            aliasAddr = new InetSocketAddress(targetIp, alias);
+            bindAddr = local != null && local.getAddress() != null
+                    ? new InetSocketAddress(local.getAddress(), 0)
+                    : new InetSocketAddress(0);
+        }
+        AdaptiveUdpPort port = new AdaptiveUdpPort(false, bindAddr, 0, false, hopping);
         try {
-            Peer peer = new Peer(key, tcp, recv, ip, new InetSocketAddress(ip, primary));
-            peer.alias = new InetSocketAddress(ip, alias);
+            Peer peer = new Peer(key, tcp, recv, targetIp, primaryAddr, false);
+            peer.alias = aliasAddr;
             port.add(id, peer);
             ChannelFutureListener closeOnFailure = f -> { if (!f.isSuccess()) port.close(); };
             port.bind.addListener(closeOnFailure);
@@ -124,8 +159,19 @@ public final class AdaptiveUdpPort implements AutoCloseable {
         return aliasBind != null || virtualAlias != 0;
     }
 
+    public InetSocketAddress peerAddress(long id) {
+        Peer peer = peers.get(id);
+        return peer == null ? null : peer.address;
+    }
+
     public void register(long id, byte[] key, Channel tcp, Consumer<ByteBuf> recv) {
-        Peer peer = new Peer(key, tcp, recv, remoteIp(tcp), null);
+        register(id, key, tcp, true, recv);
+    }
+
+    public void register(long id, byte[] key, Channel tcp, boolean hopping, Consumer<ByteBuf> recv) {
+        // No-hop streams may enter through a local single-port UDP tunnel (e.g. udp2raw -> 127.0.0.1:primary)
+        // while TCP remains direct; still gated by stream id, replay window and per-stream HMAC-SHA256.
+        Peer peer = new Peer(key, tcp, recv, remoteIp(tcp), null, !hopping);
         add(id, peer);
         tcp.closeFuture().addListener(f -> {
             Peer current = peers.get(id);
@@ -206,7 +252,11 @@ public final class AdaptiveUdpPort implements AutoCloseable {
         if (bytes < PREFIX + TAG || bytes > MAX_PACKET) return;
         long id = wire.getLong(i), seq = wire.getLong(i + 8);
         Peer peer = peers.get(id);
-        if (peer == null || !peer.ip.equals(packet.sender().getAddress())
+        if (peer == null) return;
+        InetAddress senderIp = packet.sender().getAddress();
+        boolean senderAllowed = peer.ip.equals(senderIp)
+                || (server && peer.allowLoopback && senderIp.isLoopbackAddress());
+        if (!senderAllowed
                 || !server && !packet.sender().equals(peer.address) && !packet.sender().equals(peer.alias)
                 || seq <= 0 || peer.replay.isDuplicate(seq)) return;
 
@@ -287,6 +337,7 @@ public final class AdaptiveUdpPort implements AutoCloseable {
         final Channel tcp;
         final Consumer<ByteBuf> recv;
         final Mac mac;
+        final boolean allowLoopback;
         final byte[] digest = new byte[32];
         volatile InetSocketAddress address;
         InetSocketAddress alias;
@@ -300,12 +351,14 @@ public final class AdaptiveUdpPort implements AutoCloseable {
             return (int) ((now - started) / TimeUnit.SECONDS.toNanos(30)) & 1;
         }
 
-        Peer(byte[] key, Channel tcp, Consumer<ByteBuf> recv, InetAddress ip, InetSocketAddress address) {
+        Peer(byte[] key, Channel tcp, Consumer<ByteBuf> recv, InetAddress ip, InetSocketAddress address,
+             boolean allowLoopback) {
             if (key.length < 16) throw new IllegalArgumentException("short UDP session key");
             this.ip = ip;
             this.tcp = tcp;
             this.recv = recv;
             this.address = address;
+            this.allowLoopback = allowLoopback;
             try {
                 mac = Mac.getInstance("HmacSHA256");
                 mac.init(new SecretKeySpec(key, "HmacSHA256"));

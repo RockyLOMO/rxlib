@@ -9,6 +9,7 @@ import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
 
 import java.io.Serializable;
+import java.net.InetSocketAddress;
 
 @Getter
 @EqualsAndHashCode
@@ -17,13 +18,20 @@ public final class TcpWarmPoolKey implements Serializable {
     private static final long serialVersionUID = 5233525606849670764L;
 
     public static TcpWarmPoolKey from(AuthenticEndpoint endpoint, SocketConfig config, String reactorName) {
+        return from(endpoint, config, reactorName, null);
+    }
+
+    public static TcpWarmPoolKey from(AuthenticEndpoint endpoint, SocketConfig config, String reactorName,
+                                      InetSocketAddress adaptiveUdpClient) {
         String addr = Sockets.toString(endpoint.getEndpoint());
         long cipherKeyHash = config.getCipherKey() == null ? 0L : CodecUtil.hash64(config.getCipherKey());
+        boolean udpHop = !(config instanceof SocksConfig) || ((SocksConfig) config).isUdpHop();
+        String adaptiveUdpText = !udpHop && adaptiveUdpClient != null ? Sockets.toString(adaptiveUdpClient) : null;
         return new TcpWarmPoolKey(endpoint.getParameters().get(SocksConnectionTagRegistry.PARAM_NAME), addr, endpoint.getUsername(), endpoint.getPassword(),
                 reactorName, config.getConnectTimeoutMillis(), config.getTransportFlags().getValue(), config.getCipher(), cipherKeyHash,
                 config instanceof SocksConfig && ((SocksConfig) config).isAdaptiveTcp(),
                 config instanceof SocksConfig ? ((SocksConfig) config).getAdaptiveProfile() : 0, config.getTcpCompressionLevel(),
-                !(config instanceof SocksConfig) || ((SocksConfig) config).isUdpHop());
+                udpHop, adaptiveUdpText);
     }
 
     private final String trafficUser;
@@ -39,19 +47,28 @@ public final class TcpWarmPoolKey implements Serializable {
     private final int adaptiveProfile;
     private final int tcpCompressionLevel;
     private final boolean udpHop;
+    private final String adaptiveUdpClientText;
 
     public TcpWarmPoolKey(String trafficUser, String endpointText, String username, String password,
                           String reactorName, int connectTimeoutMillis, int transportFlagsBits, short cipher,
                           long cipherKeyHash, boolean adaptiveTcp) {
         this(trafficUser, endpointText, username, password, reactorName, connectTimeoutMillis, transportFlagsBits,
-                cipher, cipherKeyHash, adaptiveTcp, 0, -1, true);
+                cipher, cipherKeyHash, adaptiveTcp, 0, -1, true, null);
     }
 
     public TcpWarmPoolKey(String trafficUser, String endpointText, String username, String password,
                           String reactorName, int connectTimeoutMillis, int transportFlagsBits, short cipher,
                           long cipherKeyHash, boolean adaptiveTcp, int adaptiveProfile, int tcpCompressionLevel) {
         this(trafficUser, endpointText, username, password, reactorName, connectTimeoutMillis, transportFlagsBits,
-                cipher, cipherKeyHash, adaptiveTcp, adaptiveProfile, tcpCompressionLevel, true);
+                cipher, cipherKeyHash, adaptiveTcp, adaptiveProfile, tcpCompressionLevel, true, null);
+    }
+
+    public TcpWarmPoolKey(String trafficUser, String endpointText, String username, String password,
+                          String reactorName, int connectTimeoutMillis, int transportFlagsBits, short cipher,
+                          long cipherKeyHash, boolean adaptiveTcp, int adaptiveProfile, int tcpCompressionLevel,
+                          boolean udpHop) {
+        this(trafficUser, endpointText, username, password, reactorName, connectTimeoutMillis, transportFlagsBits,
+                cipher, cipherKeyHash, adaptiveTcp, adaptiveProfile, tcpCompressionLevel, udpHop, null);
     }
 
     public boolean isSameEndpoint(AuthenticEndpoint endpoint) {

@@ -128,6 +128,28 @@ class Socks5SessionPoolTest {
     }
 
     @Test
+    void tcpWarmPoolKey_isolatesAdaptiveUdpClientOnlyWhenNoHop() {
+        SocksConfig config = new SocksConfig(1080);
+        config.setAdaptiveTcp(true);
+        config.setUdpHop(false);
+        AuthenticEndpoint ep = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 18082), "u", "p");
+        InetSocketAddress rawA = new InetSocketAddress("127.0.0.1", 4080);
+        InetSocketAddress rawB = new InetSocketAddress("127.0.0.1", 4081);
+
+        TcpWarmPoolKey direct = TcpWarmPoolKey.from(ep, config, "reactor-a", null);
+        TcpWarmPoolKey viaA = TcpWarmPoolKey.from(ep, config, "reactor-a", rawA);
+        TcpWarmPoolKey viaB = TcpWarmPoolKey.from(ep, config, "reactor-a", rawB);
+        assertNotEquals(direct, viaA);
+        assertNotEquals(viaA, viaB);
+        assertEquals(viaA, TcpWarmPoolKey.from(ep, config, "reactor-a", new InetSocketAddress("127.0.0.1", 4080)));
+
+        // When udpHop=true, adaptiveUdpClient is unused so keys match.
+        config.setUdpHop(true);
+        assertEquals(TcpWarmPoolKey.from(ep, config, "reactor-a", null),
+                TcpWarmPoolKey.from(ep, config, "reactor-a", rawA));
+    }
+
+    @Test
     void udpRelayIdleHint_appliesSafetyMargin() {
         HashMap<String, String> parameters = new HashMap<>();
         parameters.put("udpRelayIdleSeconds", "45");

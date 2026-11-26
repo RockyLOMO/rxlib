@@ -18,6 +18,7 @@ public class UpstreamSupport {
     private SocksRpcContract facade;
     private AuthenticEndpoint tcpClient;
     private InetSocketAddress udpClient;
+    private InetSocketAddress adaptiveUdpClient;
     private boolean udp2raw;
     private int configuredWeight;
     private volatile boolean healthy = true;
