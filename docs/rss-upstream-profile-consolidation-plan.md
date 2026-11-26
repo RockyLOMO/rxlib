@@ -1,12 +1,14 @@
 # RSS 上游与传输 Profile 收口方案
 
-- 日期：2026-11-26（第四版：统一 UDP MTU 预算、加密开销前置计算及最终出口校验）
+- 日期：2026-11-26（第五版：独立最终出口包装层、TCP/UDP 承载边界及 MTU 收口）
 - 审查基线：[14a05824](https://github.com/RockyLOMO/rxlib/commit/14a05824431f5b6118aec5a24330aca1d6f29c1e)
 - 状态：待实施的独立计划；本文不是已完成的代码变更。
 - 优先级：正确交付、认证安全和兼容性为硬约束；真实流量低、CPU 低、内存适当放宽且有界。game 在合理流量预算内优先低延迟。
 - 本方案作为后续 RSS 上游/profile 设计的统一依据，覆盖旧方案中与本文冲突的上游分类、特殊路由及默认增强策略；历史 Review 和测试结果作为历史记录保留。
 
 ## 1. 收口结论
+
+实际压缩、业务加密、传输增强、最终出口格式包装分属不同层。zlib 3 是实际压缩，zlib 0 是独立的可选真实 TCP 出口格式包装，不参与 FEC 输入、不进入 UDP 数据面；详见 §13（覆盖以前的业务 codec 内包装顺序）。
 
 **增强层与上游承载层彻底解耦。**
 
@@ -28,8 +30,10 @@ RSS Client 只公开四种 profile 和三类上游。profile 决定是否及如�
 | UDP FEC | 关闭 | 开启自适应（健康时可降为 0 校验） | 开启自适应（健康时可降为 0 校验） | 关闭 |
 | UDP 多倍发包 | 关闭 | 关闭 | 关闭 | 自适应 1–3 倍，原包优先、首份有效副本立即交付 |
 | TCP 实际压缩 | 保留原默认/显式配置及安全旁路 | zlib 3，按端口及安全策略 | 同 daily | 同 daily |
-| TCP 必须加密端口 | 可选实际压缩 → AES-128-GCM PSK → zlib 0 | 同 plain，随后 adaptive FEC | 同 daily | 同 daily |
-| TCP/UDP codec 旁路端口 | 不重复压缩、不重复业务加密 | 同 plain，保留 FEC | 同 daily | TCP FEC、UDP 多发保留 |
+| TCP 必须加密端口 | 可选实际压缩 → AES-128-GCM PSK | 同 plain，随后 adaptive FEC | 同 daily | 同 daily |
+| 真实 TCP 出口包装 | 独立 EgressCodec 策略（ZLIB_STORED / NONE） | 同 plain，置于 adaptive 分流之后 | 同 daily | 同 daily |
+| UDP 出口额外格式包装 | NONE | NONE（含 TCP adaptive UDP） | NONE | NONE |
+| TCP/UDP 业务 codec 旁路端口 | 不重复压缩、不重复业务加密；出口包装另行决定 | 同 plain，保留 FEC | 同 daily | TCP FEC、UDP 多发保留 |
 | TCP adaptive FEC 内再次压缩 | 不适用（默认无快路径） | 禁止 | 禁止 | 禁止 |
 | 普通业务 UDP 压缩 | 关闭 | 默认启用按收益 LZ4，保留安全/已加密端口旁路 | 同 daily | 同 daily，不人为延迟 |
 | UDP 必须加密端口 | AES-128-GCM，无传输增强 | LZ4 按需 → 分片/FEC → AES-128-GCM | 同 daily | LZ4 按需 → 分片/多发 → AES-128-GCM |
@@ -88,8 +92,8 @@ flowchart LR
 发送方向仅做一次 RSS 编码：
 
 - 普通增强 UDP：端口 codec 策略及实际承载已解析、有效 MTU 预算已确定 → 业务数据报按收益 LZ4 压缩（仅一次）→ 按预留全部封装开销后的预算判断/必要分片 → daily/weak FEC 或 game 多发 → RSS 数据面认证/按策略加密 → 最终长度校验 → 所选 UDP 承载。详见 §12。
-- TCP：业务字节流 → **按端口策略完成实际压缩（如适用）、AES-128-GCM、zlib 0 外包装或完整 codec 旁路** → AdaptiveStream 对已编码字节流分段，UDP 快路径做自适应 FEC 或走同一可靠 TCP 主通道修复；此后不再压缩，也不重复进行业务流加密。
-- TCP 接收：验证 adaptive UDP 外层认证 → 去重/FEC 恢复/可靠 TCP 补齐 → 按序还原原 TCP 编码字节流 → 按相反顺序移除 zlib 0 外包装、AES 解密、内部实际压缩解码（仅已协商时）。普通 UDP 接收：承载还原 frame → 数据面认证 → 去重/FEC 恢复 → 完整重组 → 一次 LZ4 解压（未压缩时透传）。两类解码路径保持独立。
+- TCP：业务字节流 → **按端口策略完成实际压缩（如适用）、AES-128-GCM 或业务 codec 旁路** → AdaptiveStream 对已编码字节流分段并分流（plain 不进入 adaptive）。UDP 快路径做 FEC/认证后直接交给 UDP 承载；真实 TCP 主通道及修复帧按独立 EgressCodec 进行最终连续流包装（启用时 zlib 0）。此后不再做实际压缩或重复业务加密。
+- TCP 接收：真实 TCP 先解出口包装，再处理 adaptive 长度帧；UDP 快路径先验证自身外层认证。两路径去重/FEC 恢复/可靠 TCP 补齐后，按序还原同一原始编码字节流，再交给 AES 解密和实际压缩解码（按协商）。plain 真实 TCP 解包装后直接进入业务 codec。普通 UDP 接收：承载还原 frame → 数据面认证 → 去重/FEC 恢复 → 完整重组 → 一次 LZ4 解压（未压缩时透传）。两类解码路径保持独立。
 - 外部承载可有自身加密/可靠性开销，但 RSS 不额外默认启用第二层 XOR、多发、压缩或跳跃。TCP adaptive UDP 的独立 frame 认证、序号和防重放必须保留；不要把禁止重复业务加密误解为取消外层认证。不要把标准 SOCKS5 UDP 数据报直接送进只识别 RSS adaptive frame 的端口，反之亦然。
 
 ## 4. Hysteria2、udp2raw 与端口跳跃的组合
@@ -224,7 +228,7 @@ shadowUsers:
 - [ ] 仅在 RSS 配置层引入 type enum（RSS / SOCKS5 / UDPCLIENT）和不可变解析结果，逻辑包含 peer identity、TCP endpoint、UDP data/adaptive endpoint、RPC/control endpoint、支持动态目标/跳跃/MTU 的能力。
 - [ ] 先扫描主源码、资源、构建、测试、活跃部署脚本与配置，去掉已移除的单协议外层依赖、专用分支和引用；不保留无用兼容类型。不删除无关通用 UDP/KCP 等公共库 API，仅因名称类似不能误删；先确认调用关系。历史评审可归档并标记过时。
 - [ ] 移除 RSS 上游类型对 FEC、game 副本、压缩及跳跃策略的隐式覆盖。保留已验收的安全和资源边界。
-- [ ] 按 §11 统一 RssDnsInterceptor / RssPortPolicy；先证明 53 全入口拦截及 DNS 策略正确，再修改默认端口。TCP AES PSK + zlib 0 线格式变更必须双端兼容验收，不能仅调整 compressionLevel。
+- [ ] 按 §11 统一 RssDnsInterceptor / RssPortPolicy；先证明 53 全入口拦截及 DNS 策略正确，再修改默认端口。TCP AES PSK 业务 codec 与独立 RssEgressCodec（§13）必须双端兼容验收，不能仅调整 compressionLevel。
 
 ### P1：统一 route + adapter
 
@@ -275,10 +279,12 @@ shadowUsers:
 
 ```mermaid
 flowchart TD
-  A["TCP 原始业务字节"] --> B["端口 codec：按需压缩 → AES → zlib 0；或旁路"]
+  A["TCP 原始业务字节"] --> B["业务 codec：按需压缩 → AES；或旁路"]
   B --> C["AdaptiveStream：已编码字节"]
   C --> D["分段 + 自适应 XOR + UDP frame 认证"]
-  C --> E["可靠 TCP 主通道 / 修复"]
+  C --> E["可靠 TCP 主通道 / 修复帧"]
+  E --> T["独立 RssEgressCodec：zlib 0 或 NONE"]
+  T --> TS["真实 TCP Socket"]
   D --> F["UdpTransport：只承载，不再次压缩"]
   G["普通 UDP 业务数据报"] --> M["端口策略已解析 / MTU 预算已缓存"]
   M --> H["按需 LZ4 一次"]
@@ -289,7 +295,7 @@ flowchart TD
   V --> F
 ```
 
-- TCP 已经按 §11 完成实际 zlib 压缩（若适用）、AES-128-GCM PSK 加密、zlib 0 外包装，或者依据端口策略合法旁路。自适应 FEC 不管内容是否压缩或加密，均视为 opaque encoded bytes。直接分段、异或、封装和发送；不得尝试 LZ4、zlib、熵检测、重复业务加密。已有认证及 replay/逻辑去重仍保留。
+- TCP 已经按 §11 完成实际 zlib 压缩（若适用）、AES-128-GCM PSK 加密，或者依据端口策略合法旁路。zlib 0 不属于这些业务 codec，也不进入 FEC 输入；仅按 §13 应用于真实 TCP 最终出口。自适应 FEC 不管内容是否压缩或加密，均视为 opaque encoded bytes。直接分段、异或、封装和发送；不得尝试 LZ4、zlib、熵检测、重复业务加密。已有认证及 replay/逻辑去重仍保留。
 - FEC parity、重传、SACK/ACK、PING/PONG、修复数据均不再进入业务压缩；TCP fallback 发送同一编码流，不回到压缩器，不能改变字节边界或重复使用 nonce。TCP 收端先还原连续编码流，再交回原 codec。
 - 普通业务 UDP 在应用入口仅压缩一次。daily/weak/game 默认启用现有按收益 LZ4（原实现门槛：至少 96 B、净省至少 24 B 且 12%；连续 8 次低收益旁路 30 秒；保留既有加密流量/安全旁路及显式关闭）。不强制每个 UDP 数据报都产生压缩块；game 不人为等待聚包。plain UDP 完全不尝试压缩。
 - 普通 UDP 先压缩后分片、FEC/复制，然后认证与发送；多个分片、parity 或副本不再压缩。收端完整重组后只解压一次。
@@ -299,7 +305,7 @@ flowchart TD
 ### 9.2 验收
 
 - [ ] plain TCP 未修改的路径与基线一致；必须保护端口使用新 codec 且旧格式迁移兼容；plain UDP 不进行传输增强，必须保护端口保留 AES；53 经 DNS AOP，QUIC 命中 codec 旁路。
-- [ ] enhanced TCP 两方向验证实际 zlib / AES-128-GCM / zlib 0 外包装与旁路组合（旧 TLS 仅迁移兼容）；在 codec 后和 FEC 输入处断言编码字节一致，FEC、承载及 TCP repair 路径压缩器调用次数为 0；丢包/乱序/回退/FIN 后最终字节流一致。
+- [ ] enhanced TCP 两方向验证实际 zlib / AES-128-GCM / zlib 0 外包装与旁路组合（旧 TLS 仅迁移兼容）；在 codec 后和 FEC 输入处断言编码字节一致，FEC、UDP 承载及 TCP repair 路径实际压缩器调用次数为 0（真实 TCP 出口包装单独统计）；丢包/乱序/回退/FIN 后最终字节流一致。
 - [ ] enhanced 普通 UDP：可压缩包只压缩一次，压缩后能装入 MTU 则不分片；随机包/已加密流量按策略原样；缺片/FEC 恢复/复制去重后只解压一次，game 仍首份有效包立即交付。
 - [ ] 三种上游都执行同样测试。以可注入计数器或测试 hook 验证处理次数，不在生产每包增加日志/新计数对象。
 
@@ -316,6 +322,7 @@ flowchart TD
 | 策略 | RssTransportPolicy（不可变有效策略）、RssProfile、UdpMode | 按用户/profile 解析 TCP adaptive 和普通 UDP 增强模式，与端口 codec 合成有效配置；RssTransport 保留 YAML DTO |
 | 路由 | RssUpstreamSpec、RssUpstreamType、RssUpstreamRoute | 三类逻辑上游及完整端点；权重、健康、源地址亲和性；每次会话选择一次，不按类型二次随机 |
 | 承载 | RssUdpTransport | 已编码 frame 的发送/接收、所有权、实际 endpoint、能力和关闭；按关联绑定；直达/标准 SOCKS5 UDP/固定 client 适配，不重复压缩或增强 |
+| 最终出口格式 | RssEgressCodec / EgressCodec | 独立于端口安全和 profile；真实 TCP 连续流包装，UDP 暂 NONE；不进入 adaptive FEC 输入 |
 | UDP 路径 | RssUdpPathPolicy、RssUdpMtuBudget、按路径的状态 | MTU、hop、primary/alias、固定映射、探测与回退条件；预算包含已选 codec 与所有相关封装；共享解析和低频探测机制，不将不同方向/路径的实际 MTU/RTT 状态混为一份 |
 | 身份 | UpstreamIdentity（或 RssUpstreamIdentity，视公共 API 边界） | 逻辑 peer、物理路径、认证域、RPC identity 等公共稳定字段；TCP/UDP 专有池键独立，防止跨用户/端点错误复用 |
 | 生命周期 | 复用 UpstreamSnapshot 与 UpstreamSupport | 一个上游目录、一个用户选择映射、共享健康检查及 drain；TCP、业务 UDP、adaptive UDP、RPC 各自健康状态，不能只用 TCP boolean |
@@ -343,6 +350,7 @@ UdpMode = NONE / ADAPTIVE_FEC / ADAPTIVE_COPIES，仅定义普通业务 UDP 的�
 | RssRuntime.firstRoute + DNS 路由装配 | RssDnsInterceptor | P0；覆盖 SS/SOCKS、DIRECT/PROXY、固定上游等全部入口，保留 DNS 规则和安全控制 |
 | RssTransport.cipherPorts / RssClientConf.*AlreadyEncryptedPorts / 分散端口判断 | RssPortPolicy / CodecPolicy | P0；端口策略独立；建议配置名 tcpCodecBypassPorts / udpCodecBypassPorts，迁移期识别旧名 |
 | RssHopTls.ServerSelector | RssTcpCodecSelector | P1；独立处理原生 SOCKS、zlib、PSK AES/zlib0 协议识别；RSS TLS 兼容分支仅迁移期保留 |
+| RssEgressCodec | 新增最小内部出口 codec 装配 | P1；NONE / ZLIB_STORED；未来格式仅预留扩展职责，不提前实现 |
 | RssHopAes | 保留 | 已实现 TCP AES-128-GCM PSK，复用而非重写；UDP 独立会话派生 |
 | UdpClientUpstream | 保留（通用公共类） | 当前仅表示固定 UDP endpoint；新的完整逻辑上游由 RssUpstreamSpec/Route 配对，不将旧类硬改成 TCP+UDP |
 | Udp2rawUpstream | 保留通用用途，移出 RSS 专用路由分支 | 这是已有私有 UDP tunnel 实现，不等同于外部客户端；先确认其它使用方，禁止无差别删除 |
@@ -381,8 +389,8 @@ UdpMode = NONE / ADAPTIVE_FEC / ADAPTIVE_COPIES，仅定义普通业务 UDP 的�
 | 端口分类 | TCP codec | UDP codec |
 |---|---|---|
 | DNS AOP：53 | 进入本地 DNS Server，按 DNS 规则缓存/解析/RPC | 同 TCP |
-| 必须加密 | 实际压缩（符合策略时）→ AES-128-GCM PSK → zlib level 0 外包装 | 实际 LZ4（增强模式且符合策略时）→ 分片/FEC/多发（如启用）→ AES-128-GCM |
-| Codec 旁路：已加密/已压缩协议 | 不再进行实际压缩、额外业务加密及 zlib 0 包装 | 不再实际压缩或额外业务加密 |
+| 必须加密 | 实际压缩（符合策略时）→ AES-128-GCM PSK；出口包装独立按 §13 | 实际 LZ4（增强模式且符合策略时）→ 分片/FEC/多发（如启用）→ AES-128-GCM |
+| Codec 旁路：已加密/已压缩协议 | 不再进行实际压缩、额外业务加密；出口包装由独立策略决定 | 不再实际压缩或额外业务加密 |
 | 其他端口 | plain 原 TCP 压缩配置；daily/weak/game 默认 zlib 3 | plain 原生 UDP；daily/weak/game 按收益 LZ4 |
 
 增强模式命中 codec 旁路时仍保留 TCP adaptive FEC、daily/weak 普通 UDP FEC 或 game 多发、必要认证、去重和 MTU 安全。plain 命中必须保护 UDP 端口只启用 AES 与必要安全封装，无普通 UDP FEC、复制、压缩、增强分片或跳跃。UDP 单包上限需扣除安全封装，不保证超出物理 MTU 的大包可以发送；明确超限失败/指标，不能为保护端口静默退回明文。
@@ -399,24 +407,27 @@ UdpMode = NONE / ADAPTIVE_FEC / ADAPTIVE_COPIES，仅定义普通业务 UDP 的�
 
 保留现有 tcpAlreadyEncryptedPorts / udpAlreadyEncryptedPorts 作为迁移别名，规范化为 CodecBypassPorts（含已压缩协议，不只加密协议）；不长期维护两套判断逻辑。端口列表均可显式配置，允许真正的空列表（CLI/YAML 解析须区分未配置和显式空数组）。校验范围、去重、加密与旁路冲突、DNS 53 冲突；不允许 bypass 覆盖必须保护端口。端口只是策略提示，不证明载荷一定加密/压缩，不能假定 587/143 等所有连接均明文或 443 一定安全。只在会话/关联建立时解析有效策略，缓存复用，不增加每包复杂协议识别。
 
-### 11.2 TCP：实际压缩 → AES-128-GCM → zlib 0
+### 11.2 TCP：实际压缩 → AES-128-GCM；出口包装独立（§13）
 
 ```mermaid
 flowchart LR
   A["原 TCP 业务字节"] --> B["按策略实际 zlib 3 或旁路"]
   B --> C["AES-128-GCM PSK"]
-  C --> D["zlib 0：仅合法格式包装"]
-  D --> E["plain：可靠 TCP"]
-  D --> F["enhanced：Adaptive TCP/FEC + TCP repair"]
+  C --> E["plain：可靠 TCP"]
+  C --> F["enhanced：Adaptive TCP stream"]
+  F --> R["TCP 主通道/修复帧"]
+  F --> U["UDP FEC/认证 → UDP 承载"]
+  E --> D["真实 TCP 出口：zlib 0 或 NONE"]
+  R --> D
 ```
 
-- 实际压缩与 zlib 外包装是不同 codec 职责。Level 1 仍实际尝试压缩，**Level 0 才是不压缩的 DEFLATE stored block / zlib 流包装**。外包装仍有长度、校验、flush、CPU 和字节开销；不宣称零开销或提供额外保密性。只在必须保护 TCP 端口按本方案添加外层，旁路端口不创建任何压缩/包装 handler。正常端口不套无意义外层。
+- 实际压缩与 zlib 外包装是不同 codec 职责。Level 1 仍实际尝试压缩，**Level 0 才是不压缩的 DEFLATE stored block / zlib 流包装**。外包装仍有长度、校验、flush、CPU 和字节开销；不宣称零开销或提供额外保密性。外包装不再由必须加密端口隐式触发，而由独立 EgressCodec 策略决定。业务 codec 旁路仍不创建实际压缩/业务加密 handler；出口选择 NONE 时无包装 handler。
 - 内层实际压缩默认沿用原 profile/显式配置（增强模式 zlib 3，plain 保留原配置）；对于混合秘密和攻击者可控输入的协议禁用共享压缩上下文或实际压缩，避免压缩长度侧信道；不能为了省流无条件压缩敏感数据。已加密/已压缩旁路不重复处理。
 - 复用现有 RssHopAes。RSS_TCP_AES_KEY 是 Base64 编码的 32 个随机字节部署 PSK（不是低熵简单口令或直接固定 AES nonce）；现有握手派生双向 128 位 AES traffic key，保留随机 salt、证明、认证 tag、序号、密钥使用上限和错误关闭。无需证书。SS 入口密码算法、RPC 安全机制、其它通用 TLS 功能不因 RSS TCP hop 改造而变更。
 - 新 RSS hop 加密只提供 PSK AES-128-GCM。逐步清除 RSS 专用证书 TLS 配置、依赖分支与握手选择，通用 TLS API 保留。迁移期明确版本/兼容窗口，不允许认证失败或必需加密不可用时退回明文；缺失/非法 PSK 的保护路由配置拒绝启用。
 - **当前真实代码顺序不同**：[Sockets.addTcpClientHandler](https://github.com/RockyLOMO/rxlib/blob/de0e0aa9eb50f1bdf3be1b1fe22367109c6d552d/rxlib/src/main/java/org/rx/net/Sockets.java#L1011-L1074) 先添加 AES handler 再添加 zlib handler；Netty 出站 tail→head，实际是 zlib→AES。[RssHopTls.ServerSelector](https://github.com/RockyLOMO/rxlib/blob/de0e0aa9eb50f1bdf3be1b1fe22367109c6d552d/rxlib/src/main/java/org/rx/net/RssHopTls.java#L78-L124) 识别 raw SOCKS / AES magic / TLS / zlib；现有 zlib 解码路径不等于支持 zlib0 包装后的 AES 握手。当前 RssTransport.valid 与 RssServer 参数限制实际压缩级别 1..9。
-- 新增独立外包装 codec 策略，固定 level=0；不要把全局 tcpCompressionLevel 改为 0 导致普通业务压缩失效。服务端使用 RssTcpCodecSelector 识别新线格式，明确能力/版本或专用兼容入口：新格式先还原外层 zlib，再识别 AES 握手，认证通过后按约定解出内部 zlib/原数据。不得仅凭 zlib header 判定 level 或安全保护，不能递归接受无界嵌套层，也不能误认旧 zlib SOCKS 为新 AES。实际 inner compression 的双向启用需明确协商，保护端口必须检查实际认证状态。
-- 需验证 zlib0 外层握手 flush、AES pending write、SOCKS 协商与 adaptive handler 安装时序、解码器累计缓冲、长连接状态、FIN/trailer、切换前后数据边界；旧端兼容不能损坏原连接。adaptive 安装后两条数据路径复用**同一份完整已编码 TCP 字节流**，TCP repair/UDP FEC 不重新进入任意 zlib 或 AES 业务 codec；adaptive frame HMAC 等独立认证继续保留。新版本协议改动单独提交，不与类名 rename 混淆。
+- 外包装由 §13 独立出口 codec 决定；不得把实际 tcpCompressionLevel 改成 0。双端版本/配置及握手边界需要兼容验证；禁止仅凭 zlib header 判断实际压缩等级或安全状态，禁止无界嵌套解码。实际 inner compression 的双向启用需明确约定；保护端口必须检查真实认证状态。
+- adaptive 安装后两条数据路径复用**同一份业务 codec 编码 TCP 字节流**（不含最终出口包装）；TCP repair/UDP FEC 不重新进入实际 zlib 压缩或 AES 业务 codec。真实 TCP 修复帧正常经过该物理通道的独立出口 codec，adaptive UDP 保留自身 frame HMAC。握手、FIN、旧端及 pipeline 顺序的兼容验收见 §13；协议改动与类名 rename 分开提交。
 
 ### 11.3 UDP：先有效压缩再 FEC/复制，最后 AES
 
@@ -439,11 +450,11 @@ flowchart LR
 ### 11.5 验收及命名
 
 - [ ] 全四 profile × TCP/UDP × DNS/必须加密/codec 旁路/普通端口 × 三类上游矩阵；对不兼容 RSS 私有 codec 的第三方 SOCKS5 保护路径验证明确拒绝或显式安全替代，不发送私有帧给标准最终出口。
-- [ ] TCP protected 实际压缩可选、AES 一次、外层 zlib0 一次；双方可恢复原数据，旁路端口不创建这些 handler；FEC/TCP repair 不再编码。以测试计数器/抓包验证，记录 zlib0 真实额外字节、CPU、握手和延迟，不把包装误算为压缩收益。
+- [ ] TCP protected 实际压缩可选、AES 一次；真实 TCP 出口按独立策略包装一次，UDP 不包装；双方可恢复原数据，业务旁路不创建压缩/加密 handler；FEC/TCP repair 不再进行实际压缩或业务加密。以测试计数器/抓包验证，记录 zlib0 真实额外字节、CPU、握手和延迟，不把包装误算为压缩收益。
 - [ ] UDP 可压缩包先 LZ4、再分片、FEC/多发、AES；已加密/压缩端口跳过业务 codec；plain AES-only 不启动增强状态；错误 key、tag、nonce/replay、MTU、超时及重组回归。
 - [ ] DNS TCP 长度、UDP、A/AAAA 及已有支持的其他 RR 类型、缓存、block/direct/proxy、用户权限、RPC 超时/断开、无 RSS RPC 的路由；抓包证明不存在未授权普通 53 上游流量。先补覆盖再删端口规则。
 - [ ] JDK8/21 与 Linux 实测；测量 CPU/真实 IP 字节、解码资源上限、旧端兼容及热更新回滚。保持低频探测，不增加正常包无效处理。
-- [ ] 新增 RssDnsInterceptor / RssPortPolicy / CodecPolicy（PASSTHROUGH、COMPRESS、PROTECTED，内部以独立实际压缩位、AES 位、外包装位表达组合）；RssTcpCodecSelector 从 RssHopTls 中拆出，RssHopAes 保留，RssDatagramCipher 复用；不新增每个 profile 的 codec 子类。
+- [ ] 新增 RssDnsInterceptor / RssPortPolicy / CodecPolicy（PASSTHROUGH、COMPRESS、PROTECTED，内部表达独立实际压缩和 AES 状态；外包装由 RssEgressCodec 独立管理）；RssTcpCodecSelector 从 RssHopTls 中拆出，RssHopAes 保留，RssDatagramCipher 复用；不新增每个 profile 的 codec 子类。
 
 ## 12. 统一 UDP MTU 预算（第四版新增，强制正确性约束）
 
@@ -512,8 +523,61 @@ TCP adaptive UDP 走独立的数据分段预算：其输入是原 TCP codec 已�
 
 **结论：提前计算安全/封装开销，不提前执行 AES；压缩后按预算分片，生成 FEC/多发帧后执行实际认证加密，最后检查长度并发送。**
 
-## 13. 交付边界
+## 13. 独立最终出口格式包装（第五版新增）
+
+### 13.1 职责与配置
+
+实际业务压缩、业务保密、传输增强、最终传输格式分别管理：
+
+| 职责 | 建议类型 | 本轮范围 |
+|---|---|---|
+| 实际压缩 | 现有 TCP zlib / RssDatagramCompression | zlib 3 默认实际压缩、普通增强 UDP 按收益 LZ4 |
+| 业务加密 | RssHopAes / RssDatagramCipher | AES-128-GCM PSK，按端口安全策略 |
+| 增强 | RssTransportPolicy / AdaptiveUdpFec / AdaptiveUdpReplication | FEC、多发、可靠 TCP 修复，不负责出口包装 |
+| 最终出口格式 | RssEgressCodec / EgressCodec | NONE、ZLIB_STORED；UDP 暂 NONE |
+| 实际承载 | RssUpstreamRoute / RssUdpTransport | 直达、SOCKS5 或固定外部客户端；不重复业务 codec |
+
+zlib level 3 是实际压缩；level 0 是无实际压缩的格式封装。两者独立配置、独立统计，不用真实压缩等级表达出口格式。未来若存在其他合法的传输格式或兼容性需求，仅保留扩展边界，本轮不增加 HTTP 等实现，不设计通用动态插件框架。格式包装不构成加密、身份认证或任何特定网络可达性的保证。
+
+拟议配置（不是现有可直接使用的 YAML）：
+
+```yaml
+transport:
+  profile: daily
+  tcpCompressionLevel: 3
+egress:
+  tcpCodec: zlib-stored
+  udpCodec: none
+```
+
+内部 EgressCodec 仅 NONE / ZLIB_STORED；udpCodec 当前只接受 NONE。建议先在支持该格式的 RSS-to-RSS 逻辑路由上显式配置，而不是无协商全局打开；配置启用时适用于该路由上的四种 profile 的实际 RSS TCP 出口，与端口业务 codec 旁路相互独立。NONE 路径不安装额外 handler。普通第三方 SOCKS5 最终出口、业务目标 DIRECT、RPC、SS 入口及外部客户端自身 TCP 连接不注入 RSS 专用格式。具体默认开启范围与旧端迁移需在实现前确认。
+
+### 13.2 数据层次
+
+- 业务 TCP：实际压缩（按策略）→ AES（按安全策略）→ 已编码业务流 → plain 可靠 TCP 或 enhanced AdaptiveTcpStream 分流。
+- 真实 RSS TCP 出口：主通道/修复帧按已约定的出口格式发送；接收端逆向去除该物理通道的包装后再还原 adaptive 帧和业务流。包装以连续 TCP 字节流为单位，不以操作系统 TCP/IP 分段为应用层消息边界。
+- TCP adaptive UDP：对同一已编码业务流分段、FEC、独立认证；不加入 zlib0 包装，不再次实际压缩或业务加密；保留 TCP repair。
+- 普通 UDP：端口 codec 与 MTU 决策 → LZ4（如适用）→ 分片/FEC 或复制 → AES/MAC（按需）→ 最终 MTU guard → UDP 承载。仍按 §11/§12，不改变 wire。
+- 复用现有 Netty codec，接收端使用匹配的逆向解码。所有入口/出口的协议版本、认证、握手、缓冲上限、FIN、异常关闭和迁移应以现有安全约束为前提；不允许未认证降级。配置变化只作用于新连接，旧连接保留原 codec 并按既有 drain 结束。不能宣称现有 adaptive pipeline 已支持新层次，需实现测试。
+
+### 13.3 外部 udp2raw 与 RSS 分段职责
+
+参考 [udp2raw 官方 MTU 文档](https://github.com/wangyu-/udp2raw/wiki/about-mtu) 与 [FAQ](https://github.com/wangyu-/udp2raw/wiki/Frequently-Asked-Questions)：上游项目的 udp2raw 自身没有用户态 packet splitter；FakeTCP 为外部 UDP 数据报的承载封装，不是真实可靠 TCP。不要把仓库中 Udp2rawUpstream / Udp2rawPayloadSupport（RSS 私有旧 tunnel 类）等同于外部 udp2raw 进程，也不假定所有 fork 或其它隧道实现均相同。
+
+RSS 内部自有端口跳跃与固定 UDP 外部承载使用同一增强算法、同一预算计算规则；实际路径状态和上限可以不同。RSS 负责 TCP 流分段、普通 UDP 分片、FEC/多发、认证和相应恢复；外部承载接收完整 RSS 数据报并交付完整数据报，不默认叠加第二套 RSS 分片、FEC、实际压缩或重组机制。外部协议自身的必要安全/封装机制另计。只在验证实际承载及物理路径约束后确定预算，不依赖其自动拆包。
+
+[AdaptiveStream.java](https://github.com/RockyLOMO/rxlib/blob/6ea080b466fe79d402b392d6c055adba3afa16dc/rxlib/src/main/java/org/rx/net/rss/tcp/AdaptiveStream.java#L20-L24) 当前 MAX_UDP_FRAME=1250，CHUNK=1237；[AdaptiveUdpPort.java](https://github.com/RockyLOMO/rxlib/blob/6ea080b466fe79d402b392d6c055adba3afa16dc/rxlib/src/main/java/org/rx/net/rss/tcp/AdaptiveUdpPort.java#L25-L28) 还有独立 PREFIX=16 和 TAG=16，现有最大预算为 1282 B RSS UDP payload，而非 1250 B 物理出口上限。这说明 §12 的 RssUdpMtuBudget 也需覆盖 adaptive TCP 的独立 CHUNK 和外层认证开销，不将普通 UDP 分片头错误用于 TCP adaptive stream。实际路径上限与外部承载能力以验证结果为准，不能把固定默认数值当作全链路保证。当前不重写现有 FEC 或 TCP repair 算法。
+
+### 13.4 交付和验证边界
+
+- [ ] 独立业务压缩、加密、出口格式配置及统计；NONE 路径无新增包装成本。
+- [ ] 真实 TCP 与 adaptive UDP 双端可恢复完全相同的业务 codec 字节流；包装不进入 FEC 分段/校验输入。测试可靠修复、正常/异常 FIN、断线和旧端兼容；实际压缩器在 FEC/修复/承载层无重复调用。
+- [ ] 自有端口跳跃、固定 UDP 外部承载与普通 UDP 验证数据报边界、真实 MTU、完整交付率及资源消耗。外部组件的实际版本与功能由部署验收确认。
+- [ ] 真实 CPU 与字节开销分层统计，不把 zlib0 的封装成本记为实际压缩收益。默认不增加额外每包对象、重复处理或与业务无关的 codec 实现。
+- [ ] 本轮仅设计计划；没有实现新出口 codec、改变协议默认行为或运行时验证。具体协议兼容方式与默认启用范围仍需双端确认。
+
+## 14. 交付边界
 
 本次只提交设计文档；不修改 Java 源码、运行配置、协议默认值、远端服务或外部客户端，不启动/停止任何现网进程。具体 YAML 字段与迁移方式是为减少改动提出的建议；示例端口不是实际映射。需要实现和实测后才标记通过。
 
-**最终原则：四个 profile、三类完整上游、全模式 DNS AOP 与端口 codec 策略，独立增强及 UDP 路径策略。TCP 必须保护端口按需实际压缩 → AES-128-GCM PSK → zlib0；普通增强 UDP 按需 LZ4 → 分片/FEC 或多发 → AES（需要时）；plain UDP 无传输增强，但必须保护端口执行 AES。TCP adaptive FEC 不再次压缩；旁路端口不浪费 CPU；53 完整拦截验收后移出默认加密名单。算法不依赖上游名称，类名表达真实职责。统一 RssUdpMtuBudget 提前预留 AES/MAC、FEC/分片及承载开销，最终出口再校验；不会为避免超限而关闭必要加密。**
+**最终原则：四个 profile、三类完整上游、全模式 DNS AOP 与端口 codec 策略，独立增强及 UDP 路径策略。TCP 必须保护端口按需实际压缩 → AES-128-GCM PSK；最终真实 TCP 出口由独立 RssEgressCodec 决定 zlib0 或 NONE，TCP adaptive UDP 不包装；普通增强 UDP 按需 LZ4 → 分片/FEC 或多发 → AES（需要时）；plain UDP 无传输增强，但必须保护端口执行 AES。TCP adaptive FEC 不再次压缩；旁路端口不浪费 CPU；53 完整拦截验收后移出默认加密名单。算法不依赖上游名称，类名表达真实职责。统一 RssUdpMtuBudget 提前预留 AES/MAC、FEC/分片及承载开销，最终出口再校验；不会为避免超限而关闭必要加密。**
