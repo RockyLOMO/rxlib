@@ -144,7 +144,8 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
                     onBind.accept(tcpChannels.get(0));
                 }
             } else {
-                bootstrap = Sockets.serverBootstrap(config, this::acceptChannel);
+                bootstrap = Sockets.serverBootstrap(config, this::acceptChannel)
+                        .option(ChannelOption.SO_REUSEADDR, true);
                 tcpChannels = Sockets.bindChannels(bootstrap.attr(SocksContext.SOCKS_SVR, this), listenAddress, config);
                 if (onBind != null) {
                     for (Channel channel : tcpChannels) {

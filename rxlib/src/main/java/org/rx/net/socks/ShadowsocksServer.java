@@ -64,7 +64,8 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
             } else {
                 channel.pipeline().addLast(CipherCodec.DEFAULT, new SSProtocolCodec(), SSTcpProxyHandler.DEFAULT);
             }
-        }).childOption(ChannelOption.ALLOW_HALF_CLOSURE, true);
+        }).option(ChannelOption.SO_REUSEADDR, true)
+                .childOption(ChannelOption.ALLOW_HALF_CLOSURE, true);
         tcpChannels = Sockets.bindChannels(bootstrap.attr(ShadowsocksConfig.SVR, this), config.getServerEndpoint(), config);
 
         //udp server
@@ -90,12 +91,43 @@ public class ShadowsocksServer extends Disposable implements EventPublisher<Shad
 
     @Override
     protected void dispose() {
+        java.util.List<io.netty.channel.ChannelFuture> futures = new java.util.ArrayList<>(tcpChannels.size() + udpChannels.size());
         for (Channel channel : tcpChannels) {
-            channel.close();
+            futures.add(channel.close());
+        }
+        for (Channel channel : udpChannels) {
+            futures.add(channel.close());
+        }
+        for (io.netty.channel.ChannelFuture future : futures) {
+            if (!future.channel().eventLoop().inEventLoop()) {
+                future.awaitUninterruptibly(5, java.util.concurrent.TimeUnit.SECONDS);
+            }
+        }
+        boolean onTcpLoop = false;
+        for (Channel channel : tcpChannels) {
+            if (channel.eventLoop().inEventLoop()) {
+                onTcpLoop = true;
+                break;
+            }
         }
         Sockets.closeBootstrap(bootstrap);
-        for (Channel channel : udpChannels) {
-            channel.close();
+        io.netty.channel.EventLoopGroup boss = bootstrap.config().group();
+        if (boss != null && boss.isShuttingDown() && !onTcpLoop) {
+            boss.terminationFuture().awaitUninterruptibly(5, java.util.concurrent.TimeUnit.SECONDS);
+        } else {
+            awaitSelectorDeregister(tcpChannels);
+        }
+        awaitSelectorDeregister(udpChannels);
+    }
+
+    private static void awaitSelectorDeregister(List<Channel> channels) {
+        for (Channel channel : channels) {
+            io.netty.channel.EventLoop loop = channel.eventLoop();
+            if (!loop.inEventLoop() && !loop.isShuttingDown()) {
+                loop.schedule(() -> {
+                }, 1, java.util.concurrent.TimeUnit.MILLISECONDS)
+                        .awaitUninterruptibly(5, java.util.concurrent.TimeUnit.SECONDS);
+            }
         }
     }
 }

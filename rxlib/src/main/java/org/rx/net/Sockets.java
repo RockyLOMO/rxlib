@@ -785,11 +785,11 @@ public final class Sockets {
         ServerBootstrapConfig config = bootstrap.config();
         EventLoopGroup group = config.group();
         if (group != null && !reactors.containsValue(group) && !localReactors.containsValue(group)) {
-            group.shutdownGracefully();
+            group.shutdownGracefully(0, 5, TimeUnit.SECONDS);
         }
         group = config.childGroup();
         if (group != null && !reactors.containsValue(group) && !localReactors.containsValue(group)) {
-            group.shutdownGracefully();
+            group.shutdownGracefully(0, 5, TimeUnit.SECONDS);
         }
     }
 

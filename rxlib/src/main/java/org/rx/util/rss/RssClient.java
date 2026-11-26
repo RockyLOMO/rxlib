@@ -1957,8 +1957,11 @@ public final class RssClient {
             org.rx.net.socks.SocksUserTraffic.registerRecorder(trafficStore);
         }
 
-        httpServer = HttpServer.getDefault().requestAsync(RssClientHttpHandler.SHADOW_USERS_PAGE_PATH,
-                new RssClientHttpHandler(trafficStore, authenticator.getMemoryRetentionHours(), authenticator::getShadowStore));
+        HttpServer defaultHttp = HttpServer.getDefault();
+        if (defaultHttp != null) {
+            httpServer = defaultHttp.requestAsync(RssClientHttpHandler.SHADOW_USERS_PAGE_PATH,
+                    new RssClientHttpHandler(trafficStore, authenticator.getMemoryRetentionHours(), authenticator::getShadowStore));
+        }
 
         configureRrpServer(rssConf);
 

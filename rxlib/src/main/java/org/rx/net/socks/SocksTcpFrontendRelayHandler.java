@@ -21,7 +21,14 @@ public class SocksTcpFrontendRelayHandler extends ChannelInboundHandlerAdapter {
 
     private static final AttributeKey<PendingConnect> PENDING = AttributeKey.valueOf("socksTcpPendingConnect");
     static final AttributeKey<HalfCloseWatch> HALF_CLOSE_WATCH = AttributeKey.valueOf("socksTcpHalfCloseWatch");
-    private static final long HALF_CLOSE_IDLE_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(120);
+    private static final long DEFAULT_HALF_CLOSE_IDLE_MILLIS = Math.max(100L,
+            Long.getLong("rx.socks.halfCloseIdleMillis", 120_000L));
+    static volatile long halfCloseIdleNanos = java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(DEFAULT_HALF_CLOSE_IDLE_MILLIS);
+
+    static void setHalfCloseIdleMillisForTest(long millis) {
+        halfCloseIdleNanos = java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(
+                millis <= 0L ? DEFAULT_HALF_CLOSE_IDLE_MILLIS : Math.max(50L, millis));
+    }
 
     static final class HalfCloseWatch implements Runnable {
         final Channel inbound;
@@ -39,7 +46,7 @@ public class SocksTcpFrontendRelayHandler extends ChannelInboundHandlerAdapter {
         }
 
         void start() {
-            timer = inbound.eventLoop().schedule(this, 60, java.util.concurrent.TimeUnit.SECONDS);
+            timer = inbound.eventLoop().schedule(this, halfCloseIdleNanos, java.util.concurrent.TimeUnit.NANOSECONDS);
             inbound.closeFuture().addListener(f -> cancel());
         }
 
@@ -51,17 +58,41 @@ public class SocksTcpFrontendRelayHandler extends ChannelInboundHandlerAdapter {
             }
         }
 
+        private static boolean isBackpressured(Channel inbound, Channel outbound) {
+            if (!inbound.isWritable() || !outbound.config().isAutoRead()) {
+                return true;
+            }
+            Channel.Unsafe unsafe = inbound.unsafe();
+            ChannelOutboundBuffer buf = unsafe != null ? unsafe.outboundBuffer() : null;
+            return buf != null && buf.totalPendingWriteBytes() > 0;
+        }
+
         @Override
         public void run() {
+            timer = null;
             if (!inbound.isOpen()) {
                 return;
             }
-            if (!outbound.isActive() || System.nanoTime() - lastActiveNano >= HALF_CLOSE_IDLE_NANOS) {
+            if (!outbound.isActive()) {
                 outbound.close();
                 Sockets.closeOnFlushed(inbound);
                 return;
             }
-            timer = inbound.eventLoop().schedule(this, 60, java.util.concurrent.TimeUnit.SECONDS);
+            long idleLimit = halfCloseIdleNanos;
+            long now = System.nanoTime();
+            // Do not mistake downstream slow-client backpressure for an unresponsive backend.
+            if (isBackpressured(inbound, outbound)) {
+                lastActiveNano = now;
+                timer = inbound.eventLoop().schedule(this, idleLimit, java.util.concurrent.TimeUnit.NANOSECONDS);
+                return;
+            }
+            long remaining = idleLimit - (now - lastActiveNano);
+            if (remaining <= 0L) {
+                outbound.close();
+                Sockets.closeOnFlushed(inbound);
+                return;
+            }
+            timer = inbound.eventLoop().schedule(this, remaining, java.util.concurrent.TimeUnit.NANOSECONDS);
         }
     }
 
@@ -113,16 +144,40 @@ public class SocksTcpFrontendRelayHandler extends ChannelInboundHandlerAdapter {
         if (inbound.attr(HALF_CLOSE_WATCH).compareAndSet(null, watch)) {
             watch.start();
         }
-        DuplexChannel duplexOutbound = (DuplexChannel) outbound;
-        outbound.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener((ChannelFutureListener) f -> {
-            if (!f.isSuccess() || !outbound.isActive() || !inbound.isActive()) {
-                outbound.close();
+        io.netty.handler.proxy.ProxyHandler proxy = outbound.pipeline().get(io.netty.handler.proxy.ProxyHandler.class);
+        if (proxy != null && !proxy.connectFuture().isDone()) {
+            proxy.connectFuture().addListener(pf -> {
+                if (!pf.isSuccess()) {
+                    outbound.close();
+                    Sockets.closeOnFlushed(inbound);
+                    return;
+                }
+                if (inbound.eventLoop().inEventLoop()) {
+                    flushAndShutdownOutbound(inbound, (DuplexChannel) outbound);
+                } else {
+                    inbound.eventLoop().execute(() -> flushAndShutdownOutbound(inbound, (DuplexChannel) outbound));
+                }
+            });
+            return;
+        }
+        flushAndShutdownOutbound(inbound, (DuplexChannel) outbound);
+    }
+
+    private static void flushAndShutdownOutbound(Channel inbound, DuplexChannel duplexOutbound) {
+        if (!duplexOutbound.isActive() || !inbound.isActive()) {
+            duplexOutbound.close();
+            Sockets.closeOnFlushed(inbound);
+            return;
+        }
+        duplexOutbound.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener((ChannelFutureListener) f -> {
+            if (!f.isSuccess() || !duplexOutbound.isActive() || !inbound.isActive()) {
+                duplexOutbound.close();
                 Sockets.closeOnFlushed(inbound);
                 return;
             }
             duplexOutbound.shutdownOutput().addListener((ChannelFutureListener) sf -> {
-                if (!sf.isSuccess() || !outbound.isActive()) {
-                    outbound.close();
+                if (!sf.isSuccess() || !duplexOutbound.isActive()) {
+                    duplexOutbound.close();
                     Sockets.closeOnFlushed(inbound);
                 }
             });
@@ -187,8 +242,21 @@ public class SocksTcpFrontendRelayHandler extends ChannelInboundHandlerAdapter {
     }
 
     @Override
+    public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
+        HalfCloseWatch watch = ctx.channel().attr(HALF_CLOSE_WATCH).get();
+        if (watch != null) {
+            watch.touch();
+        }
+        super.channelWritabilityChanged(ctx);
+    }
+
+    @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
         Channel inbound = ctx.channel();
+        HalfCloseWatch watch = inbound.attr(HALF_CLOSE_WATCH).getAndSet(null);
+        if (watch != null) {
+            watch.cancel();
+        }
         PendingConnect pending = inbound.attr(PENDING).get();
         if (pending != null) {
             pending.finish(inbound, null);

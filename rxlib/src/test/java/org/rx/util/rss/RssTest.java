@@ -1420,6 +1420,278 @@ public class RssTest extends AbstractTester {
     }
 
     @Test
+    public void shadowUserCipherHotReload_IsolatesOtherUsersAndRollsBackOnBindFailure() throws Exception {
+        int upstreamPort = freePort();
+        int rpcPort = freePort();
+        int ssPortA = freePort();
+        int ssPortB = freePort();
+        int dnsPort = freePort();
+        int nsRegPort = freePort();
+        int nsSyncPort = freePort();
+        int inPort = freePort();
+
+        SocksConfig upCfg = new SocksConfig(upstreamPort);
+        SocksUser socksUsr = new SocksUser("u");
+        socksUsr.setPassword("p");
+        SocksProxyServer upstreamSvr = new SocksProxyServer(upCfg, new SocksAuthenticator(Collections.singletonList(socksUsr)));
+
+        ServerSocket tcpEcho = new ServerSocket(0, 8, InetAddress.getByName("127.0.0.1"));
+        java.net.DatagramSocket udpEcho = new java.net.DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+        java.util.concurrent.atomic.AtomicBoolean echoRunning = new java.util.concurrent.atomic.AtomicBoolean(true);
+        Thread tcpEchoThread = new Thread(() -> {
+            while (echoRunning.get()) {
+                try {
+                    java.net.Socket s = tcpEcho.accept();
+                    Thread worker = new Thread(() -> {
+                        try (java.net.Socket sock = s) {
+                            byte[] b = new byte[256];
+                            int n;
+                            while ((n = sock.getInputStream().read(b)) != -1) {
+                                sock.getOutputStream().write(b, 0, n);
+                                sock.getOutputStream().flush();
+                            }
+                        } catch (Exception ignored) {
+                        }
+                    });
+                    worker.setDaemon(true);
+                    worker.start();
+                } catch (Exception ignored) {
+                    break;
+                }
+            }
+        });
+        tcpEchoThread.setDaemon(true);
+        tcpEchoThread.start();
+        Thread udpEchoThread = new Thread(() -> {
+            byte[] b = new byte[2048];
+            while (echoRunning.get()) {
+                try {
+                    java.net.DatagramPacket p = new java.net.DatagramPacket(b, b.length);
+                    udpEcho.receive(p);
+                    udpEcho.send(new java.net.DatagramPacket(p.getData(), p.getLength(), p.getSocketAddress()));
+                } catch (Exception ignored) {
+                    break;
+                }
+            }
+        });
+        udpEchoThread.setDaemon(true);
+        udpEchoThread.start();
+
+        RssClientConf oldGlobalConf = RssClient.rssConf;
+        RssRuntime runtime = null;
+        java.net.Socket persistentClientB = null;
+        org.rx.net.socks.encryption.ICrypto persistentCryptoB = null;
+        try {
+            RssClientConf conf1 = buildTwoUserRuntimeConf(upstreamPort, rpcPort, dnsPort, nsRegPort, nsSyncPort,
+                    ssPortA, "pwdA1", null, ssPortB, "pwdB1", null);
+            assertTrue(RssClient.normalizeAndValidateRssConfig(conf1));
+            runtime = new RssRuntime(inPort, conf1);
+
+            RssRuntime.ShadowServerRef refA1 = runtime.shadowServers.get("user-a");
+            RssRuntime.ShadowServerRef refB1 = runtime.shadowServers.get("user-b");
+            assertNotNull(refA1);
+            assertNotNull(refB1);
+            assertEquals(CipherKind.AES_256_GCM.getCipherName(), refA1.ssCipher);
+            assertEquals(CipherKind.AES_256_GCM.getCipherName(), refB1.ssCipher);
+
+            // Open a persistent TCP connection on user-b BEFORE reloading user-a's cipher.
+            persistentClientB = new java.net.Socket("127.0.0.1", ssPortB);
+            persistentClientB.setSoTimeout(4000);
+            persistentCryptoB = org.rx.net.socks.encryption.ICrypto.get(CipherKind.AES_256_GCM.getCipherName(), "pwdB1");
+            ByteBuf initB = io.netty.buffer.Unpooled.buffer();
+            org.rx.net.socks.UdpManager.encode(initB, "127.0.0.1", tcpEcho.getLocalPort());
+            initB.writeBytes("keep-b-1".getBytes(StandardCharsets.UTF_8));
+            persistentClientB.getOutputStream().write(drainBuf(persistentCryptoB.encrypt(initB)));
+            persistentClientB.getOutputStream().flush();
+            assertEquals("keep-b-1", readDecryptedString(persistentClientB, persistentCryptoB, 8));
+
+            // 1. Hot-reload ONLY user-a to chacha20-ietf-poly1305; user-b must NOT rebind and its open stream must survive.
+            RssClientConf conf2 = buildTwoUserRuntimeConf(upstreamPort, rpcPort, dnsPort, nsRegPort, nsSyncPort,
+                    ssPortA, "pwdA1", "chacha20-ietf-poly1305", ssPortB, "pwdB1", null);
+            assertTrue(RssClient.normalizeAndValidateRssConfig(conf2));
+            runtime.reload(conf1, conf2);
+
+            RssRuntime.ShadowServerRef refA2 = runtime.shadowServers.get("user-a");
+            RssRuntime.ShadowServerRef refB2 = runtime.shadowServers.get("user-b");
+            assertSame(refB1, refB2, "untouched user listener must not rebind");
+            org.junit.jupiter.api.Assertions.assertNotSame(refA1, refA2, "changed cipher listener must rebind");
+            assertEquals(CipherKind.CHACHA20_IETF_POLY1305.getCipherName(), refA2.ssCipher);
+
+            // Verify user-b's existing TCP stream still echoes cleanly!
+            ByteBuf nextB = io.netty.buffer.Unpooled.copiedBuffer("keep-b-2", StandardCharsets.UTF_8);
+            persistentClientB.getOutputStream().write(drainBuf(persistentCryptoB.encrypt(nextB)));
+            persistentClientB.getOutputStream().flush();
+            assertEquals("keep-b-2", readDecryptedString(persistentClientB, persistentCryptoB, 8));
+
+            // Verify user-a TCP + UDP succeed with chacha20-ietf-poly1305, and old aes-256-gcm fails!
+            assertSsTcpEcho(ssPortA, CipherKind.CHACHA20_IETF_POLY1305.getCipherName(), "pwdA1", tcpEcho.getLocalPort(), true);
+            assertSsUdpEcho(ssPortA, CipherKind.CHACHA20_IETF_POLY1305.getCipherName(), "pwdA1", udpEcho.getLocalPort(), true);
+            assertSsTcpEcho(ssPortA, CipherKind.AES_256_GCM.getCipherName(), "pwdA1", tcpEcho.getLocalPort(), false);
+
+            // 2. Canonical case/whitespace equivalence ("  CHACHA20-IETF-POLY1305  ") must NOT rebind user-a!
+            RssClientConf confCanonical = buildTwoUserRuntimeConf(upstreamPort, rpcPort, dnsPort, nsRegPort, nsSyncPort,
+                    ssPortA, "pwdA1", "  CHACHA20-IETF-POLY1305  ", ssPortB, "pwdB1", null);
+            assertTrue(RssClient.normalizeAndValidateRssConfig(confCanonical));
+            runtime.reload(conf2, confCanonical);
+            assertSame(refA2, runtime.shadowServers.get("user-a"), "canonical equivalent cipher must not rebind");
+
+            // 3. Inject bind failure during same-port cipher switch (chacha20 -> aes-128-gcm): must roll back and restore chacha20!
+            RssClientConf confFail = buildTwoUserRuntimeConf(upstreamPort, rpcPort, dnsPort, nsRegPort, nsSyncPort,
+                    ssPortA, "pwdA1", "aes-128-gcm", ssPortB, "pwdB1", null);
+            assertTrue(RssClient.normalizeAndValidateRssConfig(confFail));
+            runtime.shadowServerBindHook = usr -> {
+                if ("user-a".equals(usr.getUsername())) {
+                    throw new java.net.BindException("simulated bind failure on port " + usr.getSsPort());
+                }
+            };
+            try {
+                RssRuntime rt = runtime;
+                assertThrows(Throwable.class, () -> rt.reload(confCanonical, confFail));
+            } finally {
+                runtime.shadowServerBindHook = null;
+            }
+            RssRuntime.ShadowServerRef restoredA = runtime.shadowServers.get("user-a");
+            assertNotNull(restoredA);
+            assertEquals(CipherKind.CHACHA20_IETF_POLY1305.getCipherName(), restoredA.ssCipher);
+            assertSsTcpEcho(ssPortA, CipherKind.CHACHA20_IETF_POLY1305.getCipherName(), "pwdA1", tcpEcho.getLocalPort(), true);
+            assertSsUdpEcho(ssPortA, CipherKind.CHACHA20_IETF_POLY1305.getCipherName(), "pwdA1", udpEcho.getLocalPort(), true);
+
+            // 4. Simultaneous password + cipher change (chacha20/pwdA1 -> aes-128-gcm/pwdA2) succeeds cleanly.
+            RssClientConf confBoth = buildTwoUserRuntimeConf(upstreamPort, rpcPort, dnsPort, nsRegPort, nsSyncPort,
+                    ssPortA, "pwdA2", "aes-128-gcm", ssPortB, "pwdB1", null);
+            assertTrue(RssClient.normalizeAndValidateRssConfig(confBoth));
+            runtime.reload(confCanonical, confBoth);
+            assertEquals(CipherKind.AES_128_GCM.getCipherName(), runtime.shadowServers.get("user-a").ssCipher);
+            assertSsTcpEcho(ssPortA, CipherKind.AES_128_GCM.getCipherName(), "pwdA2", tcpEcho.getLocalPort(), true);
+            assertSsUdpEcho(ssPortA, CipherKind.AES_128_GCM.getCipherName(), "pwdA2", udpEcho.getLocalPort(), true);
+            assertSsTcpEcho(ssPortA, CipherKind.CHACHA20_IETF_POLY1305.getCipherName(), "pwdA1", tcpEcho.getLocalPort(), false);
+        } finally {
+            echoRunning.set(false);
+            if (persistentClientB != null) persistentClientB.close();
+            if (persistentCryptoB instanceof AutoCloseable) ((AutoCloseable) persistentCryptoB).close();
+            if (runtime != null) runtime.close();
+            RssClient.rssConf = oldGlobalConf;
+            tcpEcho.close();
+            udpEcho.close();
+            upstreamSvr.close();
+        }
+    }
+
+    private static RssClientConf buildTwoUserRuntimeConf(int upstreamPort, int rpcPort, int dnsPort, int nsRegPort, int nsSyncPort,
+                                                         int portA, String pwdA, String cipherA,
+                                                         int portB, String pwdB, String cipherB) {
+        RssClientConf conf = new RssClientConf();
+        conf.socksPwd = "inner-socks-pwd";
+        conf.rpcPort = rpcPort;
+        conf.shadowDnsPort = dnsPort;
+        conf.publicIpEndpoints = new String[]{"http://127.0.0.1:1/ip"};
+        conf.rpcAutoWhiteListSeconds = 0;
+        conf.upstreamHealthCheckSeconds = 60;
+        conf.udpLeasePoolEnabled = false;
+        conf.nameserver = new NameserverConfig();
+        conf.nameserver.setRegisterPort(nsRegPort);
+        conf.nameserver.setSyncPort(nsSyncPort);
+        AuthenticEndpoint ep = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", upstreamPort), "u", "p");
+        conf.socksServers = Collections.singletonList(new RssClientConf.SocksServer("primary", 1, ep));
+
+        ShadowUser a = new ShadowUser();
+        a.setUsername("user-a");
+        a.setSocksUser("socks-a");
+        a.setSsPort(portA);
+        a.setSsPwd(pwdA);
+        a.setSsCipher(cipherA);
+
+        ShadowUser b = new ShadowUser();
+        b.setUsername("user-b");
+        b.setSocksUser("socks-b");
+        b.setSsPort(portB);
+        b.setSsPwd(pwdB);
+        b.setSsCipher(cipherB);
+
+        conf.shadowUsers = Arrays.asList(a, b);
+        return conf;
+    }
+
+    private static byte[] drainBuf(ByteBuf buf) {
+        try {
+            byte[] out = new byte[buf.readableBytes()];
+            buf.readBytes(out);
+            return out;
+        } finally {
+            buf.release();
+        }
+    }
+
+    private static String readDecryptedString(java.net.Socket sock, org.rx.net.socks.encryption.ICrypto crypto, int expectedLen) throws Exception {
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        byte[] buf = new byte[256];
+        while (out.size() < expectedLen) {
+            int n = sock.getInputStream().read(buf);
+            if (n == -1) break;
+            ByteBuf dec = crypto.decrypt(io.netty.buffer.Unpooled.wrappedBuffer(buf, 0, n));
+            try {
+                out.write(drainBuf(dec.retain()));
+            } finally {
+                dec.release();
+            }
+        }
+        return new String(out.toByteArray(), StandardCharsets.UTF_8);
+    }
+
+    private static void assertSsTcpEcho(int ssPort, String method, String pwd, int targetPort, boolean expectSuccess) throws Exception {
+        org.rx.net.socks.encryption.ICrypto crypto = org.rx.net.socks.encryption.ICrypto.get(method, pwd);
+        try (java.net.Socket s = new java.net.Socket("127.0.0.1", ssPort)) {
+            s.setSoTimeout(expectSuccess ? 4000 : 800);
+            ByteBuf req = io.netty.buffer.Unpooled.buffer();
+            org.rx.net.socks.UdpManager.encode(req, "127.0.0.1", targetPort);
+            req.writeBytes("ping".getBytes(StandardCharsets.UTF_8));
+            s.getOutputStream().write(drainBuf(crypto.encrypt(req)));
+            s.getOutputStream().flush();
+            if (expectSuccess) {
+                assertEquals("ping", readDecryptedString(s, crypto, 4));
+            } else {
+                int r;
+                try {
+                    r = s.getInputStream().read();
+                } catch (java.io.IOException e) {
+                    return;
+                }
+                assertEquals(-1, r);
+            }
+        } finally {
+            if (crypto instanceof AutoCloseable) ((AutoCloseable) crypto).close();
+        }
+    }
+
+    private static void assertSsUdpEcho(int ssPort, String method, String pwd, int targetPort, boolean expectSuccess) throws Exception {
+        org.rx.net.socks.encryption.ICrypto crypto = org.rx.net.socks.encryption.ICrypto.get(method, pwd, true);
+        try (java.net.DatagramSocket ds = new java.net.DatagramSocket(new InetSocketAddress("127.0.0.1", 0))) {
+            ds.setSoTimeout(expectSuccess ? 4000 : 500);
+            ByteBuf req = io.netty.buffer.Unpooled.buffer();
+            org.rx.net.socks.UdpManager.encode(req, "127.0.0.1", targetPort);
+            req.writeBytes("uping".getBytes(StandardCharsets.UTF_8));
+            byte[] wire = drainBuf(crypto.encrypt(req));
+            ds.send(new java.net.DatagramPacket(wire, wire.length, InetAddress.getByName("127.0.0.1"), ssPort));
+            byte[] resp = new byte[512];
+            java.net.DatagramPacket pkt = new java.net.DatagramPacket(resp, resp.length);
+            if (!expectSuccess) {
+                assertThrows(java.net.SocketTimeoutException.class, () -> ds.receive(pkt));
+                return;
+            }
+            ds.receive(pkt);
+            ByteBuf dec = crypto.decrypt(io.netty.buffer.Unpooled.wrappedBuffer(pkt.getData(), 0, pkt.getLength()));
+            try {
+                org.rx.net.socks.UdpManager.decode(dec);
+                assertEquals("uping", dec.toString(StandardCharsets.UTF_8));
+            } finally {
+                dec.release();
+            }
+        } finally {
+            if (crypto instanceof AutoCloseable) ((AutoCloseable) crypto).close();
+        }
+    }
+
+    @Test
     public void normalizeAndValidateRssConfig_AcceptsShadowUserScopedSocksServers() {
         RssClientConf conf = validRssConf();
         RssClientConf.SocksServer first = new RssClientConf.SocksServer("primary", 1,

@@ -483,6 +483,9 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     }
 
     private void ensureFrontendHandlers(Channel inbound, Channel outbound) {
+        if (inbound.config() instanceof io.netty.channel.socket.SocketChannelConfig) {
+            ((io.netty.channel.socket.SocketChannelConfig) inbound.config()).setAllowHalfClosure(true);
+        }
         if (inbound.pipeline().get(SocksTcpFrontendRelayHandler.class) == null) {
             inbound.pipeline().addLast(SocksTcpFrontendRelayHandler.DEFAULT);
         }
