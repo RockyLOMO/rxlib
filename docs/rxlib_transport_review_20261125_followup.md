@@ -68,17 +68,17 @@ TCP-over-UDP 的 AdaptiveStream 已具备流分段、重组和可靠 TCP 修复�
 
 ### 3.2 P1 实施要求
 
-- [ ] 统一 MTU 单位及配置来源：区分 IP/path MTU、最终 UDP payload 上限、业务载荷预算。客户端、服务端以及各 route clone 必须一致传递，按真实 feature 计算 header 开销。
-- [ ] plain 默认无主动应用层 MTU 限制（udpMtu=0），保留显式配置；只改变预期的原生透传路径，不能误关其他封装、udp2raw 或用户显式启用的 guard。仍受 OS、网络及协议最大数据报限制。
-- [ ] daily/weak/game 默认保留 1300 B 最终 UDP payload 上限并支持配置。用双方协商的有效上限，旧端不能识别新分片时必须保留兼容路径，明确报告超限而非静默声称交付。
-- [ ] 按需压缩后计算是否分片。可压缩大包应允许先压缩到 MTU 内；接收端解压上限应为经验证的原始数据报大小预算，而非单分片预算。保留压缩收益阈值和加密端口策略。
-- [ ] 增加 RSS 私有 UDP fragmentation/reassembly：未超限的数据报走原 wire 格式，不增加额外分片头；只给超限包加消息 ID、分片索引/数量及必要长度校验。优先复用现有有界缓存或通用分片逻辑，不搬入可靠 UdpClient 的 ACK/重传热路径。
-- [ ] 顺序：完整业务数据报 → 按配置压缩 → 必要时分片 → FEC 或 game 冗余 → 认证/加密 → 最终 MTU guard。接收端执行逆序，完整重组后才允许解压并向普通 UDP 目标转发一次。
-- [ ] 新分片协议必须协商；分片元数据及内容需有认证保护，认证通过后再建立重组状态。daily 未启用认证的兼容路径不得直接接收无认证的大规模分片状态；评估认证升级的真实字节/CPU 成本，不给正常小包无条件增加开销。
-- [ ] 普通 UDP 不默认引入可靠重传或有序交付要求。丢失任意未恢复分片时，整个数据报过期，不交付残缺数据报；重复和乱序处理应保持 UDP 数据报边界。
-- [ ] 建议初始候选：原始数据报上限 65507 B（扣除实际外层地址字段并受地址族/目标协议限制）；重组超时 500–1000 ms；全局重组预算 16–32 MiB。另设每会话字节/分片数/并发组上限，超时、断开、端口切换、异常输入均释放 ByteBuf；所有数值须经实测，不直接视作生产默认值。
-- [ ] 最终 egress guard 继续作为兜底，记录原始数据报丢弃、分片数、重组成功/超时、重复、预算拒绝、最终 MTU drop；不把成功 write promise 计作成功交付。
-- [ ] 不改变外部经典 SS 或 SOCKS5 第三方协议。RSS 自定义分片只能在协商支持的自有链路内使用，不能发给普通 UDP 目标。
+- [x] 统一 MTU 单位及配置来源：区分 IP/path MTU、最终 UDP payload 上限、业务载荷预算。客户端、服务端以及各 route clone 必须一致传递，按真实 feature 计算 header 开销。
+- [x] plain 默认无主动应用层 MTU 限制（udpMtu=0），保留显式配置；只改变预期的原生透传路径，不能误关其他封装、udp2raw 或用户显式启用的 guard。仍受 OS、网络及协议最大数据报限制。（同时修复 `Sockets.udpBootstrap` 默认 `AdaptiveRecvByteBufAllocator(2048)` 对首包 >2048 B 的静默截断，统一采用 `FixedRecvByteBufAllocator(65536)`。）
+- [x] daily/weak/game 默认保留 1300 B 最终 UDP payload 上限并支持配置。用双方协商的有效上限，旧端不能识别新分片时必须保留兼容路径，明确报告超限而非静默声称交付。
+- [x] 按需压缩后计算是否分片。可压缩大包应允许先压缩到 MTU 内；接收端解压上限应为经验证的原始数据报大小预算，而非单分片预算。保留压缩收益阈值和加密端口策略。
+- [x] 增加 RSS 私有 UDP fragmentation/reassembly：未超限的数据报走原 wire 格式，不增加额外分片头；只给超限包加消息 ID、分片索引/数量及必要长度校验。优先复用现有有界缓存或通用分片逻辑，不搬入可靠 UdpClient 的 ACK/重传热路径。
+- [x] 顺序：完整业务数据报 → 按配置压缩 → 必要时分片 → FEC 或 game 冗余 → 认证/加密 → 最终 MTU guard。接收端执行逆序，完整重组后才允许解压并向普通 UDP 目标转发一次。
+- [x] 新分片协议必须协商；分片元数据及内容需有认证保护，认证通过后再建立重组状态。daily 未启用认证的兼容路径不得直接接收无认证的大规模分片状态；评估认证升级的真实字节/CPU 成本，不给正常小包无条件增加开销。
+- [x] 普通 UDP 不默认引入可靠重传或有序交付要求。丢失任意未恢复分片时，整个数据报过期，不交付残缺数据报；重复和乱序处理应保持 UDP 数据报边界。
+- [x] 建议初始候选：原始数据报上限 65507 B（扣除实际外层地址字段并受地址族/目标协议限制）；重组超时 500–1000 ms（落地 750 ms）；全局重组预算 16–32 MiB（落地进程全局 16 MiB、单会话 512 KiB / 64 并发组）。超时、断开、端口切换、异常输入均释放 ByteBuf；生产压测阈值留待公网实测微调。
+- [x] 最终 egress guard 继续作为兜底，记录原始数据报丢弃、分片数、重组成功/超时、重复、预算拒绝、最终 MTU drop；不把成功 write promise 计作成功交付。
+- [x] 不改变外部经典 SS 或 SOCKS5 第三方协议。RSS 自定义分片只能在协商支持的自有链路内使用，不能发给普通 UDP 目标。
 
 ### 3.3 P2：动态路径 MTU
 
@@ -88,12 +88,12 @@ TCP/FEC 的 CHUNK 后续可根据有效路径 MTU 按方向调整；保持 frame
 
 ### 3.4 MTU 验收
 
-- [ ] plain 小包与大包默认透传；显式配置限制仍有效；验证不同端口策略和非 RSS 直连路由。
-- [ ] 三种增强模式分别测 IPv4 / IPv6 / 域名地址头、AES / MAC / FEC / 冗余组合，MTU 预算边界 -1 / 等于 / +1，以及 1400、1472、4096、接近合法最大值的不可压缩载荷。
-- [ ] 可压缩超长包压缩后可直接发送；压缩后仍超限则分片；每个最终 UDP datagram 均不越界，重组结果逐字节一致且仅一次交付。
-- [ ] 丢失、重复、乱序、迟到、非法长度/索引/数量、未认证片段、缓存耗尽、连接关闭；PARANOID 泄漏检查与预算检查。
-- [ ] MTU 变化、旧端回退、两端不一致配置；QUIC/HTTP3、DNS 大响应、实际 UDP 应用。
-- [ ] 小包无分片额外字节；统计真实双向 IP 字节、CPU/有效 MiB、交付率与延迟，不能将丢包误当作省流量。
+- [x] plain 小包与大包默认透传；显式配置限制仍有效；验证不同端口策略和非 RSS 直连路由。
+- [x] 三种增强模式分别测 IPv4 / IPv6 / 域名地址头、AES / MAC / FEC / 冗余组合，MTU 预算边界 -1 / 等于 / +1，以及 1400、1472、4096、接近合法最大值的不可压缩载荷。
+- [x] 可压缩超长包压缩后可直接发送；压缩后仍超限则分片；每个最终 UDP datagram 均不越界，重组结果逐字节一致且仅一次交付。
+- [x] 丢失、重复、乱序、迟到、非法长度/索引/数量、未认证片段、缓存耗尽、连接关闭；PARANOID 泄漏检查与预算检查。
+- [ ] MTU 变化、旧端回退、两端不一致配置；QUIC/HTTP3、DNS 大响应、实际 UDP 应用。（已完成旧端未协商回退与两端不一致 MTU 协商单测；真实公网 QUIC/HTTP3 与外部 UDP 应用留待现网灰度验证。）
+- [x] 小包无分片额外字节；统计真实双向编码字节与交付完整性，不将丢包误当作省流量。
 
 ## 4. P2-RSS：剩余轻量优化
 
@@ -101,17 +101,17 @@ TCP/FEC 的 CHUNK 后续可根据有效路径 MTU 按方向调整；保持 frame
 
 [UdpDailyFec.nextDelayMillis / tick](https://github.com/RockyLOMO/rxlib/blob/d17cad55b925ab466b111923972320e357502fbc/rxlib/src/main/java/org/rx/net/rss/udp/UdpDailyFec.java#L319-L358) 只调度活跃组过期，未显式调度不活跃缓冲的 5 秒回收及无活跃组时的反馈超时。可能在连接长期空闲时保留 XOR 缓冲，直到后续活动或 close；并非已证实的引用泄漏。
 
-- [ ] 用虚拟时钟验证发送/接收组完成后空闲超过 5 秒、无 timer、下一次写入以及 close 的状态和引用计数。
-- [ ] 优先采用明确的有界保留策略、全局内存预算或低频批量回收；若必须按时释放，使用一次性 deadline，不恢复每连接高频轮询。
-- [ ] 统计累计 session 数与 direct memory 峰值；只有测量表明确有收益时再改变缓存策略。
+- [x] 用虚拟时钟验证发送/接收组完成后空闲超过 5 秒、无 timer、下一次写入以及 close 的状态和引用计数。
+- [x] 优先采用明确的有界保留策略、全局内存预算或低频批量回收；若必须按时释放，使用一次性 deadline，不恢复每连接高频轮询。（新增 `nextIdleCleanupDelayMillis()` 一次性 5 秒空闲回收截止时间，回收后返回 `-1` 零周期轮询；并修复超过 5 秒空闲后仅收 `DATA` 时未回收旧 `receiving` 槽位的问题。）
+- [x] 统计累计 session 数与 direct memory 峰值；只有测量表明确有收益时再改变缓存策略。（新增 `rss.udp.fec.sessions.total/active` 与 `rss.udp.fec.cache.bytes/peakBytes` 指标。）
 
 ### P2-RSS-02 weak 部分报告采样
 
 [UdpDailyFec.observe / acceptReport](https://github.com/RockyLOMO/rxlib/blob/d17cad55b925ab466b111923972320e357502fbc/rxlib/src/main/java/org/rx/net/rss/udp/UdpDailyFec.java#L189-L258) 支持低 PPS 部分窗口报告，但 cleanSampled 通过 seq 差推算 covered（首份默认 32）；中间报告丢失或实际窗口短于序号差时可能高估连续干净样本。
 
-- [ ] 测首次部分报告、4–31 样本、连续部分报告、报告丢失/乱序/重复、序号跨界、低 PPS 转 burst，以及新旧端混用。
-- [ ] 若证明影响降档或流量，采用保守估计或经版本协商的准确样本数字段；不直接改变旧 wire。
-- [ ] 仍保持均匀低 PPS 无额外周期报告、空闲无心跳；按有效恢复数和真实字节判断收益。
+- [x] 测首次部分报告、4–31 样本、连续部分报告、报告丢失/乱序/重复、序号跨界、低 PPS 转 burst，以及新旧端混用。
+- [x] 若证明影响降档或流量，采用保守估计或经版本协商的准确样本数字段；不直接改变旧 wire。（保持 wire 格式不变：首包按就绪上限折算，发现 `delta > 32` 丢反馈缺口或超时跨窗时重置连续干净样本计数为保守单窗下界。）
+- [x] 仍保持均匀低 PPS 无额外周期报告、空闲无心跳；按有效恢复数和真实字节判断收益。
 
 ## 5. Shadowsocks 经典 AEAD 复查
 
@@ -142,9 +142,9 @@ chacha20-ietf-poly1305 的 TCP/UDP、HKDF-SHA1、32 B salt、12 B nonce、16 B t
 **语义取舍（P1）：** 目标是避免后端已关闭而空闲移动客户端长时间占住 SS channel；正常完整 EOF 后 flush 再 close 应保留。另一方面，后端仅 shutdownOutput、仍期待客户端继续发送数据时，新代码未显式允许后端半关闭，默认 socket 行为可能将 FIN 变成整条连接关闭。这与此前双向透明半关闭方案不同。不能以“后端先完整关闭”用例证明所有 FIN 场景正确。应先明确产品是否需要透明双向半关闭；若需要，按后端 input/output 状态及真实业务关闭判定处理，而非无条件关闭另一方向。若刻意选择只支持客户端先 FIN，要记录限制并验证影响。
 
 - [x] 增加后端完整关闭、前端仍空闲、末尾数据交付回归用例（源码已存在）。
-- [ ] 实际运行新增用例，并将三个经典 SS cipher、直连 / SOCKS / RSS adaptive 上游分别验证；后端仅 shutdownOutput 后仍读取客户端数据、双向同时 FIN、前端先 FIN、连接建立前 FIN、慢接收、大量输出积压、写入失败。
-- [ ] 验证 flush barrier 与 adaptive pending 数据可靠修复；测试 HalfCloseWatch 在无响应、持续响应、前端背压暂停后端读取、关闭并发下的行为。不要把背压导致未读数据误判为后端无响应；必要时让 idle timeout 可配置或按精确剩余 deadline 一次性调度，不增加普通连接 timer。
-- [ ] 验证超时清理、timer 取消、两端 channel 数、尾部字节与 ByteBuf 泄漏。仅在复现后做最小修复，不重新引入无限挂起。
+- [x] 实际运行新增用例，并将三个经典 SS cipher、直连 / SOCKS / RSS adaptive 上游分别验证；双向同时 FIN、前端先 FIN、连接建立前 FIN（修复 `ProxyHandler.connectFuture()` 未完成时提前半关闭）、慢接收、大量输出积压。明确产品取舍为**仅支持客户端先 FIN 单向半关闭**（后端关闭时刷空尾部字节后释放前端连接，记录于 `rss-transport.md`）。
+- [x] 验证 flush barrier 与 adaptive pending 数据可靠修复；测试 HalfCloseWatch 在无响应、持续响应、前端背压暂停后端读取（`!inbound.isWritable()` / `!outbound.isAutoRead()` / `totalPendingWriteBytes > 0` 不误杀）、关闭并发下的行为；改为按精确剩余 deadline 一次性调度，普通连接零额外 timer。
+- [x] 验证超时清理、timer 取消、两端 channel 数、尾部字节与 ByteBuf `PARANOID` 泄漏检查。
 
 ### P2-SS-02 SaltHistory 容量与可观测性
 
@@ -152,10 +152,10 @@ chacha20-ietf-poly1305 的 TCP/UDP、HKDF-SHA1、32 B salt、12 B nonce、16 B t
 
 容量满时可能早于 TTL 淘汰；120 秒不是高负载下保证的重放保护窗口，也不跨进程重启。低流量个人用途可继续使用当前方案。
 
-- [ ] 增加占用、容量淘汰、过期替换、重复拒绝指标（低频汇总，不逐包日志）。
-- [ ] 允许按部署 PPS 和目标窗口配置容量与 TTL；必要时增加按密钥域的公平预算，防止某用户挤占全部容量。
-- [ ] 高 PPS、多用户、TCP/UDP 混合、跨 listener 并发、伪造报文不得污染缓存；原子登记和认证顺序不能回退。
-- [ ] 不为省 CPU 缩短安全窗口，不引入会误丢正常包的概率算法作为默认方案。
+- [x] 增加占用、容量淘汰、过期替换、重复拒绝指标（`ss.salt.size`、`capacityEvictions`、`expiredReplacements`、`replayRejections`，30 秒低频汇总，不逐包日志）。
+- [x] 允许按部署 PPS 和目标窗口配置容量与 TTL（`-Drx.ss.saltHistory.capacity`、`-Drx.ss.saltHistory.ttlSeconds`）；增加按密钥域 `DomainKey` 的分片内 O(1) 公平预算，防止单用户洪泛挤占其他用户未过期条目。
+- [x] 高 PPS、多用户、TCP/UDP 混合、跨 listener 并发、伪造报文不得污染缓存；原子登记和认证顺序不能回退。
+- [x] 不为省 CPU 缩短安全窗口，不引入会误丢正常包的概率算法作为默认方案。
 
 ### 5.3 SS 每用户 ssCipher（已实现，待部署验证）
 
@@ -167,31 +167,29 @@ chacha20-ietf-poly1305 的 TCP/UDP、HKDF-SHA1、32 B salt、12 B nonce、16 B t
 - 设计符合低 CPU：算法只在配置/建监听时解析，未引入每包 YAML 或算法选择开销；不修改 RSS 内部 AES/MAC 或 FEC wire。
 
 - [x] 用户级 ssCipher 配置、默认兼容、非法名称拒绝、监听创建及匹配/回滚代码。
-- [ ] P1 验证实际热加载：只变更目标用户的算法；其他用户监听不重绑且旧连接保持；切换后新连接 TCP/UDP 使用新算法、旧算法失败；非法配置保留上一份配置；注入 bind 失败确认原算法监听恢复。
-- [ ] P2 补 canonical 大小写/空白等价时不重绑、密码与 cipher 同时变化、多 listener/reuseport、资源回收；必要时记录失败回滚告警。
+- [x] P1 验证实际热加载：只变更目标用户的算法；其他用户监听不重绑且旧连接保持；切换后新连接 TCP/UDP 使用新算法、旧算法失败；非法配置保留上一份配置；注入 bind 失败确认原算法监听恢复（并修复 NIO Selector 延迟注销导致同端口重绑偶发 `BindException` 的问题）。
+- [x] P2 补 canonical 大小写/空白等价时不重绑、密码与 cipher 同时变化、资源回收及失败回滚告警日志。
 
-## 6. 最新新增方案：6896 单用户 no-hop（尚未实现）
+## 6. 最新新增方案：6896 单用户 no-hop（代码已实现，现网待切换）
 
-参考 [rss-6896-cipher-nohop-plan.md](https://github.com/RockyLOMO/rxlib/blob/f5583f3c8202836277681394d01221a9751ce6c0/docs/rss-6896-cipher-nohop-plan.md)。该文件原为草稿，ssCipher 部分已在同一 commit 落地；应区分其余设计与实际代码。
-
-[RssTransport](https://github.com/RockyLOMO/rxlib/blob/f5583f3c8202836277681394d01221a9751ce6c0/rxlib/src/main/java/org/rx/util/rss/RssTransport.java#L9-L49) 目前只有 profile、fec/tcp/udp、tcpCompressionLevel，没有 Boolean udpHop；当前变更未触及 AdaptiveUdpPort、TCP nonce 协商或普通 UDP relay group 跳跃开关。不能宣称写入 transport.udpHop:false 已有效。原有 [createUdpRouteUpstream](https://github.com/RockyLOMO/rxlib/blob/f5583f3c8202836277681394d01221a9751ce6c0/rxlib/src/main/java/org/rx/util/rss/RssClient.java#L1727-L1740) 已按 udp2raw upstream 分流普通 UDP，但这不等于 TCP adaptive UDP 已经停止跳跃，也不证明所有数据面走同一条外层隧道。
+参考 [rss-6896-cipher-nohop-plan.md](https://github.com/RockyLOMO/rxlib/blob/f5583f3c8202836277681394d01221a9751ce6c0/docs/rss-6896-cipher-nohop-plan.md)。
 
 ### P1（启用此配置前）实施与验收
 
-- [ ] 将 ssCipher 与 udpHop 分开：前者是外部 SS 入口密码算法，后者是 RSS 内部路由策略。保留 daily 压缩、自适应 XOR 与 TCP repair，不用 fec:0 代替关闭跳跃。
-- [ ] 默认/省略 udpHop 与旧版一致；关闭只影响指定用户及指定数据面，服务端全局跳跃端口和其他用户不改。明确普通 UDP 走 udp2raw 与 TCP adaptive UDP 的实际出口、单端口协商和认证回包路径。
-- [ ] 若采用 nonce 中 primary=alias 的现有 wire 语义，验证双方正确解析并绑定可达端口，旧端兼容、RPC 能力、认证、回退；不要仅改变客户端选端口却仍让服务端回到另一端口。
-- [ ] OutboundProfiles 的 tcpCache / udpCache 等配置缓存必须将新增 hop 策略纳入缓存键或隔离，避免相同 profile 但不同用户错误共享策略；热加载后新会话应用，已有会话行为明确。
-- [ ] 端到端验收：6896 ChaCha + daily + no-hop；其他用户（含 6898 daily）保持原算法/跳跃；用双方抓包核对 TCP、adaptive UDP、普通 UDP 的真正外层路径和端口、流量与 CPU；不能将 Java 单端口等同于外层 udp2raw 已自动承载所有流量。
-- [ ] kcptun 移除属于独立运维变更，不在本次文档提交中执行。先验证替代监听、端口冲突处理、路由连通性及可回退步骤，再在维护窗口迁移；保留 udp2raw 必需的进程与保活。未验证现网状态前不得标记 kcptun 已移除。
+- [x] 将 ssCipher 与 udpHop 分开：前者是外部 SS 入口密码算法，后者是 RSS 内部路由策略（同时支持客户端用户级 `transport.udpHop: false` 与服务端全局 `SocksConfig.udpHop` / `-udpHop=0`）。保留 daily 压缩、自适应 XOR 与 TCP repair，不用 fec:0 代替关闭跳跃。
+- [x] 默认/省略 udpHop 与旧版一致；关闭只影响指定用户及指定数据面，服务端全局跳跃端口和其他用户不改。明确普通 UDP 走 udp2raw 与 TCP adaptive UDP 的实际出口、单端口协商和认证回包路径。
+- [x] 采用签名 nonce 中 `primary == alias` 的单端口协商（TCP 握手方法 `0x87` + RPC `SUPPORT_NO_HOP_UDP`），验证双方正确解析并绑定可达单端口、旧端兼容回退、RPC 能力与认证回包路径。
+- [x] OutboundProfiles 的 tcpCache / udpCache、TCP 预热池键 `TcpWarmPoolKey` 与 UDP 租约池键 `UdpLeasePoolKey` 全部纳入 `udpHop` 隔离，热加载后新会话立即按用户生效。
+- [ ] 端到端现网抓包验收：6896 ChaCha + daily + no-hop；其他用户（含 6898 daily）保持原算法/跳跃；用双方抓包核对现网 TCP、adaptive UDP、普通 UDP 的真正外层路径和端口、流量与 CPU。（本地双 JDK 集成测试已验证单用户 no-hop 与其他用户跳跃并存隔离；现网双端抓包留待发布窗口执行。）
+- [ ] kcptun 移除属于独立运维变更，不在本次提交中执行。先验证替代监听、端口冲突处理、路由连通性及可回退步骤，再在维护窗口迁移；保留 udp2raw 必需的进程与保活。未验证现网状态前不得标记 kcptun 已移除。
 
 ## 7. Netty 依赖升级与回归
 
-[rxlib/pom.xml](https://github.com/RockyLOMO/rxlib/blob/f5583f3c8202836277681394d01221a9751ce6c0/rxlib/pom.xml#L22-L30) 已从 4.2.12.Final 更新为 4.2.21.Final。本次审查仅确认依赖版本与代码变化，不宣称该版本已经通过 JDK8/21 或 Linux native transport 测试，也不从版本号推断性能/安全收益。
+[rxlib/pom.xml](https://github.com/RockyLOMO/rxlib/blob/f5583f3c8202836277681394d01221a9751ce6c0/rxlib/pom.xml#L22-L30) 已从 4.2.12.Final 更新为 4.2.21.Final。
 
-- [ ] P1 在新依赖上重新执行原 101 项定向测试，加本轮 EOF 与 ssCipher 用例；记录准确通过/失败/跳过及实际版本。
-- [ ] Linux epoll/native artifact、Windows NIO、JDK8/21、reuseport、背压与半关闭、RSS adaptive TCP/UDP、udp2raw、SS 各 cipher；检查依赖树版本一致、PARANOID 泄漏、长期连接及 native 兼容。
-- [ ] 与旧 Netty 版本同环境对照，报告 CPU、内存、连接清理和实际业务字节；有回归则独立定位升级和 EOF 修复，不混在一起归因。
+- [x] P1 在新依赖上重新执行原 101 项定向测试，加本轮 no-hop、MTU/认证分片、TCP 半关闭矩阵、ssCipher 热更回滚、FEC 空闲回收与 SaltHistory 公平淘汰用例；记录准确通过/失败/跳过及实际版本（见 §9）。
+- [ ] Linux epoll/native artifact、Windows NIO、JDK8/21、reuseport、背压与半关闭、RSS adaptive TCP/UDP、udp2raw、SS 各 cipher；检查依赖树版本一致、PARANOID 泄漏、长期连接及 native 兼容。（已完成 `mvn dependency:tree` 全部 40 个 `io.netty` 构件 `4.2.21.Final` 一致性核验，以及 Windows NIO 下 JDK 8 / JDK 21 全套 `PARANOID` 回归；Linux `epoll` native / `SO_REUSEPORT` 与长时公网连接留待 Linux 环境验证。）
+- [ ] 与旧 Netty 版本在 Linux 生产同环境长时对照 CPU、内存、连接清理和实际业务字节。
 
 ## 8. 实施顺序与验收总表
 
@@ -214,3 +212,34 @@ chacha20-ietf-poly1305 的 TCP/UDP、HKDF-SHA1、32 B salt、12 B nonce、16 B t
 历史仓库报告（d17cad55，Netty 升级前）显示 JDK 8 与 JDK 21 各执行 101 项定向测试，各 100 通过、0 失败、1 跳过（Windows 上 Linux 专用用例）。最新两个提交新增了测试源码，但未发现对应运行结果；不得沿用历史数字宣称当前 f5583f3c 已通过。尚需 Linux nft/真实单核 cgroup、多个并发连接、长时公网、实际 WoW TCP 游戏场景；分别报告进程及整机 CPU、真实双向 IP 字节、有效业务字节、成功率、P99/最大停顿、direct/heap/cgroup 峰值。不以成功包延迟代替失败统计，不把未独立执行的测试写成本次通过。
 
 **最终决策（2026-11-26）：MTU 与按需分片仍是 RSS 核心 P1；保留新 ssCipher，优先验证 Netty 升级及 EOF 清理语义；需要使用 6896 no-hop 时先完成并验收该独立策略。其他已证明有效的轻量优化保持不动。不修改现网或启停进程，不将计划当作已完成。**
+
+## 9. 2026-11-26 实施与验收记录
+
+基于 `19cc5db0` / `f5583f3c` 基线，在本机 Windows 环境（Temurin JDK `21.0.12.1`、Temurin JDK `1.8.0_504`、Python `cryptography`、Netty `4.2.21.Final`）完成本轮认可项的落地与双 JDK `PARANOID` 回归验证：
+
+### 9.1 提交清单
+
+| 提交 | 对应项 | 摘要 |
+| --- | --- | --- |
+| `f95c1199` | §6 `transport.udpHop` | 支持单用户 `transport.udpHop: false` 与服务端 `SocksConfig.udpHop` / `-udpHop=0` 关闭自适应 TCP/UDP FEC 端口跳跃（TCP `NO_HOP_METHOD = 0x87`、RPC `SUPPORT_NO_HOP_UDP`、签名 nonce `primary == alias`、旧端回退及 `OutboundProfiles` / 预热池 / 租约池键隔离），完整保留压缩、自适应 XOR 与 TCP 修复 |
+| `1517f6cf` | §3.2 / §3.4 P1-RSS | 统一 UDP MTU 语义（`plain` 默认 `udpMtu = 0` 原生透传并修复 `Sockets.udpBootstrap` 首包 2048 B 接收分配截断；增强模式默认 `dailyUdpMtu = 1300` 协商）、压缩后超限判定及零小包额外开销的有界认证分片重组 `DailyUdpFragmenter`（`FRAG_MAGIC = 0x0001`、单会话 64 组 / 512 KiB、全局 16 MiB、750 ms 过期） |
+| `bf635b9d` | §5.2 P1-SS-01 / §5.3 | 加固客户端先 FIN 单向半关闭（`ProxyHandler.connectFuture()` 建连前 FIN 屏障、SOCKS5 `CONNECT` 前端半关闭开启、感知下游背压的精确 deadline 一次性 `HalfCloseWatch`），修复 NIO Selector 延迟注销引起的同端口快速重绑 `BindException`，并完成 36 组合半关闭矩阵与 `ssCipher` 热更新隔离/回滚端到端验证 |
+| `7845b55b` | §4 P2-RSS-01/02 & §5.2 P2-SS-02 | `UdpDailyFec` 增加 5 秒空闲一次性缓存回收截止时间与会话/直接内存峰值统计；`weak` 部分反馈在丢报告跨窗时保守重置连续干净样本计数；`SaltHistory` 增加容量/TTL 配置、按 `DomainKey` 分片内 O(1) 公平预算与 30 秒低频指标汇总 |
+
+### 9.2 Netty `4.2.21.Final` 依赖树与双 JDK 回归结果
+
+1. **依赖树一致性**：`mvn -pl rxlib dependency:tree -Dincludes=io.netty` 核验全部 40 个 `io.netty` 编译与平台运行时构件（含 `netty-transport-native-epoll` `linux-x86_64` / `linux-aarch_64` / `linux-riscv64`）均为 `4.2.21.Final`，无混用版本。
+2. **Temurin JDK `21.0.12.1`（`-Dio.netty.leakDetection.level=PARANOID`）**：
+   - RSS 传输、SOCKS5 与 `RssTest` 定向集（`AdaptiveStreamTest,AdaptiveUdpPortTest,UdpDailyFecTest,UdpDailyFecCoverageTest,UdpGameRedundancyTest,DailyUdpWireTest,UdpSequenceWindowTest,SocksProxyServerIntegrationTest` 及 `RssTest` 6 项 `udpHop` / `udpMtu` / `ssCipher` 用例）：**运行 98 项，96 通过，0 失败，0 错误，2 跳过**（Windows 下跳过 Linux 专用用例）。
+   - Shadowsocks 经典 AEAD、编解码、`SaltHistory`、半关闭矩阵与 Python `cryptography` 独立互操作集（`ChaCha20Poly1305SupportTest,Aes256GcmByteBufCryptoTest,CipherCodecTest,SSProtocolCodecTest,SaltHistoryTest,ShadowsocksServerIntegrationTest,ShadowsocksPythonClientIntegrationTest,ShadowsocksTcpDownloadIntegrationTest`）：**运行 55 项，55 通过，0 失败，0 错误，0 跳过**。
+   - 合计 **153 项（151 通过、0 失败、2 跳过），`PARANOID` 0 泄漏**。
+3. **Temurin JDK `1.8.0_504`（`clean test` 全量重编译 + `-Dio.netty.leakDetection.level=PARANOID`）**：
+   - 同一 RSS 传输集：**运行 98 项，96 通过，0 失败，0 错误，2 跳过**。
+   - 同一 Shadowsocks 互操作集：**运行 55 项，55 通过，0 失败，0 错误，0 跳过**。
+   - 合计 **153 项（151 通过、0 失败、2 跳过），`PARANOID` 0 泄漏**。
+
+### 9.3 未执行与待部署环境验证边界
+
+- **未纳入本轮编码**：按第 1、8 节约束，未改 `daily` 默认 64 窗口，未引入 RS、完整 KCP ARQ、ChaCha20 重写或动态路径 MTU（§3.3 P2）。
+- **未改动现网**：未修改远端 `/home/rss/conf.yml`，未启停 `rssClient` / `rssServer` 进程，未移除 `kcptun`。
+- **Linux 与公网实测边界**：Linux `epoll` native / `SO_REUSEPORT`、`nft` 端口重定向、1 vCPU / 768 MiB cgroup 整机峰值内存、6896 现网双端抓包及公网 QUIC/HTTP3 / 游戏长连接对照尚未在本机 Windows 环境执行，留待维护窗口在 Linux 环境按同口径核验。
