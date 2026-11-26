@@ -583,6 +583,10 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
             if (fec != null) {
                 DiagnosticMetrics.record("rss.udp.fec.tx.dataBytes", fec.dataBytes, side);
                 DiagnosticMetrics.record("rss.udp.fec.tx.parityBytes", fec.parityBytes, side);
+                DiagnosticMetrics.record("rss.udp.fec.sessions.total", UdpDailyFec.totalSessions(), side);
+                DiagnosticMetrics.record("rss.udp.fec.sessions.active", UdpDailyFec.activeSessions(), side);
+                DiagnosticMetrics.record("rss.udp.fec.cache.bytes", UdpDailyFec.cachedXorBytes(), side);
+                DiagnosticMetrics.record("rss.udp.fec.cache.peakBytes", UdpDailyFec.peakCachedXorBytes(), side);
                 DiagnosticMetrics.record("rss.udp.daily.rx.sampled", fec.sampledData, side);
                 DiagnosticMetrics.record("rss.udp.daily.rx.missing", fec.missingData, side);
                 DiagnosticMetrics.record("rss.udp.daily.rx.recovered", fec.recoveredData, side);
@@ -635,7 +639,13 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
     }
 
     private long nextTimerDelayMillis() {
-        long delay = fec == null ? -1L : fec.nextDelayMillis();
+        long delay = -1L;
+        if (fec != null) {
+            delay = fec.nextDelayMillis();
+            if (delay < 0) {
+                delay = fec.nextIdleCleanupDelayMillis();
+            }
+        }
         if (fragmenter != null) {
             long fragDelay = fragmenter.nextDelayMillis(clock.getAsLong());
             if (fragDelay >= 0 && (delay < 0 || fragDelay < delay)) {
