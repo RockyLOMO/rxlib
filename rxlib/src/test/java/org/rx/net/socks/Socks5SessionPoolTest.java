@@ -50,7 +50,10 @@ class Socks5SessionPoolTest {
         TcpWarmPoolKey weak = TcpWarmPoolKey.from(left, config, "reactor-a");
         assertNotEquals(game, weak);
         config.setTcpCompressionLevel(1);
-        assertNotEquals(weak, TcpWarmPoolKey.from(left, config, "reactor-a"));
+        TcpWarmPoolKey compressed = TcpWarmPoolKey.from(left, config, "reactor-a");
+        assertNotEquals(weak, compressed);
+        config.setUdpHop(false);
+        assertNotEquals(compressed, TcpWarmPoolKey.from(left, config, "reactor-a"));
     }
 
     @Test
@@ -59,6 +62,8 @@ class Socks5SessionPoolTest {
         try {
             assertFalse(SocksAdaptiveHandshake.select(ch.pipeline().firstContext(),
                     java.util.Collections.singletonList(new Socks5AuthMethod(0x86))));
+            assertFalse(SocksAdaptiveHandshake.select(ch.pipeline().firstContext(),
+                    java.util.Collections.singletonList(new Socks5AuthMethod(0x87))));
             assertNull(ch.readOutbound());
             for (int profile = 0; profile <= 2; profile++) {
                 assertTrue(SocksAdaptiveHandshake.select(ch.pipeline().firstContext(), SocksAdaptiveHandshake.offer(profile).authMethods()));
@@ -66,6 +71,13 @@ class Socks5SessionPoolTest {
                 assertTrue(SocksAdaptiveHandshake.selected(profile, response.authMethod()));
                 assertFalse(SocksAdaptiveHandshake.selected((profile + 1) % 3, response.authMethod()));
                 assertEquals(Integer.valueOf(profile), ch.attr(SocksAdaptiveHandshake.NEGOTIATED).get());
+                assertEquals(Boolean.FALSE, ch.attr(SocksAdaptiveHandshake.NO_HOP).get());
+
+                assertTrue(SocksAdaptiveHandshake.select(ch.pipeline().firstContext(), SocksAdaptiveHandshake.offer(profile, false).authMethods()));
+                DefaultSocks5InitialResponse noHopResponse = ch.readOutbound();
+                assertTrue(SocksAdaptiveHandshake.selected(profile, noHopResponse.authMethod()));
+                assertEquals(Integer.valueOf(profile), ch.attr(SocksAdaptiveHandshake.NEGOTIATED).get());
+                assertEquals(Boolean.TRUE, ch.attr(SocksAdaptiveHandshake.NO_HOP).get());
             }
         } finally {
             ch.finishAndReleaseAll();
@@ -109,6 +121,10 @@ class Socks5SessionPoolTest {
 
         assertEquals(leftKey, rightKey);
         assertEquals(leftKey.hashCode(), rightKey.hashCode());
+        config.setDailyUdpFeatures(4);
+        UdpLeasePoolKey dailyHop = UdpLeasePoolKey.from(left, config, "reactor-b");
+        config.setUdpHop(false);
+        assertNotEquals(dailyHop, UdpLeasePoolKey.from(left, config, "reactor-b"));
     }
 
     @Test

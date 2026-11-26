@@ -32,9 +32,9 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @Slf4j
 class ShadowsocksServerIntegrationTest {
-    static final int TCP_ECHO_PORT = 16299;
-    static final int UDP_ECHO_PORT = 16300;
-    static final int UDP_ALT_ECHO_PORT = 16301;
+    static int TCP_ECHO_PORT;
+    static int UDP_ECHO_PORT;
+    static int UDP_ALT_ECHO_PORT;
     static ServerBootstrap tcpEchoBootstrap;
     static Channel tcpEchoChannel;
     static Channel udpEchoChannel;
@@ -49,7 +49,8 @@ class ShadowsocksServerIntegrationTest {
                 ctx.writeAndFlush(msg);
             }
         }));
-        tcpEchoChannel = tcpEchoBootstrap.bind(Sockets.newAnyEndpoint(TCP_ECHO_PORT)).sync().channel();
+        tcpEchoChannel = tcpEchoBootstrap.bind(Sockets.newLoopbackEndpoint(0)).sync().channel();
+        TCP_ECHO_PORT = ((InetSocketAddress) tcpEchoChannel.localAddress()).getPort();
 
         udpEchoBootstrap = Sockets.udpBootstrap(null, ob -> ob.pipeline().addLast(new SimpleChannelInboundHandler<DatagramPacket>() {
             @Override
@@ -59,8 +60,10 @@ class ShadowsocksServerIntegrationTest {
                 ctx.writeAndFlush(new DatagramPacket(content, msg.sender()));
             }
         }));
-        udpEchoChannel = udpEchoBootstrap.bind(Sockets.newAnyEndpoint(UDP_ECHO_PORT)).sync().channel();
-        udpAltEchoChannel = udpEchoBootstrap.bind(Sockets.newAnyEndpoint(UDP_ALT_ECHO_PORT)).sync().channel();
+        udpEchoChannel = udpEchoBootstrap.bind(Sockets.newLoopbackEndpoint(0)).sync().channel();
+        UDP_ECHO_PORT = ((InetSocketAddress) udpEchoChannel.localAddress()).getPort();
+        udpAltEchoChannel = udpEchoBootstrap.bind(Sockets.newLoopbackEndpoint(0)).sync().channel();
+        UDP_ALT_ECHO_PORT = ((InetSocketAddress) udpAltEchoChannel.localAddress()).getPort();
 
         Thread.sleep(300);
     }
@@ -474,6 +477,224 @@ class ShadowsocksServerIntegrationTest {
         } finally {
             ssServer.close();
             socksUpstream.close();
+        }
+    }
+
+    @Test
+    @SneakyThrows
+    @Timeout(value = 30)
+    void tcpHalfCloseMatrixAcrossCiphersAndDirectSocksAdaptiveUpstreams() {
+        SocksUser adaptiveUser = new SocksUser("adaptive");
+        adaptiveUser.setPassword("adaptive-pwd");
+        SocksConfig socksCfg = new SocksConfig(0);
+        socksCfg.setAdaptiveTcp(true);
+        try (SocksProxyServer socksUpstream = new SocksProxyServer(
+                socksCfg, new SocksAuthenticator(java.util.Collections.singletonList(adaptiveUser)))) {
+            int socksPort = ((InetSocketAddress) socksUpstream.tcpChannels.get(0).localAddress()).getPort();
+            AuthenticEndpoint socksAuthEp = new AuthenticEndpoint(
+                    new InetSocketAddress("127.0.0.1", socksPort), "adaptive", "adaptive-pwd");
+            UpstreamSupport support = new UpstreamSupport(socksAuthEp, null);
+
+            for (CipherKind kind : CipherKind.values()) {
+                for (int mode = 0; mode < 3; mode++) {
+                    final int upstreamMode = mode; // 0=direct, 1=SOCKS, 2=RSS adaptive TCP
+                    String method = kind.getCipherName();
+                    String password = "matrix-pwd-" + kind.ordinal() + "-" + mode;
+                    ShadowsocksConfig ssConfig = new ShadowsocksConfig(Sockets.newLoopbackEndpoint(0), method, password);
+                    ssConfig.setReadTimeoutSeconds(0);
+                    try (ShadowsocksServer ssServer = new ShadowsocksServer(ssConfig);
+                         java.net.ServerSocket backend = new java.net.ServerSocket(0, 8, InetAddress.getByName("127.0.0.1"))) {
+                        backend.setSoTimeout(5000);
+                        ssServer.onTcpRoute.replace((s, e) -> {
+                            if (upstreamMode == 0) {
+                                e.setUpstream(new org.rx.net.socks.upstream.Upstream(e.getFirstDestination()));
+                            } else {
+                                SocksConfig uCfg = new SocksConfig(0);
+                                if (upstreamMode == 2) {
+                                    uCfg.setAdaptiveTcp(true);
+                                }
+                                e.setUpstream(new org.rx.net.socks.upstream.SocksTcpUpstream(e.getFirstDestination(), uCfg, support));
+                            }
+                        });
+
+                        // A. Frontend-first FIN (client shutdownOutput after sending request, including adaptive drain).
+                        verifyHalfCloseScenario(ssServer, backend, method, password, "FRONT_FIN");
+                        // B. Backend-first EOF while client keeps output open.
+                        verifyHalfCloseScenario(ssServer, backend, method, password, "BACK_EOF");
+                        // C. Simultaneous FIN from both sides.
+                        verifyHalfCloseScenario(ssServer, backend, method, password, "SIMULTANEOUS");
+                        // D. Pre-connect FIN (client sends header + payload + FIN in one burst).
+                        verifyHalfCloseScenario(ssServer, backend, method, password, "PRE_CONNECT_FIN");
+                    }
+                }
+            }
+        }
+    }
+
+    private static void verifyHalfCloseScenario(ShadowsocksServer ssServer, java.net.ServerSocket backend,
+                                                String method, String password, String scenario) throws Exception {
+        byte[] reqPayload = ("req-" + scenario + "-" + method).getBytes(StandardCharsets.UTF_8);
+        byte[] respPayload = ("resp-tail-" + scenario + "-" + method + "-0123456789abcdef").getBytes(StandardCharsets.UTF_8);
+        try (Socket client = new Socket()) {
+            client.connect(ssServer.tcpChannels.get(0).localAddress(), 5000);
+            client.setSoTimeout(5000);
+            ICrypto crypto = ICrypto.get(method, password);
+            try {
+                ByteBuf req = Unpooled.buffer();
+                UdpManager.encode(req, "127.0.0.1", backend.getLocalPort());
+                req.writeBytes(reqPayload);
+                client.getOutputStream().write(toBytes(crypto.encrypt(req)));
+                client.getOutputStream().flush();
+                if ("PRE_CONNECT_FIN".equals(scenario)) {
+                    client.shutdownOutput();
+                }
+
+                try (Socket accepted = backend.accept()) {
+                    accepted.setSoTimeout(5000);
+                    byte[] gotReq = readAtLeast(accepted.getInputStream(), reqPayload.length, reqPayload.length + 16, 5000);
+                    assertArrayEquals(reqPayload, gotReq);
+
+                    if ("FRONT_FIN".equals(scenario)) {
+                        client.shutdownOutput();
+                        assertEquals(-1, accepted.getInputStream().read());
+                        accepted.getOutputStream().write(respPayload);
+                        accepted.getOutputStream().flush();
+                    } else if ("BACK_EOF".equals(scenario)) {
+                        accepted.getOutputStream().write(respPayload);
+                        accepted.getOutputStream().flush();
+                    } else if ("SIMULTANEOUS".equals(scenario)) {
+                        accepted.getOutputStream().write(respPayload);
+                        accepted.getOutputStream().flush();
+                        client.shutdownOutput();
+                        accepted.shutdownOutput();
+                    } else if ("PRE_CONNECT_FIN".equals(scenario)) {
+                        assertEquals(-1, accepted.getInputStream().read());
+                        accepted.getOutputStream().write(respPayload);
+                        accepted.getOutputStream().flush();
+                    }
+                }
+
+                java.io.ByteArrayOutputStream plainOut = new java.io.ByteArrayOutputStream();
+                byte[] buf = new byte[256];
+                int n;
+                while ((n = client.getInputStream().read(buf)) != -1) {
+                    ByteBuf dec = crypto.decrypt(Unpooled.wrappedBuffer(buf, 0, n));
+                    try {
+                        byte[] chunk = new byte[dec.readableBytes()];
+                        dec.readBytes(chunk);
+                        plainOut.write(chunk);
+                    } finally {
+                        dec.release();
+                    }
+                }
+                assertArrayEquals(respPayload, plainOut.toByteArray());
+                waitForCondition(() -> ssServer.activeChannelCount() == 0, 5000,
+                        "SS frontend channels must drain to 0 after " + scenario + " (" + method + ")");
+            } finally {
+                ((AutoCloseable) crypto).close();
+            }
+        }
+    }
+
+    @Test
+    @SneakyThrows
+    @Timeout(value = 20)
+    void halfCloseWatchCleansStalledBackendButPreservesBackpressuredSlowReader() {
+        SocksTcpFrontendRelayHandler.setHalfCloseIdleMillisForTest(250L);
+        try {
+            String method = CipherKind.CHACHA20_IETF_POLY1305.getCipherName();
+            String password = "watch-test-password";
+            ShadowsocksConfig ssConfig = new ShadowsocksConfig(Sockets.newLoopbackEndpoint(0), method, password);
+            ssConfig.setReadTimeoutSeconds(0);
+            try (ShadowsocksServer ssServer = new ShadowsocksServer(ssConfig);
+                 java.net.ServerSocket backend = new java.net.ServerSocket(0, 4, InetAddress.getByName("127.0.0.1"))) {
+                backend.setSoTimeout(5000);
+                ssServer.onTcpRoute.replace((s, e) -> e.setUpstream(new org.rx.net.socks.upstream.Upstream(e.getFirstDestination())));
+
+                // 1. Unresponsive backend after client shutdownOutput: HalfCloseWatch cleans up within ~250-600ms.
+                try (Socket client = new Socket()) {
+                    client.connect(ssServer.tcpChannels.get(0).localAddress(), 5000);
+                    client.setSoTimeout(3000);
+                    ICrypto crypto = ICrypto.get(method, password);
+                    Socket stalledAccepted = null;
+                    try {
+                        ByteBuf req = Unpooled.buffer();
+                        UdpManager.encode(req, "127.0.0.1", backend.getLocalPort());
+                        req.writeByte('S');
+                        client.getOutputStream().write(toBytes(crypto.encrypt(req)));
+                        client.getOutputStream().flush();
+                        stalledAccepted = backend.accept();
+                        assertEquals('S', stalledAccepted.getInputStream().read());
+                        client.shutdownOutput();
+                        assertEquals(-1, stalledAccepted.getInputStream().read());
+                        // Backend stays silent and open; HalfCloseWatch must close frontend & backend.
+                        waitForCondition(() -> ssServer.activeChannelCount() == 0, 3000,
+                                "HalfCloseWatch must close stalled half-closed session");
+                        assertEquals(-1, client.getInputStream().read());
+                    } finally {
+                        if (stalledAccepted != null) stalledAccepted.close();
+                        ((AutoCloseable) crypto).close();
+                    }
+                }
+
+                // 2. Backpressured slow reader: backend floods 1.5 MiB after client shutdownOutput while client pauses reading
+                // for 600ms (> 2x HalfCloseWatch timeout); connection MUST stay alive and deliver all 1.5 MiB!
+                final int totalBytes = 1536 * 1024;
+                byte[] bigPayload = new byte[totalBytes];
+                new java.util.Random(77).nextBytes(bigPayload);
+                try (Socket client = new Socket()) {
+                    client.setReceiveBufferSize(16 * 1024);
+                    client.connect(ssServer.tcpChannels.get(0).localAddress(), 5000);
+                    client.setSoTimeout(10000);
+                    ICrypto crypto = ICrypto.get(method, password);
+                    Thread writerThread = null;
+                    try {
+                        ByteBuf req = Unpooled.buffer();
+                        UdpManager.encode(req, "127.0.0.1", backend.getLocalPort());
+                        req.writeByte('B');
+                        client.getOutputStream().write(toBytes(crypto.encrypt(req)));
+                        client.getOutputStream().flush();
+                        final Socket accepted = backend.accept();
+                        assertEquals('B', accepted.getInputStream().read());
+                        client.shutdownOutput();
+                        assertEquals(-1, accepted.getInputStream().read());
+
+                        writerThread = new Thread(() -> {
+                            try (Socket s = accepted) {
+                                s.getOutputStream().write(bigPayload);
+                                s.getOutputStream().flush();
+                            } catch (Exception ignored) {
+                            }
+                        }, "slow-reader-backend");
+                        writerThread.start();
+
+                        // Pause client reading for 650ms (> 2.5x 250ms watchdog) while inbound buffer is backpressured.
+                        Thread.sleep(650L);
+                        java.io.ByteArrayOutputStream plainOut = new java.io.ByteArrayOutputStream(totalBytes);
+                        byte[] buf = new byte[16384];
+                        int n;
+                        while ((n = client.getInputStream().read(buf)) != -1) {
+                            ByteBuf dec = crypto.decrypt(Unpooled.wrappedBuffer(buf, 0, n));
+                            try {
+                                byte[] chunk = new byte[dec.readableBytes()];
+                                dec.readBytes(chunk);
+                                plainOut.write(chunk);
+                            } finally {
+                                dec.release();
+                            }
+                        }
+                        writerThread.join(5000L);
+                        assertArrayEquals(bigPayload, plainOut.toByteArray());
+                        waitForCondition(() -> ssServer.activeChannelCount() == 0, 5000,
+                                "channels must close cleanly after slow reader finishes");
+                    } finally {
+                        if (writerThread != null) writerThread.join(2000L);
+                        ((AutoCloseable) crypto).close();
+                    }
+                }
+            }
+        } finally {
+            SocksTcpFrontendRelayHandler.setHalfCloseIdleMillisForTest(0L);
         }
     }
 

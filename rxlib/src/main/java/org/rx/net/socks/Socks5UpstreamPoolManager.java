@@ -96,6 +96,7 @@ public final class Socks5UpstreamPoolManager extends Disposable {
                     serverEndpoint.getPassword(), config.getConnectTimeoutMillis());
             handler.setAdaptiveTcp(config.isAdaptiveTcp());
             handler.setAdaptiveProfile(config.getAdaptiveProfile());
+            handler.setUdpHop(config.isUdpHop());
             try {
                 ChannelFuture connectFuture = Sockets.bootstrap(config, serverEndpoint.getConnectEndpoint(), ch -> {
                     Sockets.addTcpClientHandler(ch, config, serverEndpoint.getInetEndpoint());

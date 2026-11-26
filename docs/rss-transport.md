@@ -23,6 +23,8 @@ shadowUsers:
 在已有用户的 `transport` 下设置 `profile: game` 或 `profile: weak` 即可。热更新影响新建连接和 UDP 会话。用户按外部 SS 用户名匹配，内部 SOCKS 账号可复用。
 
 - `fec` 的 0/1/2/3 分别表示关、仅 UDP、仅 TCP、两者。上述四个 profile 默认依次为 0/3/2/3。`game` 显式开启 UDP FEC 时，该方向改用 XOR，每个原包只发一份。
+- `udpHop`（布尔值，省略默认 `true`）独立控制自适应 TCP/FEC 与增强普通 UDP 是否启用双端口 30 秒轮换跳跃；设为 `false`（或 Server 启动参数 `-udpHop=0`）时，完整保留 `daily` / `weak` / `game` 的压缩、自适应 XOR 校验与 TCP 修复能力，仅协商单端口（`primary == alias`，TCP 握手方法 `0x87` + RPC `SUPPORT_NO_HOP_UDP`），不再绑定别名端口或触发周期切换。`OutboundProfiles`、TCP 预热池与 UDP 租约池均按 `udpHop` 隔离缓存，单用户关闭不影响其他用户或服务端全局跳跃端口段。
+- `udpMtu`（整数，UDP 载荷字节数，不含 IP/UDP 头；可在 Client 顶层或单用户 `transport.udpMtu` 配置，Server 支持 `-udpMtu=`）：`plain` 默认 `0`（不设应用层主动截断，原生透传大包，显式配置正数时仍启用出口限长，`udp2raw` 路由保持 `1300`）；`daily` / `weak` / `game` 默认 `1300` 并通过 `openUdpRelayGroup` 协商有效上限。发送顺序为「业务数据报 → 按需 LZ4 压缩 → 压缩后判定是否超限 → 超限时按协商启用认证分片（`SUPPORT_UDP_FRAG`）→ FEC / 游戏副本 → 外层认证/加密 → 最终 MTU 守卫」，未超限小包保持零额外分片头字节。
 - `tcp` 的位 1、2、4 分别为 zlib、共享密钥 AES-128-GCM、校验证书的 TLS。AES 与 TLS 两位同时出现时使用 TLS。`udp` 的位 1、2 分别为 LZ4 和 AES。保留显式 0 和按目的端口覆盖。
 - `tcpCompressionLevel` 取 1～9，默认 3，压缩位开启时生效。Client 上的用户字段控制上行编码，Server 的 `-tcpCompressionLevel=3` 独立控制下行编码。解码允许两端使用不同级别。
 - TCP 新模式通过独立 SOCKS 方法在两端选择。旧 Server 选择常规认证时，该连接继续走 TCP，`rss.tcp.adaptive.negotiationFallback` 按请求的 profile 记录回退。普通 UDP 的新模式要求 RPC 明确确认版本与特性，旧端协商失败。
@@ -44,9 +46,11 @@ TCP 的 AES 模式由两端读取同一个 `RSS_TCP_AES_KEY`（32 个随机字�
 
 选择 TCP 的 TLS 位时，Server 读取 `RSS_TCP_TLS_CERT` 和 `RSS_TCP_TLS_KEY` 指向的 PEM 证书链与私钥。证书 SAN 需匹配 Client 上配置的 RSS 上游域名或 IP。Client 信任 JVM 信任库，私有 CA 可用 `RSS_TCP_TLS_CA` 指定 PEM 路径。验证失败关闭保护连接。TCP/FEC 先在 TCP 上协商，再探测 UDP；成功后直接拆分已编码的字节流，UDP 外层保留签名、防重放、FEC 和端口跳跃。UDP 不可用时继续 TCP。
 
-## UDP 和跳跃端口
+## UDP、MTU 分片与跳跃端口
 
-普通 UDP 的任意扩展（FEC、副本、LZ4、AES）都要求两端成功建立跳跃会话。能力或端口不足时该会话失败。LZ4 对至少 96 B 的包尝试，净省至少 24 B 且 12% 才使用，否则原包进入后续传输。UDP AES 要求两端通过环境变量 `RSS_UDP_AES_KEY` 提供相同的 32 个随机字节的 Base64 编码。每次会话按双方随机值派生方向密钥；认证覆盖跳跃代数、序号及数据，接收端检查重放。TCP/FEC 不使用普通 UDP 的 LZ4 或 AES 管线。
+普通 UDP 的任意扩展（FEC、副本、LZ4、AES）通过加密控制 RPC 建立关联（默认启用双端口跳跃；`udpHop: false` 或 `-udpHop=0` 时建立单端口关联）。能力或端口不足时该会话失败。LZ4 对至少 96 B 的包尝试，净省至少 24 B 且 12% 才使用，否则原包进入后续传输。压缩后仍超过有效单帧预算时，若双方协商具备 `SUPPORT_UDP_FRAG` 能力，则启用有界认证分片重组（`FRAG_MAGIC = 0x0001`；`weak` / `game` / `AES` 复用外层逐包认证，明文 `daily` 仅对分片报文附加控制面下发密钥派生的方向性 `HMAC-SHA256-128` 与防重放序号，正常小包零额外字节；单会话上限 64 并发组 / 512 KiB、进程全局上限 16 MiB、重组超时 750 ms，缺片过期整包丢弃不交付残包）。旧端未协商分片能力时，超限写操作立即以 `EncoderException` 明确失败并计入 `mtuDrop`。UDP AES 要求两端通过环境变量 `RSS_UDP_AES_KEY` 提供相同的 32 个随机字节的 Base64 编码。每次会话按双方随机值派生方向密钥；认证覆盖跳跃代数、序号及数据，接收端检查重放。TCP/FEC 不使用普通 UDP 的 LZ4 或 AES 管线。
+
+外部 Shadowsocks 与 SOCKS5 `CONNECT` 前端刻意采用**客户端先 FIN 单向半关闭**语义：客户端 `shutdownOutput`（含握手尚未完成前的首包带 FIN）在完成上游连接并刷空待发队列后向目标转发输出半关闭，同时启动感知下游背压的精确一次性 `HalfCloseWatch`（默认 120 秒无响应且非背压阻塞时回收，正常全双工连接零额外定时器）；后端关闭时刷空尾部下行字节并主动关闭前端连接，避免移动网络 NAT 空闲客户端长期滞留服务端句柄。
 
 默认专用 UDP 范围为 `20000-20127`，Server 通过 `-udpHopPorts=起始-结束` 覆盖。范围长度必须为偶数，最少四端口。首对由全部 TCP/FEC 流共用，剩余端口每个普通 UDP 扩展会话占用一对，默认最多 63 组。两端按 30 秒轮换。外部安全组、主机过滤规则以及容器或 NAT 的 UDP 映射需放行整段范围。
 
@@ -73,6 +77,8 @@ TCP 的 AES 模式由两端读取同一个 `RSS_TCP_AES_KEY`（32 个随机字�
 | `rss.tcp.weak.untrackedTcpFrames`、`gapSent`、`sackSent` | 顺序交付且超过 UDP 分片上限的普通 TCP 帧数、请求修复的 GAP 和 SACK 帧数。 |
 | `rss.tcp.adaptive.probes`、`transitions`、`fallbacks`、`tcpMillis`、`peakPendingFrames`、`deliveredBytes` | 自适应流关闭汇总：UDP 探测次数、`to=udp/tcp` 路径切换次数、`reason=window/timeout/fin` 回退次数、TCP 驻留毫秒数、待确认队列峰值及 `path=tcp/udp` 有效交付字节。 |
 | `rss.udp.daily.tx.unprotectedGroups`、`rx.unprotectedGroups` | 发送端未发校验即切组、接收端未收到校验即过期的分片组计数（30 秒周期汇总，按 `side=client/server` 区分）。 |
-| `ss.aead.rejected` | 外部经典 Shadowsocks AEAD 认证失败、重放 salt 或半关闭截断记录拒绝计数（30 秒限速汇总）。 |
+| `rss.udp.daily.mtuDrop`、`finalMtuDrop`、`frag.tx.datagrams`、`frag.tx.fragments`、`frag.rx.reassembled`、`frag.rx.timeout`、`frag.rx.duplicate`、`frag.rx.invalid`、`frag.rx.budgetRejected` | 普通 UDP 超限拒绝、最终出口守卫丢弃，以及认证分片发送、成功重组、超时、重复、非法/验签失败与内存预算拒绝计数。 |
+| `rss.udp.fec.sessions.total`、`sessions.active`、`cache.bytes`、`cache.peakBytes` | UDP FEC 累计/当前活跃会话数，以及每会话有界 XOR 累加器直接内存当前占用与峰值字节（空闲 5 秒后一次性回收）。 |
+| `ss.aead.rejected`、`ss.salt.size`、`ss.salt.capacityEvictions`、`ss.salt.expiredReplacements`、`ss.salt.replayRejections` | 外部经典 Shadowsocks AEAD 认证/截断拒绝计数，以及共享 `SaltHistory` 当前条目数、容量公平淘汰、TTL 过期替换与重放拒绝汇总（30 秒限速记录）。 |
 
 比较链路开销时，按方向在丢包点之前计量实际 IP 字节，并同时记录业务交付率、P99、最长停顿、吞吐、活动连接、EventLoop 排队、Netty 堆外内存和进程 RSS。

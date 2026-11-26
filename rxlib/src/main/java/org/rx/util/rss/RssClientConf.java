@@ -59,6 +59,8 @@ public class RssClientConf {
     // Close TCP relays only when neither direction has made progress.
     public int tcpTimeoutSeconds = 60 * 2;
     public int udpTimeoutSeconds = 60 * 10;
+    // 全局可选 UDP payload MTU 上限（字节，不含 IP/UDP 头）；null 表示 plain=0（透传）、daily/weak/game/udp2raw=1300。
+    public Integer udpMtu;
     public int rpcMinSize = 2;
     public int rpcMaxSize = 6;
     // RSS Server RPC 固定端口；0 表示按同 host 首个 socksServer 端口 +1 推导。

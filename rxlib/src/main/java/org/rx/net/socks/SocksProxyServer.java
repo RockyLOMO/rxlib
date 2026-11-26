@@ -144,7 +144,8 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
                     onBind.accept(tcpChannels.get(0));
                 }
             } else {
-                bootstrap = Sockets.serverBootstrap(config, this::acceptChannel);
+                bootstrap = Sockets.serverBootstrap(config, this::acceptChannel)
+                        .option(ChannelOption.SO_REUSEADDR, true);
                 tcpChannels = Sockets.bindChannels(bootstrap.attr(SocksContext.SOCKS_SVR, this), listenAddress, config);
                 if (onBind != null) {
                     for (Channel channel : tcpChannels) {
@@ -159,9 +160,10 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
             try {
                 InetSocketAddress listen = (InetSocketAddress) tcpChannels.get(0).localAddress();
                 int first = config.getDailyPortFirst();
-                adaptivePort = first == 0 ? org.rx.net.rss.tcp.AdaptiveUdpPort.listen(listen)
+                boolean hop = config.isUdpHop();
+                adaptivePort = first == 0 ? org.rx.net.rss.tcp.AdaptiveUdpPort.listen(listen, 0, false, hop)
                         : org.rx.net.rss.tcp.AdaptiveUdpPort.listen(new InetSocketAddress(listen.getAddress(), first),
-                        first + 1, config.isRedirectUdpHops());
+                        hop ? first + 1 : 0, hop && config.isRedirectUdpHops(), hop);
             } catch (Exception e) {
                 log.warn("Adaptive UDP listener unavailable, continuing over TCP", e);
             }

@@ -560,4 +560,204 @@ class UdpDailyFecTest {
             }
         }
     }
+
+    @Test
+    void idleCleanupLifecycleReleasesCachedBuffersOnceAndReallocatesOnNextWrite() throws Exception {
+        long waitDeadline = System.currentTimeMillis() + 3000L;
+        while (UdpDailyFec.activeSessions() > 0 && System.currentTimeMillis() < waitDeadline) {
+            Thread.sleep(20L);
+        }
+        UdpDailyFec.resetTelemetryForTest();
+        long baselineTotal = UdpDailyFec.totalSessions();
+        try (Link link = new Link()) {
+            assertTrue(UdpDailyFec.activeSessions() >= 2);
+            assertEquals(baselineTotal + 2, UdpDailyFec.totalSessions());
+
+            link.introduceLoss(TimeUnit.MILLISECONDS.toNanos(20));
+            for (int i = 40; i < 44; i++) {
+                link.time.addAndGet(TimeUnit.MILLISECONDS.toNanos(20));
+                link.send(i);
+                if (i == 41) {
+                    link.packets.removeFirst().release();
+                }
+                link.drain();
+            }
+            assertEquals(1, link.receiver.recoveredData);
+            assertEquals(-1, link.sender.nextDelayMillis());
+            assertEquals(-1, link.receiver.nextDelayMillis());
+            assertTrue(link.sender.cachedBufferCount() > 0);
+            assertTrue(link.sender.nextIdleCleanupDelayMillis() > 0);
+            assertTrue(UdpDailyFec.peakCachedXorBytes() >= UdpDailyFec.MAX_SHARD_BYTES);
+
+            // Advance > 5s idle: one-shot tick reclaims all cached XOR buffers and resets target; no further wakeups.
+            link.time.addAndGet(TimeUnit.SECONDS.toNanos(6));
+            assertEquals(0, link.sender.nextIdleCleanupDelayMillis());
+            link.sender.tick(link::queue);
+            link.receiver.tick(link::queue);
+            assertTrue(link.packets.isEmpty());
+            assertEquals(0, link.sender.currentTarget());
+            assertEquals(0, link.sender.cachedBufferCount());
+            assertEquals(0, link.receiver.cachedBufferCount());
+            assertEquals(-1, link.sender.nextDelayMillis());
+            assertEquals(-1, link.sender.nextIdleCleanupDelayMillis());
+            assertEquals(-1, link.receiver.nextIdleCleanupDelayMillis());
+
+            // Subsequent write after idle sends clean DATA cleanly without stale buffers, and re-enables on new loss.
+            link.send(100);
+            assertEquals(1, link.packets.size());
+            assertEquals(UdpDailyFec.DATA, link.packets.element().getUnsignedByte(link.packets.element().readerIndex()));
+            link.drain();
+            assertTrue(link.delivered.contains(100));
+
+            // Also verify RX receiving DATA after >5s silence still reclaims previously cached RX shard slots.
+            ByteBuf orphanShard = Unpooled.buffer().writeByte(UdpDailyFec.SHARD).writeInt(200).writeByte(0)
+                    .writeInt(200).writeZero(200 % 11);
+            link.receive(orphanShard);
+            link.time.addAndGet(TimeUnit.MILLISECONDS.toNanos(350));
+            link.receiver.tick(link::queue);
+            assertEquals(1, link.receiver.cachedBufferCount());
+            link.time.addAndGet(TimeUnit.SECONDS.toNanos(6));
+            link.send(201);
+            link.drain();
+            assertEquals(0, link.receiver.cachedBufferCount());
+        }
+        long drainDeadline = System.currentTimeMillis() + 3000L;
+        while (UdpDailyFec.activeSessions() > 0 && System.currentTimeMillis() < drainDeadline) {
+            Thread.sleep(20L);
+        }
+        assertEquals(0, UdpDailyFec.activeSessions());
+        assertEquals(0, UdpDailyFec.cachedXorBytes());
+    }
+
+    @Test
+    void weakPartialReportConservativeSamplingHandlesLostDuplicateReorderedAndWrapAround() {
+        AtomicLong clock = new AtomicLong(TimeUnit.SECONDS.toNanos(1));
+        ArrayDeque<ByteBuf> wire = new ArrayDeque<>();
+        ByteBuf payload = Unpooled.buffer(24).writeZero(24);
+        try (UdpDailyFec tx = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, clock::get, true, 44);
+             UdpDailyFec rx = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, clock::get, true, 44)) {
+            // 1. First partial report with 5 ready samples (seq 0..12, loss at seq 2) activates target=16.
+            ArrayDeque<ByteBuf> reports = new ArrayDeque<>();
+            for (int seq = 0; seq <= 12; seq++) {
+                clock.addAndGet(seq == 12 ? TimeUnit.SECONDS.toNanos(3) : TimeUnit.MILLISECONDS.toNanos(20));
+                tx.write(payload, wire::add);
+                ByteBuf f = wire.remove();
+                if (seq == 2) {
+                    f.release();
+                } else {
+                    try { rx.read(f, ByteBuf::release, reports::add); } finally { f.release(); }
+                }
+            }
+            assertEquals(1, reports.size());
+            ByteBuf r1 = reports.remove();
+            try { tx.read(r1, ByteBuf::release, ByteBuf::release); } finally { r1.release(); }
+            assertEquals(16, tx.currentTarget());
+
+            // 2. Duplicate and reordered older reports are ignored.
+            ByteBuf dup = Unpooled.buffer(8).writeByte(UdpDailyFec.REPORT).writeInt(12).writeByte(0).writeByte(0).writeByte(0);
+            ByteBuf older = Unpooled.buffer(8).writeByte(UdpDailyFec.REPORT).writeInt(10).writeByte(0).writeByte(0).writeByte(0);
+            try {
+                tx.read(dup, ByteBuf::release, ByteBuf::release);
+                tx.read(older, ByteBuf::release, ByteBuf::release);
+            } finally {
+                dup.release();
+                older.release();
+            }
+            assertEquals(16, tx.currentTarget());
+
+            // 3a. Consecutive 6-sample partial reports every 3.1s (< 5s REPORT_TIMEOUT): 10 reports = 60 samples < 96,
+            // so FEC stays active (would have disabled after 3 reports if each partial report credited 32!).
+            int currentSeq = 12;
+            for (int k = 0; k < 10; k++) {
+                for (int n = 0; n < 6; n++) {
+                    clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(500));
+                    tx.write(payload, ByteBuf::release);
+                }
+                currentSeq += 6;
+                ByteBuf partialClean = Unpooled.buffer(8).writeByte(UdpDailyFec.REPORT)
+                        .writeInt(currentSeq).writeByte(0).writeByte(0).writeByte(0);
+                try {
+                    tx.read(partialClean, ByteBuf::release, ByteBuf::release);
+                } finally {
+                    partialClean.release();
+                }
+                assertEquals(16, tx.currentTarget(), "60 partial clean samples (<96) must not disable FEC");
+            }
+
+            // 3b. Now cleanSampled is 60. Simulate a 32-packet lossy burst whose REPORT was LOST on the reverse path,
+            // followed within 3.2s (< 5s REPORT_TIMEOUT) by a 6-packet clean partial report (delta = 38 > 32):
+            // must NOT add +32 to 60 (=92) or +38 (=98) across the unconfirmed gap; must reset contiguous count to 4!
+            for (int n = 0; n < 38; n++) {
+                clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(80));
+                tx.write(payload, ByteBuf::release);
+            }
+            currentSeq += 38;
+            ByteBuf gapClean = Unpooled.buffer(8).writeByte(UdpDailyFec.REPORT)
+                    .writeInt(currentSeq).writeByte(0).writeByte(0).writeByte(0);
+            try {
+                tx.read(gapClean, ByteBuf::release, ByteBuf::release);
+            } finally {
+                gapClean.release();
+            }
+            assertEquals(16, tx.currentTarget(), "lost intermediate report must reset contiguous cleanSampled");
+
+            // One more 32-packet clean burst (4 + 32 = 36 < 96) still keeps FEC active, proving cleanSampled was reset!
+            clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(300));
+            for (int n = 0; n < 32; n++) tx.write(payload, ByteBuf::release);
+            currentSeq += 32;
+            ByteBuf burst1 = Unpooled.buffer(8).writeByte(UdpDailyFec.REPORT)
+                    .writeInt(currentSeq).writeByte(0).writeByte(0).writeByte(0);
+            try {
+                tx.read(burst1, ByteBuf::release, ByteBuf::release);
+            } finally {
+                burst1.release();
+            }
+            assertEquals(16, tx.currentTarget(), "36 contiguous clean samples after gap reset must keep FEC active");
+
+            // 4. Two more full 32-packet clean burst windows (36 + 32 + 32 = 100 >= 96) disable FEC cleanly.
+            for (int w = 0; w < 2; w++) {
+                clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(300));
+                for (int n = 0; n < 32; n++) tx.write(payload, ByteBuf::release);
+                currentSeq += 32;
+                ByteBuf burstClean = Unpooled.buffer(8).writeByte(UdpDailyFec.REPORT)
+                        .writeInt(currentSeq).writeByte(0).writeByte(0).writeByte(0);
+                try {
+                    tx.read(burstClean, ByteBuf::release, ByteBuf::release);
+                } finally {
+                    burstClean.release();
+                }
+            }
+            assertEquals(0, tx.currentTarget(), "three full clean burst windows after gap reset must disable FEC");
+        } finally {
+            payload.release();
+            while (!wire.isEmpty()) wire.remove().release();
+        }
+
+        // 5. Verify sequence wrap-around across Integer.MAX_VALUE -> Integer.MIN_VALUE on receiver report generation.
+        try (UdpDailyFec rxWrap = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, clock::get, true, 44)) {
+            ArrayDeque<ByteBuf> wrapReports = new ArrayDeque<>();
+            int start = Integer.MAX_VALUE - 10;
+            for (int i = 0; i < 42; i++) {
+                clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(10));
+                int seq = start + i;
+                if (i == 5) continue; // 1 isolated missing packet across wrap boundary
+                ByteBuf frame = Unpooled.buffer().writeByte(UdpDailyFec.DATA).writeInt(seq).writeInt(i);
+                try {
+                    rxWrap.read(frame, ByteBuf::release, wrapReports::add);
+                } finally {
+                    frame.release();
+                }
+            }
+            assertEquals(1, wrapReports.size());
+            ByteBuf rep = wrapReports.remove();
+            try {
+                int pos = rep.readerIndex();
+                assertEquals(UdpDailyFec.REPORT, rep.getUnsignedByte(pos));
+                assertEquals(1, rep.getUnsignedByte(pos + 5)); // missing
+                assertEquals(1, rep.getUnsignedByte(pos + 6)); // isolated
+            } finally {
+                rep.release();
+            }
+        }
+    }
 }

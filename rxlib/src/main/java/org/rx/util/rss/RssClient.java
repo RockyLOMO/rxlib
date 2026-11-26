@@ -449,6 +449,10 @@ public final class RssClient {
             log.warn("Invalid or overlapping RSS UDP port lists");
             return false;
         }
+        if (!RssTransport.validUdpMtu(conf.udpMtu)) {
+            log.warn("rssConf invalid udpMtu {}", conf.udpMtu);
+            return false;
+        }
         if (!hasWeightedSocksServer(conf.socksServers)) {
             log.warn("rssConf socksServers has no enabled server");
             return false;
@@ -1034,7 +1038,9 @@ public final class RssClient {
         config.setTcpIdleTimeoutSeconds(conf.tcpTimeoutSeconds);
         config.setUdpReadTimeoutSeconds(conf.udpTimeoutSeconds);
 
-        config.setUdpMtu(UDP2RAW_MTU);
+        int configuredUdpMtu = conf.udpMtu != null ? Math.max(0, conf.udpMtu) : 0;
+        config.setUdpMtu(configuredUdpMtu);
+        config.setDailyUdpMtu(conf.udpMtu != null ? Math.max(0, conf.udpMtu) : UDP2RAW_MTU);
         config.setDailyUdpFeatures(0);
         config.setAdaptiveTcp(false);
         applyUdpLeasePool(conf, config);
@@ -1761,14 +1767,14 @@ public final class RssClient {
             java.util.Arrays.sort(udpEncryptedPorts);
             SocksConfig base = createOutboundConfig(conf, inbound);
             Map<Integer, SocksConfig> tcpCache = new LinkedHashMap<>();
-            SocksConfig[] udpCache = new SocksConfig[32];
+            Map<Long, SocksConfig> udpCache = new LinkedHashMap<>();
             tcpCache.put(0, base);
-            udpCache[0] = base;
-            defaults = new Routes(RssTransport.DEFAULT, base, tcpCache, udpCache);
+            udpCache.put(udpCacheKey(0, true, base.getUdpMtu(), base.getDailyUdpMtu()), base);
+            defaults = new Routes(RssTransport.DEFAULT, conf.udpMtu, base, tcpCache, udpCache);
             if (conf.shadowUsers != null) {
                 for (ShadowUser u : conf.shadowUsers) {
                     if (u.transport != null) {
-                        users.put(u.getUsername(), new Routes(u.transport, base, tcpCache, udpCache));
+                        users.put(u.getUsername(), new Routes(u.transport, conf.udpMtu, base, tcpCache, udpCache));
                     }
                 }
             }
@@ -1794,43 +1800,62 @@ public final class RssClient {
             return java.util.Arrays.binarySearch(udpEncryptedPorts, port) >= 0 ? r.udpPassthrough : r.udp;
         }
 
+        private static long udpCacheKey(int features, boolean hop, int udpMtu, int dailyUdpMtu) {
+            return (features & 31L) | (hop ? 0L : 32L)
+                    | ((udpMtu & 0xFFFFL) << 8)
+                    | ((dailyUdpMtu & 0xFFFFL) << 24);
+        }
+
         private static final class Routes {
             final SocksConfig tcp, protectedTcp, passthrough, udp, protectedUdp, udpPassthrough;
 
-            Routes(RssTransport policy, SocksConfig base, Map<Integer, SocksConfig> tcpCache, SocksConfig[] udpCache) {
+            Routes(RssTransport policy, Integer globalUdpMtu, SocksConfig base,
+                   Map<Integer, SocksConfig> tcpCache, Map<Long, SocksConfig> udpCache) {
                 if (!policy.valid()) {
                     throw new IllegalArgumentException("Invalid RSS user transport");
                 }
                 boolean adaptive = (policy.fec() & 2) != 0;
+                boolean hop = policy.udpHop();
                 int mask = policy.tcp();
                 tcp = tcpConfig(base, tcpCache, mask, adaptive, policy);
                 protectedTcp = tcpConfig(base, tcpCache, (mask & 6) == 0 ? 2 : mask, adaptive, policy);
                 passthrough = tcpConfig(base, tcpCache, 0, adaptive, policy);
                 int features = policy.udpFeatures();
-                udp = udpConfig(base, udpCache, features);
-                protectedUdp = udpConfig(base, udpCache, features | org.rx.net.rss.udp.DailyUdpWire.AES);
-                udpPassthrough = udpConfig(base, udpCache, features & ~(org.rx.net.rss.udp.DailyUdpWire.LZ4 | org.rx.net.rss.udp.DailyUdpWire.AES));
+                Integer explicitMtu = policy.udpMtu != null ? policy.udpMtu : globalUdpMtu;
+                udp = udpConfig(base, udpCache, features, hop, explicitMtu);
+                protectedUdp = udpConfig(base, udpCache, features | org.rx.net.rss.udp.DailyUdpWire.AES, hop, explicitMtu);
+                udpPassthrough = udpConfig(base, udpCache, features & ~(org.rx.net.rss.udp.DailyUdpWire.LZ4 | org.rx.net.rss.udp.DailyUdpWire.AES), hop, explicitMtu);
             }
 
-            private static SocksConfig udpConfig(SocksConfig base, SocksConfig[] udpCache, int features) {
-                if (udpCache[features] == null) {
+            private static SocksConfig udpConfig(SocksConfig base, Map<Long, SocksConfig> udpCache,
+                                                 int features, boolean hop, Integer explicitMtu) {
+                int passthroughMtu = features == 0 ? (explicitMtu != null ? Math.max(0, explicitMtu) : 0) : 0;
+                int tunnelMtu = features != 0 ? (explicitMtu != null ? Math.max(0, explicitMtu) : UDP2RAW_MTU) : base.getDailyUdpMtu();
+                long slot = udpCacheKey(features, hop, passthroughMtu, tunnelMtu);
+                SocksConfig cached = udpCache.get(slot);
+                if (cached == null) {
                     SocksConfig c = Sys.deepClone(base);
                     c.setDailyUdpFeatures(features);
-                    udpCache[features] = c;
+                    c.setUdpHop(hop);
+                    c.setUdpMtu(passthroughMtu);
+                    c.setDailyUdpMtu(tunnelMtu);
+                    udpCache.put(slot, cached = c);
                 }
-                return udpCache[features];
+                return cached;
             }
 
             private static SocksConfig tcpConfig(SocksConfig base, Map<Integer, SocksConfig> cache, int mask, boolean adaptive, RssTransport policy) {
                 boolean tls = (mask & 4) != 0;
+                boolean hop = policy.udpHop();
                 int profile = adaptive ? policy.adaptiveProfile() : 0;
                 int level = (mask & 1) == 0 ? 0 : policy.compressionLevel();
-                int key = (tls ? mask & ~2 : mask) | (adaptive ? 8 : 0) | (profile << 4) | (level << 6);
+                int key = (tls ? mask & ~2 : mask) | (adaptive ? 8 : 0) | (profile << 4) | (level << 6) | (hop ? 0 : (1 << 10));
                 SocksConfig cached = cache.get(key);
                 if (cached == null) {
                     SocksConfig c = Sys.deepClone(base);
                     c.setAdaptiveTcp(adaptive);
                     c.setAdaptiveProfile(profile);
+                    c.setUdpHop(hop);
                     if (level != 0) c.setTcpCompressionLevel(level);
                     TransportFlags protection = tls ? TransportFlags.RSS_AUTHENTICATED_TLS
                             : (mask & 2) != 0 ? TransportFlags.RSS_PSK_AES : TransportFlags.NONE;
@@ -1850,8 +1875,12 @@ public final class RssClient {
             config = new SocksConfig();
         }
         SocksConfig routed = Sys.deepClone(config);
-        routed.setUdpMtu(UDP2RAW_MTU);
+        int explicit = config.isDailyUdp() ? config.getDailyUdpMtu() : config.getUdpMtu();
+        routed.setUdpMtu(explicit > 0 ? explicit : UDP2RAW_MTU);
         RssSupport.configureUdp2raw(routed);
+        if (!config.isUdpHop()) {
+            routed.setUdpPortHoppingEnabled(false);
+        }
         return routed;
     }
 
@@ -1928,8 +1957,11 @@ public final class RssClient {
             org.rx.net.socks.SocksUserTraffic.registerRecorder(trafficStore);
         }
 
-        httpServer = HttpServer.getDefault().requestAsync(RssClientHttpHandler.SHADOW_USERS_PAGE_PATH,
-                new RssClientHttpHandler(trafficStore, authenticator.getMemoryRetentionHours(), authenticator::getShadowStore));
+        HttpServer defaultHttp = HttpServer.getDefault();
+        if (defaultHttp != null) {
+            httpServer = defaultHttp.requestAsync(RssClientHttpHandler.SHADOW_USERS_PAGE_PATH,
+                    new RssClientHttpHandler(trafficStore, authenticator.getMemoryRetentionHours(), authenticator::getShadowStore));
+        }
 
         configureRrpServer(rssConf);
 

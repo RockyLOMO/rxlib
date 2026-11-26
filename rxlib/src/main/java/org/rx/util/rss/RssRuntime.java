@@ -53,7 +53,12 @@ final class RssRuntime implements AutoCloseable {
     final RssRpcApp app;
     final Map<String, ShadowServerRef> shadowServers = new LinkedHashMap<>();
     final CopyOnWriteArrayList<UpstreamSnapshot> closingUpstreamSnapshots = new CopyOnWriteArrayList<>();
+    interface ShadowBindHook {
+        void beforeBind(ShadowUser user) throws Exception;
+    }
+
     final AtomicBoolean drainStarted = new AtomicBoolean();
+    volatile ShadowBindHook shadowServerBindHook;
 
     SwitchingRandomList<DnsResolveInterceptor> dnsInterceptors = new SwitchingRandomList<>();
     volatile UpstreamSnapshot upstreamSnapshot;
@@ -544,8 +549,10 @@ final class RssRuntime implements AutoCloseable {
             UserRule route = new UserRule();
             route.setSrcSteeringTTL(oldRef.srcSteeringTTL);
             user.setRoute(route);
-            ShadowServerRef restored = createShadowServer(activeConf, user, oldRef.routePlan);
+            ShadowServerRef restored = createShadowServer(activeConf, user, oldRef.routePlan, true);
             shadowServers.put(restored.username, restored);
+            log.warn("restored shadow server after reload failure user={} port={} cipher={}",
+                    oldRef.username, oldRef.ssPort, oldRef.ssCipher);
         } catch (Throwable e) {
             log.error("restore shadow server failed user={} port={}", oldRef.username, oldRef.ssPort, e);
         }
@@ -594,6 +601,18 @@ final class RssRuntime implements AutoCloseable {
     }
 
     private ShadowServerRef createShadowServer(RssClientConf conf, ShadowUser usr, ShadowRoutePlan routePlan) {
+        return createShadowServer(conf, usr, routePlan, false);
+    }
+
+    private ShadowServerRef createShadowServer(RssClientConf conf, ShadowUser usr, ShadowRoutePlan routePlan, boolean restoring) {
+        ShadowBindHook hook = shadowServerBindHook;
+        if (!restoring && hook != null) {
+            try {
+                hook.beforeBind(usr);
+            } catch (Throwable e) {
+                throw InvalidException.sneaky(e);
+            }
+        }
         String cipher = usr.cipherName();
         ShadowsocksConfig ssConf = new ShadowsocksConfig(Sockets.newAnyEndpoint(usr.getSsPort()),
                 cipher, usr.getSsPwd());

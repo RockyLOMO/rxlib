@@ -61,8 +61,10 @@ public class SocksUdpUpstream extends Upstream {
         this.next = next;
         // A single local SOCKS UDP association can multiplex destinations requiring different wire formats.
         int features = config.getDailyUdpFeatures();
-        sessionKey = AttributeKey.valueOf("socksUdpUpstreamSessionGroup." + features);
-        initKey = AttributeKey.valueOf("socksUdpUpstreamSessionInit." + features);
+        int effectiveMtu = config.isDailyUdp() ? config.resolveDailyUdpMtu() : config.getUdpMtu();
+        String suffix = features + (config.isUdpHop() ? "" : ".nohop") + ".mtu" + effectiveMtu;
+        sessionKey = AttributeKey.valueOf("socksUdpUpstreamSessionGroup." + suffix);
+        initKey = AttributeKey.valueOf("socksUdpUpstreamSessionInit." + suffix);
     }
 
     public AuthenticEndpoint getServerEndpoint() {
@@ -363,9 +365,11 @@ public class SocksUdpUpstream extends Upstream {
                 if (request.getProfileVersion() == 1 || (features & DailyUdpWire.AES) != 0) {
                     request.setClientSalt(java.util.UUID.randomUUID());
                 }
-                // One logical relay with two physical ingress ports.
+                request.setUdpFragSupported(capabilities.has(SocksRpcCapabilities.SUPPORT_UDP_FRAG));
+                request.setUdpMtu(socksConfig.resolveDailyUdpMtu());
+                // One logical relay with one (no-hop) or two (hopping) physical ingress ports.
                 initialCount = minActive = 1;
-                maxRelayCount = 2;
+                maxRelayCount = !socksConfig.isUdpHop() && capabilities.has(SocksRpcCapabilities.SUPPORT_NO_HOP_UDP) ? 1 : 2;
             }
             request.setClientId(key.toString());
             request.setClientAddr(resolveRpcClientAddress(channel));
@@ -423,23 +427,33 @@ public class SocksUdpUpstream extends Upstream {
                 primary = normalizeRpcRelayAddress(endpoint.getRelayAddress());
             }
         }
-        if (primary == null || alias == null || primary.getPort() == alias.getPort()) {
+        boolean wantHop = ((SocksConfig) config).isUdpHop();
+        if (primary == null) {
+            throw new IllegalStateException("Daily UDP requires a primary relay port");
+        }
+        if (wantHop && result.getRelays().size() >= 2 && (alias == null || primary.getPort() == alias.getPort())) {
             throw new IllegalStateException("Daily UDP requires two distinct relay ports");
         }
         // Only the proxy transport host is resolved here, on the existing off-loop RPC setup path.
         if (primary.isUnresolved()) {
             primary = Sockets.resolveUdpEndpointAsync(primary, config).get();
         }
-        alias = new InetSocketAddress(primary.getAddress(), alias.getPort());
+        alias = !wantHop || alias == null ? primary : new InetSocketAddress(primary.getAddress(), alias.getPort());
         if (request.getProfileVersion() != 0 && (result.getProfileVersion() != request.getProfileVersion()
                 || result.getSelectedFeatures() != request.getDailyFeatures())) {
             throw new IllegalStateException("Upstream did not negotiate the requested UDP profile");
         }
-        control.dailyWire = DailyUdpWire.client(result.getToken(), primary, alias, config.getUdpMtu(), request.getDailyFeatures(), request.getClientSalt(), result.getAuthSecret());
+        int localMtu = ((SocksConfig) config).resolveDailyUdpMtu();
+        int peerMtu = Math.max(0, result.getUdpMtu());
+        int effectiveMtu = localMtu > 0 && peerMtu > 0 ? Math.min(localMtu, peerMtu) : Math.max(localMtu, peerMtu);
+        boolean fragEnabled = request.isUdpFragSupported() && result.isUdpFragEnabled();
+        control.dailyWire = DailyUdpWire.client(result.getToken(), primary, alias, effectiveMtu,
+                request.getDailyFeatures(), request.getClientSalt(), result.getAuthSecret(), fragEnabled);
         SessionGroup group = new SessionGroup(new SessionHolder[]{SessionHolder.rpc(control, result.getGroupId(), primary)},
                 UdpPortHoppingMode.ROUND_ROBIN, 1, control);
         onRpcRelayGroupSuccess(poolKey());
-        DiagnosticMetrics.record("socks.udp.relay.control.mode.count", 1D, "mode=hopping,features=" + request.getDailyFeatures());
+        DiagnosticMetrics.record("socks.udp.relay.control.mode.count", 1D,
+                "mode=" + (primary.equals(alias) ? "nohop" : "hopping") + ",features=" + request.getDailyFeatures());
         return group;
     }
 

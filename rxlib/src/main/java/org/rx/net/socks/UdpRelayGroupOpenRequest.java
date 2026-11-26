@@ -24,5 +24,7 @@ public final class UdpRelayGroupOpenRequest implements Serializable {
     private int dailyFeatures;
     private int profileVersion;
     private UUID clientSalt;
+    private boolean udpFragSupported;
+    private int udpMtu;
     private boolean sharedDedupRequired;
 }

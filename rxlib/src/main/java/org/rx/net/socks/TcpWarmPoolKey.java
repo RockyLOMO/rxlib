@@ -22,7 +22,8 @@ public final class TcpWarmPoolKey implements Serializable {
         return new TcpWarmPoolKey(endpoint.getParameters().get(SocksConnectionTagRegistry.PARAM_NAME), addr, endpoint.getUsername(), endpoint.getPassword(),
                 reactorName, config.getConnectTimeoutMillis(), config.getTransportFlags().getValue(), config.getCipher(), cipherKeyHash,
                 config instanceof SocksConfig && ((SocksConfig) config).isAdaptiveTcp(),
-                config instanceof SocksConfig ? ((SocksConfig) config).getAdaptiveProfile() : 0, config.getTcpCompressionLevel());
+                config instanceof SocksConfig ? ((SocksConfig) config).getAdaptiveProfile() : 0, config.getTcpCompressionLevel(),
+                !(config instanceof SocksConfig) || ((SocksConfig) config).isUdpHop());
     }
 
     private final String trafficUser;
@@ -37,12 +38,20 @@ public final class TcpWarmPoolKey implements Serializable {
     private final boolean adaptiveTcp;
     private final int adaptiveProfile;
     private final int tcpCompressionLevel;
+    private final boolean udpHop;
 
     public TcpWarmPoolKey(String trafficUser, String endpointText, String username, String password,
                           String reactorName, int connectTimeoutMillis, int transportFlagsBits, short cipher,
                           long cipherKeyHash, boolean adaptiveTcp) {
         this(trafficUser, endpointText, username, password, reactorName, connectTimeoutMillis, transportFlagsBits,
-                cipher, cipherKeyHash, adaptiveTcp, 0, -1);
+                cipher, cipherKeyHash, adaptiveTcp, 0, -1, true);
+    }
+
+    public TcpWarmPoolKey(String trafficUser, String endpointText, String username, String password,
+                          String reactorName, int connectTimeoutMillis, int transportFlagsBits, short cipher,
+                          long cipherKeyHash, boolean adaptiveTcp, int adaptiveProfile, int tcpCompressionLevel) {
+        this(trafficUser, endpointText, username, password, reactorName, connectTimeoutMillis, transportFlagsBits,
+                cipher, cipherKeyHash, adaptiveTcp, adaptiveProfile, tcpCompressionLevel, true);
     }
 
     public boolean isSameEndpoint(AuthenticEndpoint endpoint) {

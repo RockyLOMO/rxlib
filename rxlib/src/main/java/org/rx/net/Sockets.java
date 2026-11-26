@@ -223,6 +223,7 @@ public final class Sockets {
     public static final String ZIP_ENCODER = "ZIP_ENCODER";
     public static final String ZIP_DECODER = "ZIP_DECODER";
     public static final String UDP_FINAL_EGRESS_GUARD = "UDP_FINAL_EGRESS_GUARD";
+    private static final FixedRecvByteBufAllocator UDP_RECV_ALLOCATOR = new FixedRecvByteBufAllocator(65536);
     public static final LengthFieldPrepender INT_LENGTH_FIELD_ENCODER = new LengthFieldPrepender(4);
     public static final AttributeKey<InetSocketAddress> ATTR_ORIGIN_REMOTE_ADDR = AttributeKey.valueOf("originRemoteAddr");
     static final AttributeKey<SocketAddress> ATTR_CONNECT_HINT = AttributeKey.valueOf("connectHint");
@@ -784,11 +785,11 @@ public final class Sockets {
         ServerBootstrapConfig config = bootstrap.config();
         EventLoopGroup group = config.group();
         if (group != null && !reactors.containsValue(group) && !localReactors.containsValue(group)) {
-            group.shutdownGracefully();
+            group.shutdownGracefully(0, 5, TimeUnit.SECONDS);
         }
         group = config.childGroup();
         if (group != null && !reactors.containsValue(group) && !localReactors.containsValue(group)) {
-            group.shutdownGracefully();
+            group.shutdownGracefully(0, 5, TimeUnit.SECONDS);
         }
     }
 
@@ -1165,7 +1166,8 @@ public final class Sockets {
 
         OptimalSettings op = ifNull(config.getOptimalSettings(), OptimalSettings.EMPTY);
         op.calculate();
-        AdaptiveRecvByteBufAllocator recvByteBufAllocator = op.recvByteBufAllocator;
+        // UDP recvfrom truncates any datagram larger than the single-read buffer; pooled 64 KiB is released per tick.
+        FixedRecvByteBufAllocator recvByteBufAllocator = UDP_RECV_ALLOCATOR;
 
         // writeBufferWaterMark UDP无效
         Bootstrap b = new Bootstrap()

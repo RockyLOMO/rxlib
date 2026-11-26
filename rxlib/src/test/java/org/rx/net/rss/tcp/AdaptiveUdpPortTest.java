@@ -37,6 +37,48 @@ class AdaptiveUdpPortTest {
         verifyPath("::1");
     }
 
+    @Test
+    @Timeout(12)
+    void supportsSinglePortNoHopOnServerAndClient() throws Exception {
+        InetSocketAddress loopback = new InetSocketAddress("127.0.0.1", 0);
+        EventLoopGroup group = new NioEventLoopGroup(1);
+        BlockingQueue<Channel> accepted = new LinkedBlockingQueue<>();
+        Channel listener = new ServerBootstrap().group(group).channel(NioServerSocketChannel.class)
+                .childHandler(new ChannelInboundHandlerAdapter() {
+                    @Override public void channelActive(ChannelHandlerContext ctx) {
+                        accepted.add(ctx.channel());
+                    }
+                }).bind(loopback).sync().channel();
+        Channel tcp = new Bootstrap().group(group).channel(NioSocketChannel.class)
+                .handler(new ChannelInboundHandlerAdapter()).connect(listener.localAddress()).sync().channel();
+        Channel remote = accepted.poll(2, TimeUnit.SECONDS);
+        assertNotNull(remote);
+        byte[] key = new byte[32];
+        new SecureRandom().nextBytes(key);
+        BlockingQueue<Integer> inbound = new LinkedBlockingQueue<>();
+        try (AdaptiveUdpPort server = AdaptiveUdpPort.listen(loopback, 0, false, false)) {
+            assertFalse(server.isHopping());
+            assertEquals(server.port(), server.aliasPort());
+            server.register(19, key, remote, frame -> server.send(19, frame));
+            try (AdaptiveUdpPort client = AdaptiveUdpPort.client(19, key, tcp, server.port(), server.aliasPort(), frame -> {
+                try { inbound.add(frame.readInt()); } finally { frame.release(); }
+            })) {
+                assertFalse(client.isHopping());
+                assertEquals(client.port(), client.aliasPort());
+                for (int i = 0; i < 30 && inbound.isEmpty(); i++) {
+                    client.send(19, Unpooled.buffer(4).writeInt(42));
+                    Thread.sleep(20);
+                }
+                assertEquals(Integer.valueOf(42), inbound.poll(1, TimeUnit.SECONDS));
+            }
+        } finally {
+            tcp.close().sync();
+            remote.close().sync();
+            listener.close().sync();
+            group.shutdownGracefully(0, 1, TimeUnit.SECONDS).sync();
+        }
+    }
+
     private void verifyPath(String host) throws Exception {
         InetSocketAddress loopback = new InetSocketAddress(host, 0);
         EventLoopGroup group = new NioEventLoopGroup(1);

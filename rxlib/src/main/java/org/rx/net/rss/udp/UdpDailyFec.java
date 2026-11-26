@@ -6,6 +6,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
 
@@ -19,11 +20,15 @@ public final class UdpDailyFec implements AutoCloseable {
     public static final int MAX_OVERHEAD = 8; // parity: type, first sequence, count, XOR of lengths
     public static final int WIRE_HEADROOM = 20;
     public static final int MAX_PAYLOAD = 65507 - WIRE_HEADROOM - 5;
-    private static final int MAX_SHARDS = 16, MIN_SHARDS = 2, MAX_SHARD_BYTES = 1500;
+    static final int MAX_SHARDS = 16, MIN_SHARDS = 2, MAX_SHARD_BYTES = 1500;
     private static final long FLUSH = TimeUnit.MILLISECONDS.toNanos(15);
     private static final long MAX_FLUSH = TimeUnit.MILLISECONDS.toNanos(180);
     private static final long EXPIRE = TimeUnit.MILLISECONDS.toNanos(300);
     private static final long REPORT_TIMEOUT = TimeUnit.SECONDS.toNanos(5);
+    private static final AtomicLong TOTAL_SESSIONS = new AtomicLong();
+    private static final AtomicLong ACTIVE_SESSIONS = new AtomicLong();
+    private static final AtomicLong CACHED_XOR_BYTES = new AtomicLong();
+    private static final AtomicLong PEAK_CACHED_XOR_BYTES = new AtomicLong();
 
     private final ByteBufAllocator alloc;
     private final LongSupplier clock;
@@ -64,6 +69,65 @@ public final class UdpDailyFec implements AutoCloseable {
         this.wireOverhead = wireOverheadBytes;
         this.alloc = allocator;
         this.clock = clock;
+        TOTAL_SESSIONS.incrementAndGet();
+        ACTIVE_SESSIONS.incrementAndGet();
+    }
+
+    public static long totalSessions() {
+        return TOTAL_SESSIONS.get();
+    }
+
+    public static long activeSessions() {
+        return ACTIVE_SESSIONS.get();
+    }
+
+    public static long cachedXorBytes() {
+        return CACHED_XOR_BYTES.get();
+    }
+
+    public static long peakCachedXorBytes() {
+        return PEAK_CACHED_XOR_BYTES.get();
+    }
+
+    static void resetTelemetryForTest() {
+        PEAK_CACHED_XOR_BYTES.set(CACHED_XOR_BYTES.get());
+    }
+
+    private static void addCachedBytes(int bytes) {
+        if (bytes <= 0) return;
+        long current = CACHED_XOR_BYTES.addAndGet(bytes);
+        while (true) {
+            long peak = PEAK_CACHED_XOR_BYTES.get();
+            if (current <= peak || PEAK_CACHED_XOR_BYTES.compareAndSet(peak, current)) {
+                break;
+            }
+        }
+    }
+
+    private static void removeCachedBytes(int bytes) {
+        if (bytes > 0) {
+            CACHED_XOR_BYTES.addAndGet(-bytes);
+        }
+    }
+
+    int cachedBufferCount() {
+        int count = sending.xor != null ? 1 : 0;
+        for (Group g : receiving) {
+            if (g != null && g.xor != null) count++;
+        }
+        return count;
+    }
+
+    int cachedCapacityBytes() {
+        int bytes = sending.trackedCapacity;
+        for (Group g : receiving) {
+            if (g != null) bytes += g.trackedCapacity;
+        }
+        return bytes;
+    }
+
+    int currentTarget() {
+        return target;
     }
 
     public void write(ByteBuf payload, Consumer<ByteBuf> wire) {
@@ -130,7 +194,7 @@ public final class UdpDailyFec implements AutoCloseable {
             return;
         }
         int type = frame.getUnsignedByte(pos), seq = frame.getInt(pos + 1);
-        long now = lastRx = clock.getAsLong();
+        long now = clock.getAsLong();
         if (type == REPORT) {
             if (bytes == (weak ? 8 : 6)) {
                 acceptReport(seq, frame.getUnsignedByte(pos + 5), weak ? frame.getUnsignedByte(pos + 6) : 0,
@@ -138,6 +202,10 @@ public final class UdpDailyFec implements AutoCloseable {
             }
             return;
         }
+        if (lastRx != 0 && now - lastRx >= REPORT_TIMEOUT) {
+            releaseInactiveReceivers();
+        }
+        lastRx = now;
         if (type == PARITY) {
             if (bytes < MAX_OVERHEAD || bytes > MAX_OVERHEAD + MAX_SHARD_BYTES) {
                 return;
@@ -237,7 +305,9 @@ public final class UdpDailyFec implements AutoCloseable {
         if (missing > 32 || isolated > missing || recovered > missing || nextSeq - seq <= 0 || hasReport && seq - reportSeq <= 0) {
             return;
         }
-        int covered = hasReport ? Math.min(32, Math.max(1, seq - reportSeq)) : 32;
+        boolean previousReport = hasReport;
+        int delta = previousReport ? seq - reportSeq : 0;
+        long elapsed = previousReport ? now - lastReportTime : 0L;
         hasReport = true;
         reportSeq = seq;
         lastReportTime = now;
@@ -251,9 +321,23 @@ public final class UdpDailyFec implements AutoCloseable {
                 target = requested;
             }
             cleanSampled = 0;
-        } else if (target != 0 && (cleanSampled += covered) >= 96) {
-            target = 0;
-            cancelPendingParity();
+        } else if (target != 0) {
+            if (!previousReport) {
+                int covered = weak && sentData <= 64 ? Math.min(32, Math.max(1, seq - 7)) : 32;
+                cleanSampled += covered;
+            } else if (delta > 32) {
+                // At least one intermediate report was lost; restart contiguous count conservatively.
+                cleanSampled = weak ? 4 : 32;
+            } else if (weak && elapsed >= TimeUnit.SECONDS.toNanos(6)) {
+                long perWindow = ((long) delta * TimeUnit.SECONDS.toNanos(3)) / Math.max(1L, elapsed);
+                cleanSampled = (int) Math.max(4L, Math.min(32L, Math.min(delta, perWindow)));
+            } else {
+                cleanSampled += Math.max(1, delta);
+            }
+            if (cleanSampled >= 96) {
+                target = 0;
+                cancelPendingParity();
+            }
         }
     }
 
@@ -300,8 +384,7 @@ public final class UdpDailyFec implements AutoCloseable {
                 int age = highestRaw - seq;
                 if (weak && age >= 0 && age < 64) recoveredMask |= 1L << age;
                 ByteBuf payload = g.xor.slice(0, g.lengthXor);
-                g.xor = null;
-                g.clear();
+                g.detach();
                 deliver.accept(payload);
                 return;
             }
@@ -328,6 +411,39 @@ public final class UdpDailyFec implements AutoCloseable {
         return delay == Long.MAX_VALUE ? -1 : Math.max(0, (delay + 999_999L) / 1_000_000L);
     }
 
+    /**
+     * One-shot deadline to reclaim inactive cached XOR buffers and stale feedback target after 5s of silence.
+     * Returns -1 while an active group owns scheduling or once all idle buffers/targets are already released.
+     */
+    public long nextIdleCleanupDelayMillis() {
+        if (closed || sending.active) {
+            return -1;
+        }
+        long now = clock.getAsLong();
+        long latest = Long.MIN_VALUE;
+        if (target != 0) {
+            latest = Math.max(latest, REPORT_TIMEOUT - (now - lastReportTime));
+        }
+        if (sending.xor != null) {
+            long due = target == 0 || lastWrite == 0 ? 0L : REPORT_TIMEOUT - (now - lastWrite);
+            latest = Math.max(latest, due);
+        }
+        for (int i = 0; i < receiving.length; i++) {
+            Group g = receiving[i];
+            if (g == null) {
+                continue;
+            }
+            if (g.active) {
+                return -1;
+            }
+            if (g.xor != null) {
+                long due = i >= 4 || lastRx == 0 ? 0L : REPORT_TIMEOUT - (now - lastRx);
+                latest = Math.max(latest, due);
+            }
+        }
+        return latest == Long.MIN_VALUE ? -1 : Math.max(0L, (latest + 999_999L) / 1_000_000L);
+    }
+
     public void tick(Consumer<ByteBuf> wire) {
         if (closed) {
             return;
@@ -348,12 +464,24 @@ public final class UdpDailyFec implements AutoCloseable {
         }
     }
 
+    private void releaseInactiveReceivers() {
+        for (Group g : receiving) {
+            if (g != null && !g.active && g.xor != null) {
+                g.release();
+            }
+        }
+    }
+
     private void expireSender(long now, Consumer<ByteBuf> wire) {
         if (target != 0 && now - lastReportTime >= REPORT_TIMEOUT) {
             target = 0;
             cancelPendingParity();
         } else if (sending.active && now - sending.started >= flushAfter) {
             flush(wire);
+        }
+        if (!sending.active && sending.xor != null
+                && (target == 0 || lastWrite != 0 && now - lastWrite >= REPORT_TIMEOUT)) {
+            sending.release();
         }
     }
 
@@ -397,7 +525,10 @@ public final class UdpDailyFec implements AutoCloseable {
 
     @Override
     public void close() {
-        closed = true;
+        if (!closed) {
+            closed = true;
+            ACTIVE_SESSIONS.decrementAndGet();
+        }
         sending.release();
         for (Group g : receiving) {
             if (g != null) {
@@ -409,7 +540,7 @@ public final class UdpDailyFec implements AutoCloseable {
     private static final class Group {
         ByteBuf xor;
         long started;
-        int base, mask, count, parityBytes, lengthXor;
+        int base, mask, count, parityBytes, lengthXor, trackedCapacity;
         boolean active;
 
         void begin(int base, long now, ByteBufAllocator alloc, int len) {
@@ -420,9 +551,13 @@ public final class UdpDailyFec implements AutoCloseable {
             if (xor != null && xor.refCnt() > 1) {
                 xor.release();
                 xor = null;
+                removeCachedBytes(trackedCapacity);
+                trackedCapacity = 0;
             }
             if (xor == null) {
                 xor = alloc.ioBuffer(Math.max(256, len), MAX_SHARD_BYTES);
+                trackedCapacity = xor.maxCapacity();
+                addCachedBytes(trackedCapacity);
             } else {
                 xor.clear();
             }
@@ -448,10 +583,20 @@ public final class UdpDailyFec implements AutoCloseable {
             mask = count = parityBytes = lengthXor = 0;
         }
 
+        void detach() {
+            xor = null;
+            removeCachedBytes(trackedCapacity);
+            trackedCapacity = 0;
+            active = false;
+            mask = count = parityBytes = lengthXor = 0;
+        }
+
         void release() {
             if (xor != null) {
                 xor.release();
                 xor = null;
+                removeCachedBytes(trackedCapacity);
+                trackedCapacity = 0;
             }
             active = false;
             mask = count = parityBytes = lengthXor = 0;

@@ -11,9 +11,10 @@ import io.netty.channel.ChannelPromise;
 import io.netty.channel.FixedRecvByteBufAllocator;
 import io.netty.channel.RecvByteBufAllocator;
 import io.netty.channel.socket.DatagramPacket;
+import io.netty.handler.codec.EncoderException;
 import io.netty.util.AttributeKey;
+import io.netty.util.internal.ThrowableUtil;
 import org.rx.diagnostic.DiagnosticMetrics;
-import org.rx.net.SocketConfig;
 import org.rx.net.Sockets;
 
 import java.lang.management.ManagementFactory;
@@ -34,14 +35,20 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
     public static final int LZ4 = 1, AES = 2, FEC = 4, GAME = 8, WEAK = 16;
     static final long HOP_NANOS = TimeUnit.SECONDS.toNanos(30);
     private static final AttributeKey<RecvByteBufAllocator> ORIGINAL_ALLOCATOR = AttributeKey.valueOf("rssDailyOriginalAllocator");
+    private static final EncoderException MTU_EXCEEDED_ERROR = ThrowableUtil.unknownStackTrace(
+            new EncoderException("UDP datagram exceeds negotiated RSS MTU"), DailyUdpWire.class, "write");
+    private static final EncoderException FINAL_MTU_EXCEEDED_ERROR = ThrowableUtil.unknownStackTrace(
+            new EncoderException("Encoded RSS UDP frame exceeds wire MTU"), DailyUdpWire.class, "writePacket");
 
     private final long tokenHigh, tokenLow;
     private final InetSocketAddress primary, alias;
+    private final boolean hopping;
     private final Predicate<InetSocketAddress> knownTarget;
     private final LongSupplier clock;
     private final DailyUdpCompression compression;
     private final DailyUdpCipher cipher;
     private final DailyUdpMac mac;
+    private final DailyUdpFragmenter fragmenter;
     private final UdpGameRedundancy game;
     private final boolean useFec, weak;
     private long latestBindingSeq;
@@ -53,6 +60,7 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
     private ScheduledFuture<?> timer;
     private ChannelPromise dataPromise;
     private long started, lastMetrics, lastProbe, payloadBytes, encodedBytes, compressionSavedBytes;
+    private long mtuDrops, finalMtuDrops, unnegotiatedFragRxDrops;
     private static final AtomicLong LAST_LOOP_SAMPLE = new AtomicLong(System.nanoTime() - TimeUnit.SECONDS.toNanos(1));
     private int epoch, wireMtu, authOperations;
     private final ChannelFutureListener originalWrite = f -> {
@@ -86,34 +94,52 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
 
     public static DailyUdpWire client(String token, InetSocketAddress primary, InetSocketAddress alias,
                                       int mtu, int features, UUID salt) {
-        return client(token, primary, alias, mtu, features, salt, null);
+        return client(token, primary, alias, mtu, features, salt, null, false);
     }
 
     public static DailyUdpWire client(String token, InetSocketAddress primary, InetSocketAddress alias,
                                       int mtu, int features, UUID salt, byte[] authSecret) {
+        return client(token, primary, alias, mtu, features, salt, authSecret, false);
+    }
+
+    public static DailyUdpWire client(String token, InetSocketAddress primary, InetSocketAddress alias,
+                                      int mtu, int features, UUID salt, byte[] authSecret, boolean fragEnabled) {
         DailyUdpWire wire = new DailyUdpWire(token, primary, alias, null, System::nanoTime, features, salt,
-                (features & AES) != 0 ? Key.PSK : authSecret, UdpGameRedundancy.GLOBAL_EXTRAS);
-        wire.wireMtu = mtu;
+                (features & AES) != 0 ? Key.PSK : authSecret, UdpGameRedundancy.GLOBAL_EXTRAS, fragEnabled);
+        wire.wireMtu = Math.max(0, mtu);
         return wire;
     }
 
     public static DailyUdpWire server(String token, Predicate<InetSocketAddress> knownTarget, int features, UUID salt) {
-        return server(token, knownTarget, features, salt, null);
+        return server(token, knownTarget, features, salt, null, 0, false);
     }
 
     public static DailyUdpWire server(String token, Predicate<InetSocketAddress> knownTarget, int features,
                                       UUID salt, byte[] authSecret) {
-        return new DailyUdpWire(token, null, null, knownTarget, System::nanoTime, features, salt,
-                (features & AES) != 0 ? Key.PSK : authSecret, UdpGameRedundancy.GLOBAL_EXTRAS);
+        return server(token, knownTarget, features, salt, authSecret, 0, false);
+    }
+
+    public static DailyUdpWire server(String token, Predicate<InetSocketAddress> knownTarget, int features,
+                                      UUID salt, byte[] authSecret, int mtu, boolean fragEnabled) {
+        DailyUdpWire wire = new DailyUdpWire(token, null, null, knownTarget, System::nanoTime, features, salt,
+                (features & AES) != 0 ? Key.PSK : authSecret, UdpGameRedundancy.GLOBAL_EXTRAS, fragEnabled);
+        wire.wireMtu = Math.max(0, mtu);
+        return wire;
     }
 
     DailyUdpWire(String token, InetSocketAddress primary, InetSocketAddress alias, Predicate<InetSocketAddress> knownTarget,
                  LongSupplier clock, int features, UUID salt, byte[] key) {
-        this(token, primary, alias, knownTarget, clock, features, salt, key, new AtomicLong(clock.getAsLong()));
+        this(token, primary, alias, knownTarget, clock, features, salt, key, new AtomicLong(clock.getAsLong()), false);
+    }
+
+    DailyUdpWire(String token, InetSocketAddress primary, InetSocketAddress alias, Predicate<InetSocketAddress> knownTarget,
+                 LongSupplier clock, int features, UUID salt, byte[] key, int mtu, boolean fragEnabled) {
+        this(token, primary, alias, knownTarget, clock, features, salt, key, new AtomicLong(clock.getAsLong()), fragEnabled);
+        this.wireMtu = Math.max(0, mtu);
     }
 
     private DailyUdpWire(String token, InetSocketAddress primary, InetSocketAddress alias, Predicate<InetSocketAddress> knownTarget,
-                         LongSupplier clock, int features, UUID salt, byte[] key, AtomicLong processBudget) {
+                         LongSupplier clock, int features, UUID salt, byte[] key, AtomicLong processBudget, boolean fragEnabled) {
         if (features <= 0 || (features & ~(LZ4 | AES | FEC | GAME | WEAK)) != 0
                 || (features & GAME) != 0 && (features & WEAK) != 0
                 || (features & WEAK) != 0 && (features & FEC) == 0) {
@@ -125,10 +151,16 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
         game = !useFec && (features & GAME) != 0 ? new UdpGameRedundancy(processBudget) : null;
         mac = (features & (GAME | WEAK)) != 0 && (features & AES) == 0 ? new DailyUdpMac(key, id, features, primary == null) : null;
         cipher = (features & AES) != 0 ? new DailyUdpCipher(key, id, salt, primary == null, features) : null;
+        // Never allow unauthenticated fragment reassembly: outer cipher/mac or per-group RPC authSecret is required.
+        boolean canAuthFragments = cipher != null || mac != null || (key != null && key.length == 32);
+        fragmenter = fragEnabled && canAuthFragments
+                ? new DailyUdpFragmenter(id, features, primary == null, cipher == null && mac == null ? key : null)
+                : null;
         tokenHigh = id.getMostSignificantBits();
         tokenLow = id.getLeastSignificantBits();
         this.primary = logicalPeer = physicalPeer = primary;
-        this.alias = alias;
+        this.alias = alias != null ? alias : primary;
+        this.hopping = primary != null && !primary.equals(this.alias);
         this.knownTarget = knownTarget;
         this.clock = clock;
         compression = (features & LZ4) != 0 ? new DailyUdpCompression() : null;
@@ -158,21 +190,14 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
     public void handlerAdded(ChannelHandlerContext ctx) {
         main = returnPath = ctx;
         ctx.channel().attr(ORIGINAL_ALLOCATOR).setIfAbsent(ctx.channel().config().getRecvByteBufAllocator());
-        int channelMtu = sizeReceiveBuffer(ctx);
-        if (wireMtu <= 0 || channelMtu > 0 && channelMtu < wireMtu) {
-            wireMtu = channelMtu;
-        }
+        sizeReceiveBuffer(ctx);
         fec = useFec ? new UdpDailyFec(ctx.alloc(), clock, weak, wireOverhead()) : null;
         started = lastMetrics = clock.getAsLong();
     }
 
-    private static int sizeReceiveBuffer(ChannelHandlerContext ctx) {
-        // Datagram reads truncate silently if an adaptive allocator guessed too small for the first packet.
-        SocketConfig config = ctx.channel().attr(SocketConfig.ATTR_CONF).get();
-        int mtu = config == null ? 0 : config.getUdpMtu();
-        int capacity = mtu <= 0 ? 65536 : Math.min(65535, mtu) + 1;
-        ctx.channel().config().setRecvByteBufAllocator(new FixedRecvByteBufAllocator(capacity));
-        return mtu;
+    private static void sizeReceiveBuffer(ChannelHandlerContext ctx) {
+        // Shared relay sockets also read unfragmented datagrams from local apps or Internet UDP targets up to 64 KiB.
+        ctx.channel().config().setRecvByteBufAllocator(new FixedRecvByteBufAllocator(65536));
     }
 
     @Override
@@ -185,6 +210,7 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
             if (original != null) ctx.channel().config().setRecvByteBufAllocator(original);
         }
         recordMetrics();
+        if (fragmenter != null) fragmenter.close();
         if (fec != null) fec.close();
         if (game != null) game.close();
         main = returnPath = null;
@@ -244,7 +270,7 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
                     physicalPeer = sender;
                     returnPath = path;
                 }
-            } else if (rotate() || generation != epoch && clock.getAsLong() - lastProbe >= TimeUnit.SECONDS.toNanos(1)) {
+            } else if (hopping && (rotate() || generation != epoch && clock.getAsLong() - lastProbe >= TimeUnit.SECONDS.toNanos(1))) {
                 lastProbe = clock.getAsLong();
                 // Open the new NAT binding even during a download with no application uplink.
                 sendFrame(main.alloc().ioBuffer(HEADER_BYTES, HEADER_BYTES).setIndex(HEADER_BYTES, HEADER_BYTES));
@@ -279,24 +305,55 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
         DatagramPacket packet = (DatagramPacket) msg;
         ByteBuf block = null;
         try {
-            if (packet.content().readableBytes() > maxPayload()) {
-                DiagnosticMetrics.record("rss.udp.daily.mtuDrop", 1);
+            if (packet.content().readableBytes() <= 0 || packet.content().readableBytes() > DailyUdpFragmenter.MAX_DATAGRAM_BYTES) {
+                mtuDrops++;
+                DiagnosticMetrics.record("rss.udp.daily.mtuDrop", 1, "reason=oversized");
                 if (game != null) DiagnosticMetrics.record("rss.udp.game.tx.originalMtuDrop", 1);
-                promise.trySuccess();
+                promise.tryFailure(MTU_EXCEEDED_ERROR);
+                return;
+            }
+            long now = clock.getAsLong();
+            block = compression == null ? null : compression.tryEncode(packet.content(), now);
+            ByteBuf data = block == null ? packet.content() : block;
+            int maxSingle = maxPayload();
+            boolean collidesWithFragMagic = fragmenter != null && block == null && DailyUdpFragmenter.isFragment(data);
+            if (data.readableBytes() > maxSingle || collidesWithFragMagic) {
+                int unitLimit = fragmentUnitLimit(maxSingle);
+                if (fragmenter == null || !fragmenter.canFragment(data.readableBytes(), unitLimit)) {
+                    mtuDrops++;
+                    DiagnosticMetrics.record("rss.udp.daily.mtuDrop", 1,
+                            fragmenter == null ? "reason=unnegotiated" : "reason=fragment-limit");
+                    if (game != null) DiagnosticMetrics.record("rss.udp.game.tx.originalMtuDrop", 1);
+                    promise.tryFailure(MTU_EXCEEDED_ERROR);
+                    return;
+                }
+                if (primary != null) {
+                    rotate();
+                }
+                payloadBytes += packet.content().readableBytes();
+                if (block != null) {
+                    compressionSavedBytes += packet.content().readableBytes() - block.readableBytes();
+                }
+                fragmenter.fragment(ctx.alloc(), data, unitLimit, (fragFrame, last) -> {
+                    try {
+                        dataPromise = last ? promise : null;
+                        emitUnitFromHeadroomFrame(fragFrame, last);
+                    } finally {
+                        dataPromise = null;
+                    }
+                });
                 return;
             }
             if (primary != null) {
                 rotate();
             }
             payloadBytes += packet.content().readableBytes();
-            dataPromise = promise;
-            block = compression == null ? null : compression.tryEncode(packet.content(), clock.getAsLong());
             if (block != null) {
                 compressionSavedBytes += packet.content().readableBytes() - block.readableBytes();
             }
-            ByteBuf data = block == null ? packet.content() : block;
+            dataPromise = promise;
             if (game != null) {
-                sendGame(data);
+                sendGame(data, true);
             } else if (fec != null) {
                 if (weak && !returnPath.channel().isWritable()) fec.cancelPendingParity();
                 fec.write(data, emit);
@@ -318,7 +375,34 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
         }
     }
 
-    private void sendGame(ByteBuf data) {
+    private int fragmentUnitLimit(int maxSingle) {
+        return useFec ? Math.min(maxSingle, UdpDailyFec.MAX_SHARD_BYTES) : maxSingle;
+    }
+
+    private void emitUnitFromHeadroomFrame(ByteBuf fragFrame, boolean flush) {
+        if (game != null) {
+            try {
+                sendGame(fragFrame, flush);
+            } finally {
+                fragFrame.release();
+            }
+        } else if (fec != null) {
+            try {
+                if (weak && !returnPath.channel().isWritable()) fec.cancelPendingParity();
+                fec.write(fragFrame, f -> sendFrame(f, false));
+            } finally {
+                fragFrame.release();
+            }
+            if (flush) {
+                returnPath.flush();
+                scheduleTick();
+            }
+        } else {
+            sendFrame(fragFrame, flush);
+        }
+    }
+
+    private void sendGame(ByteBuf data, boolean flush) {
         long now = clock.getAsLong();
         int seq = game.begin(now);
         int body = UdpGameRedundancy.DATA_HEADER + data.readableBytes();
@@ -352,11 +436,14 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
             }
         } finally {
             if (plain != null) plain.release();
-            path.flush();
+            if (flush) path.flush();
         }
     }
 
     private boolean rotate() {
+        if (!hopping) {
+            return false;
+        }
         int next = (int) ((clock.getAsLong() - started) / HOP_NANOS);
         physicalPeer = (next & 1) == 0 ? primary : alias;
         boolean changed = epoch != next;
@@ -396,6 +483,16 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
     }
 
     private void writePacket(ByteBuf frame, ChannelPromise pending) {
+        if (wireMtu > 0 && frame.readableBytes() > wireMtu) {
+            int droppedBytes = frame.readableBytes();
+            frame.release();
+            finalMtuDrops++;
+            DiagnosticMetrics.record("rss.udp.daily.finalMtuDrop", 1, "mtu=" + wireMtu + ",bytes=" + droppedBytes);
+            if (pending != null && !pending.isVoid()) {
+                pending.tryFailure(FINAL_MTU_EXCEEDED_ERROR);
+            }
+            return;
+        }
         encodedBytes += frame.readableBytes();
         DatagramPacket packet = new DatagramPacket(frame, physicalPeer);
         // Caller-observed original writes only. Kernel drops are measured separately at the socket.
@@ -419,8 +516,21 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
     }
 
     private void deliver(ByteBuf payload) {
+        if (DailyUdpFragmenter.isFragment(payload)) {
+            if (fragmenter == null) {
+                payload.release();
+                unnegotiatedFragRxDrops++;
+                DiagnosticMetrics.record("rss.udp.daily.frag.rx.unnegotiatedDrop", 1);
+                return;
+            }
+            payload = fragmenter.accept(payload, main.alloc(), clock.getAsLong());
+            scheduleTick();
+            if (payload == null) {
+                return;
+            }
+        }
         if (compression != null) {
-            payload = DailyUdpCompression.decode(payload, maxPayload());
+            payload = DailyUdpCompression.decode(payload, DailyUdpFragmenter.MAX_DATAGRAM_BYTES);
             if (payload == null) {
                 return;
             }
@@ -473,6 +583,10 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
             if (fec != null) {
                 DiagnosticMetrics.record("rss.udp.fec.tx.dataBytes", fec.dataBytes, side);
                 DiagnosticMetrics.record("rss.udp.fec.tx.parityBytes", fec.parityBytes, side);
+                DiagnosticMetrics.record("rss.udp.fec.sessions.total", UdpDailyFec.totalSessions(), side);
+                DiagnosticMetrics.record("rss.udp.fec.sessions.active", UdpDailyFec.activeSessions(), side);
+                DiagnosticMetrics.record("rss.udp.fec.cache.bytes", UdpDailyFec.cachedXorBytes(), side);
+                DiagnosticMetrics.record("rss.udp.fec.cache.peakBytes", UdpDailyFec.peakCachedXorBytes(), side);
                 DiagnosticMetrics.record("rss.udp.daily.rx.sampled", fec.sampledData, side);
                 DiagnosticMetrics.record("rss.udp.daily.rx.missing", fec.missingData, side);
                 DiagnosticMetrics.record("rss.udp.daily.rx.recovered", fec.recoveredData, side);
@@ -486,6 +600,20 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
             }
             DiagnosticMetrics.record("rss.udp.daily.tx.payloadBytes", payloadBytes, side);
             DiagnosticMetrics.record("rss.udp.daily.tx.encodedBytes", encodedBytes, side);
+            DiagnosticMetrics.record("rss.udp.daily.tx.mtuDrops", mtuDrops, side);
+            DiagnosticMetrics.record("rss.udp.daily.tx.finalMtuDrops", finalMtuDrops, side);
+            if (fragmenter != null) {
+                DiagnosticMetrics.record("rss.udp.daily.frag.tx.datagrams", fragmenter.txDatagrams, side);
+                DiagnosticMetrics.record("rss.udp.daily.frag.tx.fragments", fragmenter.txFragments, side);
+                DiagnosticMetrics.record("rss.udp.daily.frag.rx.reassembled", fragmenter.rxReassembled, side);
+                DiagnosticMetrics.record("rss.udp.daily.frag.rx.timeout", fragmenter.rxTimeouts, side);
+                DiagnosticMetrics.record("rss.udp.daily.frag.rx.duplicate", fragmenter.rxDuplicates, side);
+                DiagnosticMetrics.record("rss.udp.daily.frag.rx.invalid", fragmenter.rxInvalid, side);
+                DiagnosticMetrics.record("rss.udp.daily.frag.rx.budgetRejected", fragmenter.rxBudgetRejected, side);
+            }
+            if (unnegotiatedFragRxDrops != 0) {
+                DiagnosticMetrics.record("rss.udp.daily.frag.rx.unnegotiated", unnegotiatedFragRxDrops, side);
+            }
             if (compression != null) {
                 DiagnosticMetrics.record("rss.udp.daily.tx.compressionSavedBytes", compressionSavedBytes, side);
             }
@@ -497,6 +625,12 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
             game.receivedCopies = game.receivedUnique = game.sampled = game.lost = 0;
         }
         payloadBytes = encodedBytes = compressionSavedBytes = 0;
+        mtuDrops = finalMtuDrops = unnegotiatedFragRxDrops = 0;
+        if (fragmenter != null) {
+            fragmenter.txDatagrams = fragmenter.txFragments = 0;
+            fragmenter.rxReassembled = fragmenter.rxTimeouts = fragmenter.rxDuplicates = 0;
+            fragmenter.rxInvalid = fragmenter.rxBudgetRejected = 0;
+        }
         if (fec != null) {
             fec.sampledData = fec.missingData = fec.recoveredData = fec.paritySent = 0;
             fec.sentData = fec.protectedData = fec.dataBytes = fec.parityBytes = 0;
@@ -504,8 +638,25 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
         }
     }
 
+    private long nextTimerDelayMillis() {
+        long delay = -1L;
+        if (fec != null) {
+            delay = fec.nextDelayMillis();
+            if (delay < 0) {
+                delay = fec.nextIdleCleanupDelayMillis();
+            }
+        }
+        if (fragmenter != null) {
+            long fragDelay = fragmenter.nextDelayMillis(clock.getAsLong());
+            if (fragDelay >= 0 && (delay < 0 || fragDelay < delay)) {
+                delay = fragDelay;
+            }
+        }
+        return delay;
+    }
+
     private void scheduleTick() {
-        long delay = fec.nextDelayMillis();
+        long delay = nextTimerDelayMillis();
         if (delay < 0 || timer != null && timer.getDelay(TimeUnit.MILLISECONDS) <= delay) {
             return;
         }
@@ -514,8 +665,16 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
         }
         timer = main.executor().schedule(() -> {
             timer = null;
-            if (weak && !returnPath.channel().isWritable()) fec.cancelPendingParity();
-            fec.tick(emit);
+            if (main == null) {
+                return;
+            }
+            if (fragmenter != null) {
+                fragmenter.expire(clock.getAsLong());
+            }
+            if (fec != null) {
+                if (weak && !returnPath.channel().isWritable()) fec.cancelPendingParity();
+                fec.tick(emit);
+            }
             scheduleTick();
         }, delay, TimeUnit.MILLISECONDS);
     }
