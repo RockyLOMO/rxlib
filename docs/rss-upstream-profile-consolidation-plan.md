@@ -1,6 +1,6 @@
 # RSS 上游与传输 Profile 收口方案
 
-- 日期：2026-11-26（第三版：全模式端口安全策略、AES/zlib 顺序、DNS AOP 与命名收口）
+- 日期：2026-11-26（第四版：统一 UDP MTU 预算、加密开销前置计算及最终出口校验）
 - 审查基线：[14a05824](https://github.com/RockyLOMO/rxlib/commit/14a05824431f5b6118aec5a24330aca1d6f29c1e)
 - 状态：待实施的独立计划；本文不是已完成的代码变更。
 - 优先级：正确交付、认证安全和兼容性为硬约束；真实流量低、CPU 低、内存适当放宽且有界。game 在合理流量预算内优先低延迟。
@@ -87,7 +87,7 @@ flowchart LR
 
 发送方向仅做一次 RSS 编码：
 
-- 普通增强 UDP：业务数据报 → 按收益 LZ4 压缩（仅一次）→ 压缩后 MTU 判定/必要分片 → daily/weak FEC 或 game 多发 → RSS 数据面认证/按策略加密 → 所选 UDP 承载。
+- 普通增强 UDP：端口 codec 策略及实际承载已解析、有效 MTU 预算已确定 → 业务数据报按收益 LZ4 压缩（仅一次）→ 按预留全部封装开销后的预算判断/必要分片 → daily/weak FEC 或 game 多发 → RSS 数据面认证/按策略加密 → 最终长度校验 → 所选 UDP 承载。详见 §12。
 - TCP：业务字节流 → **按端口策略完成实际压缩（如适用）、AES-128-GCM、zlib 0 外包装或完整 codec 旁路** → AdaptiveStream 对已编码字节流分段，UDP 快路径做自适应 FEC 或走同一可靠 TCP 主通道修复；此后不再压缩，也不重复进行业务流加密。
 - TCP 接收：验证 adaptive UDP 外层认证 → 去重/FEC 恢复/可靠 TCP 补齐 → 按序还原原 TCP 编码字节流 → 按相反顺序移除 zlib 0 外包装、AES 解密、内部实际压缩解码（仅已协商时）。普通 UDP 接收：承载还原 frame → 数据面认证 → 去重/FEC 恢复 → 完整重组 → 一次 LZ4 解压（未压缩时透传）。两类解码路径保持独立。
 - 外部承载可有自身加密/可靠性开销，但 RSS 不额外默认启用第二层 XOR、多发、压缩或跳跃。TCP adaptive UDP 的独立 frame 认证、序号和防重放必须保留；不要把禁止重复业务加密误解为取消外层认证。不要把标准 SOCKS5 UDP 数据报直接送进只识别 RSS adaptive frame 的端口，反之亦然。
@@ -229,7 +229,7 @@ shadowUsers:
 ### P1：统一 route + adapter
 
 - [ ] 复用 UpstreamSupport/现有 Upstream 子类，在建连或 UDP association 初始化时解析一次配套 TCP 与 UDP 路径；不在每个包上查 YAML、供应商名称或动态构建策略对象。
-- [ ] 封装最小 UDP 承载契约：发送/接收完整 frame、返回路径/目标元数据、支持固定或动态 endpoint、有效 MTU、close。可复用 channel/pipeline，不设计复杂通用插件框架或额外复制层。
+- [ ] 封装最小 UDP 承载契约：发送/接收完整 frame、返回路径/目标元数据、支持固定或动态 endpoint、有效 MTU、close。统一 RssUdpMtuBudget：会话建立及路径/MTU/安全策略变更时提前计算 AES/MAC/FEC/分片及承载开销，按预算分片，保留最终出口长度检查（§12）。可复用 channel/pipeline，不设计复杂通用插件框架或额外复制层。
 - [ ] 将 AdaptiveUdpPort、DailyUdpWire 发送及接收绑定到同一套逻辑承载解析规则（仍可用独立会话和端口）。确保认证先于状态更新；原有控制面能力、TCP 回退、FEC、去重、分片预算不变。
 - [ ] 统一 health check、权重、故障隔离、配置热更、亲和性、连接追踪。TCP warm pool / UDP lease pool / route cache 键包含逻辑 peer、认证域、profile、真实 TCP/UDP 映射、MTU、有效 hop 与控制面身份；不同路由不共享错误会话。
 - [ ] 处理旧配置迁移：旧 endpoint-only 映射到明确 rss 或 socks5 类型（仅在能力/现网配置可以确认时）；旧 udp2raw + tcpClient/udpClient/adaptiveUdpClient 映射为 udpclient 完整配对。对不完整、含歧义的旧路由提示迁移并拒绝，不永久保留双运行分支。不自动改现网配置。
@@ -280,11 +280,13 @@ flowchart TD
   C --> D["分段 + 自适应 XOR + UDP frame 认证"]
   C --> E["可靠 TCP 主通道 / 修复"]
   D --> F["UdpTransport：只承载，不再次压缩"]
-  G["普通 UDP 业务数据报"] --> H["按需 LZ4 一次"]
-  H --> I["MTU 判断 / 必要分片"]
+  G["普通 UDP 业务数据报"] --> M["端口策略已解析 / MTU 预算已缓存"]
+  M --> H["按需 LZ4 一次"]
+  H --> I["按含 AES/MAC 开销的预算判断 / 分片"]
   I --> J["daily/weak XOR 或 game 多发"]
   J --> K["UDP 认证/按策略加密"]
-  K --> F
+  K --> V["最终 MTU 检查"]
+  V --> F
 ```
 
 - TCP 已经按 §11 完成实际 zlib 压缩（若适用）、AES-128-GCM PSK 加密、zlib 0 外包装，或者依据端口策略合法旁路。自适应 FEC 不管内容是否压缩或加密，均视为 opaque encoded bytes。直接分段、异或、封装和发送；不得尝试 LZ4、zlib、熵检测、重复业务加密。已有认证及 replay/逻辑去重仍保留。
@@ -314,7 +316,7 @@ flowchart TD
 | 策略 | RssTransportPolicy（不可变有效策略）、RssProfile、UdpMode | 按用户/profile 解析 TCP adaptive 和普通 UDP 增强模式，与端口 codec 合成有效配置；RssTransport 保留 YAML DTO |
 | 路由 | RssUpstreamSpec、RssUpstreamType、RssUpstreamRoute | 三类逻辑上游及完整端点；权重、健康、源地址亲和性；每次会话选择一次，不按类型二次随机 |
 | 承载 | RssUdpTransport | 已编码 frame 的发送/接收、所有权、实际 endpoint、能力和关闭；按关联绑定；直达/标准 SOCKS5 UDP/固定 client 适配，不重复压缩或增强 |
-| UDP 路径 | RssUdpPathPolicy、按路径的状态 | MTU、hop、primary/alias、固定映射、探测与回退条件；共享解析和低频探测机制，不将不同方向/路径的实际 MTU/RTT 状态混为一份 |
+| UDP 路径 | RssUdpPathPolicy、RssUdpMtuBudget、按路径的状态 | MTU、hop、primary/alias、固定映射、探测与回退条件；预算包含已选 codec 与所有相关封装；共享解析和低频探测机制，不将不同方向/路径的实际 MTU/RTT 状态混为一份 |
 | 身份 | UpstreamIdentity（或 RssUpstreamIdentity，视公共 API 边界） | 逻辑 peer、物理路径、认证域、RPC identity 等公共稳定字段；TCP/UDP 专有池键独立，防止跨用户/端点错误复用 |
 | 生命周期 | 复用 UpstreamSnapshot 与 UpstreamSupport | 一个上游目录、一个用户选择映射、共享健康检查及 drain；TCP、业务 UDP、adaptive UDP、RPC 各自健康状态，不能只用 TCP boolean |
 
@@ -418,7 +420,7 @@ flowchart LR
 
 ### 11.3 UDP：先有效压缩再 FEC/复制，最后 AES
 
-增强普通业务 UDP 沿用现有 [DailyUdpWire](https://github.com/RockyLOMO/rxlib/blob/de0e0aa9eb50f1bdf3be1b1fe22367109c6d552d/rxlib/src/main/java/org/rx/net/rss/udp/DailyUdpWire.java#L318-L386) 的按收益 LZ4；压缩后判断 MTU，按需分片，daily/weak 用自适应 XOR，game 用自适应多发，之后每个物理 frame 执行端口要求的 AES-128-GCM（或原有必要认证）并由上游承载。plain 必须保护 UDP 端口走 AES-only 安全封装，不使用 LZ4/增强分片/FEC/复制/hop。不得先 AES 再尝试压缩密文；不对 parity、控制反馈、复制或修复包做第二次业务压缩。
+增强普通业务 UDP 沿用现有 [DailyUdpWire](https://github.com/RockyLOMO/rxlib/blob/de0e0aa9eb50f1bdf3be1b1fe22367109c6d552d/rxlib/src/main/java/org/rx/net/rss/udp/DailyUdpWire.java#L318-L386) 的按收益 LZ4；先解析端口 codec 安全策略、确定实际承载及其有效 MTU，预留 AES/MAC、RSS、FEC/复制、分片和必要承载头；压缩后按有效载荷预算判断 MTU，按需分片，daily/weak 用自适应 XOR，game 用自适应多发，之后每个物理 frame 执行端口要求的 AES-128-GCM（或原有必要认证），通过最终出口长度检查再由上游承载。加密决策前置，实际加密后置，详见 §12。plain 必须保护 UDP 端口走 AES-only 安全封装，不使用 LZ4/增强分片/FEC/复制/hop。不得先 AES 再尝试压缩密文；不对 parity、控制反馈、复制或修复包做第二次业务压缩。
 
 复用 [DailyUdpCipher](https://github.com/RockyLOMO/rxlib/blob/de0e0aa9eb50f1bdf3be1b1fe22367109c6d552d/rxlib/src/main/java/org/rx/net/rss/udp/DailyUdpCipher.java#L32-L74)（拟名 RssDatagramCipher），已经从 32 字节 PSK 派生 16 字节 AES key。UDP 不套 TCP 的 zlib0。可以抽象公共 PSK 配置校验与派生工具，但保留 TCP/UDP 不同协议 label、方向/session key、nonce、认证范围和使用上限；不复用密钥+nonce，不把 TCP/UDP 变成同一个 cipher 状态机。AES 认证失败拒收，防重放状态只在认证后更新。保留现有控制面安全与必要 frame authentication。
 
@@ -443,8 +445,75 @@ flowchart LR
 - [ ] JDK8/21 与 Linux 实测；测量 CPU/真实 IP 字节、解码资源上限、旧端兼容及热更新回滚。保持低频探测，不增加正常包无效处理。
 - [ ] 新增 RssDnsInterceptor / RssPortPolicy / CodecPolicy（PASSTHROUGH、COMPRESS、PROTECTED，内部以独立实际压缩位、AES 位、外包装位表达组合）；RssTcpCodecSelector 从 RssHopTls 中拆出，RssHopAes 保留，RssDatagramCipher 复用；不新增每个 profile 的 codec 子类。
 
-## 12. 交付边界
+## 12. 统一 UDP MTU 预算（第四版新增，强制正确性约束）
+
+### 12.1 原则：加密决策前置，实际 AES 后置
+
+端口旁路/加密策略必须在会话或 UDP association 建立时解析完成，不能先按无加密的 MTU 切片，再临时添加 AES。AES-128-GCM 不需要提前执行：其本协议线格式开销确定，先从预算中扣除即可。不要对密文做 LZ4，也不因 MTU 超限关闭必要认证或减少 tag 长度。
+
+```mermaid
+flowchart TD
+  A["DNS AOP / 端口 codec / profile / 上游选择"] --> B["解析实际路径及有效 UDP payload MTU"]
+  B --> C["预留 RSS + AES/MAC + FEC/多发 + 必要承载开销"]
+  C --> D["普通 UDP 按收益 LZ4 或旁路"]
+  D --> E["按无分片预算判断；必要时按分片预算切片"]
+  E --> F["FEC / 多倍发包 / 必要封装"]
+  F --> G["AES-128-GCM 或既有 MAC（按安全策略）"]
+  G --> H["最终长度检查"]
+  H --> I["UDP 承载出口"]
+```
+
+TCP adaptive UDP 走独立的数据分段预算：其输入是原 TCP codec 已处理的编码字节流，禁止再次压缩；根据实际 adaptive wire header、FEC 最大开销、外层认证及承载限制确定 CHUNK/有效帧上限。保留可靠 TCP 主通道修复，不对 TCP 字节流套普通 UDP 的分片头。plain AES-only 普通 UDP 同样先预留安全封装，但不启用增强分片；无法容纳时明确失败，不退回明文。
+
+### 12.2 当前实现与准确预算示例
+
+本轮静态核对基线 [c2a678b8](https://github.com/RockyLOMO/rxlib/commit/c2a678b8e333c1d44067f4e5c94274b0c130b7e5)（源码仍沿用 14a05824 基线）。[DailyUdpWire.maxPayload / wireOverhead](https://github.com/RockyLOMO/rxlib/blob/c2a678b8e333c1d44067f4e5c94274b0c130b7e5/rxlib/src/main/java/org/rx/net/rss/udp/DailyUdpWire.java#L622-L630) 已在分片前扣除 RSS header、AES 或 MAC 与 FEC/多发最大头部开销；[fragmentUnitLimit](https://github.com/RockyLOMO/rxlib/blob/c2a678b8e333c1d44067f4e5c94274b0c130b7e5/rxlib/src/main/java/org/rx/net/rss/udp/DailyUdpWire.java#L404-L406) 对 FEC 分片另限制 1500 B shard；[writePacket](https://github.com/RockyLOMO/rxlib/blob/c2a678b8e333c1d44067f4e5c94274b0c130b7e5/rxlib/src/main/java/org/rx/net/rss/udp/DailyUdpWire.java#L566-L576) 已存在最终 wireMtu 检查及失败指标。这些机制优先复用，不重写 FEC/加密/分片算法。本次没有独立运行测试，不能据此宣称外部承载的真实路径 MTU 已验证。
+
+当前普通增强 UDP 协议开销（字节）：
+
+| 开销 | 大小 |
+|---|---:|
+| RSS wire header | 20 |
+| AES-128-GCM 外层：序号 8 + tag 16 | 24 |
+| MAC 外层（与 AES 互斥时） | 24 |
+| FEC 最大 header（以 parity 8 B 为保守预算） | 8 |
+| game 多发 DATA header | 5 |
+| 已有外层认证的分片 header | 10 |
+| 无外层认证、使用分片内部认证的 header | 34 |
+
+定义：
+
+- M = 当前路径允许的 RSS wire UDP payload 字节数，已正确扣除外部承载相关限制；不含 IP/UDP 头，也不是应用原始数据上限。
+- A = 实际协商的 AES/MAC 开销（AES 或 MAC 为 24，无则 0；不把互斥项重复相加）。
+- E = 当前普通 UDP 增强算法最大头部开销（FEC 8、game DATA 5、无冗余 0）。
+- B = min(65507, M) - 20 - A - E，为当前 DailyUdpWire 的保守无分片载荷预算。
+- U = FEC 路径 min(B, 1500)，其它路径 B；S = U - 实际分片头大小，为单片编码数据预算。分片数量须不超过 64，完整编码数据报也须符合 65507 B 上限；必要时校验压缩/解压的独立长度上限及重组资源预算。S 小于等于 0 时该分片路径不可用，拒绝非法配置/协商。
+- 普通 UDP 此处的载荷包括内层业务目的地址/协议元数据，不是纯应用数据；LZ4 编码长度（含压缩前缀）应按实际结果计入。plain 原生无 RSS wire header 的路径使用其自身格式预算，不机械扣除 20 B；plain AES-only 以实际安全封装为准。
+
+例：有效 RSS UDP payload MTU=1300 B，daily/weak + AES，B=1300-20-24-8=1248 B，S=1248-10=1238 B。game + AES/MAC，B=1300-20-24-5=1251 B，S=1241 B。daily 无外层 AES/MAC、但有内部认证分片时，B=1272 B，S=1272-34=1238 B。后两种认证方式开销位置不同，不重复计费。FEC 原始 DATA/SHARD 的实际头可能小于 8 B；使用保守最大值使 parity 也有预算。例子不是网卡真实 IP 字节测量，不包括额外 SOCKS5/Hysteria2/udp2raw 承载开销。
+
+### 12.3 RssUdpMtuBudget 与承载契约
+
+- [ ] 在 RssUdpPathPolicy 内复用或引入小型不可变 RssUdpMtuBudget 值对象/计算器。输入为有效路径、协商 MTU、已解析 codec/认证、具体 wire format、增强算法、是否允许分片；输出无分片 payload 上限、分片 unit/slice 上限、最终 wire 上限及 adaptive TCP 的独立 CHUNK 预算（不假定两种 wire header 相同）。纯计算共享，session/方向/实际物理路径状态分别维护，不新增每包策略对象。
+- [ ] 明确 MTU 的层级：path IP MTU 包含 IP 头、UDP 头和 UDP payload；RSS udpMtu / dailyUdpMtu 是 UDP payload 上限，不能再次扣除同一 IP/UDP 头。IPv4 无 options 时头 20+8 B，IPv6 基础头 40+8 B；实际 options/extension headers、外部隧道开销另计。例如 1280 B IPv6 path IP MTU 的原生 UDP payload 最多 1232 B（无扩展头），不能直接使用 1300 B。
+- [ ] RssUdpTransport 暴露承载可接收的最大 RSS frame 大小或实际可用上限；原生直达、SOCKS5 UDP 动态目的地址（IPv4/IPv6/域名头长不同）、固定 udpClient 映射、外部隧道分别按其真实封装与约束提供预算。SOCKS5/隧道外层 header 只扣一次；若外部客户端已经提供净 RSS frame 上限，直接使用，不再重复扣外层。不得假定 Hysteria2/udp2raw 外层固定开销；不知道有效上限时使用经验证的保守配置、能力/路径探测或明确拒绝，不能声称保证不分片。
+- [ ] 将本地配置、远端协商、当前方向路径与外部承载有效上限取适用的最小值；0 表示没有显式该层限制，不表示 MTU=0 或物理链路无限。原生 UDP 仍受系统/协议/实际路径限制；严格保证仅针对已知的有效预算。
+- [ ] 初始化/重新协商、端点/primary-alias 切换、实际 MTU 更新或 codec 改变时重新计算并缓存；正常每包只做长度比较。跳跃端点可提前缓存各自预算或选择共享最小值，避免在未知较小路径上继续使用旧的大包预算。已排队 frame、FEC group/parity、分片批次与 CHUNK 变化必须协调：旧编码帧不再适配时，可靠 TCP 数据走既有 repair/fallback；普通 UDP 明确失败/丢弃并计数，或在尚未发送、仍持有完整数据时重编码；不得把已发部分当作完整成功，不任意重新分片已认证 frame。
+- [ ] 最终 guard 放在各可控编码层最后（RSS frame 及本地实际 UDP 承载出口）；检查原始数据、分片、parity、game 副本、反馈及探测的最终长度。探测若允许超当前工作预算，必须有独立受控的探测上限和明确验证路径；不把普通数据静默超限发送。无法观察外部进程最终物理 frame 时，靠承载净预算契约、真实抓包及路径测试验证，而非把 RSS guard 说成全链路保证。
+- [ ] 复用现有 finalMtuDrop / mtuDrop、写入失败聚合及重组指标；区分原始数据与可选冗余的失败，不以最终 guard 频繁丢包代替正确预算。保持小包无额外分配/压缩/复制，限制重组内存；不在本次抽象中重写动态 PMTU 算法。动态探测及自适应 CHUNK 的后续工作仍按原计划执行。
+
+### 12.4 P1 验收清单
+
+- [ ] 普通 UDP AES/MAC/无外层认证、LZ4 成功/旁路、FEC/game/无冗余；长度为预算 -1、恰好预算、预算 +1，以及多片与最大分片数边界。捕获 DATA/SHARD/PARITY/副本/反馈最终 wire，确保符合各自预算，验证原始数据完整交付。
+- [ ] plain AES-only 超限明确失败；plain 非加密端口原生行为不受影响；codec bypass 不压缩、不重复加密；任何保护端口不可因超限退回明文。
+- [ ] TCP adaptive UDP 各认证组合验证 CHUNK 与外层 overhead；压缩器不在 FEC/修复/承载层再次执行；降低 MTU 后正确 TCP 兜底，无截断或重复业务字节。
+- [ ] IPv4/IPv6 低 MTU、SOCKS5 不同地址类型、固定映射、动态目标、hop/no-hop；用真实 Hysteria2/udp2raw 承载验证净 RSS frame 预算与外层 IP 包大小，区分隧道合法的内部分段与意外 IP 分片。测试路径 MTU 动态变小、双向不对称、黑洞及热更时的旧队列。
+- [ ] 记录最终超限、重组失败、有效交付率、真实双向流量、CPU/有效 MiB、堆外内存；正常已知预算下不出现意外 finalMtuDrop；与现有正确路径同条件对照，无每包额外复杂计算。
+
+**结论：提前计算安全/封装开销，不提前执行 AES；压缩后按预算分片，生成 FEC/多发帧后执行实际认证加密，最后检查长度并发送。**
+
+## 13. 交付边界
 
 本次只提交设计文档；不修改 Java 源码、运行配置、协议默认值、远端服务或外部客户端，不启动/停止任何现网进程。具体 YAML 字段与迁移方式是为减少改动提出的建议；示例端口不是实际映射。需要实现和实测后才标记通过。
 
-**最终原则：四个 profile、三类完整上游、全模式 DNS AOP 与端口 codec 策略，独立增强及 UDP 路径策略。TCP 必须保护端口按需实际压缩 → AES-128-GCM PSK → zlib0；普通增强 UDP 按需 LZ4 → 分片/FEC 或多发 → AES（需要时）；plain UDP 无传输增强，但必须保护端口执行 AES。TCP adaptive FEC 不再次压缩；旁路端口不浪费 CPU；53 完整拦截验收后移出默认加密名单。算法不依赖上游名称，类名表达真实职责。**
+**最终原则：四个 profile、三类完整上游、全模式 DNS AOP 与端口 codec 策略，独立增强及 UDP 路径策略。TCP 必须保护端口按需实际压缩 → AES-128-GCM PSK → zlib0；普通增强 UDP 按需 LZ4 → 分片/FEC 或多发 → AES（需要时）；plain UDP 无传输增强，但必须保护端口执行 AES。TCP adaptive FEC 不再次压缩；旁路端口不浪费 CPU；53 完整拦截验收后移出默认加密名单。算法不依赖上游名称，类名表达真实职责。统一 RssUdpMtuBudget 提前预留 AES/MAC、FEC/分片及承载开销，最终出口再校验；不会为避免超限而关闭必要加密。**
