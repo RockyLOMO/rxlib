@@ -191,27 +191,28 @@ chacha20-ietf-poly1305 的 TCP/UDP、HKDF-SHA1、32 B salt、12 B nonce、16 B t
 - [ ] Linux epoll/native artifact、Windows NIO、JDK8/21、reuseport、背压与半关闭、RSS adaptive TCP/UDP、udp2raw、SS 各 cipher；检查依赖树版本一致、PARANOID 泄漏、长期连接及 native 兼容。（已完成 `mvn dependency:tree` 全部 40 个 `io.netty` 构件 `4.2.21.Final` 一致性核验，以及 Windows NIO 下 JDK 8 / JDK 21 全套 `PARANOID` 回归；Linux `epoll` native / `SO_REUSEPORT` 与长时公网连接留待 Linux 环境验证。）
 - [ ] 与旧 Netty 版本在 Linux 生产同环境长时对照 CPU、内存、连接清理和实际业务字节。
 
-## 8. 实施顺序与验收总表
+## 8. 实施顺序与验收总表（2026-11-26 最新复查更新）
 
-| 优先级 | 任务 | 验收重点 |
+| 优先级 | 任务 | 状态 / 验收重点 |
 |---|---|---|
-| P1 | 统一 MTU 配置、plain 透传语义 | 真实出口预算、显式配置兼容 |
-| P1 | 压缩后判断与增强模式按需分片重组 | 无超长包静默损失、认证、无界状态防护 |
-| P1 | SS TCP 半关闭边界（已部分修复） | 后端完整 EOF 与仅 FIN 区分、watchdog、尾部字节 |
-| P1 | ssCipher 配置（已实现） | 实际热加载、隔离及失败回滚 |
-| P1（启用前） | 单用户 no-hop（未实现） | 不关闭 daily FEC、策略缓存隔离、真实链路 |
-| P1 | Netty 新版本回归 | JDK8/21、Linux epoll、NIO |
-| P2 | RSS 动态路径 MTU、TCP/FEC CHUNK | IPv4/IPv6 与黑洞恢复、低频探测 |
-| P2 | FEC 空闲缓存 | 保留低 CPU、有界内存 |
-| P2 | weak 部分反馈 | 反馈丢失下不误降档 |
-| P2 | SaltHistory 容量与统计 | 实际保护窗口与公平性 |
-| P2 | Linux 单核长时压力及真实网络验证 | 1 vCPU / 768 MiB、CPU/流量/交付率 |
+| P1 | 统一 MTU、plain 透传、压缩后分片 | 已实现，保留；真实内存预算与发送结果见 §10 |
+| P1 | UDP 分片实际内存预算 | 待修复或证明无放大风险 |
+| P1 | 6896 no-hop / udp2raw 实际数据面 | Java 实现已完成，待双端抓包；不等于已经移除 kcptun |
+| P1 | 分片本地写入结果聚合 | 待修复；不承诺远端 UDP 交付 |
+| P1 | Linux 单核长期部署回归 | 待执行，1 vCPU / 768 MiB |
+| P2 | RSS 动态路径 MTU、TCP/FEC CHUNK | 未实现，IPv4/IPv6 与黑洞恢复、低频探测 |
+| P2 | 大包复制与分配优化 | 先测实际内存、CPU 和有效交付 |
+| P2 | 文档参数一致性 | 按最新代码修正；另见 §10.4 |
+| P2 | FEC 空闲缓存、weak 部分反馈 | 已改进，保持并观察 |
+| P2 | SS TCP 半关闭、ssCipher 热加载 | 目标策略已实现并有本地回归；单向半关闭限制仍需明确 |
+| P2 | Netty 新版本回归 | 双 JDK Windows 回归已记录，Linux native 待验证 |
+| P3 | SaltHistory 多用户容量淘汰性能 | 已实现容量配置和公平预算；多域扫描按需优化 |
 
 不再做：daily 默认扩窗、RS、完整 KCP ARQ、重写 ChaCha20、大规模架构重构。将不同候选分开 A/B，记录失败实验，不强行合入无净收益的优化。
 
-历史仓库报告（d17cad55，Netty 升级前）显示 JDK 8 与 JDK 21 各执行 101 项定向测试，各 100 通过、0 失败、1 跳过（Windows 上 Linux 专用用例）。最新两个提交新增了测试源码，但未发现对应运行结果；不得沿用历史数字宣称当前 f5583f3c 已通过。尚需 Linux nft/真实单核 cgroup、多个并发连接、长时公网、实际 WoW TCP 游戏场景；分别报告进程及整机 CPU、真实双向 IP 字节、有效业务字节、成功率、P99/最大停顿、direct/heap/cgroup 峰值。不以成功包延迟代替失败统计，不把未独立执行的测试写成本次通过。
+历史仓库报告（d17cad55，Netty 升级前）每个 JDK 为 101 项（100 通过、1 跳过）。本轮实现后的仓库记录见 §9：JDK 8/21 各 153 项（151 通过、0 失败、2 跳过）。这些是仓库已有报告，不是本次静态 Review 独立执行的结果。Linux nft/真实单核 cgroup、多个并发连接、长时公网、实际 WoW TCP 游戏场景仍待验证。
 
-**最终决策（2026-11-26）：MTU 与按需分片仍是 RSS 核心 P1；保留新 ssCipher，优先验证 Netty 升级及 EOF 清理语义；需要使用 6896 no-hop 时先完成并验收该独立策略。其他已证明有效的轻量优化保持不动。不修改现网或启停进程，不将计划当作已完成。**
+**最新决策：功能开发逐步转向稳定性验证。优先修复分片内存预算和本地发送状态，验证实际 no-hop 数据面与 Linux 部署。已有低开销 FEC 和经典 SS AEAD 核心不再反复修改。**
 
 ## 9. 2026-11-26 实施与验收记录
 
@@ -222,9 +223,9 @@ chacha20-ietf-poly1305 的 TCP/UDP、HKDF-SHA1、32 B salt、12 B nonce、16 B t
 | 提交 | 对应项 | 摘要 |
 | --- | --- | --- |
 | `f95c1199` | §6 `transport.udpHop` | 支持单用户 `transport.udpHop: false` 与服务端 `SocksConfig.udpHop` / `-udpHop=0` 关闭自适应 TCP/UDP FEC 端口跳跃（TCP `NO_HOP_METHOD = 0x87`、RPC `SUPPORT_NO_HOP_UDP`、签名 nonce `primary == alias`、旧端回退及 `OutboundProfiles` / 预热池 / 租约池键隔离），完整保留压缩、自适应 XOR 与 TCP 修复 |
-| `1517f6cf` | §3.2 / §3.4 P1-RSS | 统一 UDP MTU 语义（`plain` 默认 `udpMtu = 0` 原生透传并修复 `Sockets.udpBootstrap` 首包 2048 B 接收分配截断；增强模式默认 `dailyUdpMtu = 1300` 协商）、压缩后超限判定及零小包额外开销的有界认证分片重组 `DailyUdpFragmenter`（`FRAG_MAGIC = 0x0001`、单会话 64 组 / 512 KiB、全局 16 MiB、750 ms 过期） |
+| `1517f6cf` | §3.2 / §3.4 P1-RSS | 统一 UDP MTU 语义（`plain` 默认 `udpMtu = 0` 原生透传并修复 `Sockets.udpBootstrap` 首包 2048 B 接收分配截断；增强模式默认 `dailyUdpMtu = 1300` 协商）、压缩后超限判定及零小包额外开销的有界认证分片重组 `DailyUdpFragmenter`（`FRAG_MAGIC = 0x0001`、单会话 16 组 / 256 KiB、全局默认 24 MiB、750 ms 默认过期（按 0a0dcb83 源码复核修正；实际内存预算仍需验证）） |
 | `bf635b9d` | §5.2 P1-SS-01 / §5.3 | 加固客户端先 FIN 单向半关闭（`ProxyHandler.connectFuture()` 建连前 FIN 屏障、SOCKS5 `CONNECT` 前端半关闭开启、感知下游背压的精确 deadline 一次性 `HalfCloseWatch`），修复 NIO Selector 延迟注销引起的同端口快速重绑 `BindException`，并完成 36 组合半关闭矩阵与 `ssCipher` 热更新隔离/回滚端到端验证 |
-| `7845b55b` | §4 P2-RSS-01/02 & §5.2 P2-SS-02 | `UdpDailyFec` 增加 5 秒空闲一次性缓存回收截止时间与会话/直接内存峰值统计；`weak` 部分反馈在丢报告跨窗时保守重置连续干净样本计数；`SaltHistory` 增加容量/TTL 配置、按 `DomainKey` 分片内 O(1) 公平预算与 30 秒低频指标汇总 |
+| `7845b55b` | §4 P2-RSS-01/02 & §5.2 P2-SS-02 | `UdpDailyFec` 增加 5 秒空闲一次性缓存回收截止时间与会话/直接内存峰值统计；`weak` 部分反馈在丢报告跨窗时保守重置连续干净样本计数；`SaltHistory` 增加容量/TTL 配置、按 `DomainKey` 分片内公平预算（部分淘汰路径扫描域）与 30 秒低频指标汇总 |
 
 ### 9.2 Netty `4.2.21.Final` 依赖树与双 JDK 回归结果
 
@@ -243,3 +244,100 @@ chacha20-ietf-poly1305 的 TCP/UDP、HKDF-SHA1、32 B salt、12 B nonce、16 B t
 - **未纳入本轮编码**：按第 1、8 节约束，未改 `daily` 默认 64 窗口，未引入 RS、完整 KCP ARQ、ChaCha20 重写或动态路径 MTU（§3.3 P2）。
 - **未改动现网**：未修改远端 `/home/rss/conf.yml`，未启停 `rssClient` / `rssServer` 进程，未移除 `kcptun`。
 - **Linux 与公网实测边界**：Linux `epoll` native / `SO_REUSEPORT`、`nft` 端口重定向、1 vCPU / 768 MiB cgroup 整机峰值内存、6896 现网双端抓包及公网 QUIC/HTTP3 / 游戏长连接对照尚未在本机 Windows 环境执行，留待维护窗口在 Linux 环境按同口径核验。
+
+## 10. 2026-11-26 15:58 版本增量 Review（最新）
+
+审查基线：[0a0dcb83](https://github.com/RockyLOMO/rxlib/commit/0a0dcb839ca832feed8ee311f76643e88ec0a950)，北京时间 2026-11-26 15:58:22。相比上一轮评审文档提交 [19cc5db0](https://github.com/RockyLOMO/rxlib/commit/19cc5db0624eadc4eff528ff6adad3dc54f7e731) 新增 5 个 commit，涉及 42 个文件。以下为最新状态，优先于此前尚未实施时的描述。保留 §9 原有实施与验证记录；本次未独立运行测试、未操作现网。
+
+### 10.1 已实现事项及保留决策
+
+| 项目 | 结论 |
+|---|---|
+| plain 默认 udpMtu=0 | 保留，指原生路径不主动限长；特殊加密路由、udp2raw 不等于裸透传 |
+| enhanced UDP MTU 协商，默认 1300 B | 保留，UDP payload 与 IP/path MTU 仍须区分 |
+| 按需压缩、压缩后判断、认证分片和有界重组 | 已实现，继续验证真实资源预算及本地写入失败 |
+| 单用户 no-hop，预热池、租约池、配置缓存隔离 | 已实现，实际外层路径待验证 |
+| SS 半关闭、EOF、ssCipher 热加载与回滚 | 已增强，保留并明确客户端先 FIN 策略 |
+| FEC 空闲一次性回收、weak 部分反馈 | 已改进，保持低唤醒，不恢复周期扫描 |
+| SaltHistory 容量、TTL、域公平淘汰及低频统计 | 已实现，保留 |
+| 动态路径 MTU / TCP FEC CHUNK | 尚未实现 |
+| Linux 实际部署及 kcptun 新一轮对照 | 尚未验证 |
+
+仓库 §9 报告 JDK8/21 各 153 项定向测试，151 通过、0 失败、2 跳过，Netty 4.2.21.Final、PARANOID 未报告泄漏。泄漏检测不等于验证了活跃会话内存预算，也不代表已完成 Linux 生产验证。
+
+### 10.2 P1-RSS-01 分片真实内存预算（优先）
+
+源码：[DailyUdpWire.sizeReceiveBuffer](https://github.com/RockyLOMO/rxlib/blob/0a0dcb839ca832feed8ee311f76643e88ec0a950/rxlib/src/main/java/org/rx/net/rss/udp/DailyUdpWire.java#L198-L201)、[DailyUdpFragmenter.accept](https://github.com/RockyLOMO/rxlib/blob/0a0dcb839ca832feed8ee311f76643e88ec0a950/rxlib/src/main/java/org/rx/net/rss/udp/DailyUdpFragmenter.java#L246-L299)。
+
+接收分配器固定为 65536 B，以防较大原始 UDP 数据报截断；重组预算按每片 SLOT_OVERHEAD_BYTES(64) + sliceLen 计费，而 slot.parts 使用 frame.retainedSlice 保留父缓冲引用。特别是明文 daily 等直接使用原接收缓冲的路径，实际底层持有容量可能远大于计费长度。以 1200 B slice 为例，计费 1264 B，若独立保留一块 65536 B backing buffer，约为 51.8 倍。该比值为条件性上界示例，不是实测放大值；加密、MAC 和不同 allocator 路径可能不同。24 MiB 是逻辑计费预算，不是经证明的 direct memory 硬上限。完整重组时的额外输出缓冲及对象元数据也应纳入峰值分析。
+
+- [ ] 使用真实 NIO / epoll socket 接收路径与池化 allocator，测量原始 backing buffer、重组逻辑计费、active direct memory、进程 RSS 和 cgroup 峰值。不要只用小型 Unpooled 测试输入证明预算正确。
+- [ ] 对需跨事件长期持有的分片按实际 sliceLen 拷入容量匹配的池化 buffer 后释放父引用，或者建立可靠的实际 backing allocation 计费；选择对真实 CPU/内存综合收益更优的方案。保持正常未分片包快路径不变，不降低 65536 B 接收分配器导致截断。
+- [ ] 校验单会话与全局预算、每组元数据、重组完成时临时输出缓冲及解压峰值。拒绝预算时不得长期占用无有效片段的 assembly slot；验证成功、超时、异常、关闭、分配失败均归还引用和预算。
+- [ ] 压测多会话、大量缺片、乱序、重复、缓存满、FEC 恢复与认证失败；全部清理后逻辑计费归零，实际活跃内存回落。区分池化 allocator 保留内存与活跃引用占用，不将池保留直接判为泄漏。
+- [ ] 同时记录分片路径 CPU/有效 MiB、GC、direct 分配、交付率与真实 IP 流量，确保对日常小包没有额外拷贝及每包新增对象。
+
+### 10.3 P1-RSS-02 / 03 实际 no-hop 数据面及本地写入结果
+
+**P1-RSS-02：6896 main-tun 路径验证。**
+
+[AdaptiveUdpPort.client / remoteIp](https://github.com/RockyLOMO/rxlib/blob/0a0dcb839ca832feed8ee311f76643e88ec0a950/rxlib/src/main/java/org/rx/net/rss/tcp/AdaptiveUdpPort.java#L85-L111) 根据 TCP socket 的 remoteAddress 取得目标 IP，再使用握手协商的 primary/alias UDP 端口创建数据面。若 TCP 实际连接本机 127.0.0.1:4080，不能由 udpHop=false 推断 adaptive UDP 已经走 udp2raw 外层。普通业务 UDP 的 Udp2rawUpstream 路由与 TCP/FEC adaptive UDP 是两个不同的数据面。可能出现 TCP 正常但 UDP 探测失败、持续 TCP 回退；这是部署风险，尚未复现。
+
+- [ ] 双端抓包及指标验证 6896 TCP 主通道、TCP adaptive UDP、普通业务 UDP 三条路径；检查远端 IP、实际映射端口、认证 PING/PONG、toUdp/toTcp 与实际有效交付，确认没有意外公网直出或本地未映射端口。
+- [ ] 与 6898 保持跳跃的 daily 对照，确认单用户配置和池键隔离；旧端能力不足时记录实际行为，不把旧端回退当作 no-hop 完整支持。
+- [ ] 若 UDP 映射不可达，先明确外层路由/映射策略或保留 TCP 回退，不以关闭 fec 或盲目增加探测掩盖问题。是否需要额外外层通道必须由部署实测决定。
+- [ ] kcptun 下线仍是独立运维操作：先验证替代监听、端口冲突处理和可回退方案，维护窗口迁移；不宣称已切换现网。
+
+**P1-RSS-03：多分片本地写入结果聚合。**
+
+[DailyUdpWire.write](https://github.com/RockyLOMO/rxlib/blob/0a0dcb839ca832feed8ee311f76643e88ec0a950/rxlib/src/main/java/org/rx/net/rss/udp/DailyUdpWire.java#L337-L346) 中 dataPromise = last ? promise : null，前面分片使用 voidPromise，最后一片成功不能证明之前分片也成功完成本地 write。UDP 无远端可靠交付保证，但本地写入状态应准确，不能错误计入成功业务包。
+
+- [ ] 仅在真正进入分片路径时聚合各原始分片的本地写结果；首片/中间片/尾片失败时原始 promise 只能完成一次并准确反映失败。不要把 parity 或可选 game 额外副本失败与原始数据分片失败混为一谈。
+- [ ] 检查跨 Channel/回程 path 的 promise 归属、批量 flush、编码同步异常、最终 MTU guard、关闭、异步失败、引用释放。异常后已发送部分无法撤回，接收端按重组超时丢弃，不引入默认 UDP 重传。
+- [ ] 保留小包原写入路径与正常单次 flush，避免每片无必要的新任务、每包聚合对象和频繁 flush。记录本地发送失败、缺片超时及真实成功重组数。
+
+### 10.4 参数及文档一致性
+
+按 [DailyUdpFragmenter.java](https://github.com/RockyLOMO/rxlib/blob/0a0dcb839ca832feed8ee311f76643e88ec0a950/rxlib/src/main/java/org/rx/net/rss/udp/DailyUdpFragmenter.java#L20-L34)、[DailyUdpWire.maxPayload](https://github.com/RockyLOMO/rxlib/blob/0a0dcb839ca832feed8ee311f76643e88ec0a950/rxlib/src/main/java/org/rx/net/rss/udp/DailyUdpWire.java#L541-L549) 核查当前实际值：
+
+| 参数 | 源码 |
+|---|---:|
+| plain 默认 udpMtu | 0 |
+| enhanced UDP 默认 payload MTU | 1300 B |
+| 最大原始 RSS 封装载荷 | 65507 B（含目标地址等内层开销） |
+| 最大分片数 | 64 |
+| 单会话最大并发重组组 | 16 |
+| 单会话计费预算 | 256 KiB |
+| 进程全局默认计费预算 | 24 MiB |
+| 默认重组超时 | 750 ms |
+| 外层已有认证时分片头 | 10 B |
+| 无外层认证 daily 的分片头、序号与 tag | 34 B |
+| 普通未分片 SOCKS UDP | 0 B 额外分片开销 |
+
+此前 docs/rss-transport.md 与 §9 实施记录写为 64 组 / 512 KiB / 16 MiB，不符合最新代码。本文 §9 参数已按当前源码校正；独立的 rss-transport.md 尚未修改，后续同步。不要仅为与旧文档一致而修改代码参数。rx.rss.udp.reassemblyTimeoutMillis 与 rx.rss.udp.reassemblyGlobalBytes 可配置；默认值不等于实测物理内存预算。
+
+- [ ] 明确 64 分片上限与 MTU 对最大可传输业务载荷的限制：maxEncodedDatagram = min(65507, 64 * maxSliceBytes)，其中 maxSliceBytes = fragmentUnitLimit(maxPayload) - fragmentHeaderBytes；FEC 分片 unit 还受 1500 B shard 上限约束。实际业务上限再扣除地址头等，压缩收益另计。
+- [ ] 对最小允许 MTU=256、默认 1300、IPv4/IPv6、不同保护组合、64 片边界和超限失败补充测试和文档。不盲目扩大 MAX_FRAGMENTS。
+- [ ] 正常小包保持零额外分片头；特殊 magic 冲突转义路径与协议约束应单列，不宣称所有任意字节序列均零开销。
+
+分片流量估算示例：不可压缩 4096 B RSS 内层数据报、1300 B UDP MTU，game + MAC（外层保守预算 49 B，分片头 10 B）：单片数据预算 1241 B，需 4 片，原始数据片 UDP payload 合计约 4332 B，额外 236 B（约 5.76%）。该值不含可选 game 副本、FEC parity、反馈、IP/UDP 头及链路层开销，不是实测。daily（无外层 AES）使用 34 B 分片认证头；weak 使用外层认证与 10 B 分片头。按实际模式和认证配置计算，不统一使用某一组开销值。
+
+### 10.5 P2 动态 MTU 与低 CPU 优化
+
+- [ ] RSS 动态路径 MTU 与 TCP/FEC 动态 CHUNK 仍未实现。区分 UDP payload 上限与 path IP MTU；固定 1250 B adaptive frame + 32 B 认证外层 + IPv6/UDP 48 B 可达 1330 B。路径 IP MTU 1280 B 时仍可能分片/黑洞。
+- [ ] 复用已有 udp2raw MTU 探测思路，认证并核验实际尺寸，按方向/路径低频按需探测、退避、缓存，避免空闲心跳及探测导致 IP 分片的误判。改变 CHUNK 不影响 TCP 可靠兜底与旧端协议。
+- [ ] 先解决实际分片预算，再用 profile 评估大包复制、分配和批量写。保留 FEC 5 秒一次性空闲回收及 weak 保守报告处理；不为理论收益重写 XOR、扩大 daily 默认窗口或提高 zlib 默认压缩等级。
+
+### 10.6 SS 最新复查
+
+- [SaltHistory](https://github.com/RockyLOMO/rxlib/blob/0a0dcb839ca832feed8ee311f76643e88ec0a950/rxlib/src/main/java/org/rx/net/socks/encryption/SaltHistory.java#L195-L231) 已有分片锁、容量和 TTL 配置、精确防重放、域内公平淘汰及 30 秒低频指标。部分容量满路径遍历 domains.values() 选 victim，复杂度与该分片域数相关，而非所有淘汰 O(1)。少量用户场景优先保持简单；P3 仅在实测多域锁竞争明显时考虑优化。不降低安全窗口或使用概率误判代替精确缓存。
+- [SocksTcpFrontendRelayHandler](https://github.com/RockyLOMO/rxlib/blob/0a0dcb839ca832feed8ee311f76643e88ec0a950/rxlib/src/main/java/org/rx/net/socks/SocksTcpFrontendRelayHandler.java#L23-L170) 已引入可配置半关闭 idle deadline、背压判断、ProxyHandler.connectFuture 屏障；保持目标 EOF 清理和尾部数据验证。当前策略仍偏向客户端先 FIN 的单向半关闭，不等价于完整透明双向 TCP 半关闭；若业务要求后端先 shutdownOutput 后继续读取客户端数据，单独测试并明确支持范围。
+- chacha20-ietf-poly1305 核心不重写；保留独立 TCP/UDP 互操作及 JCE 差分测试。没有新增证据表明需改变加密算法默认策略。
+
+### 10.7 P1 Linux 验收与部署门槛
+
+在 1 vCPU / 768 MiB 限额、真实独立进程上验证 Linux epoll/native、SO_REUSEPORT、nft、Netty 新版本、SS listener 重绑、半关闭、no-hop 及 UDP 分片。以 plain/daily/weak/game 和 kcptun 0:0 / 10:1 / 相近真实流量预算为对照；至少三个种子并重复、交替测试顺序，区分冷/热 JVM 及 session。测试空闲、短包/低 PPS、长上传下载、并发业务、QUIC/HTTP3、真实 TCP 游戏；覆盖 RTT、随机/突发丢包、乱序、UDP 单向/双向阻断及 IPv6 低 MTU。
+
+分别记录双向 IP 字节、有效交付字节/数据报、P99/最大停顿与失败率、内核丢包、本地写失败、分片成功率、进程及整机 CPU/有效 MiB、唤醒、heap/direct/cgroup 峰值。以正确性、安全、兼容为硬约束，流量与 CPU 优先，内存放宽但必须有界。不能以丢包制造省流量结果，不能只报告成功包的延迟，也不能以 Windows 定向通过代替 Linux 公网验收。
+
+**下一轮执行顺序：真实分片内存预算 → 本地写结果聚合 → 6896 实际路径抓包 → Linux 长时 A/B；随后根据实测推进动态路径 MTU 和少量大包优化。**
