@@ -63,8 +63,16 @@ public class SocksConfig extends SocketConfig {
     @ToString.Exclude
     private transient volatile Set<InetAddress> whiteList;
 
+    public static final int DEFAULT_DAILY_UDP_MTU = 1300;
     /** Negotiate RSS daily UDP (timed port hopping and adaptive FEC) over RPC. */
     private int dailyUdpFeatures;
+    /** Final RSS UDP tunnel datagram cap for daily/weak/game profiles; 0 disables tunnel MTU capping. */
+    private int dailyUdpMtu = DEFAULT_DAILY_UDP_MTU;
+
+    public int resolveDailyUdpMtu() {
+        int mtu = getUdpMtu();
+        return mtu > 0 ? mtu : Math.max(0, dailyUdpMtu);
+    }
 
     public boolean isDailyUdp() {
         return dailyUdpFeatures != 0;

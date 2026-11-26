@@ -22,6 +22,8 @@ public final class UdpRelayGroupOpenResult implements Serializable {
     @ToString.Exclude
     private String token;
     private int profileVersion, selectedFeatures;
+    private boolean udpFragEnabled;
+    private int udpMtu;
     @ToString.Exclude
     @com.alibaba.fastjson2.annotation.JSONField(serialize = false)
     private byte[] authSecret;

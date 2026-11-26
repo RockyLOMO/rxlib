@@ -14,14 +14,20 @@ public final class RssTransport implements Serializable {
     public Integer fec, tcp, udp;
     public Integer tcpCompressionLevel;
     public Boolean udpHop;
+    public Integer udpMtu;
 
     boolean udpHop() {
         return !Boolean.FALSE.equals(udpHop);
     }
 
+    static boolean validUdpMtu(Integer mtu) {
+        return mtu == null || mtu == 0 || (mtu >= 256 && mtu <= 65507);
+    }
+
     boolean valid() {
         return RssProfile.named(profile) != null
                 && (tcpCompressionLevel == null || tcpCompressionLevel >= 1 && tcpCompressionLevel <= 9)
+                && validUdpMtu(udpMtu)
                 && inRange(fec, 3) && inRange(tcp, 7) && inRange(udp, 3);
     }
 

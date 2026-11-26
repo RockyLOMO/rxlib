@@ -18,7 +18,8 @@ final class DailyUdpCompression {
     /** Borrows the input. Returns an owned block, or null to send the original unchanged. */
     ByteBuf tryEncode(ByteBuf input, long now) {
         int len = input.readableBytes();
-        if (len < MIN_PAYLOAD || lowGain == 8 && now - bypassStarted < BYPASS_NANOS) {
+        if (len < MIN_PAYLOAD || len > DailyUdpFragmenter.MAX_DATAGRAM_BYTES
+                || lowGain == 8 && now - bypassStarted < BYPASS_NANOS) {
             return null;
         }
         int max = UdpCompressSupport.maxCompressedLength(len, 0);

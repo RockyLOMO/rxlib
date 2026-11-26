@@ -61,7 +61,8 @@ public class SocksUdpUpstream extends Upstream {
         this.next = next;
         // A single local SOCKS UDP association can multiplex destinations requiring different wire formats.
         int features = config.getDailyUdpFeatures();
-        String suffix = features + (config.isUdpHop() ? "" : ".nohop");
+        int effectiveMtu = config.isDailyUdp() ? config.resolveDailyUdpMtu() : config.getUdpMtu();
+        String suffix = features + (config.isUdpHop() ? "" : ".nohop") + ".mtu" + effectiveMtu;
         sessionKey = AttributeKey.valueOf("socksUdpUpstreamSessionGroup." + suffix);
         initKey = AttributeKey.valueOf("socksUdpUpstreamSessionInit." + suffix);
     }
@@ -364,6 +365,8 @@ public class SocksUdpUpstream extends Upstream {
                 if (request.getProfileVersion() == 1 || (features & DailyUdpWire.AES) != 0) {
                     request.setClientSalt(java.util.UUID.randomUUID());
                 }
+                request.setUdpFragSupported(capabilities.has(SocksRpcCapabilities.SUPPORT_UDP_FRAG));
+                request.setUdpMtu(socksConfig.resolveDailyUdpMtu());
                 // One logical relay with one (no-hop) or two (hopping) physical ingress ports.
                 initialCount = minActive = 1;
                 maxRelayCount = !socksConfig.isUdpHop() && capabilities.has(SocksRpcCapabilities.SUPPORT_NO_HOP_UDP) ? 1 : 2;
@@ -440,7 +443,12 @@ public class SocksUdpUpstream extends Upstream {
                 || result.getSelectedFeatures() != request.getDailyFeatures())) {
             throw new IllegalStateException("Upstream did not negotiate the requested UDP profile");
         }
-        control.dailyWire = DailyUdpWire.client(result.getToken(), primary, alias, config.getUdpMtu(), request.getDailyFeatures(), request.getClientSalt(), result.getAuthSecret());
+        int localMtu = ((SocksConfig) config).resolveDailyUdpMtu();
+        int peerMtu = Math.max(0, result.getUdpMtu());
+        int effectiveMtu = localMtu > 0 && peerMtu > 0 ? Math.min(localMtu, peerMtu) : Math.max(localMtu, peerMtu);
+        boolean fragEnabled = request.isUdpFragSupported() && result.isUdpFragEnabled();
+        control.dailyWire = DailyUdpWire.client(result.getToken(), primary, alias, effectiveMtu,
+                request.getDailyFeatures(), request.getClientSalt(), result.getAuthSecret(), fragEnabled);
         SessionGroup group = new SessionGroup(new SessionHolder[]{SessionHolder.rpc(control, result.getGroupId(), primary)},
                 UdpPortHoppingMode.ROUND_ROBIN, 1, control);
         onRpcRelayGroupSuccess(poolKey());

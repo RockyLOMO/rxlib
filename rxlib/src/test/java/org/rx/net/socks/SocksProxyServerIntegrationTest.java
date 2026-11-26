@@ -2114,6 +2114,105 @@ class SocksProxyServerIntegrationTest {
     }
 
     @Test
+    @Timeout(value = 15)
+    void plainUdpPassthroughAllowsLargeDatagramsWhileExplicitMtuStillGuards() throws Exception {
+        SocksConfig upstreamCfg = new SocksConfig(0);
+        try (SocksProxyServer upstreamProxy = new SocksProxyServer(upstreamCfg);
+             DatagramSocket app = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0))) {
+            app.setSoTimeout(4000);
+            int upstreamPort = ((InetSocketAddress) upstreamProxy.tcpChannels.get(0).localAddress()).getPort();
+            UpstreamSupport support = new UpstreamSupport(
+                    new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", upstreamPort), null, null), null);
+
+            // 1. Default plain (udpMtu = 0): 2048B datagram passes end-to-end without artificial 1300B drop.
+            ShadowsocksConfig ssPlain = new ShadowsocksConfig(Sockets.newLoopbackEndpoint(0),
+                    org.rx.net.socks.encryption.CipherKind.AES_256_GCM.getCipherName(), "plain-mtu-pwd");
+            SocksConfig plainRoute = new SocksConfig();
+            assertEquals(0, plainRoute.getUdpMtu());
+            try (ShadowsocksServer ssServer = new ShadowsocksServer(ssPlain)) {
+                ssServer.onUdpRoute.replace((s, e) -> e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), plainRoute, support)));
+                int ssPort = ((InetSocketAddress) ssServer.udpChannels.get(0).localAddress()).getPort();
+                org.rx.net.socks.encryption.ICrypto crypto = org.rx.net.socks.encryption.ICrypto.get(
+                        ssPlain.getMethod(), ssPlain.getPassword(), true);
+                try {
+                    byte[] large = new byte[8192];
+                    new java.util.Random(12).nextBytes(large);
+                    ByteBuf req = Unpooled.buffer();
+                    UdpManager.encode(req, "127.0.0.1", UDP_ECHO_PORT);
+                    req.writeBytes(large);
+                    byte[] encrypted = toBytes(crypto.encrypt(req));
+                    app.send(new java.net.DatagramPacket(encrypted, encrypted.length, InetAddress.getByName("127.0.0.1"), ssPort));
+                    byte[] respBuf = new byte[16384];
+                    java.net.DatagramPacket resp = new java.net.DatagramPacket(respBuf, respBuf.length);
+                    app.receive(resp);
+                    ByteBuf clear = crypto.decrypt(Unpooled.wrappedBuffer(resp.getData(), 0, resp.getLength()));
+                    try {
+                        UdpManager.decode(clear);
+                        byte[] echoed = new byte[clear.readableBytes()];
+                        clear.readBytes(echoed);
+                        assertArrayEquals(large, echoed);
+                    } finally {
+                        clear.release();
+                    }
+                } finally {
+                    ((AutoCloseable) crypto).close();
+                }
+            }
+
+            // 2. Explicit udpMtu = 1200 on upstream relay: 2048B datagram is dropped by final egress guard while 512B succeeds.
+            SocksConfig cappedCfg = new SocksConfig(0);
+            cappedCfg.setUdpMtu(1200);
+            try (SocksProxyServer cappedProxy = new SocksProxyServer(cappedCfg)) {
+                int cappedPort = ((InetSocketAddress) cappedProxy.tcpChannels.get(0).localAddress()).getPort();
+                UpstreamSupport cappedSupport = new UpstreamSupport(
+                        new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", cappedPort), null, null), null);
+                ShadowsocksConfig ssCapped = new ShadowsocksConfig(Sockets.newLoopbackEndpoint(0),
+                        org.rx.net.socks.encryption.CipherKind.AES_256_GCM.getCipherName(), "capped-mtu-pwd");
+                try (ShadowsocksServer ssServer = new ShadowsocksServer(ssCapped)) {
+                    ssServer.onUdpRoute.replace((s, e) -> e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), plainRoute, cappedSupport)));
+                    int ssPort = ((InetSocketAddress) ssServer.udpChannels.get(0).localAddress()).getPort();
+                    org.rx.net.socks.encryption.ICrypto crypto = org.rx.net.socks.encryption.ICrypto.get(
+                            ssCapped.getMethod(), ssCapped.getPassword(), true);
+                    try {
+                        byte[] over = new byte[2048];
+                        new java.util.Random(13).nextBytes(over);
+                        ByteBuf req = Unpooled.buffer();
+                        UdpManager.encode(req, "127.0.0.1", UDP_ECHO_PORT);
+                        req.writeBytes(over);
+                        byte[] encrypted = toBytes(crypto.encrypt(req));
+                        app.send(new java.net.DatagramPacket(encrypted, encrypted.length, InetAddress.getByName("127.0.0.1"), ssPort));
+                        app.setSoTimeout(400);
+                        byte[] respBuf = new byte[4096];
+                        assertThrows(java.net.SocketTimeoutException.class,
+                                () -> app.receive(new java.net.DatagramPacket(respBuf, respBuf.length)));
+
+                        app.setSoTimeout(4000);
+                        byte[] small = "small-under-1200".getBytes(StandardCharsets.UTF_8);
+                        ByteBuf smallReq = Unpooled.buffer();
+                        UdpManager.encode(smallReq, "127.0.0.1", UDP_ECHO_PORT);
+                        smallReq.writeBytes(small);
+                        byte[] smallEnc = toBytes(crypto.encrypt(smallReq));
+                        app.send(new java.net.DatagramPacket(smallEnc, smallEnc.length, InetAddress.getByName("127.0.0.1"), ssPort));
+                        java.net.DatagramPacket smallResp = new java.net.DatagramPacket(respBuf, respBuf.length);
+                        app.receive(smallResp);
+                        ByteBuf clear = crypto.decrypt(Unpooled.wrappedBuffer(smallResp.getData(), 0, smallResp.getLength()));
+                        try {
+                            UdpManager.decode(clear);
+                            byte[] echoed = new byte[clear.readableBytes()];
+                            clear.readBytes(echoed);
+                            assertArrayEquals(small, echoed);
+                        } finally {
+                            clear.release();
+                        }
+                    } finally {
+                        ((AutoCloseable) crypto).close();
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     @SneakyThrows
     @Timeout(value = 15)
     void shadowsocksUdpRelay_socks5_localChannel_preservesOrigin_e2e() {

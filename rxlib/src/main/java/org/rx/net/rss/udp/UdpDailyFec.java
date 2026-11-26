@@ -19,7 +19,7 @@ public final class UdpDailyFec implements AutoCloseable {
     public static final int MAX_OVERHEAD = 8; // parity: type, first sequence, count, XOR of lengths
     public static final int WIRE_HEADROOM = 20;
     public static final int MAX_PAYLOAD = 65507 - WIRE_HEADROOM - 5;
-    private static final int MAX_SHARDS = 16, MIN_SHARDS = 2, MAX_SHARD_BYTES = 1500;
+    static final int MAX_SHARDS = 16, MIN_SHARDS = 2, MAX_SHARD_BYTES = 1500;
     private static final long FLUSH = TimeUnit.MILLISECONDS.toNanos(15);
     private static final long MAX_FLUSH = TimeUnit.MILLISECONDS.toNanos(180);
     private static final long EXPIRE = TimeUnit.MILLISECONDS.toNanos(300);

@@ -1855,7 +1855,9 @@ public class RssTest extends AbstractTester {
         assertEquals(0, config.getWriteTimeoutSeconds());
         assertEquals(240, config.getTcpIdleTimeoutSeconds());
         assertEquals(SocksConfig.DEF_UDP_READ_TIMEOUT_SECONDS, config.getUdpReadTimeoutSeconds());
-        assertEquals(1300, config.getUdpMtu());
+        assertEquals(0, config.getUdpMtu());
+        assertEquals(1300, config.getDailyUdpMtu());
+        assertEquals(1300, config.resolveDailyUdpMtu());
         assertFalse(config.isEnableUdp2raw());
         assertTrue(config.isDailyUdp());
         assertEquals(1, config.getUdpRedundantMultiplier());
@@ -2031,9 +2033,16 @@ public class RssTest extends AbstractTester {
         assertEquals(0, config.getWriteTimeoutSeconds());
         assertEquals(3, config.getTcpIdleTimeoutSeconds());
         assertEquals(4, config.getUdpReadTimeoutSeconds());
-        assertEquals(1300, config.getUdpMtu());
+        assertEquals(0, config.getUdpMtu());
+        assertEquals(1300, config.getDailyUdpMtu());
+        assertEquals(1300, config.resolveDailyUdpMtu());
         assertTrue(config.isUdpLeasePoolEnabled());
         assertEquals(5, config.getUdpLeasePoolMaxSize());
+
+        conf.udpMtu = 1420;
+        RssClient.configureOutboundConfig(conf, config);
+        assertEquals(1420, config.getUdpMtu());
+        assertEquals(1420, config.getDailyUdpMtu());
     }
 
     @Test
@@ -2132,6 +2141,22 @@ public class RssTest extends AbstractTester {
         assertFalse(isolated.udp(grey, 80).isUdpHop());
         assertTrue(isolated.udp(main, 80).isUdpHop());
         org.junit.jupiter.api.Assertions.assertNotSame(isolated.udp(grey, 80), isolated.udp(main, 80));
+        assertEquals(0, isolated.udp(grey, 80).getUdpMtu());
+        assertEquals(1300, isolated.udp(grey, 80).resolveDailyUdpMtu());
+        assertEquals(0, profiles.udp(b, 80).getUdpMtu());
+        assertEquals(1300, profiles.udp(b, 53).resolveDailyUdpMtu());
+
+        String mtuJson = "{\"shadowUsers\":["
+                + "{\"ssPort\":6896,\"username\":\"plainCustom\",\"socksUser\":\"shared\",\"transport\":{\"profile\":\"plain\",\"udpMtu\":1240}},"
+                + "{\"ssPort\":6897,\"username\":\"dailyCustom\",\"socksUser\":\"shared\",\"transport\":{\"profile\":\"daily\",\"udpMtu\":1400}}]}";
+        RssClientConf mtuConf = JSON.parseObject(mtuJson, RssClientConf.class);
+        assertTrue( mtuConf.shadowUsers.get(0).transport.valid());
+        RssClient.OutboundProfiles mtuProfiles = new RssClient.OutboundProfiles(mtuConf, inbound);
+        assertEquals(1240, mtuProfiles.udp(mtuConf.shadowUsers.get(0), 80).getUdpMtu());
+        assertEquals(0, mtuProfiles.udp(mtuConf.shadowUsers.get(1), 80).getUdpMtu());
+        assertEquals(1400, mtuProfiles.udp(mtuConf.shadowUsers.get(1), 80).resolveDailyUdpMtu());
+        mtuConf.shadowUsers.get(0).transport.udpMtu = 100;
+        assertFalse(mtuConf.shadowUsers.get(0).transport.valid());
     }
 
     @Test

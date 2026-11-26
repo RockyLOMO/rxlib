@@ -19,10 +19,14 @@ public final class UdpLeasePoolKey implements Serializable {
     public static UdpLeasePoolKey from(AuthenticEndpoint endpoint, SocketConfig config, String reactorName) {
         String addr = Sockets.toString(endpoint.getEndpoint());
         long cipherKeyHash = config.getCipherKey() == null ? 0L : CodecUtil.hash64(config.getCipherKey());
+        int effectiveMtu = config instanceof SocksConfig
+                ? (((SocksConfig) config).isDailyUdp() ? ((SocksConfig) config).resolveDailyUdpMtu() : config.getUdpMtu())
+                : config.getUdpMtu();
         return new UdpLeasePoolKey(endpoint.getParameters().get(SocksConnectionTagRegistry.PARAM_NAME), addr, endpoint.getUsername(), endpoint.getPassword(),
                 reactorName, config.getConnectTimeoutMillis(), config.getTransportFlags().getValue(), config.getCipher(), cipherKeyHash,
                 config instanceof SocksConfig ? ((SocksConfig) config).getDailyUdpFeatures() : 0,
-                !(config instanceof SocksConfig) || ((SocksConfig) config).isUdpHop());
+                !(config instanceof SocksConfig) || ((SocksConfig) config).isUdpHop(),
+                effectiveMtu);
     }
 
     private final String trafficUser;
@@ -36,12 +40,20 @@ public final class UdpLeasePoolKey implements Serializable {
     private final long cipherKeyHash;
     private final int dailyFeatures;
     private final boolean udpHop;
+    private final int udpMtu;
 
     public UdpLeasePoolKey(String trafficUser, String endpointText, String username, String password,
                            String reactorName, int connectTimeoutMillis, int transportFlagsBits, short cipher,
                            long cipherKeyHash, int dailyFeatures) {
         this(trafficUser, endpointText, username, password, reactorName, connectTimeoutMillis, transportFlagsBits,
-                cipher, cipherKeyHash, dailyFeatures, true);
+                cipher, cipherKeyHash, dailyFeatures, true, 0);
+    }
+
+    public UdpLeasePoolKey(String trafficUser, String endpointText, String username, String password,
+                           String reactorName, int connectTimeoutMillis, int transportFlagsBits, short cipher,
+                           long cipherKeyHash, int dailyFeatures, boolean udpHop) {
+        this(trafficUser, endpointText, username, password, reactorName, connectTimeoutMillis, transportFlagsBits,
+                cipher, cipherKeyHash, dailyFeatures, udpHop, 0);
     }
 
     public boolean isSameEndpoint(AuthenticEndpoint endpoint) {
