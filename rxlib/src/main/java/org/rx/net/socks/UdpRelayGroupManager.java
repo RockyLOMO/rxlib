@@ -51,8 +51,9 @@ final class UdpRelayGroupManager extends Disposable {
     SocksRpcCapabilities capabilities() {
         SocksConfig config = server.getConfig();
         SocksRpcCapabilities caps = SocksRpcCapabilities.udpRelayGroup(config.getUdpRelayControlMaxRelaysPerGroup(), MAX_GROUPS);
-        if (config.isDailyUdp() && caps.getMaxRelaysPerGroup() >= 2) {
+        if (config.isDailyUdp() && (!config.isUdpHop() || caps.getMaxRelaysPerGroup() >= 2)) {
             caps.addFlag(SocksRpcCapabilities.SUPPORT_DAILY_UDP);
+            caps.addFlag(SocksRpcCapabilities.SUPPORT_NO_HOP_UDP);
             if ((config.getDailyUdpFeatures() & PROFILES) != 0) caps.addFlag(SocksRpcCapabilities.PROFILE_UDP_V1);
         }
         return caps;
@@ -91,10 +92,15 @@ final class UdpRelayGroupManager extends Disposable {
             if ((features & DailyUdpWire.AES) != 0 && (request.getClientSalt() == null || !DailyUdpWire.hasCipherKey())) {
                 return UdpRelayGroupOpenResult.fail("DAILY_AES_UNAVAILABLE", "UDP key and session salt required");
             }
-            if (maxAllowed < 2 || request.getMaxRelayCount() < 2) {
-                return UdpRelayGroupOpenResult.fail("DAILY_HOPS_UNAVAILABLE", "two relay ports required");
+            boolean hop = config.isUdpHop() && request.getMaxRelayCount() >= 2;
+            if (hop) {
+                if (maxAllowed < 2) {
+                    return UdpRelayGroupOpenResult.fail("DAILY_HOPS_UNAVAILABLE", "two relay ports required");
+                }
+                initialCount = minActive = maxRelayCount = 2;
+            } else {
+                initialCount = minActive = maxRelayCount = 1;
             }
-            initialCount = minActive = maxRelayCount = 2;
         }
         long now = System.currentTimeMillis();
         long idleMillis = request.getIdleTimeoutMillis() > 0L
@@ -307,8 +313,8 @@ final class UdpRelayGroupManager extends Disposable {
         if (first == 0) {
             return bootstrap.bind(bind);
         }
-        first += 2; // First pair serves all adaptive TCP streams.
-        int stride = config.isRedirectUdpHops() ? 2 : 1;
+        first += config.isUdpHop() ? 2 : 1; // First slot(s) serve adaptive TCP streams.
+        int stride = config.isUdpHop() && config.isRedirectUdpHops() ? 2 : 1;
         int size = (config.getDailyPortLast() - first + 1) / stride;
         if (size <= 0) {
             throw new BindException("No UDP relay ports after the adaptive TCP pair");

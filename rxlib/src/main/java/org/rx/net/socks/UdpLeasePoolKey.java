@@ -21,7 +21,8 @@ public final class UdpLeasePoolKey implements Serializable {
         long cipherKeyHash = config.getCipherKey() == null ? 0L : CodecUtil.hash64(config.getCipherKey());
         return new UdpLeasePoolKey(endpoint.getParameters().get(SocksConnectionTagRegistry.PARAM_NAME), addr, endpoint.getUsername(), endpoint.getPassword(),
                 reactorName, config.getConnectTimeoutMillis(), config.getTransportFlags().getValue(), config.getCipher(), cipherKeyHash,
-                config instanceof SocksConfig ? ((SocksConfig) config).getDailyUdpFeatures() : 0);
+                config instanceof SocksConfig ? ((SocksConfig) config).getDailyUdpFeatures() : 0,
+                !(config instanceof SocksConfig) || ((SocksConfig) config).isUdpHop());
     }
 
     private final String trafficUser;
@@ -34,6 +35,14 @@ public final class UdpLeasePoolKey implements Serializable {
     private final short cipher;
     private final long cipherKeyHash;
     private final int dailyFeatures;
+    private final boolean udpHop;
+
+    public UdpLeasePoolKey(String trafficUser, String endpointText, String username, String password,
+                           String reactorName, int connectTimeoutMillis, int transportFlagsBits, short cipher,
+                           long cipherKeyHash, int dailyFeatures) {
+        this(trafficUser, endpointText, username, password, reactorName, connectTimeoutMillis, transportFlagsBits,
+                cipher, cipherKeyHash, dailyFeatures, true);
+    }
 
     public boolean isSameEndpoint(AuthenticEndpoint endpoint) {
         return endpointText.equals(Sockets.toString(endpoint.getEndpoint()))

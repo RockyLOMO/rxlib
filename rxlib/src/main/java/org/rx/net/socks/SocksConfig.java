@@ -79,6 +79,7 @@ public class SocksConfig extends SocketConfig {
     public static final int ADAPTIVE_GAME = RssProfile.GAME_ID, ADAPTIVE_WEAK = RssProfile.WEAK_ID;
     private boolean adaptiveTcp;
     private int adaptiveProfile;
+    private boolean udpHop = true;
     @ToString.Exclude
     private transient SslContext rssTlsContext;
     private int[] requiredTcpCipherPorts;

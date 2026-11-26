@@ -25,25 +25,34 @@ final class SocksAdaptiveHandshake {
     private static final Socks5AuthMethod[] METHODS = {
             new Socks5AuthMethod(0x83), new Socks5AuthMethod(0x84), new Socks5AuthMethod(0x85)
     };
+    private static final Socks5AuthMethod NO_HOP_METHOD = new Socks5AuthMethod(0x87);
     private static final String[] PROFILE_TAGS = {"profile=daily", "profile=game", "profile=weak"};
     private static final DefaultSocks5InitialRequest[] OFFERS = new DefaultSocks5InitialRequest[METHODS.length];
+    private static final DefaultSocks5InitialRequest[] NO_HOP_OFFERS = new DefaultSocks5InitialRequest[METHODS.length];
     private static final DefaultSocks5InitialResponse[] RESPONSES = new DefaultSocks5InitialResponse[METHODS.length];
     static final AttributeKey<Integer> NEGOTIATED = AttributeKey.valueOf("rssAdaptiveNegotiated");
+    static final AttributeKey<Boolean> NO_HOP = AttributeKey.valueOf("rssAdaptiveNoHop");
     static final AttributeKey<byte[]> NONCE = AttributeKey.valueOf("rssAdaptiveNonce");
     private static final SecureRandom RANDOM = new SecureRandom();
 
     static {
         for (int i = 0; i < METHODS.length; i++) {
             OFFERS[i] = new DefaultSocks5InitialRequest(Arrays.asList(Socks5AuthMethod.NO_AUTH, Socks5AuthMethod.PASSWORD, METHODS[i]));
+            NO_HOP_OFFERS[i] = new DefaultSocks5InitialRequest(Arrays.asList(
+                    Socks5AuthMethod.NO_AUTH, Socks5AuthMethod.PASSWORD, METHODS[i], NO_HOP_METHOD));
             RESPONSES[i] = new DefaultSocks5InitialResponse(METHODS[i]);
         }
     }
 
     static DefaultSocks5InitialRequest offer(int profile) {
+        return offer(profile, true);
+    }
+
+    static DefaultSocks5InitialRequest offer(int profile, boolean udpHop) {
         if (profile < 0 || profile >= OFFERS.length) {
             throw new IllegalArgumentException("Unknown RSS adaptive profile: " + profile);
         }
-        return OFFERS[profile];
+        return udpHop ? OFFERS[profile] : NO_HOP_OFFERS[profile];
     }
 
     static boolean selected(int profile, Socks5AuthMethod method) {
@@ -58,6 +67,7 @@ final class SocksAdaptiveHandshake {
         for (int i = 0; i < METHODS.length; i++) {
             if (offered.contains(METHODS[i])) {
                 ctx.channel().attr(NEGOTIATED).set(i);
+                ctx.channel().attr(NO_HOP).set(offered.contains(NO_HOP_METHOD));
                 ctx.writeAndFlush(RESPONSES[i]);
                 return true;
             }
@@ -66,9 +76,15 @@ final class SocksAdaptiveHandshake {
     }
 
     static byte[] sendNonce(ChannelHandlerContext ctx, AdaptiveUdpPort port) {
+        return sendNonce(ctx, port, true);
+    }
+
+    static byte[] sendNonce(ChannelHandlerContext ctx, AdaptiveUdpPort port, boolean udpHop) {
         byte[] nonce = new byte[32];
         RANDOM.nextBytes(nonce);
-        ByteBuffer.wrap(nonce, 28, 4).putShort((short) port.port()).putShort((short) port.aliasPort());
+        int primary = port.port();
+        int alias = udpHop ? port.aliasPort() : primary;
+        ByteBuffer.wrap(nonce, 28, 4).putShort((short) primary).putShort((short) alias);
         ctx.writeAndFlush(ctx.alloc().buffer(32, 32).writeBytes(nonce));
         return nonce;
     }
@@ -86,6 +102,10 @@ final class SocksAdaptiveHandshake {
     }
 
     static void install(Channel tcp, byte[] nonce, String password, AdaptiveUdpPort serverPort, int profile) {
+        install(tcp, nonce, password, serverPort, profile, true);
+    }
+
+    static void install(Channel tcp, byte[] nonce, String password, AdaptiveUdpPort serverPort, int profile, boolean udpHop) {
         byte[] key;
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
@@ -97,7 +117,9 @@ final class SocksAdaptiveHandshake {
         } catch (GeneralSecurityException e) {
             throw new IllegalStateException(e);
         }
+        int primary = ByteBuffer.wrap(nonce).getShort(28) & 0xffff;
+        int alias = udpHop ? (ByteBuffer.wrap(nonce).getShort(30) & 0xffff) : primary;
         AdaptiveTcpHandler.install(tcp, ByteBuffer.wrap(nonce).getLong(), key, serverPort,
-                ByteBuffer.wrap(nonce).getShort(28) & 0xffff, ByteBuffer.wrap(nonce).getShort(30) & 0xffff, profile);
+                primary, alias, profile);
     }
 }

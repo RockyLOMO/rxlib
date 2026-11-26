@@ -57,6 +57,66 @@ class DailyUdpWireTest {
         }
     }
 
+    @Test
+    void noHopSinglePortKeepsFecAndCompressionWithoutRotatingPort() throws Exception {
+        InetAddress ip = InetAddress.getByName("127.0.0.1");
+        SocksConfig config = new SocksConfig(new LocalAddress(UUID.randomUUID().toString()));
+        config.setDailyUdpFeatures(31);
+        int flags = DailyUdpWire.WEAK | DailyUdpWire.FEC | DailyUdpWire.LZ4;
+        try (DatagramSocket target = new DatagramSocket(new InetSocketAddress(ip, 0));
+             SocksProxyServer server = new SocksProxyServer(config)) {
+            assertTrue(server.socksRpcCapabilities().has(SocksRpcCapabilities.SUPPORT_NO_HOP_UDP));
+            target.setSoTimeout(5000);
+            UdpRelayGroupOpenRequest req = new UdpRelayGroupOpenRequest();
+            req.setMaxRelayCount(1);
+            req.setDailyFeatures(flags);
+            req.setProfileVersion(1);
+            req.setClientSalt(UUID.randomUUID());
+            UdpRelayGroupOpenResult result = server.openUdpRelayGroup(req, SocksRpcContract.rpcToken());
+            assertTrue(result.isSuccess(), result.getErrorCode());
+            assertEquals(1, result.getRelays().size());
+            InetSocketAddress primary = new InetSocketAddress(ip, result.getRelays().get(0).getRelayAddress().getPort());
+            AtomicLong clock = new AtomicLong();
+            BlockingQueue<Integer> wirePorts = new LinkedBlockingQueue<>(), delivered = new LinkedBlockingQueue<>();
+            Channel client = Sockets.udpBootstrap(null, ch -> {
+                ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
+                    @Override public void channelRead(ChannelHandlerContext ctx, Object msg) {
+                        DatagramPacket pkt = (DatagramPacket) msg;
+                        wirePorts.add(pkt.sender().getPort());
+                        ctx.fireChannelRead(msg);
+                    }
+                });
+                ch.pipeline().addLast(new DailyUdpWire(result.getToken(), primary, primary, null, clock::get, flags,
+                        req.getClientSalt(), result.getAuthSecret()));
+                ch.pipeline().addLast(new SimpleChannelInboundHandler<DatagramPacket>() {
+                    @Override protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket packet) {
+                        ByteBuf b = packet.content();
+                        UdpManager.socks5Decode(b);
+                        delivered.add(b.readableBytes() == 1200 ? b.readInt() : -1);
+                    }
+                });
+            }).bind(new InetSocketAddress(ip, 0)).sync().channel();
+            try {
+                for (int i = 0; i < 4; i++) {
+                    clock.set(i * DailyUdpWire.HOP_NANOS);
+                    int value = 1200 << 16 | i;
+                    ByteBuf b = UdpManager.socks5Encode(client.alloc().buffer(1200).writeInt(value).writeZero(1196),
+                            (InetSocketAddress) target.getLocalSocketAddress());
+                    client.writeAndFlush(new DatagramPacket(b, primary)).sync();
+                    java.net.DatagramPacket received = new java.net.DatagramPacket(new byte[1200], 1200);
+                    target.receive(received);
+                    assertEquals(primary.getPort(), received.getPort());
+                    target.send(received);
+                    assertEquals(Integer.valueOf(value), delivered.poll(5, TimeUnit.SECONDS));
+                    Integer replyPort = wirePorts.poll(1, TimeUnit.SECONDS);
+                    assertEquals(Integer.valueOf(primary.getPort()), replyPort);
+                }
+            } finally {
+                client.close().sync();
+            }
+        }
+    }
+
     private void verifyHops(InetAddress ip, int flags) throws Exception {
         boolean lz4 = (flags & DailyUdpWire.LZ4) != 0;
         SocksConfig config = new SocksConfig(new LocalAddress(UUID.randomUUID().toString()));

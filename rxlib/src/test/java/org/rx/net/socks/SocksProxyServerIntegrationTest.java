@@ -2064,6 +2064,56 @@ class SocksProxyServerIntegrationTest {
     }
 
     @Test
+    @Timeout(value = 15)
+    void adaptiveNoHopStreamCoexistsWithHoppingStreamOnSameServer() throws Exception {
+        SocksConfig cfg = new SocksConfig(15800);
+        cfg.setAdaptiveTcp(true);
+        cfg.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
+        SocksUser user = new SocksUser("warm");
+        user.setPassword("test-pass");
+        try (SocksProxyServer server = new SocksProxyServer(cfg, new SocksAuthenticator(Collections.singletonList(user)))) {
+            assertTrue(server.adaptivePort.isHopping());
+            assertNotEquals(server.adaptivePort.port(), server.adaptivePort.aliasPort());
+            int port = ((InetSocketAddress) server.tcpChannels.get(0).localAddress()).getPort();
+            InetSocketAddress address = new InetSocketAddress("127.0.0.1", port);
+            for (boolean udpHop : new boolean[]{false, true}) {
+                SocksConfig uplink = new SocksConfig();
+                uplink.setAdaptiveTcp(true);
+                uplink.setUdpHop(udpHop);
+                uplink.setTransportFlags(cfg.getTransportFlags());
+                Socks5WarmupHandler warm = new Socks5WarmupHandler(address, "warm", "test-pass", 4000);
+                warm.setAdaptiveTcp(true);
+                warm.setUdpHop(udpHop);
+                Channel ch = Sockets.bootstrap(uplink, address, c -> {
+                    Sockets.addTcpClientHandler(c, uplink, address);
+                    c.pipeline().addLast(warm);
+                }).connect(address).sync().channel();
+                try {
+                    warm.readyFuture().get(4, TimeUnit.SECONDS);
+                    AdaptiveTcpHandler handler = ch.pipeline().get(AdaptiveTcpHandler.class);
+                    assertNotNull(handler);
+                    assertEquals(udpHop, handler.isUdpHopping());
+                    ch.eventLoop().submit(() -> warm.connect(new InetSocketAddress("127.0.0.1", TCP_ECHO_PORT))).get().sync();
+                    assertTrue(Sockets.hasTcpCompressionHandlers(ch));
+                    java.util.concurrent.BlockingQueue<String> echoed = new java.util.concurrent.LinkedBlockingQueue<>();
+                    ch.pipeline().addLast(new SimpleChannelInboundHandler<ByteBuf>() {
+                        @Override protected void channelRead0(ChannelHandlerContext ctx, ByteBuf msg) {
+                            echoed.add(msg.toString(StandardCharsets.UTF_8));
+                        }
+                    });
+                    ch.writeAndFlush(Unpooled.copiedBuffer("probe-" + udpHop, StandardCharsets.UTF_8)).sync();
+                    assertEquals("probe-" + udpHop, echoed.poll(4, TimeUnit.SECONDS));
+                    waitForCondition(handler::usingUdp, 4000, "adaptive UDP active for udpHop=" + udpHop);
+                    ch.writeAndFlush(Unpooled.copiedBuffer("udp-payload-" + udpHop, StandardCharsets.UTF_8)).sync();
+                    assertEquals("udp-payload-" + udpHop, echoed.poll(4, TimeUnit.SECONDS));
+                } finally {
+                    ch.close().sync();
+                }
+            }
+        }
+    }
+
+    @Test
     @SneakyThrows
     @Timeout(value = 15)
     void shadowsocksUdpRelay_socks5_localChannel_preservesOrigin_e2e() {

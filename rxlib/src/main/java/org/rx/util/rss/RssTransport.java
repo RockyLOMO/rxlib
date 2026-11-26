@@ -13,6 +13,11 @@ public final class RssTransport implements Serializable {
     public String profile = "plain";
     public Integer fec, tcp, udp;
     public Integer tcpCompressionLevel;
+    public Boolean udpHop;
+
+    boolean udpHop() {
+        return !Boolean.FALSE.equals(udpHop);
+    }
 
     boolean valid() {
         return RssProfile.named(profile) != null

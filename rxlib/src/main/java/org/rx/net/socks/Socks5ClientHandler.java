@@ -48,6 +48,7 @@ public final class Socks5ClientHandler extends ProxyHandler {
     private final Socks5CommandType commandType;
     @Setter private boolean adaptiveTcp;
     @Setter private int adaptiveProfile;
+    @Setter private boolean udpHop = true;
     private int offeredProfile = -1;
     private boolean negotiated;
     private String decoderName;
@@ -130,7 +131,7 @@ public final class Socks5ClientHandler extends ProxyHandler {
     protected Object newInitialMessage(ChannelHandlerContext ctx) throws Exception {
         if (adaptiveTcp && commandType == Socks5CommandType.CONNECT && password != null && ctx.channel().remoteAddress() instanceof InetSocketAddress) {
             offeredProfile = adaptiveProfile;
-            return SocksAdaptiveHandshake.offer(offeredProfile);
+            return SocksAdaptiveHandshake.offer(offeredProfile, udpHop);
         }
         return socksAuthMethod() == Socks5AuthMethod.PASSWORD ? INIT_REQUEST_PASSWORD : INIT_REQUEST_NO_AUTH;
     }
@@ -175,7 +176,7 @@ public final class Socks5ClientHandler extends ProxyHandler {
             }
 
             if (negotiated) {
-                SocksAdaptiveHandshake.install(ctx.channel(), ctx.channel().attr(SocksAdaptiveHandshake.NONCE).getAndSet(null), password, null, offeredProfile);
+                SocksAdaptiveHandshake.install(ctx.channel(), ctx.channel().attr(SocksAdaptiveHandshake.NONCE).getAndSet(null), password, null, offeredProfile, udpHop);
                 negotiated = false;
             }
             sendCommand(ctx);

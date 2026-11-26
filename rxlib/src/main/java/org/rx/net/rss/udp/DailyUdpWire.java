@@ -37,6 +37,7 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
 
     private final long tokenHigh, tokenLow;
     private final InetSocketAddress primary, alias;
+    private final boolean hopping;
     private final Predicate<InetSocketAddress> knownTarget;
     private final LongSupplier clock;
     private final DailyUdpCompression compression;
@@ -128,7 +129,8 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
         tokenHigh = id.getMostSignificantBits();
         tokenLow = id.getLeastSignificantBits();
         this.primary = logicalPeer = physicalPeer = primary;
-        this.alias = alias;
+        this.alias = alias != null ? alias : primary;
+        this.hopping = primary != null && !primary.equals(this.alias);
         this.knownTarget = knownTarget;
         this.clock = clock;
         compression = (features & LZ4) != 0 ? new DailyUdpCompression() : null;
@@ -244,7 +246,7 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
                     physicalPeer = sender;
                     returnPath = path;
                 }
-            } else if (rotate() || generation != epoch && clock.getAsLong() - lastProbe >= TimeUnit.SECONDS.toNanos(1)) {
+            } else if (hopping && (rotate() || generation != epoch && clock.getAsLong() - lastProbe >= TimeUnit.SECONDS.toNanos(1))) {
                 lastProbe = clock.getAsLong();
                 // Open the new NAT binding even during a download with no application uplink.
                 sendFrame(main.alloc().ioBuffer(HEADER_BYTES, HEADER_BYTES).setIndex(HEADER_BYTES, HEADER_BYTES));
@@ -357,6 +359,9 @@ public final class DailyUdpWire extends ChannelDuplexHandler {
     }
 
     private boolean rotate() {
+        if (!hopping) {
+            return false;
+        }
         int next = (int) ((clock.getAsLong() - started) / HOP_NANOS);
         physicalPeer = (next & 1) == 0 ? primary : alias;
         boolean changed = epoch != next;

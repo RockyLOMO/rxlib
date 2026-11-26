@@ -72,10 +72,15 @@ public final class RssServer {
         if (compressionLevel < 1 || compressionLevel > 9) throw new IllegalArgumentException("tcpCompressionLevel must be 1..9");
         outConf.setTcpCompressionLevel(compressionLevel);
         outConf.setAdaptiveTcp(!"0".equals(options.get("adaptiveTcp")));
+        boolean udpHop = !"0".equals(options.get("udpHop")) && !"false".equalsIgnoreCase(options.get("udpHop"));
+        outConf.setUdpHop(udpHop);
         outConf.setDailyPortRange(options.getOrDefault("udpHopPorts", "20000-20127"));
-        if (outConf.getDailyPortLast() - outConf.getDailyPortFirst() < 3 || outConf.getDailyPortFirst() == 0
-                || (outConf.getDailyPortLast() - outConf.getDailyPortFirst()) % 2 == 0) {
+        if (udpHop && (outConf.getDailyPortLast() - outConf.getDailyPortFirst() < 3 || outConf.getDailyPortFirst() == 0
+                || (outConf.getDailyPortLast() - outConf.getDailyPortFirst()) % 2 == 0)) {
             throw new IllegalArgumentException("udpHopPorts requires at least two pairs of dedicated UDP ports");
+        }
+        if (!udpHop && (outConf.getDailyPortLast() - outConf.getDailyPortFirst() < 1 || outConf.getDailyPortFirst() == 0)) {
+            throw new IllegalArgumentException("udpHopPorts requires at least two dedicated UDP ports");
         }
         outConf.setRequiredTcpCipherPorts(parsePorts(options.get("tcpCipherPorts"), RssTransport.cipherPorts()));
         outConf.setRequiredUdpCipherPorts(parsePorts(options.get("udpCipherPorts"), RssTransport.udpCipherPorts()));
@@ -116,7 +121,7 @@ public final class RssServer {
     }
 
     private static void configureHopRedirect(SocksConfig config) {
-        if (!System.getProperty("os.name", "").startsWith("Linux")) {
+        if (!config.isUdpHop() || !System.getProperty("os.name", "").startsWith("Linux")) {
             return;
         }
         try {

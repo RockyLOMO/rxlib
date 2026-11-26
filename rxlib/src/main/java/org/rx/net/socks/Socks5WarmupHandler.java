@@ -39,6 +39,7 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
     private final CompletableFuture<Channel> readyFuture = new CompletableFuture<>();
     @Setter private boolean adaptiveTcp;
     @Setter private int adaptiveProfile;
+    @Setter private boolean udpHop = true;
     private int offeredProfile = -1;
     private boolean negotiated;
     private volatile State state = State.INIT;
@@ -147,7 +148,7 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
     private Object newInitialMessage() {
         if (adaptiveTcp && password != null && ctx.channel().remoteAddress() instanceof InetSocketAddress) {
             offeredProfile = adaptiveProfile;
-            return SocksAdaptiveHandshake.offer(offeredProfile);
+            return SocksAdaptiveHandshake.offer(offeredProfile, udpHop);
         }
         return socksAuthMethod() == Socks5AuthMethod.PASSWORD ? INIT_REQUEST_PASSWORD : INIT_REQUEST_NO_AUTH;
     }
@@ -179,7 +180,7 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
             return;
         }
         if (negotiated) {
-            SocksAdaptiveHandshake.install(ctx.channel(), ctx.channel().attr(SocksAdaptiveHandshake.NONCE).getAndSet(null), password, null, offeredProfile);
+            SocksAdaptiveHandshake.install(ctx.channel(), ctx.channel().attr(SocksAdaptiveHandshake.NONCE).getAndSet(null), password, null, offeredProfile, udpHop);
             negotiated = false;
         }
         markReady(ctx);

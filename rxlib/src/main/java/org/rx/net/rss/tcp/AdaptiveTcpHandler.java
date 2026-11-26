@@ -164,6 +164,10 @@ public final class AdaptiveTcpHandler extends ChannelDuplexHandler {
         return stream.usingUdp();
     }
 
+    public boolean isUdpHopping() {
+        return port != null && port.isHopping();
+    }
+
     @Override public void close(ChannelHandlerContext ctx, ChannelPromise promise) {
         if (closing || !ctx.channel().isActive()) {
             ctx.close(promise);

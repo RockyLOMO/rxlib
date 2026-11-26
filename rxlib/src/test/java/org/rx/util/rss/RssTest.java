@@ -2111,6 +2111,27 @@ public class RssTest extends AbstractTester {
         assertThrows(IllegalArgumentException.class, () -> new RssClient.OutboundProfiles(reload, inbound));
         reload.tcpCipherPorts = new int[]{443};
         assertFalse(RssTransport.validPortLists(reload.tcpCipherPorts, reload.tcpAlreadyEncryptedPorts));
+
+        String noHopJson = "{\"shadowUsers\":["
+                + "{\"ssPort\":6896,\"username\":\"grey\",\"socksUser\":\"shared\",\"ssCipher\":\"chacha20-ietf-poly1305\","
+                + "\"transport\":{\"profile\":\"daily\",\"udpHop\":false}},"
+                + "{\"ssPort\":6898,\"username\":\"main\",\"socksUser\":\"shared\",\"transport\":{\"profile\":\"daily\"}}]}";
+        RssClientConf noHopConf = JSON.parseObject(noHopJson, RssClientConf.class);
+        RssClient.OutboundProfiles isolated = new RssClient.OutboundProfiles(noHopConf, inbound);
+        ShadowUser grey = noHopConf.shadowUsers.get(0), main = noHopConf.shadowUsers.get(1);
+        assertEquals(CipherKind.CHACHA20_IETF_POLY1305.getCipherName(), grey.cipherName());
+        assertEquals(CipherKind.AES_256_GCM.getCipherName(), main.cipherName());
+        assertTrue(isolated.tcp(grey, 12345).isAdaptiveTcp());
+        assertTrue(isolated.tcp(main, 12345).isAdaptiveTcp());
+        assertFalse(isolated.tcp(grey, 12345).isUdpHop());
+        assertTrue(isolated.tcp(main, 12345).isUdpHop());
+        org.junit.jupiter.api.Assertions.assertNotSame(isolated.tcp(grey, 12345), isolated.tcp(main, 12345));
+        assertTrue(isolated.tcp(grey, 12345).getTransportFlags().has(TransportFlags.COMPRESS_BOTH));
+        assertEquals(4, isolated.udp(grey, 80).getDailyUdpFeatures());
+        assertEquals(4, isolated.udp(main, 80).getDailyUdpFeatures());
+        assertFalse(isolated.udp(grey, 80).isUdpHop());
+        assertTrue(isolated.udp(main, 80).isUdpHop());
+        org.junit.jupiter.api.Assertions.assertNotSame(isolated.udp(grey, 80), isolated.udp(main, 80));
     }
 
     @Test

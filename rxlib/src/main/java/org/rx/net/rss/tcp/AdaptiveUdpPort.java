@@ -61,11 +61,15 @@ public final class AdaptiveUdpPort implements AutoCloseable {
 
     /** Server startup only. Both real sockets share the EventLoop, MAC and replay window. */
     public static AdaptiveUdpPort listen(InetSocketAddress address) {
-        return listen(address, 0, false);
+        return listen(address, 0, false, true);
     }
 
     public static AdaptiveUdpPort listen(InetSocketAddress address, int alias, boolean redirect) {
-        AdaptiveUdpPort port = new AdaptiveUdpPort(true, address, alias, redirect, true);
+        return listen(address, alias, redirect, true);
+    }
+
+    public static AdaptiveUdpPort listen(InetSocketAddress address, int alias, boolean redirect, boolean hopping) {
+        AdaptiveUdpPort port = new AdaptiveUdpPort(true, address, alias, redirect && hopping, hopping);
         try {
             port.bind.syncUninterruptibly();
             if (port.aliasBind != null) port.aliasBind.syncUninterruptibly();
@@ -76,7 +80,7 @@ public final class AdaptiveUdpPort implements AutoCloseable {
         } catch (Throwable e) {
             // Netty can rethrow a checked BindException from syncUninterruptibly.
             port.close();
-            throw new IllegalStateException("Cannot bind both adaptive UDP ports", e);
+            throw new IllegalStateException("Cannot bind adaptive UDP port", e);
         }
     }
 
@@ -112,7 +116,12 @@ public final class AdaptiveUdpPort implements AutoCloseable {
     }
 
     public int aliasPort() {
-        return aliasBind != null ? ((InetSocketAddress) aliasBind.channel().localAddress()).getPort() : virtualAlias;
+        return aliasBind != null ? ((InetSocketAddress) aliasBind.channel().localAddress()).getPort()
+                : virtualAlias != 0 ? virtualAlias : port();
+    }
+
+    public boolean isHopping() {
+        return aliasBind != null || virtualAlias != 0;
     }
 
     public void register(long id, byte[] key, Channel tcp, Consumer<ByteBuf> recv) {
