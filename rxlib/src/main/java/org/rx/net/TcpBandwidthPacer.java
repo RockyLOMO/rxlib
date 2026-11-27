@@ -3,6 +3,7 @@ package org.rx.net;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import io.netty.util.ReferenceCountUtil;
+import io.netty.util.concurrent.EventExecutor;
 import io.netty.util.concurrent.ScheduledFuture;
 
 import java.util.ArrayDeque;
@@ -31,7 +32,8 @@ public final class TcpBandwidthPacer {
     private final ArrayDeque<ByteBuf> queue = new ArrayDeque<>();
     private final int maxConnPendingBytes;
 
-    private int queuedBytes;
+    private volatile int queuedBytes;
+    private volatile int queuedCount;
     private int reservedLimiterBytes;
     private int reservedLimiterTasks;
     private BandwidthLimiter reservedLimiter;
@@ -39,7 +41,7 @@ public final class TcpBandwidthPacer {
     private boolean pacerRegistered;
     private boolean eofPending;
     private Runnable eofCallback;
-    private boolean closed;
+    private volatile boolean closed;
     private ScheduledFuture<?> timer;
 
     public TcpBandwidthPacer(Channel pauseChannel, Channel writeChannel,
@@ -66,7 +68,7 @@ public final class TcpBandwidthPacer {
     }
 
     public boolean hasPending() {
-        return !queue.isEmpty();
+        return queuedCount > 0;
     }
 
     public int queuedBytes() {
@@ -126,6 +128,16 @@ public final class TcpBandwidthPacer {
     }
 
     public void onWritabilityChanged() {
+        if (closed) {
+            return;
+        }
+        EventExecutor executor = ownerExecutor();
+        if (executor != null && !executor.inEventLoop()) {
+            if (!executor.isShuttingDown()) {
+                executor.execute(this::onWritabilityChanged);
+            }
+            return;
+        }
         if (!closed && !queue.isEmpty() && isWriteTargetReady()) {
             drain();
         }
@@ -141,10 +153,28 @@ public final class TcpBandwidthPacer {
         }
         eofPending = true;
         eofCallback = callback;
+        if ((timer == null || timer.isDone()) && isWriteTargetReady()) {
+            timer = null;
+            drain();
+        }
         return true;
     }
 
     public void close() {
+        if (closed) {
+            return;
+        }
+        EventExecutor executor = ownerExecutor();
+        if (executor != null && !executor.inEventLoop()) {
+            if (!executor.isShuttingDown()) {
+                executor.execute(this::close);
+            }
+            return;
+        }
+        close0();
+    }
+
+    private void close0() {
         if (closed) {
             return;
         }
@@ -157,6 +187,7 @@ public final class TcpBandwidthPacer {
             ReferenceCountUtil.release(buf);
         }
         queuedBytes = 0;
+        queuedCount = 0;
         releaseAllReserved();
         unregisterPacer();
         resumeReadIfPaused();
@@ -180,6 +211,7 @@ public final class TcpBandwidthPacer {
             registerPacer(limiter);
         }
         queue.addLast(buf);
+        queuedCount = queue.size();
         queuedBytes += size;
         pauseReadIfNeeded();
         return true;
@@ -201,7 +233,7 @@ public final class TcpBandwidthPacer {
             return;
         }
         if (writeChannel != null && !writeChannel.isActive()) {
-            close();
+            close0();
             return;
         }
         if (!isWriteTargetReady()) {
@@ -212,6 +244,7 @@ public final class TcpBandwidthPacer {
         if (limiter == null || !limiter.isEnabled(direction)) {
             while (!closed && !queue.isEmpty() && isWriteTargetReady()) {
                 ByteBuf buf = queue.pollFirst();
+                queuedCount = queue.size();
                 int len = buf.readableBytes();
                 queuedBytes -= len;
                 releaseReserved(len, 1);
@@ -231,6 +264,7 @@ public final class TcpBandwidthPacer {
             int readable = head.readableBytes();
             if (readable <= 0) {
                 queue.pollFirst();
+                queuedCount = queue.size();
                 ReferenceCountUtil.release(head);
                 releaseReserved(0, 1);
                 continue;
@@ -253,6 +287,7 @@ public final class TcpBandwidthPacer {
             int tasksDone;
             if (toSend == readable) {
                 out = queue.pollFirst();
+                queuedCount = queue.size();
                 tasksDone = 1;
             } else {
                 out = head.readRetainedSlice(toSend);
@@ -271,6 +306,8 @@ public final class TcpBandwidthPacer {
 
     private void finishDrained() {
         cancelTimer();
+        queuedBytes = 0;
+        queuedCount = 0;
         releaseAllReserved();
         unregisterPacer();
         resumeReadIfPaused();
@@ -294,16 +331,32 @@ public final class TcpBandwidthPacer {
         return writeChannel.isActive() && writeChannel.isWritable();
     }
 
+    private EventExecutor ownerExecutor() {
+        Channel loopOwner = pauseChannel != null ? pauseChannel : writeChannel;
+        return loopOwner != null ? loopOwner.eventLoop() : null;
+    }
+
     private void scheduleDrain(long waitNanos) {
-        if (closed || timer != null) {
+        if (closed) {
             return;
         }
-        Channel loopOwner = pauseChannel != null ? pauseChannel : writeChannel;
-        if (loopOwner == null || !loopOwner.isOpen()) {
+        if (timer != null && !timer.isDone()) {
+            return;
+        }
+        timer = null;
+        if (writeChannel != null && !writeChannel.isActive()) {
+            close0();
+            return;
+        }
+        // Keep draining on the owner EventLoop even after pauseChannel closes on EOF,
+        // so deferred-EOF bytes queued for writeChannel finish pacing cleanly.
+        EventExecutor executor = ownerExecutor();
+        if (executor == null || executor.isShuttingDown()) {
+            close0();
             return;
         }
         long clamped = Math.min(Math.max(1_000_000L, waitNanos), MAX_TIMER_SLICE_NANOS);
-        timer = loopOwner.eventLoop().schedule(drainTask, clamped, TimeUnit.NANOSECONDS);
+        timer = executor.schedule(drainTask, clamped, TimeUnit.NANOSECONDS);
     }
 
     private void cancelTimer() {

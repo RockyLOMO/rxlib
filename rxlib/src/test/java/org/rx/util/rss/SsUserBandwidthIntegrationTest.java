@@ -194,6 +194,41 @@ class SsUserBandwidthIntegrationTest {
     }
 
     @Test
+    @Timeout(30)
+    void ssDownloadDrainsCompletelyAt40KiBpsWhenBackendClosesImmediatelyAndWithDedicatedCryptoGroup() throws Exception {
+        // Reproduces real-VPS bench_bw: 40 KiB/s up/down, 160 KiB download where backend closes immediately after send
+        BandwidthLimiter limiter = new BandwidthLimiter("bench_bw_repro", new BandwidthLimitConfig(40L, 40L));
+        ShadowsocksConfig cfg = new ShadowsocksConfig(Sockets.newLoopbackEndpoint(0), CIPHER, "pwdBw40");
+        cfg.setUseDedicatedCryptoGroup(true);
+        cfg.setBandwidthLimiter(limiter);
+
+        try (ShadowsocksServer svr = new ShadowsocksServer(cfg)) {
+            int port = boundTcpPort(svr);
+            long t0 = System.nanoTime();
+            byte[] downloaded = ssDownload(port, "pwdBw40", 160 * 1024);
+            long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t0);
+            assertEquals(160 * 1024, downloaded.length, "160 KiB download must not stall or truncate after backend EOF");
+            for (int i = 0; i < downloaded.length; i++) {
+                assertEquals((byte) (i & 0xFF), downloaded[i], "Byte mismatch at " + i);
+            }
+            // 160 KiB with 16 KiB burst at 40 KiB/s -> >= 144/40 = 3.6s (allow small scheduling margin)
+            assertTrue(elapsedMs >= 2800L && elapsedMs < 15000L,
+                    "Expected ~3.6s paced download at 40 KiB/s, got " + elapsedMs + "ms");
+            assertEquals(0L, limiter.pendingTcpBytes());
+            assertEquals(0, limiter.pendingTcpTasks());
+
+            // Also verify 160 KiB upload + half-close completes cleanly at 40 KiB/s
+            long ul0 = System.nanoTime();
+            int uploaded = ssUploadAndHalfClose(port, "pwdBw40", 160 * 1024);
+            long ulMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - ul0);
+            assertEquals(160 * 1024, uploaded);
+            assertTrue(ulMs >= 2800L && ulMs < 15000L,
+                    "Expected ~3.6s paced upload at 40 KiB/s, got " + ulMs + "ms");
+            assertEquals(0L, limiter.pendingTcpBytes());
+        }
+    }
+
+    @Test
     @Timeout(15)
     void ssUdpExcessDroppedEarlyAndSharesBudgetWithTcp() throws Exception {
         // 16 KiB/s upload & download (initial burst = 16 KiB)

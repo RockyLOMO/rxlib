@@ -166,8 +166,9 @@ class BandwidthLimiterTest {
         EmbeddedChannel ch = new EmbeddedChannel();
         List<ByteBuf> emitted = new ArrayList<>();
         AtomicBoolean eofFired = new AtomicBoolean();
+        TcpBandwidthPacer pacer = null;
         try {
-            TcpBandwidthPacer pacer = new TcpBandwidthPacer(
+            pacer = new TcpBandwidthPacer(
                     ch, null, BandwidthLimiter.Direction.UPLOAD, () -> limiter, emitted::add);
 
             // 48 KiB single buffer (> 16 KiB initial burst)
@@ -205,14 +206,78 @@ class BandwidthLimiterTest {
                 b.release();
             }
             assertEquals(src.length, pos);
-            pacer.close();
         } finally {
+            if (pacer != null) {
+                pacer.close();
+            }
             for (ByteBuf b : emitted) {
                 if (b.refCnt() > 0) {
                     b.release();
                 }
             }
             ch.finishAndReleaseAll();
+        }
+    }
+
+    @Test
+    void tcpPacerContinuesDrainingDeferredEofAfterPauseChannelCloses() {
+        AtomicLong clock = new AtomicLong(3_000_000_000L);
+        // 40 KiB/s -> burst 16 KiB, chunk 2560 B -> 96 KiB needs multiple scheduled drain slices after pauseChannel closes
+        BandwidthLimiter limiter = new BandwidthLimiter("eof-drain",
+                new BandwidthLimitConfig(0L, 40L), clock::get);
+        EmbeddedChannel pauseCh = new EmbeddedChannel();
+        EmbeddedChannel writeCh = new EmbeddedChannel();
+        List<ByteBuf> emitted = new ArrayList<>();
+        AtomicBoolean eofFired = new AtomicBoolean();
+        TcpBandwidthPacer pacer = null;
+        try {
+            pacer = new TcpBandwidthPacer(
+                    pauseCh, writeCh, BandwidthLimiter.Direction.DOWNLOAD, () -> limiter, emitted::add);
+
+            byte[] src = new byte[96 * 1024];
+            for (int i = 0; i < src.length; i++) {
+                src[i] = (byte) ((i * 17 + 3) & 0xFF);
+            }
+            assertTrue(pacer.offer(Unpooled.wrappedBuffer(src)));
+            assertTrue(pacer.hasPending());
+
+            // Simulate backend EOF closing pauseChannel (outbound) while writeChannel (inbound) stays active
+            pauseCh.close().syncUninterruptibly();
+            assertFalse(pauseCh.isOpen());
+            assertTrue(writeCh.isActive());
+            assertTrue(pacer.deferEof(() -> eofFired.set(true)));
+            assertFalse(eofFired.get());
+
+            for (int step = 0; step < 60 && pacer.hasPending(); step++) {
+                clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(100));
+                pauseCh.advanceTimeBy(250, TimeUnit.MILLISECONDS);
+                pauseCh.runScheduledPendingTasks();
+            }
+
+            assertFalse(pacer.hasPending(), "pacer must not stall after pauseChannel closes on EOF");
+            assertTrue(eofFired.get(), "deferred EOF callback must fire once remaining bytes drain");
+            assertEquals(0L, limiter.pendingTcpBytes());
+            assertEquals(0, limiter.pendingTcpTasks());
+
+            int pos = 0;
+            for (ByteBuf b : emitted) {
+                while (b.isReadable()) {
+                    assertEquals(src[pos++], b.readByte());
+                }
+                b.release();
+            }
+            assertEquals(src.length, pos);
+        } finally {
+            if (pacer != null) {
+                pacer.close();
+            }
+            for (ByteBuf b : emitted) {
+                if (b.refCnt() > 0) {
+                    b.release();
+                }
+            }
+            pauseCh.finishAndReleaseAll();
+            writeCh.finishAndReleaseAll();
         }
     }
 

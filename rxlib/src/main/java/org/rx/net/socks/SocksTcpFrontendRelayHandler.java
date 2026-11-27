@@ -82,13 +82,19 @@ public class SocksTcpFrontendRelayHandler extends ChannelInboundHandlerAdapter {
             if (!inbound.isOpen()) {
                 return;
             }
+            long idleLimit = halfCloseIdleNanos;
+            long now = System.nanoTime();
+            TcpBandwidthPacer dl = inbound.attr(ATTR_DOWNLOAD_PACER).get();
+            if (dl != null && dl.hasPending()) {
+                lastActiveNano = now;
+                timer = inbound.eventLoop().schedule(this, idleLimit, java.util.concurrent.TimeUnit.NANOSECONDS);
+                return;
+            }
             if (!outbound.isActive()) {
                 outbound.close();
                 Sockets.closeOnFlushed(inbound);
                 return;
             }
-            long idleLimit = halfCloseIdleNanos;
-            long now = System.nanoTime();
             // Do not mistake downstream slow-client backpressure for an unresponsive backend.
             if (isBackpressured(inbound, outbound)) {
                 lastActiveNano = now;
