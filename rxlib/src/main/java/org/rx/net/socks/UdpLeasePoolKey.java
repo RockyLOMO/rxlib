@@ -22,13 +22,14 @@ public final class UdpLeasePoolKey implements Serializable {
         int effectiveMtu = config instanceof SocksConfig
                 ? (((SocksConfig) config).isDailyUdp() ? ((SocksConfig) config).resolveDailyUdpMtu() : config.getUdpMtu())
                 : config.getUdpMtu();
-        return new UdpLeasePoolKey(endpoint.getParameters().get(SocksConnectionTagRegistry.PARAM_NAME), addr, endpoint.getUsername(), endpoint.getPassword(),
+        return new UdpLeasePoolKey(endpoint.getParameters().get(org.rx.net.support.UpstreamSupport.POOL_GENERATION), endpoint.getParameters().get(SocksConnectionTagRegistry.PARAM_NAME), addr, endpoint.getUsername(), endpoint.getPassword(),
                 reactorName, config.getConnectTimeoutMillis(), config.getTransportFlags().getValue(), config.getCipher(), cipherKeyHash,
                 config instanceof SocksConfig ? ((SocksConfig) config).getDailyUdpFeatures() : 0,
                 !(config instanceof SocksConfig) || ((SocksConfig) config).isUdpHop(),
                 effectiveMtu);
     }
 
+    private final String routeGeneration;
     private final String trafficUser;
     private final String endpointText;
     private final String username;
@@ -45,19 +46,20 @@ public final class UdpLeasePoolKey implements Serializable {
     public UdpLeasePoolKey(String trafficUser, String endpointText, String username, String password,
                            String reactorName, int connectTimeoutMillis, int transportFlagsBits, short cipher,
                            long cipherKeyHash, int dailyFeatures) {
-        this(trafficUser, endpointText, username, password, reactorName, connectTimeoutMillis, transportFlagsBits,
+        this(null, trafficUser, endpointText, username, password, reactorName, connectTimeoutMillis, transportFlagsBits,
                 cipher, cipherKeyHash, dailyFeatures, true, 0);
     }
 
     public UdpLeasePoolKey(String trafficUser, String endpointText, String username, String password,
                            String reactorName, int connectTimeoutMillis, int transportFlagsBits, short cipher,
                            long cipherKeyHash, int dailyFeatures, boolean udpHop) {
-        this(trafficUser, endpointText, username, password, reactorName, connectTimeoutMillis, transportFlagsBits,
+        this(null, trafficUser, endpointText, username, password, reactorName, connectTimeoutMillis, transportFlagsBits,
                 cipher, cipherKeyHash, dailyFeatures, udpHop, 0);
     }
 
     public boolean isSameEndpoint(AuthenticEndpoint endpoint) {
-        return endpointText.equals(Sockets.toString(endpoint.getEndpoint()))
+        return eq(routeGeneration, endpoint.getParameters().get(org.rx.net.support.UpstreamSupport.POOL_GENERATION))
+                && endpointText.equals(Sockets.toString(endpoint.getEndpoint()))
                 && eq(username, endpoint.getUsername())
                 && eq(password, endpoint.getPassword());
     }

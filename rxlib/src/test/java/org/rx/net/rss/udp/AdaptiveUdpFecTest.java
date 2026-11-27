@@ -11,11 +11,11 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class UdpDailyFecTest {
+class AdaptiveUdpFecTest {
     static class Link implements AutoCloseable {
         final AtomicLong time = new AtomicLong();
-        final UdpDailyFec sender = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, time::get);
-        final UdpDailyFec receiver = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, time::get);
+        final AdaptiveUdpFec sender = new AdaptiveUdpFec(UnpooledByteBufAllocator.DEFAULT, time::get);
+        final AdaptiveUdpFec receiver = new AdaptiveUdpFec(UnpooledByteBufAllocator.DEFAULT, time::get);
         final ArrayDeque<ByteBuf> packets = new ArrayDeque<>();
         final ArrayDeque<Integer> delivered = new ArrayDeque<>();
         int fixedMissing = -1; // Optional controlled feedback for fixed-tier coverage measurements.
@@ -31,7 +31,7 @@ class UdpDailyFecTest {
         }
 
         void queue(ByteBuf frame) {
-            assertEquals(UdpDailyFec.WIRE_HEADROOM, frame.readerIndex());
+            assertEquals(AdaptiveUdpFec.WIRE_HEADROOM, frame.readerIndex());
             packets.add(frame);
         }
 
@@ -47,7 +47,7 @@ class UdpDailyFecTest {
                     }
                 }, report -> {
                     try {
-                        assertEquals(UdpDailyFec.WIRE_HEADROOM, report.readerIndex());
+                        assertEquals(AdaptiveUdpFec.WIRE_HEADROOM, report.readerIndex());
                         if (fixedMissing >= 0) report.setByte(report.readerIndex() + 5, fixedMissing);
                         sender.read(report, unused -> unused.release(), unused -> unused.release());
                     } finally {
@@ -74,7 +74,7 @@ class UdpDailyFecTest {
                 time.addAndGet(packetInterval);
                 send(i);
                 ByteBuf wire = packets.remove();
-                assertEquals(UdpDailyFec.DATA, wire.getByte(wire.readerIndex()));
+                assertEquals(AdaptiveUdpFec.DATA, wire.getByte(wire.readerIndex()));
                 if (i >= 12 && i < 16) {
                     wire.release();
                 } else {
@@ -98,12 +98,12 @@ class UdpDailyFecTest {
     @Test
     void lateParityForCompleteGroupReleasesAccumulator() {
         AtomicLong clock = new AtomicLong();
-        try (UdpDailyFec fec = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, clock::get)) {
+        try (AdaptiveUdpFec fec = new AdaptiveUdpFec(UnpooledByteBufAllocator.DEFAULT, clock::get)) {
             AtomicLong deliveries = new AtomicLong();
             for (int index = 0; index < 3; index++) {
                 ByteBuf wire = Unpooled.buffer();
-                if (index < 2) wire.writeByte(UdpDailyFec.SHARD).writeInt(index).writeByte(index).writeByte(7);
-                else wire.writeByte(UdpDailyFec.PARITY).writeInt(0).writeByte(2).writeShort(0).writeByte(0);
+                if (index < 2) wire.writeByte(AdaptiveUdpFec.SHARD).writeInt(index).writeByte(index).writeByte(7);
+                else wire.writeByte(AdaptiveUdpFec.PARITY).writeInt(0).writeByte(2).writeShort(0).writeByte(0);
                 try {
                     fec.read(wire, payload -> { deliveries.incrementAndGet(); payload.release(); }, ByteBuf::release);
                 } finally {
@@ -120,8 +120,8 @@ class UdpDailyFecTest {
     void reusedAccumulatorsIsolateRetainedRecoveriesAndCountUnprotectedGroups() {
         AtomicLong clock = new AtomicLong();
         ArrayDeque<ByteBuf> retained = new ArrayDeque<>(), wire = new ArrayDeque<>();
-        try (UdpDailyFec tx = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, clock::get);
-             UdpDailyFec rx = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, clock::get)) {
+        try (AdaptiveUdpFec tx = new AdaptiveUdpFec(UnpooledByteBufAllocator.DEFAULT, clock::get);
+             AdaptiveUdpFec rx = new AdaptiveUdpFec(UnpooledByteBufAllocator.DEFAULT, clock::get)) {
             ByteBuf input = Unpooled.buffer(16);
             try {
                 for (int i = 0; i < 40; i++) {
@@ -163,7 +163,7 @@ class UdpDailyFecTest {
                         tx.write(input, wire::add);
                         while (!wire.isEmpty()) {
                             ByteBuf f = wire.remove();
-                            if (f.getUnsignedByte(f.readerIndex()) == UdpDailyFec.SHARD && i == 5) {
+                            if (f.getUnsignedByte(f.readerIndex()) == AdaptiveUdpFec.SHARD && i == 5) {
                                 f.release();
                             } else {
                                 try {
@@ -207,8 +207,8 @@ class UdpDailyFecTest {
         AtomicLong clock = new AtomicLong(1_000_000L);
         ArrayDeque<ByteBuf> q = new ArrayDeque<>(), rq = new ArrayDeque<>();
         ByteBuf payload = Unpooled.buffer(32).writeZero(32);
-        try (UdpDailyFec tx = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, clock::get, true, 44);
-             UdpDailyFec rx = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, clock::get, true, 44)) {
+        try (AdaptiveUdpFec tx = new AdaptiveUdpFec(UnpooledByteBufAllocator.DEFAULT, clock::get, true, 44);
+             AdaptiveUdpFec rx = new AdaptiveUdpFec(UnpooledByteBufAllocator.DEFAULT, clock::get, true, 44)) {
             // 2 PPS in 20ms pairs (980ms gap between pairs): 32 packets take 16s (> 5s REPORT_TIMEOUT),
             // so activity-gated 3s weak reports must sustain target and recover paired losses.
             for (int i = 0; i < 80; i++) {
@@ -229,7 +229,7 @@ class UdpDailyFecTest {
                 tx.write(payload, q::add);
                 while (!q.isEmpty()) {
                     ByteBuf f = q.remove();
-                    if (f.getUnsignedByte(f.readerIndex()) != UdpDailyFec.PARITY && i % 20 == 6) {
+                    if (f.getUnsignedByte(f.readerIndex()) != AdaptiveUdpFec.PARITY && i % 20 == 6) {
                         f.release();
                     } else {
                         try { rx.read(f, ByteBuf::release, rq::add); } finally { f.release(); }
@@ -270,18 +270,18 @@ class UdpDailyFecTest {
         long[] wireBytes = new long[2];
         java.util.function.Consumer<ByteBuf> count = frame -> {
             try {
-                int kind = frame.getUnsignedByte(frame.readerIndex()) == UdpDailyFec.PARITY ? 1 : 0;
+                int kind = frame.getUnsignedByte(frame.readerIndex()) == AdaptiveUdpFec.PARITY ? 1 : 0;
                 wireBytes[kind] += frame.readableBytes() + authHeader;
             } finally {
                 frame.release();
             }
         };
-        try (UdpDailyFec fec = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, time::get, true, authHeader)) {
+        try (AdaptiveUdpFec fec = new AdaptiveUdpFec(UnpooledByteBufAllocator.DEFAULT, time::get, true, authHeader)) {
             ByteBuf small = Unpooled.buffer(10).writeZero(10), large = Unpooled.buffer(1400).writeZero(1400);
             try {
                 for (int i = 0; i < 40; i++) fec.write(small, count);
                 assertEquals(0, fec.paritySent);
-                ByteBuf report = Unpooled.buffer(8).writeByte(UdpDailyFec.REPORT).writeInt(39)
+                ByteBuf report = Unpooled.buffer(8).writeByte(AdaptiveUdpFec.REPORT).writeInt(39)
                         .writeByte(4).writeByte(4).writeByte(0);
                 try {
                     fec.read(report, count, count);
@@ -399,7 +399,7 @@ class UdpDailyFecTest {
     void cachePressureEvictsWithinFixedBudget() {
         try (Link link = new Link()) {
             for (int i = 0; i < 20; i++) {
-                ByteBuf shard = Unpooled.buffer().writeByte(UdpDailyFec.SHARD).writeInt(i * 2)
+                ByteBuf shard = Unpooled.buffer().writeByte(AdaptiveUdpFec.SHARD).writeInt(i * 2)
                         .writeByte(0).writeInt(i).writeZero(i % 11);
                 link.receive(shard);
                 link.time.incrementAndGet();
@@ -416,19 +416,19 @@ class UdpDailyFecTest {
                 try (Link link = new Link()) {
                     // Two shards with identical four-byte payloads have all-zero XOR and length XOR.
                     int base = -3;
-                    link.receive(Unpooled.buffer().writeByte(UdpDailyFec.SHARD).writeInt(base)
+                    link.receive(Unpooled.buffer().writeByte(AdaptiveUdpFec.SHARD).writeInt(base)
                             .writeByte(0).writeInt(0));
                     link.time.addAndGet(TimeUnit.MILLISECONDS.toNanos(elapsed));
                     for (int i = 2; i <= age + 1; i++) {
-                        link.receive(Unpooled.buffer().writeByte(UdpDailyFec.DATA).writeInt(base + i)
+                        link.receive(Unpooled.buffer().writeByte(AdaptiveUdpFec.DATA).writeInt(base + i)
                                 .writeInt(0));
                     }
                     for (int i = 0; i < 2; i++) {
-                        link.receive(Unpooled.buffer().writeByte(UdpDailyFec.PARITY).writeInt(base)
+                        link.receive(Unpooled.buffer().writeByte(AdaptiveUdpFec.PARITY).writeInt(base)
                                 .writeByte(2).writeShort(0).writeInt(0));
                     }
                     assertEquals(elapsed < 300 ? 1 : 0, link.receiver.recoveredData);
-                    link.receive(Unpooled.buffer().writeByte(UdpDailyFec.SHARD).writeInt(base + 1)
+                    link.receive(Unpooled.buffer().writeByte(AdaptiveUdpFec.SHARD).writeInt(base + 1)
                             .writeByte(1).writeInt(0));
                     assertEquals(age + 2, link.delivered.size());
                 }
@@ -472,7 +472,7 @@ class UdpDailyFecTest {
                 while (!link.packets.isEmpty()) {
                     ByteBuf frame = link.packets.remove();
                     int pos = frame.readerIndex();
-                    if (frame.getUnsignedByte(pos) == UdpDailyFec.PARITY) {
+                    if (frame.getUnsignedByte(pos) == AdaptiveUdpFec.PARITY) {
                         parity++;
                     } else if ((frame.getInt(pos + 1) & 31) == 10) {
                         dropped++;
@@ -501,7 +501,7 @@ class UdpDailyFecTest {
             }
             assertEquals(5, link.packets.size());
             ByteBuf parity = link.packets.removeLast();
-            assertEquals(UdpDailyFec.PARITY, parity.getByte(parity.readerIndex()));
+            assertEquals(AdaptiveUdpFec.PARITY, parity.getByte(parity.readerIndex()));
             link.receive(parity);
             link.receive(link.packets.remove());
             ByteBuf delayed = link.packets.remove();
@@ -520,7 +520,7 @@ class UdpDailyFecTest {
             }
             link.send(144);
             assertEquals(1, link.packets.size());
-            assertEquals(UdpDailyFec.DATA, link.packets.element().getByte(UdpDailyFec.WIRE_HEADROOM));
+            assertEquals(AdaptiveUdpFec.DATA, link.packets.element().getByte(AdaptiveUdpFec.WIRE_HEADROOM));
             assertEquals(-1, link.sender.nextDelayMillis());
         }
     }
@@ -552,7 +552,7 @@ class UdpDailyFecTest {
                 link.sender.write(payload, link::queue);
                 ByteBuf packet = link.packets.element();
                 assertEquals(2005, packet.readableBytes());
-                assertEquals(UdpDailyFec.DATA, packet.getByte(packet.readerIndex()));
+                assertEquals(AdaptiveUdpFec.DATA, packet.getByte(packet.readerIndex()));
                 assertEquals(1, payload.readerIndex());
                 assertEquals(-1, link.sender.nextDelayMillis());
             } finally {
@@ -564,14 +564,14 @@ class UdpDailyFecTest {
     @Test
     void idleCleanupLifecycleReleasesCachedBuffersOnceAndReallocatesOnNextWrite() throws Exception {
         long waitDeadline = System.currentTimeMillis() + 3000L;
-        while (UdpDailyFec.activeSessions() > 0 && System.currentTimeMillis() < waitDeadline) {
+        while (AdaptiveUdpFec.activeSessions() > 0 && System.currentTimeMillis() < waitDeadline) {
             Thread.sleep(20L);
         }
-        UdpDailyFec.resetTelemetryForTest();
-        long baselineTotal = UdpDailyFec.totalSessions();
+        AdaptiveUdpFec.resetTelemetryForTest();
+        long baselineTotal = AdaptiveUdpFec.totalSessions();
         try (Link link = new Link()) {
-            assertTrue(UdpDailyFec.activeSessions() >= 2);
-            assertEquals(baselineTotal + 2, UdpDailyFec.totalSessions());
+            assertTrue(AdaptiveUdpFec.activeSessions() >= 2);
+            assertEquals(baselineTotal + 2, AdaptiveUdpFec.totalSessions());
 
             link.introduceLoss(TimeUnit.MILLISECONDS.toNanos(20));
             for (int i = 40; i < 44; i++) {
@@ -587,7 +587,7 @@ class UdpDailyFecTest {
             assertEquals(-1, link.receiver.nextDelayMillis());
             assertTrue(link.sender.cachedBufferCount() > 0);
             assertTrue(link.sender.nextIdleCleanupDelayMillis() > 0);
-            assertTrue(UdpDailyFec.peakCachedXorBytes() >= UdpDailyFec.MAX_SHARD_BYTES);
+            assertTrue(AdaptiveUdpFec.peakCachedXorBytes() >= AdaptiveUdpFec.MAX_SHARD_BYTES);
 
             // Advance > 5s idle: one-shot tick reclaims all cached XOR buffers and resets target; no further wakeups.
             link.time.addAndGet(TimeUnit.SECONDS.toNanos(6));
@@ -605,12 +605,12 @@ class UdpDailyFecTest {
             // Subsequent write after idle sends clean DATA cleanly without stale buffers, and re-enables on new loss.
             link.send(100);
             assertEquals(1, link.packets.size());
-            assertEquals(UdpDailyFec.DATA, link.packets.element().getUnsignedByte(link.packets.element().readerIndex()));
+            assertEquals(AdaptiveUdpFec.DATA, link.packets.element().getUnsignedByte(link.packets.element().readerIndex()));
             link.drain();
             assertTrue(link.delivered.contains(100));
 
             // Also verify RX receiving DATA after >5s silence still reclaims previously cached RX shard slots.
-            ByteBuf orphanShard = Unpooled.buffer().writeByte(UdpDailyFec.SHARD).writeInt(200).writeByte(0)
+            ByteBuf orphanShard = Unpooled.buffer().writeByte(AdaptiveUdpFec.SHARD).writeInt(200).writeByte(0)
                     .writeInt(200).writeZero(200 % 11);
             link.receive(orphanShard);
             link.time.addAndGet(TimeUnit.MILLISECONDS.toNanos(350));
@@ -622,11 +622,11 @@ class UdpDailyFecTest {
             assertEquals(0, link.receiver.cachedBufferCount());
         }
         long drainDeadline = System.currentTimeMillis() + 3000L;
-        while (UdpDailyFec.activeSessions() > 0 && System.currentTimeMillis() < drainDeadline) {
+        while (AdaptiveUdpFec.activeSessions() > 0 && System.currentTimeMillis() < drainDeadline) {
             Thread.sleep(20L);
         }
-        assertEquals(0, UdpDailyFec.activeSessions());
-        assertEquals(0, UdpDailyFec.cachedXorBytes());
+        assertEquals(0, AdaptiveUdpFec.activeSessions());
+        assertEquals(0, AdaptiveUdpFec.cachedXorBytes());
     }
 
     @Test
@@ -634,8 +634,8 @@ class UdpDailyFecTest {
         AtomicLong clock = new AtomicLong(TimeUnit.SECONDS.toNanos(1));
         ArrayDeque<ByteBuf> wire = new ArrayDeque<>();
         ByteBuf payload = Unpooled.buffer(24).writeZero(24);
-        try (UdpDailyFec tx = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, clock::get, true, 44);
-             UdpDailyFec rx = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, clock::get, true, 44)) {
+        try (AdaptiveUdpFec tx = new AdaptiveUdpFec(UnpooledByteBufAllocator.DEFAULT, clock::get, true, 44);
+             AdaptiveUdpFec rx = new AdaptiveUdpFec(UnpooledByteBufAllocator.DEFAULT, clock::get, true, 44)) {
             // 1. First partial report with 5 ready samples (seq 0..12, loss at seq 2) activates target=16.
             ArrayDeque<ByteBuf> reports = new ArrayDeque<>();
             for (int seq = 0; seq <= 12; seq++) {
@@ -654,8 +654,8 @@ class UdpDailyFecTest {
             assertEquals(16, tx.currentTarget());
 
             // 2. Duplicate and reordered older reports are ignored.
-            ByteBuf dup = Unpooled.buffer(8).writeByte(UdpDailyFec.REPORT).writeInt(12).writeByte(0).writeByte(0).writeByte(0);
-            ByteBuf older = Unpooled.buffer(8).writeByte(UdpDailyFec.REPORT).writeInt(10).writeByte(0).writeByte(0).writeByte(0);
+            ByteBuf dup = Unpooled.buffer(8).writeByte(AdaptiveUdpFec.REPORT).writeInt(12).writeByte(0).writeByte(0).writeByte(0);
+            ByteBuf older = Unpooled.buffer(8).writeByte(AdaptiveUdpFec.REPORT).writeInt(10).writeByte(0).writeByte(0).writeByte(0);
             try {
                 tx.read(dup, ByteBuf::release, ByteBuf::release);
                 tx.read(older, ByteBuf::release, ByteBuf::release);
@@ -674,7 +674,7 @@ class UdpDailyFecTest {
                     tx.write(payload, ByteBuf::release);
                 }
                 currentSeq += 6;
-                ByteBuf partialClean = Unpooled.buffer(8).writeByte(UdpDailyFec.REPORT)
+                ByteBuf partialClean = Unpooled.buffer(8).writeByte(AdaptiveUdpFec.REPORT)
                         .writeInt(currentSeq).writeByte(0).writeByte(0).writeByte(0);
                 try {
                     tx.read(partialClean, ByteBuf::release, ByteBuf::release);
@@ -692,7 +692,7 @@ class UdpDailyFecTest {
                 tx.write(payload, ByteBuf::release);
             }
             currentSeq += 38;
-            ByteBuf gapClean = Unpooled.buffer(8).writeByte(UdpDailyFec.REPORT)
+            ByteBuf gapClean = Unpooled.buffer(8).writeByte(AdaptiveUdpFec.REPORT)
                     .writeInt(currentSeq).writeByte(0).writeByte(0).writeByte(0);
             try {
                 tx.read(gapClean, ByteBuf::release, ByteBuf::release);
@@ -705,7 +705,7 @@ class UdpDailyFecTest {
             clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(300));
             for (int n = 0; n < 32; n++) tx.write(payload, ByteBuf::release);
             currentSeq += 32;
-            ByteBuf burst1 = Unpooled.buffer(8).writeByte(UdpDailyFec.REPORT)
+            ByteBuf burst1 = Unpooled.buffer(8).writeByte(AdaptiveUdpFec.REPORT)
                     .writeInt(currentSeq).writeByte(0).writeByte(0).writeByte(0);
             try {
                 tx.read(burst1, ByteBuf::release, ByteBuf::release);
@@ -719,7 +719,7 @@ class UdpDailyFecTest {
                 clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(300));
                 for (int n = 0; n < 32; n++) tx.write(payload, ByteBuf::release);
                 currentSeq += 32;
-                ByteBuf burstClean = Unpooled.buffer(8).writeByte(UdpDailyFec.REPORT)
+                ByteBuf burstClean = Unpooled.buffer(8).writeByte(AdaptiveUdpFec.REPORT)
                         .writeInt(currentSeq).writeByte(0).writeByte(0).writeByte(0);
                 try {
                     tx.read(burstClean, ByteBuf::release, ByteBuf::release);
@@ -734,14 +734,14 @@ class UdpDailyFecTest {
         }
 
         // 5. Verify sequence wrap-around across Integer.MAX_VALUE -> Integer.MIN_VALUE on receiver report generation.
-        try (UdpDailyFec rxWrap = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, clock::get, true, 44)) {
+        try (AdaptiveUdpFec rxWrap = new AdaptiveUdpFec(UnpooledByteBufAllocator.DEFAULT, clock::get, true, 44)) {
             ArrayDeque<ByteBuf> wrapReports = new ArrayDeque<>();
             int start = Integer.MAX_VALUE - 10;
             for (int i = 0; i < 42; i++) {
                 clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(10));
                 int seq = start + i;
                 if (i == 5) continue; // 1 isolated missing packet across wrap boundary
-                ByteBuf frame = Unpooled.buffer().writeByte(UdpDailyFec.DATA).writeInt(seq).writeInt(i);
+                ByteBuf frame = Unpooled.buffer().writeByte(AdaptiveUdpFec.DATA).writeInt(seq).writeInt(i);
                 try {
                     rxWrap.read(frame, ByteBuf::release, wrapReports::add);
                 } finally {
@@ -752,7 +752,7 @@ class UdpDailyFecTest {
             ByteBuf rep = wrapReports.remove();
             try {
                 int pos = rep.readerIndex();
-                assertEquals(UdpDailyFec.REPORT, rep.getUnsignedByte(pos));
+                assertEquals(AdaptiveUdpFec.REPORT, rep.getUnsignedByte(pos));
                 assertEquals(1, rep.getUnsignedByte(pos + 5)); // missing
                 assertEquals(1, rep.getUnsignedByte(pos + 6)); // isolated
             } finally {

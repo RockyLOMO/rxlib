@@ -393,6 +393,8 @@ public final class Tasks {
     }
 
     public static ScheduledFuture<?> schedulePeriod(@NonNull Action task, long initialDelay, long period) {
-        return timer.setTimeout(task, d -> d == 0 ? initialDelay : period, null, Constants.TIMER_PERIOD_FLAG);
+        // WheelTimer passes d=0 only on the first tick; clamp 0 to 1ms so subsequent ticks use period without extra state.
+        long init = initialDelay == 0 ? 1 : initialDelay;
+        return timer.setTimeout(task, d -> d == 0 ? init : period, null, Constants.TIMER_PERIOD_FLAG);
     }
 }

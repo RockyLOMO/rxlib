@@ -372,8 +372,6 @@ public class RssClientHttpHandler implements HttpServer.Handler {
             int snapshotActiveConnections = RssClient.activeConnectionCount(snapshot);
             appendUpstreamRows(rows, "socks", snapshot, snapshot.socksServers, snapshot.configuredSocksServers,
                     now, snapshotActiveConnections);
-            appendUpstreamRows(rows, "udp2raw", snapshot, snapshot.udp2rawSocksServers,
-                    snapshot.configuredUdp2rawSocksServers, now, snapshotActiveConnections);
         }
         return rows;
     }
@@ -399,10 +397,25 @@ public class RssClientHttpHandler implements HttpServer.Handler {
                 supportByEndpoint.put(support.getEndpoint(), support);
             }
         }
+        Map<String, UpstreamSupport> supportById = new LinkedHashMap<>();
+        for (UpstreamSupport support : supports) {
+            if (support.getRouteId() != null) {
+                supportById.put(support.getRouteId(), support);
+            }
+        }
         for (Object configuredEndpoint : configuredEndpoints) {
             AuthenticEndpoint endpoint = configuredEndpoint(configuredEndpoint);
-            appendUpstreamRow(rows, type, snapshot, servers, configuredEndpointId(configuredEndpoint),
-                    configuredEndpoint, endpoint, supportByEndpoint.remove(endpoint),
+            String id = configuredEndpointId(configuredEndpoint);
+            UpstreamSupport support = supportById.get(id);
+            if (support != null) {
+                supportByEndpoint.remove(support.getEndpoint());
+            } else {
+                support = supportByEndpoint.remove(endpoint);
+            }
+            String routeType = configuredEndpoint instanceof RssClientConf.SocksServer
+                    ? ((RssClientConf.SocksServer) configuredEndpoint).type.name().toLowerCase(java.util.Locale.ROOT) : type;
+            appendUpstreamRow(rows, routeType, snapshot, servers, id,
+                    configuredEndpoint, endpoint, support,
                     now, snapshotActiveConnections);
         }
         for (UpstreamSupport support : supportByEndpoint.values()) {

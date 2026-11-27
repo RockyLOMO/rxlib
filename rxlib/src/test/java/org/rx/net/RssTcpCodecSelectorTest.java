@@ -10,10 +10,10 @@ import java.util.zip.Deflater;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class RssHopTlsTest {
+class RssTcpCodecSelectorTest {
     @Test
     void shortRawGreetingPassesWithoutWaitingForFiveBytes() {
-        EmbeddedChannel ch = new EmbeddedChannel(RssHopTls.serverSelector(new SocksConfig()));
+        EmbeddedChannel ch = new EmbeddedChannel(new RssTcpCodecSelector(new SocksConfig()));
         try {
             ByteBuf greeting = Unpooled.wrappedBuffer(new byte[]{5, 1, 0});
             assertTrue(ch.writeInbound(greeting));
@@ -28,7 +28,7 @@ class RssHopTlsTest {
 
     @Test
     void fragmentedZlibHeaderSelectsCompressionWithoutCertificate() {
-        EmbeddedChannel ch = new EmbeddedChannel(RssHopTls.serverSelector(new SocksConfig()));
+        EmbeddedChannel ch = new EmbeddedChannel(new RssTcpCodecSelector(new SocksConfig()));
         Deflater deflater = new Deflater(3);
         try {
             deflater.setInput(new byte[]{5, 1, 0});
@@ -54,7 +54,7 @@ class RssHopTlsTest {
     @Test
     void rejectsInvalidHeaderAndTlsWithoutCertificate() {
         for (byte[] prefix : new byte[][]{{0x78, 0}, {0x16, 3, 1}, {0}}) {
-            EmbeddedChannel ch = new EmbeddedChannel(RssHopTls.serverSelector(new SocksConfig()));
+            EmbeddedChannel ch = new EmbeddedChannel(new RssTcpCodecSelector(new SocksConfig()));
             try {
                 assertFalse(ch.writeInbound(Unpooled.wrappedBuffer(prefix)));
                 assertFalse(ch.isOpen());

@@ -82,8 +82,12 @@ public class SocksTcpUpstream extends Upstream {
         return next.getEndpoint();
     }
 
+    public InetSocketAddress getAdaptiveUdpClient() {
+        return next.getAdaptiveUdpClient();
+    }
+
     public TcpWarmPoolKey warmPoolKey() {
-        return TcpWarmPoolKey.from(next.getEndpoint(), config, config.getReactorName());
+        return TcpWarmPoolKey.from(next.getEndpoint(), config, config.getReactorName(), next.getAdaptiveUdpClient());
     }
 
     public InetSocketAddress prepareDestination() {
@@ -92,8 +96,7 @@ public class SocksTcpUpstream extends Upstream {
         }
         destinationPrepared = true;
         SocksRpcContract facade = next.getFacade();
-        if (facade == null || config.getTransportFlags().has(TransportFlags.RSS_AUTHENTICATED_TLS)
-                || config.getTransportFlags().has(TransportFlags.RSS_PSK_AES)
+        if (facade == null || config.getTransportFlags().has(TransportFlags.RSS_PSK_AES)
                 || (!SocksRpcContract.FAKE_IPS.contains(destination.getHostString()) && !SocksRpcContract.FAKE_PORTS.contains(destination.getPort())
                 && Sockets.isValidIp(destination.getHostString()))) {
             return destination;
@@ -306,6 +309,8 @@ public class SocksTcpUpstream extends Upstream {
         proxyHandler.setAdaptiveTcp(((SocksConfig) config).isAdaptiveTcp());
         proxyHandler.setAdaptiveProfile(((SocksConfig) config).getAdaptiveProfile());
         proxyHandler.setUdpHop(((SocksConfig) config).isUdpHop());
+        proxyHandler.setAdaptiveUdpMtu(((SocksConfig) config).resolveDailyUdpMtu());
+        proxyHandler.setAdaptiveUdpAddress(next.getAdaptiveUdpClient());
         proxyHandler.setConnectTimeoutMillis(config.getConnectTimeoutMillis());
         channel.pipeline().addLast(proxyHandler);
     }

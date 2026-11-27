@@ -1,5 +1,8 @@
 # 技术方案 - RSS: 6896 加密可配与单用户关闭端口跳跃
 
+> [!NOTE]
+> **历史归档文档**：本文保留作为 6896 `ssCipher` / `udpHop` 迁移与 `kcptun` 下线方案的历史记录。现行三类上游（`rss` / `socks5` / `udpclient`）、`-fixedUdpPort` 与传输配置请以 [rss-transport.md](./rss-transport.md) 为准。
+
 - 日期: 2026-11-25（2026-11-26 代码已落地）
 - 状态: Java 侧 `ssCipher` 与 `transport.udpHop`（含服务端 `-udpHop=0`、连接池/策略缓存隔离及热更新回滚）已在仓库实现并通过 JDK 8 / JDK 21 验证；现网配置切换与 `kcptun` 拆线待维护窗口确认后执行
 - 关联配置: rss client `/home/rss/conf.yml`

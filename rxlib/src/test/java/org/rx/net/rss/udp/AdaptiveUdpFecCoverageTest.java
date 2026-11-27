@@ -10,11 +10,11 @@ import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class UdpDailyFecCoverageTest {
+class AdaptiveUdpFecCoverageTest {
     private static final int COUNT = 512;
     private static final int[] RATES = {20, 50, 100, 200, 300, 1000};
 
-    private static final class Run extends UdpDailyFecTest.Link {
+    private static final class Run extends AdaptiveUdpFecTest.Link {
         int dropped;
         long protectedShards, parityFrames;
 
@@ -22,7 +22,7 @@ class UdpDailyFecCoverageTest {
             while (!packets.isEmpty()) {
                 ByteBuf frame = packets.remove();
                 int pos = frame.readerIndex();
-                boolean parity = frame.getUnsignedByte(pos) == UdpDailyFec.PARITY;
+                boolean parity = frame.getUnsignedByte(pos) == AdaptiveUdpFec.PARITY;
                 if (parity) {
                     parityFrames++;
                     protectedShards += frame.getUnsignedByte(pos + 5);
@@ -76,7 +76,7 @@ class UdpDailyFecCoverageTest {
                         final int phase = offset;
                         run.measure(40, interval, frame -> {
                             int pos = frame.readerIndex();
-                            return frame.getUnsignedByte(pos) != UdpDailyFec.PARITY
+                            return frame.getUnsignedByte(pos) != AdaptiveUdpFec.PARITY
                                     && ((frame.getInt(pos + 1) - 40) & 15) == phase;
                         });
                         assertTrue(run.parityFrames <= COUNT / target);

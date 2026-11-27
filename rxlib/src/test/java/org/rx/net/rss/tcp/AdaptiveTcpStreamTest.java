@@ -13,11 +13,11 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class AdaptiveStreamTest {
+class AdaptiveTcpStreamTest {
     static final class End implements AutoCloseable {
         final ArrayDeque<ByteBuf> tcp = new ArrayDeque<>(), udp = new ArrayDeque<>();
         final List<Integer> delivered = new ArrayList<>();
-        final AdaptiveStream stream;
+        final AdaptiveTcpStream stream;
 
         End(AtomicLong clock) {
             this(clock, 0);
@@ -28,8 +28,8 @@ class AdaptiveStreamTest {
         }
 
         End(AtomicLong clock, int profile, boolean udpTail) {
-            stream = new AdaptiveStream(UnpooledByteBufAllocator.DEFAULT, tcp::add, packet -> {
-                assertTrue(packet.readableBytes() <= AdaptiveStream.MAX_UDP_FRAME);
+            stream = new AdaptiveTcpStream(UnpooledByteBufAllocator.DEFAULT, tcp::add, packet -> {
+                assertTrue(packet.readableBytes() <= AdaptiveTcpStream.MAX_UDP_FRAME);
                 udp.add(packet);
             }, bytes -> {
                 try {
@@ -102,7 +102,7 @@ class AdaptiveStreamTest {
         for (boolean udp : new boolean[]{true, false}) {
             for (boolean ackLost : new boolean[]{true, false}) {
                 AtomicLong now = new AtomicLong();
-                try (End a = new End(now, AdaptiveStream.WEAK, udp); End b = new End(now, AdaptiveStream.WEAK)) {
+                try (End a = new End(now, AdaptiveTcpStream.WEAK, udp); End b = new End(now, AdaptiveTcpStream.WEAK)) {
                     a.stream.tick();
                     a.passUdp(b);
                     now.addAndGet(TimeUnit.MILLISECONDS.toNanos(150));
@@ -142,7 +142,7 @@ class AdaptiveStreamTest {
     @Test
     void lostUdpTailProbeHandsOffOnceBeforeFin() {
         AtomicLong now = new AtomicLong();
-        try (End a = new End(now, AdaptiveStream.WEAK); End b = new End(now, AdaptiveStream.WEAK)) {
+        try (End a = new End(now, AdaptiveTcpStream.WEAK); End b = new End(now, AdaptiveTcpStream.WEAK)) {
             a.stream.tick();
             a.passUdp(b);
             now.addAndGet(TimeUnit.MILLISECONDS.toNanos(150));
@@ -166,9 +166,9 @@ class AdaptiveStreamTest {
     @Test
     void cumulativeAckAndTailRepairCrossTheSignedSequenceBoundary() throws Exception {
         AtomicLong now = new AtomicLong();
-        try (End a = new End(now, AdaptiveStream.WEAK); End b = new End(now, AdaptiveStream.WEAK)) {
-            java.lang.reflect.Field tx = AdaptiveStream.class.getDeclaredField("nextTx");
-            java.lang.reflect.Field rx = AdaptiveStream.class.getDeclaredField("nextRx");
+        try (End a = new End(now, AdaptiveTcpStream.WEAK); End b = new End(now, AdaptiveTcpStream.WEAK)) {
+            java.lang.reflect.Field tx = AdaptiveTcpStream.class.getDeclaredField("nextTx");
+            java.lang.reflect.Field rx = AdaptiveTcpStream.class.getDeclaredField("nextRx");
             tx.setAccessible(true);
             rx.setAccessible(true);
             tx.setInt(a.stream, Integer.MAX_VALUE);
@@ -200,20 +200,20 @@ class AdaptiveStreamTest {
     void onlyUnambiguousFallbackFramesSuppressAckAfterPeerProbe() {
         AtomicLong clock = new AtomicLong(), delivered = new AtomicLong();
         ArrayDeque<ByteBuf> replies = new ArrayDeque<>();
-        try (AdaptiveStream receiver = new AdaptiveStream(UnpooledByteBufAllocator.DEFAULT, replies::add, ByteBuf::release,
-                b -> { delivered.addAndGet(b.readableBytes()); b.release(); }, clock::get, AdaptiveStream.WEAK)) {
-            ByteBuf ping = Unpooled.buffer().writeByte(AdaptiveStream.PING).writeInt(1);
+        try (AdaptiveTcpStream receiver = new AdaptiveTcpStream(UnpooledByteBufAllocator.DEFAULT, replies::add, ByteBuf::release,
+                b -> { delivered.addAndGet(b.readableBytes()); b.release(); }, clock::get, AdaptiveTcpStream.WEAK)) {
+            ByteBuf ping = Unpooled.buffer().writeByte(AdaptiveTcpStream.PING).writeInt(1);
             try { receiver.udp(ping); } finally { ping.release(); }
-            int small = AdaptiveStream.MAX_UDP_FRAME - org.rx.net.rss.udp.UdpDailyFec.MAX_OVERHEAD - 5;
+            int small = AdaptiveTcpStream.MAX_UDP_FRAME - org.rx.net.rss.udp.AdaptiveUdpFec.MAX_OVERHEAD - 5;
             int seq = 0;
             for (; seq < 64; seq++) {
-                ByteBuf tcp = Unpooled.buffer().writeByte(AdaptiveStream.DATA).writeInt(seq).writeZero(small + 1);
+                ByteBuf tcp = Unpooled.buffer().writeByte(AdaptiveTcpStream.DATA).writeInt(seq).writeZero(small + 1);
                 try { receiver.tcp(tcp); } finally { tcp.release(); }
             }
             clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(20));
             receiver.tick();
             assertTrue(replies.isEmpty(), "ordinary TCP cannot be an enqueued UDP repair at this size");
-            ByteBuf possibleRepair = Unpooled.buffer().writeByte(AdaptiveStream.DATA).writeInt(seq).writeZero(small);
+            ByteBuf possibleRepair = Unpooled.buffer().writeByte(AdaptiveTcpStream.DATA).writeInt(seq).writeZero(small);
             try { receiver.tcp(possibleRepair); } finally { possibleRepair.release(); }
             clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(20));
             receiver.tick();
@@ -228,15 +228,15 @@ class AdaptiveStreamTest {
     @Test
     void parityRecoveryAndTailProbeDeliverOnlyOnceInEitherOrder() {
         for (boolean parityFirst : new boolean[]{true, false}) {
-            try (End receiver = new End(new AtomicLong(), AdaptiveStream.WEAK)) {
+            try (End receiver = new End(new AtomicLong(), AdaptiveTcpStream.WEAK)) {
                 // FEC group [0,1]: shard 0 is lost, shard 1 contains stream frame/value 1.
                 ByteBuf shard = Unpooled.buffer().writeByte(1).writeInt(1).writeByte(1)
-                        .writeByte(AdaptiveStream.DATA).writeInt(1).writeInt(1);
+                        .writeByte(AdaptiveTcpStream.DATA).writeInt(1).writeInt(1);
                 ByteBuf parity = Unpooled.buffer().writeByte(2).writeInt(0).writeByte(2).writeShort(0)
                         .writeByte(0).writeInt(1).writeInt(1);
                 // The probe uses a new FEC serial and the original stream serial/value 0.
                 ByteBuf retry = Unpooled.buffer().writeByte(0).writeInt(2)
-                        .writeByte(AdaptiveStream.DATA).writeInt(0).writeInt(0);
+                        .writeByte(AdaptiveTcpStream.DATA).writeInt(0).writeInt(0);
                 try {
                     receiver.stream.udp(shard);
                     receiver.stream.udp(parityFirst ? parity : retry);
@@ -256,11 +256,11 @@ class AdaptiveStreamTest {
     @Test
     void invalidSelectiveRangesCannotReleaseReliableData() {
         AtomicLong clock = new AtomicLong();
-        try (End a = new End(clock, AdaptiveStream.WEAK); End b = new End(clock, AdaptiveStream.WEAK)) {
+        try (End a = new End(clock, AdaptiveTcpStream.WEAK); End b = new End(clock, AdaptiveTcpStream.WEAK)) {
             probe(a, b);
             for (int i = 0; i < 6; i++) a.send(i);
             for (long invalid : new long[]{0L, 1L, 1L << 5}) {
-                ByteBuf bad = Unpooled.buffer().writeByte(AdaptiveStream.SACK).writeInt(2).writeLong(invalid);
+                ByteBuf bad = Unpooled.buffer().writeByte(AdaptiveTcpStream.SACK).writeInt(2).writeLong(invalid);
                 try { a.stream.tcp(bad); } finally { bad.release(); }
             }
             a.stream.drainToTcp();
@@ -273,7 +273,7 @@ class AdaptiveStreamTest {
     @Test
     void weakRepairsTwoHolesWithOneBitmap() {
         AtomicLong clock = new AtomicLong();
-        try (End a = new End(clock, AdaptiveStream.WEAK); End b = new End(clock, AdaptiveStream.WEAK)) {
+        try (End a = new End(clock, AdaptiveTcpStream.WEAK); End b = new End(clock, AdaptiveTcpStream.WEAK)) {
             probe(a, b);
             for (int i = 0; i < 12; i++) {
                 a.send(i);
@@ -283,7 +283,7 @@ class AdaptiveStreamTest {
             clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(40));
             b.stream.tick();
             assertEquals(1, b.tcp.size());
-            assertEquals(AdaptiveStream.SACK, b.tcp.element().getByte(0));
+            assertEquals(AdaptiveTcpStream.SACK, b.tcp.element().getByte(0));
             b.passTcp(a);
             assertEquals(2, a.tcp.size());
             assertTrue(a.stream.usingUdp());
@@ -297,7 +297,7 @@ class AdaptiveStreamTest {
 
     @Test
     void enhancedWindowsGrowOnHighRttAndStopAtTheNegotiatedLimit() {
-        for (int profile : new int[]{AdaptiveStream.GAME, AdaptiveStream.WEAK}) {
+        for (int profile : new int[]{AdaptiveTcpStream.GAME, AdaptiveTcpStream.WEAK}) {
             AtomicLong clock = new AtomicLong();
             try (End a = new End(clock, profile); End b = new End(clock, profile)) {
                 a.stream.tick();
@@ -550,8 +550,14 @@ class AdaptiveStreamTest {
         AtomicLong clock = new AtomicLong(1);
         List<Integer> received = new ArrayList<>();
         ArrayDeque<ByteBuf> tcp = new ArrayDeque<>(), udp = new ArrayDeque<>();
-        try (AdaptiveStream sender = new AdaptiveStream(UnpooledByteBufAllocator.DEFAULT, tcp::add, udp::add, ByteBuf::release, clock::get);
-             AdaptiveStream receiver = new AdaptiveStream(UnpooledByteBufAllocator.DEFAULT, ByteBuf::release, sender::udp, bytes -> {
+        try (AdaptiveTcpStream sender = new AdaptiveTcpStream(UnpooledByteBufAllocator.DEFAULT, tcp::add, udp::add, ByteBuf::release, clock::get);
+             AdaptiveTcpStream receiver = new AdaptiveTcpStream(UnpooledByteBufAllocator.DEFAULT, ByteBuf::release, b -> {
+                 try {
+                     sender.udp(b);
+                 } finally {
+                     b.release();
+                 }
+             }, bytes -> {
                  try {
                      while (bytes.isReadable()) received.add(bytes.readInt());
                  } finally {
@@ -589,7 +595,7 @@ class AdaptiveStreamTest {
     @Test
     void reliableSackRepairCancelsRedundantPendingParity() {
         AtomicLong clock = new AtomicLong(1_000_000L);
-        try (End a = new End(clock, AdaptiveStream.WEAK); End b = new End(clock, AdaptiveStream.WEAK)) {
+        try (End a = new End(clock, AdaptiveTcpStream.WEAK); End b = new End(clock, AdaptiveTcpStream.WEAK)) {
             probe(a, b);
             // Prime loss so weak enables FEC parity credit.
             for (int i = 0; i < 40; i++) {
@@ -663,5 +669,94 @@ class AdaptiveStreamTest {
             a.passUdp(b);
             ordered(b, 101);
         }
+    }
+
+    @Test
+    void negotiatedUdpFrameLimitShrinksChunkAndFallsBackCleanly() {
+        int wireMtu = 600;
+        int frameLimit = AdaptiveUdpPort.frameLimit(wireMtu);
+        assertEquals(wireMtu - 32, frameLimit);
+        AtomicLong clock = new AtomicLong(1_000_000L);
+        ArrayDeque<ByteBuf> tcpA = new ArrayDeque<>(), udpA = new ArrayDeque<>();
+        ArrayDeque<ByteBuf> tcpB = new ArrayDeque<>(), udpB = new ArrayDeque<>();
+        java.io.ByteArrayOutputStream received = new java.io.ByteArrayOutputStream();
+        try (AdaptiveTcpStream a = new AdaptiveTcpStream(UnpooledByteBufAllocator.DEFAULT, tcpA::add, packet -> {
+                assertTrue(packet.readableBytes() <= frameLimit,
+                        "UDP frame " + packet.readableBytes() + " exceeded negotiated limit " + frameLimit);
+                udpA.add(packet);
+            }, ByteBuf::release, clock::get, AdaptiveTcpStream.WEAK, true, frameLimit);
+             AdaptiveTcpStream b = new AdaptiveTcpStream(UnpooledByteBufAllocator.DEFAULT, tcpB::add, udpB::add, bytes -> {
+                try {
+                    byte[] copy = new byte[bytes.readableBytes()];
+                    bytes.readBytes(copy);
+                    received.write(copy, 0, copy.length);
+                } finally {
+                    bytes.release();
+                }
+            }, clock::get, AdaptiveTcpStream.WEAK, true, frameLimit)) {
+            a.tick();
+            b.tick();
+            while (!udpA.isEmpty()) { ByteBuf p = udpA.remove(); try { b.udp(p); } finally { p.release(); } }
+            while (!udpB.isEmpty()) { ByteBuf p = udpB.remove(); try { a.udp(p); } finally { p.release(); } }
+            while (!udpA.isEmpty()) { ByteBuf p = udpA.remove(); try { b.udp(p); } finally { p.release(); } }
+            assertTrue(a.usingUdp());
+
+            byte[] payload = new byte[12 * 1024];
+            new java.util.Random(99).nextBytes(payload);
+            ByteBuf input = Unpooled.wrappedBuffer(payload);
+            a.write(input);
+            // Drop every 3rd UDP packet to exercise repair and then force full TCP drain on FIN.
+            int idx = 0;
+            while (!udpA.isEmpty()) {
+                ByteBuf p = udpA.remove();
+                try {
+                    if (idx++ % 3 != 0) b.udp(p);
+                } finally {
+                    p.release();
+                }
+            }
+            clock.addAndGet(TimeUnit.SECONDS.toNanos(2));
+            a.tick();
+            a.drainToTcp();
+            while (!tcpA.isEmpty()) { ByteBuf f = tcpA.remove(); try { b.tcp(f); } finally { f.release(); } }
+            assertArrayEquals(payload, received.toByteArray());
+        } finally {
+            while (!tcpA.isEmpty()) tcpA.remove().release();
+            while (!udpA.isEmpty()) udpA.remove().release();
+            while (!tcpB.isEmpty()) tcpB.remove().release();
+            while (!udpB.isEmpty()) udpB.remove().release();
+        }
+    }
+
+    @Test
+    void rssUdpMtuBudgetCoversLayeringNegotiationAndInvalidLimits() {
+        assertTrue(org.rx.net.rss.RssUdpMtuBudget.valid(0));
+        assertTrue(org.rx.net.rss.RssUdpMtuBudget.valid(256));
+        assertTrue(org.rx.net.rss.RssUdpMtuBudget.valid(65507));
+        assertFalse(org.rx.net.rss.RssUdpMtuBudget.valid(255));
+        assertFalse(org.rx.net.rss.RssUdpMtuBudget.valid(65508));
+
+        assertEquals(0, org.rx.net.rss.RssUdpMtuBudget.negotiate(0, 0));
+        assertEquals(1300, org.rx.net.rss.RssUdpMtuBudget.negotiate(0, 1300));
+        assertEquals(1300, org.rx.net.rss.RssUdpMtuBudget.negotiate(1300, 0));
+        assertEquals(1232, org.rx.net.rss.RssUdpMtuBudget.negotiate(1300, 1232));
+
+        // Daily/weak AES (20 + 24 + 8 = 52) and Game AES (20 + 24 + 5 = 49) at 1300 B payload MTU.
+        org.rx.net.rss.RssUdpMtuBudget dailyAes = new org.rx.net.rss.RssUdpMtuBudget(1300, 20 + 24 + 8, 1500);
+        assertEquals(1300, dailyAes.wireLimit);
+        assertEquals(1248, dailyAes.payloadLimit);
+        assertEquals(1248, dailyAes.fragmentUnitLimit);
+
+        org.rx.net.rss.RssUdpMtuBudget gameAes = new org.rx.net.rss.RssUdpMtuBudget(1300, 20 + 24 + 5, 1300);
+        assertEquals(1251, gameAes.payloadLimit);
+
+        // Unbounded (0) resolves to MAX_DATAGRAM while fragment unit stays capped at maxFragmentUnit (1500).
+        org.rx.net.rss.RssUdpMtuBudget unbounded = new org.rx.net.rss.RssUdpMtuBudget(0, 52, 1500);
+        assertEquals(65507, unbounded.wireLimit);
+        assertEquals(65507 - 52, unbounded.payloadLimit);
+        assertEquals(1500, unbounded.fragmentUnitLimit);
+
+        assertThrows(IllegalArgumentException.class, () -> new org.rx.net.rss.RssUdpMtuBudget(100, 20, 1500));
+        assertThrows(IllegalArgumentException.class, () -> new org.rx.net.rss.RssUdpMtuBudget(256, 256, 1500));
     }
 }

@@ -7,6 +7,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import org.rx.diagnostic.DiagnosticMetrics;
 
+import java.net.InetSocketAddress;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -17,8 +18,10 @@ public final class AdaptiveTcpHandler extends ChannelDuplexHandler {
     private final boolean server;
     private AdaptiveUdpPort port;
     private final int primaryPort, aliasPort;
-    private final int profile;
-    private AdaptiveStream stream;
+    private final int profile, udpFrameLimit;
+    private final boolean udpHop;
+    private final InetSocketAddress udpTarget;
+    private AdaptiveTcpStream stream;
     private ChannelHandlerContext ctx;
     private ScheduledFuture<?> timer;
     private boolean started, closing, udpReady;
@@ -27,19 +30,45 @@ public final class AdaptiveTcpHandler extends ChannelDuplexHandler {
     private long tcpTxFrames, tcpRxFrames, udpTxFrames, udpRxFrames;
 
     public static void install(Channel tcp, long id, byte[] key, AdaptiveUdpPort port, int primary, int alias, int profile) {
-        tcp.pipeline().addFirst("rssAdaptive", new AdaptiveTcpHandler(id, key, port, primary, alias, profile));
-        tcp.pipeline().addFirst("rssAdaptiveLength", new LengthFieldBasedFrameDecoder(
-                AdaptiveStream.MAX_TCP_FRAME + 2, 0, 2, 0, 2));
+        install(tcp, id, key, port, primary, alias, profile, primary != alias, null);
+    }
+
+    public static void install(Channel tcp, long id, byte[] key, AdaptiveUdpPort port, int primary, int alias, int profile,
+                               boolean udpHop, InetSocketAddress udpTarget) {
+        install(tcp, id, key, port, primary, alias, profile, udpHop, udpTarget, 0);
+    }
+
+    public static void install(Channel tcp, long id, byte[] key, AdaptiveUdpPort port, int primary, int alias, int profile,
+                               boolean udpHop, InetSocketAddress udpTarget, int wireMtu) {
+        int frameLimit = AdaptiveUdpPort.frameLimit(wireMtu);
+        ChannelPipeline pipeline = tcp.pipeline();
+        LengthFieldBasedFrameDecoder decoder = new LengthFieldBasedFrameDecoder(
+                AdaptiveTcpStream.MAX_TCP_FRAME + 2, 0, 2, 0, 2);
+        if (pipeline.context(org.rx.net.RssEgressCodec.INNER_ANCHOR) == null) {
+            if (pipeline.context(org.rx.net.socks.RssSocksCarrier.TCP_HANDLER) != null) {
+                pipeline.addAfter(org.rx.net.socks.RssSocksCarrier.TCP_HANDLER, "rssAdaptiveLength", decoder);
+            } else {
+                pipeline.addFirst("rssAdaptiveLength", decoder);
+            }
+        } else {
+            pipeline.addAfter(org.rx.net.RssEgressCodec.INNER_ANCHOR, "rssAdaptiveLength", decoder);
+        }
+        pipeline.addAfter("rssAdaptiveLength", "rssAdaptive",
+                new AdaptiveTcpHandler(id, key, port, primary, alias, profile, udpHop, udpTarget, frameLimit));
     }
 
     public int profile() {
         return profile;
     }
 
-    private AdaptiveTcpHandler(long id, byte[] key, AdaptiveUdpPort port, int primaryPort, int aliasPort, int profile) {
+    private AdaptiveTcpHandler(long id, byte[] key, AdaptiveUdpPort port, int primaryPort, int aliasPort, int profile,
+                               boolean udpHop, InetSocketAddress udpTarget, int frameLimit) {
+        this.udpFrameLimit = frameLimit;
         this.profile = profile;
         this.primaryPort = primaryPort;
         this.aliasPort = aliasPort;
+        this.udpHop = udpHop;
+        this.udpTarget = udpTarget;
         this.id = id;
         this.key = key;
         this.port = port;
@@ -48,11 +77,28 @@ public final class AdaptiveTcpHandler extends ChannelDuplexHandler {
 
     @Override public void handlerAdded(ChannelHandlerContext ctx) {
         this.ctx = ctx;
-        stream = new AdaptiveStream(ctx.alloc(), this::writeTcp, this::writeUdp,
-                ctx::fireChannelRead, System::nanoTime, profile);
+        stream = new AdaptiveTcpStream(ctx.alloc(), this::writeTcp, this::writeUdp,
+                ctx::fireChannelRead, System::nanoTime, profile, AdaptiveTcpStream.UDP_TAIL, udpFrameLimit);
+        if (!server && !udpHop && udpTarget != null && udpTarget.isUnresolved()) {
+            org.rx.net.Sockets.resolveUdpEndpointAsync(udpTarget, null).whenCompleteAsync((endpoint, error) -> {
+                if (closing || !ctx.channel().isActive()) return;
+                if (error != null) {
+                    DiagnosticMetrics.record("rss.tcp.adaptive.udpUnavailable", 1);
+                    return;
+                }
+                attachUdp(endpoint);
+                schedule();
+            }, ctx.executor());
+            return;
+        }
+        attachUdp(udpHop ? null : udpTarget);
+    }
+
+    private void attachUdp(InetSocketAddress endpoint) {
         try {
-            if (server) port.register(id, key, ctx.channel(), this::receiveUdp);
-            else port = AdaptiveUdpPort.client(id, key, ctx.channel(), primaryPort, aliasPort, this::receiveUdp);
+            if (server) port.register(id, key, ctx.channel(), udpHop, udpFrameLimit, this::receiveUdp);
+            else port = AdaptiveUdpPort.client(id, key, ctx.channel(), primaryPort, aliasPort,
+                    endpoint, udpFrameLimit, this::receiveUdp);
         } catch (RuntimeException unavailable) {
             port = null;
             DiagnosticMetrics.record("rss.tcp.adaptive.udpUnavailable", 1);
@@ -166,6 +212,10 @@ public final class AdaptiveTcpHandler extends ChannelDuplexHandler {
 
     public boolean isUdpHopping() {
         return port != null && port.isHopping();
+    }
+
+    public InetSocketAddress udpPeerAddress() {
+        return port == null ? null : port.peerAddress(id);
     }
 
     @Override public void close(ChannelHandlerContext ctx, ChannelPromise promise) {

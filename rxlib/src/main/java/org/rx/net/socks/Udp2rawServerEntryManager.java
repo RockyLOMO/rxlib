@@ -47,11 +47,9 @@ final class Udp2rawServerEntryManager extends Disposable {
         SocksConfig config = server.getConfig();
         Udp2rawServerEntryHandler handler = new Udp2rawServerEntryHandler(this);
         List<Channel> channels = Sockets.bindChannels(Sockets.udpBootstrap(config, ch -> {
-            ChannelPipeline p = ch.pipeline();
-            if (config.getUdpReadTimeoutSeconds() > 0 || config.getUdpWriteTimeoutSeconds() > 0) {
-                p.addLast(new ProxyChannelIdleHandler(config.getUdpReadTimeoutSeconds(), config.getUdpWriteTimeoutSeconds()));
-            }
-            p.addLast(handler);
+            // Fixed server-side udp2raw entry socket is long-lived and shared across tunnels;
+            // individual tunnel idle expiration is handled by cleanupIdleTunnels().
+            ch.pipeline().addLast(handler);
         }).attr(SocksContext.SOCKS_SVR, server), bindAddress, config);
         entryChannels.addAll(channels);
         if (!entryChannels.isEmpty()) {

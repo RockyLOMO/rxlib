@@ -226,6 +226,10 @@ public class Socks5Client extends Disposable {
         return handler.connectFuture();
     }
 
+    public CompletableFuture<Socks5UdpLease> udpAssociateLeaseAsync(InetSocketAddress source) {
+        return udpAssociateLeaseAsync(source, null);
+    }
+
     public CompletableFuture<Socks5UdpLease> udpAssociateLeaseAsync() {
         return udpAssociateLeaseAsync(null, null);
     }

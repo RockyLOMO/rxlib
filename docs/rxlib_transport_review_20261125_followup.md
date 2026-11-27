@@ -1,5 +1,8 @@
 # rxlib RSS Transport & Shadowsocks Follow-up Review — 2026-11-25（2026-11-26 更新）
 
+> [!NOTE]
+> **历史归档文档**：本文保留作为 2026-11-25/26 审查与历史基准证据记录。后续收口实现与现行配置请以 [rss-transport.md](./rss-transport.md) 和 [rss-upstream-profile-consolidation-plan.md](./rss-upstream-profile-consolidation-plan.md) 为准。
+
 原审查基线：[master d17cad55](https://github.com/RockyLOMO/rxlib/commit/d17cad55b925ab466b111923972320e357502fbc)，北京时间 2026-11-25 21:42。相对 [上一轮评审提交 0e0555fb](https://github.com/RockyLOMO/rxlib/commit/0e0555fbdc08a591eed2a2926a8e639ed3abf0e1) 新增 10 个 commit。
 
 最新复查基线：[master f5583f3c](https://github.com/RockyLOMO/rxlib/commit/f5583f3c8202836277681394d01221a9751ce6c0)，北京时间 2026-11-26 00:05:52。相对上一版本文提交 [56851521](https://github.com/RockyLOMO/rxlib/commit/56851521de885cadc25a181f4f07959ff3b9f20e) 新增 2 个 commit。更新保留历史性能证据，并以本次源码核查的状态为准。

@@ -26,7 +26,8 @@ import org.rx.net.socks.UdpRelayGroupUpdateResult;
 import org.rx.net.socks.UdpRelayAttributes;
 import org.rx.net.socks.UdpRedundantSupport;
 import org.rx.net.socks.UdpLeasePoolKey;
-import org.rx.net.rss.udp.DailyUdpWire;
+import org.rx.net.rss.udp.RssDatagramHandler;
+import org.rx.net.rss.RssUdpMtuBudget;
 import org.rx.net.udp.UdpPortHoppingConfig;
 import org.rx.net.udp.UdpPortHoppingMode;
 import java.net.InetSocketAddress;
@@ -350,30 +351,39 @@ public class SocksUdpUpstream extends Upstream {
                 if (!capabilities.has(SocksRpcCapabilities.SUPPORT_DAILY_UDP)) {
                     throw new IllegalStateException("Upstream does not support UDP extensions");
                 }
+                if (next.getUdpClient() != null) {
+                    if (socksConfig.isUdpHop() || !capabilities.has(SocksRpcCapabilities.FIXED_DATAGRAM_ENTRY)) {
+                        throw new IllegalStateException("Fixed UDP ingress unavailable on this RSS peer");
+                    }
+                    request.setFixedEntry(true);
+                }
                 request.setDailyFeatures(features);
-                if ((features & (DailyUdpWire.GAME | DailyUdpWire.WEAK)) != 0) {
+                if ((features & (RssDatagramHandler.GAME | RssDatagramHandler.WEAK)) != 0) {
                     if (!capabilities.has(SocksRpcCapabilities.PROFILE_UDP_V1)) {
                         throw new IllegalStateException("RSS UDP profile v1 is required");
                     }
                     request.setProfileVersion(1);
                 }
-                if ((features & DailyUdpWire.AES) != 0) {
-                    if (!DailyUdpWire.hasCipherKey()) {
+                if ((features & RssDatagramHandler.AES) != 0) {
+                    if (!RssDatagramHandler.hasCipherKey()) {
                         throw new IllegalStateException("RSS_UDP_AES_KEY is required");
                     }
                 }
-                if (request.getProfileVersion() == 1 || (features & DailyUdpWire.AES) != 0) {
+                if (request.getProfileVersion() == 1 || (features & RssDatagramHandler.AES) != 0) {
                     request.setClientSalt(java.util.UUID.randomUUID());
                 }
-                request.setUdpFragSupported(capabilities.has(SocksRpcCapabilities.SUPPORT_UDP_FRAG));
+                request.setUdpFragSupported(features != RssDatagramHandler.AES && capabilities.has(SocksRpcCapabilities.SUPPORT_UDP_FRAG));
                 request.setUdpMtu(socksConfig.resolveDailyUdpMtu());
                 // One logical relay with one (no-hop) or two (hopping) physical ingress ports.
                 initialCount = minActive = 1;
-                maxRelayCount = !socksConfig.isUdpHop() && capabilities.has(SocksRpcCapabilities.SUPPORT_NO_HOP_UDP) ? 1 : 2;
+                if (!socksConfig.isUdpHop() && !capabilities.has(SocksRpcCapabilities.SUPPORT_NO_HOP_UDP)) {
+                    throw new IllegalStateException("Upstream cannot negotiate single-port UDP");
+                }
+                maxRelayCount = socksConfig.isUdpHop() ? 2 : 1;
             }
             request.setClientId(key.toString());
-            request.setClientAddr(resolveRpcClientAddress(channel));
-            request.setFirstDestination((features & DailyUdpWire.AES) == 0 ? destination : null);
+            request.setClientAddr(config.getSocksCarrierProxy() == null ? resolveRpcClientAddress(channel) : null);
+            request.setFirstDestination((features & RssDatagramHandler.AES) == 0 ? destination : null);
             request.setInitialRelayCount(initialCount);
             request.setMinActiveRelays(minActive);
             request.setMaxRelayCount(maxRelayCount);
@@ -431,8 +441,17 @@ public class SocksUdpUpstream extends Upstream {
         if (primary == null) {
             throw new IllegalStateException("Daily UDP requires a primary relay port");
         }
-        if (wantHop && result.getRelays().size() >= 2 && (alias == null || primary.getPort() == alias.getPort())) {
+        if (wantHop && (alias == null || primary.getPort() == alias.getPort())) {
             throw new IllegalStateException("Daily UDP requires two distinct relay ports");
+        }
+        if (!wantHop && (result.getRelays().size() != 1 || alias != null)) {
+            throw new IllegalStateException("Upstream did not negotiate single-port UDP");
+        }
+        if (request.isFixedEntry()) {
+            if (!result.isFixedEntry() || alias != null || result.getRelays().size() != 1) {
+                throw new IllegalStateException("Peer did not establish a fixed UDP relay");
+            }
+            primary = next.getUdpClient();
         }
         // Only the proxy transport host is resolved here, on the existing off-loop RPC setup path.
         if (primary.isUnresolved()) {
@@ -444,13 +463,15 @@ public class SocksUdpUpstream extends Upstream {
             throw new IllegalStateException("Upstream did not negotiate the requested UDP profile");
         }
         int localMtu = ((SocksConfig) config).resolveDailyUdpMtu();
-        int peerMtu = Math.max(0, result.getUdpMtu());
-        int effectiveMtu = localMtu > 0 && peerMtu > 0 ? Math.min(localMtu, peerMtu) : Math.max(localMtu, peerMtu);
+        int effectiveMtu = RssUdpMtuBudget.negotiate(localMtu, result.getUdpMtu());
         boolean fragEnabled = request.isUdpFragSupported() && result.isUdpFragEnabled();
-        control.dailyWire = DailyUdpWire.client(result.getToken(), primary, alias, effectiveMtu,
-                request.getDailyFeatures(), request.getClientSalt(), result.getAuthSecret(), fragEnabled);
+        control.dailyWire = RssDatagramHandler.client(result.getToken(), primary, alias, effectiveMtu,
+                request.getDailyFeatures(), request.getClientSalt(), result.getAuthSecret(), fragEnabled, request.isFixedEntry());
         SessionGroup group = new SessionGroup(new SessionHolder[]{SessionHolder.rpc(control, result.getGroupId(), primary)},
                 UdpPortHoppingMode.ROUND_ROBIN, 1, control);
+        if (config.getSocksCarrierProxy() != null) {
+            group.carrier = new org.rx.net.socks.RssSocksCarrier(primary, alias, false, ((SocksConfig) config).getSocksCarrierOuterMtu());
+        }
         onRpcRelayGroupSuccess(poolKey());
         DiagnosticMetrics.record("socks.udp.relay.control.mode.count", 1D,
                 "mode=" + (primary.equals(alias) ? "nohop" : "hopping") + ",features=" + request.getDailyFeatures());
@@ -594,6 +615,13 @@ public class SocksUdpUpstream extends Upstream {
         Throwable error = null;
         try {
             group = acquireGroup(channel);
+            if (config.getSocksCarrierProxy() != null) {
+                if (group.carrier == null) {
+                    InetSocketAddress primary = group.primaryRelayAddress();
+                    group.carrier = new org.rx.net.socks.RssSocksCarrier(primary, primary, false, ((SocksConfig) config).getSocksCarrierOuterMtu());
+                }
+                group.carrier.open(channel, config.getSocksCarrierProxy()).get(config.getConnectTimeoutMillis(), TimeUnit.MILLISECONDS);
+            }
         } catch (Throwable e) {
             error = e;
         }
@@ -634,7 +662,8 @@ public class SocksUdpUpstream extends Upstream {
         }
 
         if (error != null) {
-            log.error("Failed to establish UDP upstream session with {}", next.getEndpoint(), error);
+            closeGroup(group, false);
+            log.error("Failed to establish UDP upstream session on route {}", next.getRouteId(), error);
             future.completeExceptionally(error);
             return;
         }
@@ -675,6 +704,7 @@ public class SocksUdpUpstream extends Upstream {
         if (group == null) {
             return;
         }
+        if (group.carrier != null) group.carrier.close();
         if (group.rpcControl != null) {
             Tasks.runAsync(() -> group.rpcControl.closeGroup());
             return;
@@ -694,11 +724,15 @@ public class SocksUdpUpstream extends Upstream {
         group.retain(next);
         InetSocketAddress[] relayAddresses = group.snapshotRelayAddresses();
         if (group.rpcControl != null && group.rpcControl.dailyWire != null) {
-            DailyUdpWire.install(channel.pipeline(), group.rpcControl.dailyWire);
+            RssDatagramHandler.install(channel.pipeline(), group.rpcControl.dailyWire);
         } else {
             for (InetSocketAddress relayAddr : relayAddresses) {
                 addRequestRedundantPeer(channel, relayAddr);
             }
+        }
+        if (group.carrier != null) {
+            if (channel.pipeline().context(Sockets.UDP_FINAL_EGRESS_GUARD) == null) channel.pipeline().addFirst(group.carrier);
+            else channel.pipeline().addAfter(Sockets.UDP_FINAL_EGRESS_GUARD, null, group.carrier);
         }
         recordGroupActiveCount(channel, group, "bind");
         final SessionGroup finalGroup = group;
@@ -933,6 +967,9 @@ public class SocksUdpUpstream extends Upstream {
                     && relay.pipeline().context(active.rpcControl.dailyWire) != null) {
                 relay.pipeline().remove(active.rpcControl.dailyWire);
             }
+            if (active.carrier != null && relay.pipeline().context(active.carrier) != null) {
+                relay.pipeline().remove(active.carrier);
+            }
             active.releaseActive();
             SocksUdpRelayHandler.onUpstreamSessionInvalidated(relay, relayAddresses, this);
             DiagnosticMetrics.record("socks.udp.session.invalidate.count", 1D,
@@ -1037,7 +1074,7 @@ public class SocksUdpUpstream extends Upstream {
         final SocksRpcContract facade;
         final String groupId;
         final String token;
-        DailyUdpWire dailyWire;
+        RssDatagramHandler dailyWire;
         final AtomicBoolean closed = new AtomicBoolean();
 
         RpcRelayGroupControl(SocksRpcContract facade, String groupId, String token) {
@@ -1111,6 +1148,7 @@ public class SocksUdpUpstream extends Upstream {
         final long scaleUpCooldownMillis;
         final long createdAtMillis;
         final RpcRelayGroupControl rpcControl;
+        org.rx.net.socks.RssSocksCarrier carrier;
         final AtomicBoolean activeRetained = new AtomicBoolean();
         final AtomicBoolean expanding = new AtomicBoolean();
         final AtomicBoolean replenishing = new AtomicBoolean();

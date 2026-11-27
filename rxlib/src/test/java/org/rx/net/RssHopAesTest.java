@@ -22,7 +22,7 @@ class RssHopAesTest {
     void mixedListenerSniffsPskThenAuthenticatedZlib() {
         EmbeddedChannel client = new EmbeddedChannel(new RssHopAes(true, KEY),
                 ZlibCodecFactory.newZlibDecoder(ZlibWrapper.ZLIB), ZlibCodecFactory.newZlibEncoder(ZlibWrapper.ZLIB, 3));
-        EmbeddedChannel server = new EmbeddedChannel(RssHopTls.serverSelector(new SocksConfig(), KEY));
+        EmbeddedChannel server = new EmbeddedChannel(new RssTcpCodecSelector(new SocksConfig(), KEY));
         try {
             byte[] body = new byte[8192];
             Arrays.fill(body, (byte) 5);

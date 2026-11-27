@@ -31,6 +31,7 @@ public final class Socks5UpstreamPoolManager extends Disposable {
         final TcpWarmPoolKey key;
         final SocksConfig config;
         final AuthenticEndpoint serverEndpoint;
+        final InetSocketAddress adaptiveUdpClient;
         final ConcurrentLinkedDeque<Channel> readyChannels = new ConcurrentLinkedDeque<>();
         final AtomicInteger createFailures = new AtomicInteger();
         volatile long nextRefillAt;
@@ -97,6 +98,8 @@ public final class Socks5UpstreamPoolManager extends Disposable {
             handler.setAdaptiveTcp(config.isAdaptiveTcp());
             handler.setAdaptiveProfile(config.getAdaptiveProfile());
             handler.setUdpHop(config.isUdpHop());
+            handler.setAdaptiveUdpMtu(config.resolveDailyUdpMtu());
+            handler.setAdaptiveUdpAddress(adaptiveUdpClient);
             try {
                 ChannelFuture connectFuture = Sockets.bootstrap(config, serverEndpoint.getConnectEndpoint(), ch -> {
                     Sockets.addTcpClientHandler(ch, config, serverEndpoint.getInetEndpoint());
@@ -218,7 +221,7 @@ public final class Socks5UpstreamPoolManager extends Disposable {
         }
         TcpWarmPoolKey key = upstream.warmPoolKey();
         TcpWarmPool pool = tcpPools.computeIfAbsent(key, k -> {
-            TcpWarmPool p = new TcpWarmPool(k, config, upstream.getServerEndpoint());
+            TcpWarmPool p = new TcpWarmPool(k, config, upstream.getServerEndpoint(), upstream.getAdaptiveUdpClient());
             p.start();
             return p;
         });

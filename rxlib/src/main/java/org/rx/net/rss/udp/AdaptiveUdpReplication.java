@@ -10,8 +10,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
-/** Directional Game UDP state. Each physical copy is authenticated separately by DailyUdpWire. */
-final class UdpGameRedundancy {
+/** Directional Game UDP state. Each physical copy is authenticated separately by RssDatagramHandler. */
+final class AdaptiveUdpReplication {
     static final int DATA_HEADER = 5, REPORT = 3;
     private static final int WINDOW = 32, SHORT_HISTORY = 256, LONG_HISTORY = 1024;
     // At most 8 MiB of extended report histories per JVM. Release on handler removal.
@@ -29,7 +29,7 @@ final class UdpGameRedundancy {
     private final AtomicLong processBudget;
     private long budgetTime, feedbackTime;
 
-    UdpGameRedundancy(AtomicLong processBudget) {
+    AdaptiveUdpReplication(AtomicLong processBudget) {
         this.processBudget = processBudget;
     }
     private int warmupCount, next, highest, reportAt, lastReport, clean, lossy, overprovisioned;
@@ -140,7 +140,7 @@ final class UdpGameRedundancy {
             sampled += WINDOW;
             lost += WINDOW - unique;
             reportAt = seq + WINDOW;
-            int headroom = DailyUdpWire.HEADER_BYTES;
+            int headroom = RssDatagramHandler.HEADER_BYTES;
             ByteBuf report = alloc.ioBuffer(headroom + 8, headroom + 8).setIndex(headroom, headroom);
             reply.accept(report.writeByte(REPORT).writeInt(seq - 8).writeByte(unique).writeByte(physical).writeByte(first));
         }

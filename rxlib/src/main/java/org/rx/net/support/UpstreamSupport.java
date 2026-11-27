@@ -14,10 +14,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Setter
 @ToString
 public class UpstreamSupport {
+    public static final String POOL_GENERATION = "rssRouteGeneration";
+    private String routeId;
+    private boolean standardSocks5;
+    private org.rx.net.RssEgressCodec rssEgressCodec = org.rx.net.RssEgressCodec.NONE;
     private AuthenticEndpoint endpoint;
     private SocksRpcContract facade;
     private AuthenticEndpoint tcpClient;
     private InetSocketAddress udpClient;
+    private InetSocketAddress adaptiveUdpClient;
     private boolean udp2raw;
     private int configuredWeight;
     private volatile boolean healthy = true;

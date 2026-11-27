@@ -14,15 +14,19 @@ class DoHMessageCodecTest {
     @Test
     void encodeDecodeQuery_supportsAAndAaaa() {
         ByteBuf buf = Unpooled.buffer();
+        DefaultDnsQuery query = null;
         try {
             DoHMessageCodec.encodeQuery(buf, 7, "example.com", DnsRecordType.A);
-            DefaultDnsQuery query = DoHMessageCodec.decodeQuery(buf);
+            query = DoHMessageCodec.decodeQuery(buf);
             DefaultDnsQuestion question = query.recordAt(DnsSection.QUESTION);
 
             assertEquals(7, query.id());
             assertEquals("example.com.", question.name());
             assertEquals(DnsRecordType.A, question.type());
         } finally {
+            if (query != null) {
+                query.release();
+            }
             buf.release();
         }
     }

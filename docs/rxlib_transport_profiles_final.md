@@ -1,5 +1,8 @@
 # rxlib RSS Transport Profiles · 最终策略修订（统一 zlib 3、按需恢复内存）
 
+> [!NOTE]
+> **历史归档文档**：本文保留作为早期 profile 策略与参数推导的历史记录。现行架构与配置请以 [rss-transport.md](./rss-transport.md) 和 [rss-upstream-profile-consolidation-plan.md](./rss-upstream-profile-consolidation-plan.md) 为准。
+
 > 基线：[`RockyLOMO/rxlib master 7a46f427`](https://github.com/RockyLOMO/rxlib/commit/7a46f427729c1c94833f0044826f2877a0e687d5)，2026-11-24 复查。
 > 服务端预算：1 vCPU、768 MiB 整机内存。全局原则：正常业务交付与安全是底线；省流量第一、CPU 效率第二，允许用有界内存换取省流或性能。daily/game/weak 的 TCP 默认均启用 zlib 3（保留原有安全与已加密端口旁路）；game 以业务延迟为例外首要目标，并与 weak 一样允许按需用内存换取恢复能力；weak 在单核 768 MiB 预算下尽量接近 kcptun 弱网体验，在满足稳定性目标的候选中优先选择真实双向流量最低的策略。
 > 本文是设计建议及源码静态 Review；参数为待验证初值，未实施、未运行基准测试。

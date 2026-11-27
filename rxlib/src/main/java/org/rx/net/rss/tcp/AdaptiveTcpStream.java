@@ -3,7 +3,7 @@ package org.rx.net.rss.tcp;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import org.rx.diagnostic.DiagnosticMetrics;
-import org.rx.net.rss.udp.UdpDailyFec;
+import org.rx.net.rss.udp.AdaptiveUdpFec;
 import org.rx.net.rss.profile.RssProfile;
 
 import java.util.ArrayDeque;
@@ -15,13 +15,13 @@ import java.util.function.LongSupplier;
 
 /** Ordered bytes over an authenticated UDP path with a reliable TCP repair lane. Event-loop confined.
  * Inputs are borrowed. Every output callback takes ownership of one reference. */
-public final class AdaptiveStream implements AutoCloseable {
+public final class AdaptiveTcpStream implements AutoCloseable {
     static final int DATA = 0, ACK = 1, GAP = 2, PING = 4, PONG = 5, SACK = 6;
     public static final int GAME = RssProfile.GAME_ID, WEAK = RssProfile.WEAK_ID;
     private static final int HEADER = 5;
     public static final int MAX_TCP_FRAME = 16384 + HEADER;
     public static final int MAX_UDP_FRAME = 1250;
-    private static final int CHUNK = MAX_UDP_FRAME - UdpDailyFec.MAX_OVERHEAD - HEADER;
+    private final int chunk;
     // Profile v1 allows 256 slots per direction. Reserve worst-case retained payload in 64-slot
     // increments only when needed, across all enhanced streams in this JVM.
     private static final int MAX_RECOVERY_BYTES = 32 << 20;
@@ -43,10 +43,10 @@ public final class AdaptiveStream implements AutoCloseable {
     private final Consumer<ByteBuf> tcpOut, udpOut, deliver;
     private final Consumer<ByteBuf> decoded = this::decoded;
     private final LongSupplier clock;
-    private final UdpDailyFec fec;
+    private final AdaptiveUdpFec fec;
     private final RssProfile policy;
     // Both candidates use existing DATA semantics. Reliable TCP remains the final repair lane.
-    private static final boolean UDP_TAIL = !"tcp".equalsIgnoreCase(System.getProperty("app.rss.weak.tailProbe", "udp"));
+    static final boolean UDP_TAIL = !"tcp".equalsIgnoreCase(System.getProperty("app.rss.weak.tailProbe", "udp"));
     private final boolean udpTail;
     private long tailDeadline, nextTailAllowed;
     private boolean tailArmed, tailSent, udpProbeOutstanding;
@@ -67,18 +67,25 @@ public final class AdaptiveStream implements AutoCloseable {
     private boolean sampling;
     private boolean peerProbed, ready, probing, closed, gapRequested;
 
-    public AdaptiveStream(ByteBufAllocator alloc, Consumer<ByteBuf> tcp, Consumer<ByteBuf> udp,
+    public AdaptiveTcpStream(ByteBufAllocator alloc, Consumer<ByteBuf> tcp, Consumer<ByteBuf> udp,
                           Consumer<ByteBuf> deliver, LongSupplier nanoClock) {
         this(alloc, tcp, udp, deliver, nanoClock, 0);
     }
 
-    public AdaptiveStream(ByteBufAllocator alloc, Consumer<ByteBuf> tcp, Consumer<ByteBuf> udp,
+    public AdaptiveTcpStream(ByteBufAllocator alloc, Consumer<ByteBuf> tcp, Consumer<ByteBuf> udp,
                           Consumer<ByteBuf> deliver, LongSupplier nanoClock, int profile) {
         this(alloc, tcp, udp, deliver, nanoClock, profile, UDP_TAIL);
     }
 
-    AdaptiveStream(ByteBufAllocator alloc, Consumer<ByteBuf> tcp, Consumer<ByteBuf> udp,
+    AdaptiveTcpStream(ByteBufAllocator alloc, Consumer<ByteBuf> tcp, Consumer<ByteBuf> udp,
                    Consumer<ByteBuf> deliver, LongSupplier nanoClock, int profile, boolean udpTail) {
+        this(alloc, tcp, udp, deliver, nanoClock, profile, udpTail, MAX_UDP_FRAME);
+    }
+
+    AdaptiveTcpStream(ByteBufAllocator alloc, Consumer<ByteBuf> tcp, Consumer<ByteBuf> udp,
+                   Consumer<ByteBuf> deliver, LongSupplier nanoClock, int profile, boolean udpTail, int udpFrameLimit) {
+        this.chunk = Math.min(udpFrameLimit, MAX_UDP_FRAME) - AdaptiveUdpFec.MAX_OVERHEAD - HEADER;
+        if (chunk <= 0) throw new IllegalArgumentException("Invalid adaptive UDP frame budget");
         this.udpTail = udpTail;
         this.policy = RssProfile.negotiated(profile);
         this.alloc = alloc;
@@ -87,7 +94,7 @@ public final class AdaptiveStream implements AutoCloseable {
         this.deliver = deliver;
         this.clock = nanoClock;
         pathSince = this.nextProbe = clock.getAsLong();
-        this.fec = new UdpDailyFec(alloc, nanoClock, policy == RssProfile.WEAK, 32);
+        this.fec = new AdaptiveUdpFec(alloc, nanoClock, policy == RssProfile.WEAK, 32);
     }
 
     public boolean usingUdp() {
@@ -113,7 +120,7 @@ public final class AdaptiveStream implements AutoCloseable {
             wroteData = true;
             lastWrite = now;
         } else if (ready && bytes.isReadable()) {
-            int chunks = (bytes.readableBytes() + CHUNK - 1) / CHUNK;
+            int chunks = 1 + (bytes.readableBytes() - 1) / chunk;
             int maxSlots = policy.maxWindow == WINDOW || srtt < REORDER_GRACE
                     ? Math.max(WINDOW, sendSlots) : policy.maxWindow;
             if (pending.size() + chunks > maxSlots) {
@@ -125,7 +132,7 @@ public final class AdaptiveStream implements AutoCloseable {
             if (ready && !sendCapacity()) {
                 drainPendingToTcp("reason=window");
             }
-            int n = Math.min(bytes.writerIndex() - offset, ready ? CHUNK : MAX_TCP_FRAME - HEADER);
+            int n = Math.min(bytes.writerIndex() - offset, ready ? chunk : MAX_TCP_FRAME - HEADER);
             ByteBuf frame = alloc.ioBuffer(HEADER + n, HEADER + n)
                     .writeByte(DATA).writeInt(nextTx++).writeBytes(bytes, offset, n);
             if (ready) {
@@ -327,7 +334,7 @@ public final class AdaptiveStream implements AutoCloseable {
 
     private void decoded(ByteBuf frame) {
         try {
-            if (frame.readableBytes() > HEADER && frame.readableBytes() <= HEADER + CHUNK
+            if (frame.readableBytes() > HEADER && frame.readableBytes() <= HEADER + chunk
                     && frame.getUnsignedByte(frame.readerIndex()) == DATA) {
                 data(frame, true);
             }
@@ -393,7 +400,7 @@ public final class AdaptiveStream implements AutoCloseable {
         // Only payloads that fit an original fast-path frame can be TCP repairs.
         // Keep acknowledging ambiguous small frames, including peers running the original weak method.
         if (fromUdp || nextRx - previous > 1 || policy == RssProfile.WEAK && peerProbed
-                && (wasBlocked || frame.readableBytes() <= HEADER + CHUNK)) {
+                && (wasBlocked || frame.readableBytes() <= HEADER + chunk)) {
             requestAck(nextRx - previous, fromUdp);
         } else if (policy == RssProfile.WEAK && peerProbed) {
             ordinaryTcpFrames++;
