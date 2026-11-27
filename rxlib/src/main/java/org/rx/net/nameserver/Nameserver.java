@@ -26,11 +26,16 @@ public interface Nameserver extends EventPublisher<Nameserver>, AutoCloseable {
         final Map<String, Serializable> attributes;
 
         AppChangedEventArgs(String appName, InetAddress address, boolean isUp, Map<String, Serializable> attributes) {
+            this(appName, address, isUp, null, attributes);
+        }
+
+        AppChangedEventArgs(String appName, InetAddress address, boolean isUp, String instanceId, Map<String, Serializable> attributes) {
             this.appName = appName;
             this.address = address;
             this.isUp = isUp;
             this.attributes = attributes;
-            this.instanceId = (String) attributes.get(RxConfig.ConfigNames.APP_ID);
+            this.instanceId = instanceId != null ? instanceId
+                    : (attributes == null ? null : (String) attributes.get(RxConfig.ConfigNames.APP_ID));
         }
     }
 
@@ -50,6 +55,7 @@ public interface Nameserver extends EventPublisher<Nameserver>, AutoCloseable {
     String EVENT_APP_ADDRESS_CHANGED = "APP_ADDRESS_CHANGED";
     String EVENT_APP_ATTRS_CHANGED = "APP_ATTRS_CHANGED";
     String APP_NAME_KEY = "app.name";
+    String INSTANCE_ID_KEY = "instance.id";
     String PUBLIC_IP_KEY = "publicIp";
 
     default int register(String appName, Set<InetSocketAddress> serverEndpoints) {
@@ -64,6 +70,13 @@ public interface Nameserver extends EventPublisher<Nameserver>, AutoCloseable {
      * @return dnsPort
      */
     int register(String appName, int weight, Set<InetSocketAddress> serverEndpoints);
+
+    /**
+     * App register self with an explicit instance identity (independent of NAT / source IP).
+     */
+    default int register(String appName, int weight, String instanceId, Set<InetSocketAddress> serverEndpoints) {
+        return register(appName, weight, serverEndpoints);
+    }
 
     void deregister();
 
@@ -82,6 +95,16 @@ public interface Nameserver extends EventPublisher<Nameserver>, AutoCloseable {
     List<InstanceInfo> discover(String appName, List<String> instanceAttrKeys);
 
     List<InstanceInfo> discoverAll(String appName, boolean exceptCurrent, List<String> instanceAttrKeys);
+
+    /** Internal authenticated peer-to-peer incremental replication RPC. */
+    default NameserverReplicaProtocol.ReplicaAck replicaApplyDelta(NameserverReplicaProtocol.ReplicaDeltaRequest request) {
+        throw new UnsupportedOperationException("Replication is not supported");
+    }
+
+    /** Internal authenticated peer-to-peer paged full snapshot replication RPC. */
+    default NameserverReplicaProtocol.ReplicaAck replicaApplySnapshotPage(NameserverReplicaProtocol.ReplicaSnapshotPage page) {
+        throw new UnsupportedOperationException("Replication is not supported");
+    }
 
     default void close() {
     }

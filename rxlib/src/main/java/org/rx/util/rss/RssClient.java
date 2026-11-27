@@ -509,6 +509,10 @@ public final class RssClient {
             if (!normalizeAndValidateUserRoute(user)) {
                 return false;
             }
+            if (user.bandwidth != null && !user.bandwidth.isValid()) {
+                log.warn("Invalid bandwidth config for user {}: {}", user.getUsername(), user.bandwidth);
+                return false;
+            }
         }
         if (shouldScheduleDdns(conf) && !CollectionUtils.isEmpty(conf.ddnsDomains)) {
             if (Strings.isEmpty(conf.ddnsApiKey)) {
@@ -886,9 +890,11 @@ public final class RssClient {
         NameserverConfig oldNs = oldConf.nameserver;
         NameserverConfig newNs = newConf.nameserver;
         return oldNs.getRegisterPort() != newNs.getRegisterPort()
-                || oldNs.getSyncPort() != newNs.getSyncPort()
+                || !Strings.hashEquals(oldNs.getNodeId(), newNs.getNodeId())
+                || !Strings.hashEquals(oldNs.getReplicaAuthToken(), newNs.getReplicaAuthToken())
+                || oldNs.getReplicaFullSyncPeriodMillis() != newNs.getReplicaFullSyncPeriodMillis()
                 || !Strings.hashEquals(toJsonString(oldNs.getReplicaEndpoints()), toJsonString(newNs.getReplicaEndpoints()))
-                || !Strings.hashEquals(toJsonString(oldNs.getUdpCodecAllowPrefixes()), toJsonString(newNs.getUdpCodecAllowPrefixes()));
+                || !Strings.hashEquals(toJsonString(oldNs.getAuthorizedReplicaPeers()), toJsonString(newNs.getAuthorizedReplicaPeers()));
     }
 
     static void configureInboundConfig(RssClientConf conf, SocksConfig config) {

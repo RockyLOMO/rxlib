@@ -304,43 +304,57 @@ class RrpIntegrationTest {
     @Test
     void clientRejectsInvalidIdLenAndReleases() {
         RrpConfig conf = new RrpConfig();
+        conf.setEnableReconnect(false);
         conf.setProxies(Collections.emptyList());
         RrpClient client = new RrpClient(conf);
         RrpClient.ClientHandler h = client.new ClientHandler();
 
         EmbeddedChannel ch = new EmbeddedChannel(h);
-        ByteBuf buf = Unpooled.buffer();
-        buf.writeByte(RrpConfig.ACTION_FORWARD);
-        buf.writeInt(2090);
-        buf.writeInt(RrpServer.MAX_CHANNEL_ID_LEN + 1);
-        // id bytes omitted
+        try {
+            releaseOutbound(ch);
+            ByteBuf buf = Unpooled.buffer();
+            buf.writeByte(RrpConfig.ACTION_FORWARD);
+            buf.writeInt(2090);
+            buf.writeInt(RrpServer.MAX_CHANNEL_ID_LEN + 1);
+            // id bytes omitted
 
-        ch.writeInbound(buf);
-        assertEquals(0, buf.refCnt(), "msg should be released by handler");
+            ch.writeInbound(buf);
+            assertEquals(0, buf.refCnt(), "msg should be released by handler");
 
-        ch.runPendingTasks();
-        assertFalse(ch.isOpen(), "server channel should be closed on invalid idLen");
+            ch.runPendingTasks();
+            assertFalse(ch.isOpen(), "server channel should be closed on invalid idLen");
+        } finally {
+            ch.finishAndReleaseAll();
+            client.close();
+        }
     }
 
     @Test
     void clientIgnoresUnknownRemotePortButStillReleases() {
         RrpConfig conf = new RrpConfig();
+        conf.setEnableReconnect(false);
         conf.setProxies(Collections.emptyList());
         RrpClient client = new RrpClient(conf);
         RrpClient.ClientHandler h = client.new ClientHandler();
 
         EmbeddedChannel ch = new EmbeddedChannel(h);
-        ByteBuf buf = Unpooled.buffer();
-        buf.writeByte(RrpConfig.ACTION_FORWARD);
-        buf.writeInt(2090);
-        byte[] id = "abc".getBytes(StandardCharsets.US_ASCII);
-        buf.writeInt(id.length);
-        buf.writeBytes(id);
-        buf.writeBytes(new byte[]{1, 2, 3}); // payload
+        try {
+            releaseOutbound(ch);
+            ByteBuf buf = Unpooled.buffer();
+            buf.writeByte(RrpConfig.ACTION_FORWARD);
+            buf.writeInt(2090);
+            byte[] id = "abc".getBytes(StandardCharsets.US_ASCII);
+            buf.writeInt(id.length);
+            buf.writeBytes(id);
+            buf.writeBytes(new byte[]{1, 2, 3}); // payload
 
-        ch.writeInbound(buf);
-        assertEquals(0, buf.refCnt(), "msg should be released by handler");
-        assertTrue(ch.isOpen(), "channel should remain open for unknown remotePort");
+            ch.writeInbound(buf);
+            assertEquals(0, buf.refCnt(), "msg should be released by handler");
+            assertTrue(ch.isOpen(), "channel should remain open for unknown remotePort");
+        } finally {
+            ch.finishAndReleaseAll();
+            client.close();
+        }
     }
 
     @Test
@@ -352,18 +366,23 @@ class RrpIntegrationTest {
         RrpClient.ClientHandler h = client.new ClientHandler();
 
         EmbeddedChannel ch = new EmbeddedChannel(h);
-        releaseOutbound(ch);
-        ByteBuf buf = Unpooled.buffer(1);
-        buf.writeByte(RrpConfig.ACTION_HEARTBEAT);
+        try {
+            releaseOutbound(ch);
+            ByteBuf buf = Unpooled.buffer(1);
+            buf.writeByte(RrpConfig.ACTION_HEARTBEAT);
 
-        ch.writeInbound(buf);
-        assertEquals(0, buf.refCnt(), "heartbeat should be released by handler");
-        assertTrue(ch.isOpen(), "heartbeat must not close client channel");
-        Object out = ch.readOutbound();
-        if (out != null) {
-            io.netty.util.ReferenceCountUtil.release(out);
+            ch.writeInbound(buf);
+            assertEquals(0, buf.refCnt(), "heartbeat should be released by handler");
+            assertTrue(ch.isOpen(), "heartbeat must not close client channel");
+            Object out = ch.readOutbound();
+            if (out != null) {
+                io.netty.util.ReferenceCountUtil.release(out);
+            }
+            assertNull(out, "client should not reply to heartbeat");
+        } finally {
+            ch.finishAndReleaseAll();
+            client.close();
         }
-        assertNull(out, "client should not reply to heartbeat");
     }
 
     @Test
@@ -409,15 +428,19 @@ class RrpIntegrationTest {
             client.proxyMap.put(proxy.p.getRemotePort(), proxy);
 
             EmbeddedChannel ch = new EmbeddedChannel(client.new ClientHandler());
-            releaseOutbound(ch);
-            ch.pipeline().fireChannelInactive();
+            try {
+                releaseOutbound(ch);
+                ch.pipeline().fireChannelInactive();
 
-            assertTrue(client.proxyMap.isEmpty(), "main channel inactive should drop stale proxy contexts");
-            assertTrue(proxy.localChannels.isEmpty(), "stale local channel map should be cleared");
+                assertTrue(client.proxyMap.isEmpty(), "main channel inactive should drop stale proxy contexts");
+                assertTrue(proxy.localChannels.isEmpty(), "stale local channel map should be cleared");
+            } finally {
+                ch.finishAndReleaseAll();
+            }
         } finally {
             client.close();
-            serverChannel.close();
-            localChannel.close();
+            serverChannel.finishAndReleaseAll();
+            localChannel.finishAndReleaseAll();
         }
     }
 
@@ -454,7 +477,7 @@ class RrpIntegrationTest {
             assertFalse(ch.isOpen(), "client main channel should close on exception");
         } finally {
             client.close();
-            ch.close();
+            ch.finishAndReleaseAll();
         }
     }
 

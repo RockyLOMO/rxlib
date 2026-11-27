@@ -1,136 +1,16 @@
-# UDP 打洞模块 (org.rx.net.udp)
+# NAT 打洞与公网中继（已退役旧版 & ADR 演进说明）
 
-专注于在 NAT（网络地址转换）环境下建立端到端（P2P）直接通信的 UDP Hole Punching 框架。
+> **状态更新（2026-11-28）**：旧版基于 `org.rx.net.transport.UdpClient` 的 `UdpHolePunchServer` / `UdpHolePunchClient` / `UdpHolePunchSession` / `UdpHolePunchRegistry` 及 `UdpClient` 本体因无生产调用且缺少公网安全鉴权模型，**已于 2026-11-28 彻底退役并从代码库删除**。
 
-## 核心类介绍
+## 当前已落地的相关基础能力
 
-- **`UdpHolePunchServer` / `UdpHolePunchRegistry`**:
-  打洞协调服务器端（公网节点）。在 P2P 网络中作为信令服务器（Signaling Server），负责记录注册上来的各个 NAT 后方客户端的公网 IP 和端口（Endpoint），并向 A 和 B 双方交换彼此的网络信息。
+- **共享地址发现（`org.rx.net.AddressDiscovery` & `EndpointCandidate`）**：统一收敛 `PublicIpObserver` 公网 IP 投票结果与本机非回环多接口地址候选（IPv4/IPv6、按接口去重与优先级排序、TTL 缓存，不阻塞 EventLoop）。
+- **轻量节点注册表（`org.rx.net.registry.NodeRegistry`）**：独立的 H2 冷存 + 有界热索引节点注册表（支持节点属性、服务能力、租约 TTL 过期清理、分页查询与内存/磁盘上限硬约束），与代理及旧版打洞完全解耦。
 
-- **`UdpHolePunchClient` / `UdpHolePunchSession`**:
-  打洞客户端。它向信令服务器注册自己，并在获取目标对等节点的公网信息后，根据 NAT 行为特征，向对方发送 UDP 探测包，以在各自的网关或路由器上打开相应的 UDP 转换表项，实现直连。
+## 双 NAT 打洞 + 公网 TCP 中继演进方向（ADR-only，尚未实现）
 
-## 适用场景
-- 视频串流、游戏联机以及无需中继服务器耗费流量的高性能 P2P 隧道或代理节点。
+若未来需要实现「双 NAT 后节点直连与失败兜底中继」，必须作为独立模块按 ADR 评审后实施（详见 [rxlib-review-20261128.md](../../rxlib-review-20261128.md) §6.2 与 [roadmap-plan.md](../../roadmap-plan.md)）：
 
----
-
-## 交互流程（简化）
-
-1. 双方客户端向协调端发送 `RendezvousRequest(roomId, peerId)`。
-2. 协调端在 `UdpHolePunchRegistry` 中登记 `peerId -> observedEndpoint`，并返回 `RendezvousResponse`。
-3. 双方拿到对端外网观察地址后，循环发送 `DirectProbe`。
-4. 任一方收到对端 `DirectProbe` 后立即回 `DirectProbeAck`。
-5. 任一方收到探测或 ACK 后，`directFuture` 完成，建立 `UdpHolePunchSession`。
-6. 后续业务走 `session.send/request/reply` 直接点对点传输。
-
-## 服务端使用方式
-
-### 启动
-
-```java
-UdpHolePunchServer server = new UdpHolePunchServer(41000);
-InetSocketAddress endpoint = server.getLocalEndpoint();
-```
-
-可选构造参数：
-- `bindPort`：监听端口。
-- `sessionTtlMillis`：房间内 peer 记录 TTL。
-- `cleanupIntervalMillis`：过期会话清理周期。
-- `maxPeersPerRoom`：单房间最大 peer 数（当前默认 2）。
-
-### 关闭
-
-```java
-server.close();
-```
-关闭时会移除接收监听、停止清理任务并关闭底层 `UdpClient`。
-
-## 客户端使用方式
-
-### 创建客户端
-
-```java
-UdpHolePunchClient client = new UdpHolePunchClient(0); // 0 表示随机本地端口
-```
-或注入已有 `UdpClient`：
-```java
-UdpClient udp = new UdpClient(42001);
-UdpHolePunchClient client = new UdpHolePunchClient(udp);
-```
-
-### 参数调优（按网络情况）
-
-- `setPeerWaitTimeoutMillis(...)`：等待对端出现的总超时。
-- `setDirectConnectTimeoutMillis(...)`：直连探测阶段超时。
-- `setDirectProbeCount(...)`：探测包总数上限。
-- `setDirectProbeIntervalMillis(...)`：探测轮询间隔。
-- `setRendezvousPollIntervalMillis(...)`：向协调端轮询间隔。
-- `setRendezvousRequestTimeoutMillis(...)`：单次协调请求超时。
-
-### 建连
-
-```java
-InetSocketAddress serverEndpoint = new InetSocketAddress("1.2.3.4", 41000);
-UdpHolePunchSession session = client.connect(serverEndpoint, "room-1", "peer-a");
-```
-说明：
-- `roomId`：同房间 peer 才会匹配。
-- `peerId`：房间内唯一标识，重复会覆盖同 peer 的最新地址。
-- 成功后返回 `UdpHolePunchSession`，保存了对端直连地址。
-
-## 会话收发与 RPC
-
-### 单向发送
-
-```java
-session.send("hello");
-```
-
-### 请求响应（RPC）
-
-```java
-String pong = session.request("ping", String.class, 3000);
-```
-
-### 被动收包并回复
-
-```java
-session.onReceive.add((s, e) -> {
-    Object packet = e.getValue().packet();
-    if ("ping".equals(packet)) {
-        s.reply(e.getValue(), "pong");
-    }
-});
-```
-
-## 异常与边界行为
-
-- 协调端房间满员时，`register` 抛出 `InvalidException`。
-- `connect` 超时会抛 `TimeoutException`（等待对端或直连探测超时）。
-- 客户端关闭后，后续调用会报 `UdpHolePunchClient closed`。
-- 会话关闭后继续发送/请求会报 `Hole punch session ... is closed`。
-- 若会话无直连地址会报 `has no direct endpoint`。
-
-## 已有测试覆盖
-
-- `UdpHolePunchRegistryTest`
-  - 首次注册等待状态
-  - 双方匹配后互见对端地址
-  - 过期清理与房间回收
-  - 房间满员拒绝第三个 peer
-- `UdpHolePunchIntegrationTest`
-  - 双端并发 `connect`
-  - 直连端口与回环地址校验
-  - 直连请求响应链路校验（`direct-ping` / `direct-pong`）
-
-## 快速验证命令
-
-在仓库根目录执行：
-```bash
-mvn "-Dtest=UdpHolePunchRegistryTest,UdpHolePunchIntegrationTest" test
-```
-若仅验证打洞端到端链路，也可只跑：
-```bash
-mvn "-Dtest=UdpHolePunchIntegrationTest" test
-```
+1. **协调层（Rendezvous）**：基于 Transport Core 已鉴权控制通道交换 `AddressDiscovery` 候选地址与公网反射端点，禁止明文无鉴权 UDP 任意房间注册。
+2. **直连探测层**：逐会话随机 token + HMAC 校验，验证双向可达性后升级至 `DatagramTransport` / Adaptive 双轨通道。
+3. **公网 TCP Relay 兜底层**：仅当直连失败时按会话凭证开启受限中继（可评估复用 `RrpClient`/`RrpServer` 或独立 Relay），强约束逐会话鉴权、目标端点绑定、ACL 白名单、端到端加密防重放、背压限流与房间/连接配额。

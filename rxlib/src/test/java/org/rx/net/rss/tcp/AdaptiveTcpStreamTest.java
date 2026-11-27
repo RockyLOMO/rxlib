@@ -759,4 +759,174 @@ class AdaptiveTcpStreamTest {
         assertThrows(IllegalArgumentException.class, () -> new org.rx.net.rss.RssUdpMtuBudget(100, 20, 1500));
         assertThrows(IllegalArgumentException.class, () -> new org.rx.net.rss.RssUdpMtuBudget(256, 256, 1500));
     }
+
+    @Test
+    void weakBulkDownloadFallsBackEarlyWithoutBlasting256UdpFrames() {
+        AtomicLong clock = new AtomicLong(1_000_000L);
+        ArrayDeque<ByteBuf> tcpA = new ArrayDeque<>(), udpA = new ArrayDeque<>();
+        ArrayDeque<ByteBuf> tcpB = new ArrayDeque<>(), udpB = new ArrayDeque<>();
+        java.io.ByteArrayOutputStream received = new java.io.ByteArrayOutputStream();
+        try (AdaptiveTcpStream a = new AdaptiveTcpStream(UnpooledByteBufAllocator.DEFAULT, tcpA::add, udpA::add,
+                ByteBuf::release, clock::get, AdaptiveTcpStream.WEAK);
+             AdaptiveTcpStream b = new AdaptiveTcpStream(UnpooledByteBufAllocator.DEFAULT, tcpB::add, udpB::add,
+                bytes -> {
+                    try {
+                        byte[] copy = new byte[bytes.readableBytes()];
+                        bytes.readBytes(copy);
+                        received.write(copy, 0, copy.length);
+                    } finally {
+                        bytes.release();
+                    }
+                }, clock::get, AdaptiveTcpStream.WEAK)) {
+            a.tick();
+            while (!udpA.isEmpty()) { ByteBuf p = udpA.remove(); try { b.udp(p); } finally { p.release(); } }
+            clock.addAndGet(TimeUnit.MILLISECONDS.toNanos(180));
+            while (!udpB.isEmpty()) { ByteBuf p = udpB.remove(); try { a.udp(p); } finally { p.release(); } }
+            assertTrue(a.usingUdp());
+
+            byte[] payload = new byte[512 * 1024];
+            new java.util.Random(2026).nextBytes(payload);
+            for (int off = 0; off < payload.length; off += 16 * 1024) {
+                ByteBuf chunk = Unpooled.wrappedBuffer(payload, off, Math.min(16 * 1024, payload.length - off));
+                a.write(chunk);
+            }
+            assertFalse(a.usingUdp(), "unacked 512 KiB bulk write must fall back to TCP early");
+            assertTrue(a.bulkFallbacks() >= 1);
+            assertTrue(a.udpDataPayloadBytes() <= 64L * 1240L,
+                    "weak must not blast 256 full-MTU frames (~315 KiB) before bulk fallback, sent=" + a.udpDataPayloadBytes());
+            assertTrue(a.directTcpBytes() >= 400 * 1024);
+
+            // Drop 15% of UDP frames and deliver all TCP frames -> exact 512 KiB recovery
+            java.util.Random rng = new java.util.Random(718);
+            while (!udpA.isEmpty()) {
+                ByteBuf p = udpA.remove();
+                try { if (rng.nextDouble() >= 0.15) b.udp(p); } finally { p.release(); }
+            }
+            a.drainToTcp();
+            while (!tcpA.isEmpty()) {
+                ByteBuf f = tcpA.remove();
+                try { b.tcp(f); } finally { f.release(); }
+            }
+            assertArrayEquals(payload, received.toByteArray());
+        } finally {
+            while (!tcpA.isEmpty()) tcpA.remove().release();
+            while (!udpA.isEmpty()) udpA.remove().release();
+            while (!tcpB.isEmpty()) tcpB.remove().release();
+            while (!udpB.isEmpty()) udpB.remove().release();
+        }
+    }
+
+    @Test
+    void weakIsolatedDoubleLostTailRepairsOnTcpWhileKeepingUdpReady() {
+        AtomicLong now = new AtomicLong(1_000_000L);
+        try (End a = new End(now, AdaptiveTcpStream.WEAK); End b = new End(now, AdaptiveTcpStream.WEAK)) {
+            a.stream.tick();
+            a.passUdp(b);
+            now.addAndGet(TimeUnit.MILLISECONDS.toNanos(180));
+            b.passUdp(a);
+            assertTrue(a.stream.usingUdp());
+
+            // Send interactive msg 0; drop BOTH original UDP and 1st UDP tail probe
+            a.send(0);
+            a.udp.remove().release();
+            now.addAndGet(TimeUnit.MILLISECONDS.toNanos(250));
+            a.stream.tick();
+            assertEquals(1, a.udp.size(), "UDP tail probe emitted");
+            a.udp.remove().release();
+
+            // Timeout triggers isolated TCP repair WITHOUT tearing down UDP readiness!
+            now.addAndGet(TimeUnit.MILLISECONDS.toNanos(350));
+            a.stream.tick();
+            assertEquals(1, a.tcp.size(), "isolated tail repaired via TCP");
+            assertTrue(a.stream.usingUdp(), "isolated double-loss must keep UDP ready for next interactive msg");
+            a.passTcp(b);
+            now.addAndGet(TimeUnit.MILLISECONDS.toNanos(15));
+            b.stream.tick();
+            b.passTcp(a);
+
+            // Next interactive msg 1 immediately rides fast UDP path!
+            a.send(1);
+            assertEquals(1, a.udp.size());
+            a.passUdp(b);
+            ordered(b, 2);
+            now.addAndGet(TimeUnit.MILLISECONDS.toNanos(15));
+            b.stream.tick();
+            b.passTcp(a);
+
+            // If UDP AND TCP repair both fail to get ACKed across consecutive timeouts, stream still falls back
+            a.send(2);
+            a.udp.remove().release();
+            now.addAndGet(TimeUnit.SECONDS.toNanos(1));
+            a.stream.tick(); // tail-timeout #1 (sets hasReliablePrefix)
+            assertEquals(1, a.tcp.size());
+            a.tcp.remove().release(); // drop repair ACK path
+            now.addAndGet(TimeUnit.SECONDS.toNanos(1));
+            a.stream.tick(); // hasReliablePrefix already set -> full fallback
+            assertFalse(a.stream.usingUdp());
+        }
+    }
+
+    @Test
+    void dynamicPmtuProbeShrinkAndPathCachePreserveInFlightOrder() {
+        AdaptiveTcpStream.clearPmtuCache();
+        AtomicLong now = new AtomicLong(1_000_000L);
+        ArrayDeque<ByteBuf> tcpA = new ArrayDeque<>(), udpA = new ArrayDeque<>();
+        ArrayDeque<ByteBuf> tcpB = new ArrayDeque<>(), udpB = new ArrayDeque<>();
+        java.io.ByteArrayOutputStream delivered = new java.io.ByteArrayOutputStream();
+        try (AdaptiveTcpStream a = new AdaptiveTcpStream(UnpooledByteBufAllocator.DEFAULT, tcpA::add, udpA::add, ByteBuf::release, now::get, AdaptiveTcpStream.WEAK);
+             AdaptiveTcpStream b = new AdaptiveTcpStream(UnpooledByteBufAllocator.DEFAULT, tcpB::add, udpB::add, bytes -> {
+                 try {
+                     while (bytes.isReadable()) delivered.write(bytes.readByte());
+                 } finally {
+                     bytes.release();
+                 }
+             }, now::get, AdaptiveTcpStream.WEAK)) {
+            a.setPathKey("203.0.113.10:c2s");
+            a.tick();
+            while (!udpA.isEmpty()) { ByteBuf f = udpA.remove(); try { b.udp(f); } finally { f.release(); } }
+            while (!udpB.isEmpty()) { ByteBuf f = udpB.remove(); try { a.udp(f); } finally { f.release(); } }
+            assertTrue(a.usingUdp());
+            int initialChunk = a.udpChunkSize();
+            assertTrue(initialChunk > 1000);
+
+            // 1. Authenticated size-verified PMTU probe succeeds for 960B
+            assertTrue(a.sendPmtuProbe(960));
+            assertEquals(1, udpA.size());
+            assertEquals(960, udpA.peek().readableBytes());
+            while (!udpA.isEmpty()) { ByteBuf f = udpA.remove(); try { b.udp(f); } finally { f.release(); } }
+            assertEquals(1, udpB.size(), "peer must echo authenticated PMTU_ACK");
+            while (!udpB.isEmpty()) { ByteBuf f = udpB.remove(); try { a.udp(f); } finally { f.release(); } }
+            assertTrue(a.udpChunkSize() < initialChunk);
+            assertEquals(960, a.udpFrameLimit());
+
+            // 2. Write in-flight frames at 960B limit, then shrink chunk dynamically to 512B limit mid-flight
+            byte[] payload = new byte[2048];
+            new java.util.Random(42).nextBytes(payload);
+            ByteBuf big = Unpooled.wrappedBuffer(payload);
+            try {
+                a.write(big);
+            } finally {
+                big.release();
+            }
+            assertTrue(a.updateUdpFrameLimit(512));
+            assertEquals(512, a.udpFrameLimit());
+            // Oversized in-flight frames must have been drained safely to TCP without corruption
+            assertFalse(tcpA.isEmpty());
+            while (!tcpA.isEmpty()) { ByteBuf f = tcpA.remove(); try { b.tcp(f); } finally { f.release(); } }
+            while (!udpA.isEmpty()) { ByteBuf f = udpA.remove(); try { b.udp(f); } finally { f.release(); } }
+            assertArrayEquals(payload, delivered.toByteArray());
+
+            // 3. Path PMTU cache applies to subsequent stream on the same pathKey
+            try (AdaptiveTcpStream a2 = new AdaptiveTcpStream(UnpooledByteBufAllocator.DEFAULT, ByteBuf::release, ByteBuf::release, ByteBuf::release, now::get, AdaptiveTcpStream.WEAK)) {
+                a2.setPathKey("203.0.113.10:c2s");
+                assertEquals(960, a2.udpFrameLimit());
+            }
+        } finally {
+            while (!tcpA.isEmpty()) tcpA.remove().release();
+            while (!udpA.isEmpty()) udpA.remove().release();
+            while (!tcpB.isEmpty()) tcpB.remove().release();
+            while (!udpB.isEmpty()) udpB.remove().release();
+            AdaptiveTcpStream.clearPmtuCache();
+        }
+    }
 }

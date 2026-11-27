@@ -338,7 +338,7 @@ public final class TransportClient extends AbstractTcpReconnectClient implements
         public void channelActive(ChannelHandlerContext ctx) throws Exception {
             int flags = requestAdaptive ? TransportProtocol.FLAG_ADAPTIVE_UDP : 0;
             ByteBuf hello = TransportProtocol.encodeHello(ctx.alloc(), flags, config.getUdpMtu(),
-                    proposedSessionId, clientNonce, localPeerId);
+                    proposedSessionId, clientNonce, localPeerId, config.getAuthSecret());
             ctx.writeAndFlush(hello);
             int timeoutMs = Math.max(500, Math.min(config.getHandshakeTimeoutMillis(),
                     Math.max(500, tcpConf.getConnectTimeoutMillis())));
@@ -360,6 +360,10 @@ public final class TransportClient extends AbstractTcpReconnectClient implements
                 return;
             }
             if (ack == null) {
+                return;
+            }
+            if (!TransportProtocol.verifyHelloAckAuth(config.getAuthSecret(), clientNonce, ack)) {
+                failHandshake(ctx, new SecurityException("Transport server handshake authentication failed"));
                 return;
             }
             completed = true;

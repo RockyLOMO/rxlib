@@ -1491,7 +1491,6 @@ public class RssTest extends AbstractTester {
         conf.udpLeasePoolEnabled = false;
         conf.nameserver = new NameserverConfig();
         conf.nameserver.setRegisterPort(nsRegPort);
-        conf.nameserver.setSyncPort(nsSyncPort);
         AuthenticEndpoint ep = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", upstreamPort), "u", "p");
         conf.socksServers = Collections.singletonList(new RssClientConf.SocksServer("primary", 1, ep));
 
@@ -1822,7 +1821,6 @@ public class RssTest extends AbstractTester {
             conf.defaultRoute.setRules(Collections.singletonList("default proxy"));
             conf.nameserver = new NameserverConfig();
             conf.nameserver.setRegisterPort(nsRegPort);
-            conf.nameserver.setSyncPort(nsSyncPort);
 
             AuthenticEndpoint mainEp = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", outPort), "youfanX", "test-pass");
             RssClientConf.SocksServer mainServer = new RssClientConf.SocksServer("main", 9, mainEp);
@@ -2953,7 +2951,6 @@ public class RssTest extends AbstractTester {
             conf.defaultRoute.setRules(Collections.singletonList("default proxy"));
             conf.nameserver = new NameserverConfig();
             conf.nameserver.setRegisterPort(nsReg);
-            conf.nameserver.setSyncPort(nsSync);
 
             RssClientConf.SocksServer storedRoute = new RssClientConf.SocksServer("stored-nested", 1,
                     AuthenticEndpoint.valueOf("127.0.0.1:" + outerPort));
@@ -3138,7 +3135,6 @@ public class RssTest extends AbstractTester {
             conf.defaultRoute.setRules(Collections.singletonList("default proxy"));
             conf.nameserver = new NameserverConfig();
             conf.nameserver.setRegisterPort(nsReg);
-            conf.nameserver.setSyncPort(nsSync);
 
             AuthenticEndpoint peerEp = new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", outPort), "matrixU", "matrixP");
             RssClientConf.SocksServer rssDirect = new RssClientConf.SocksServer("rss-direct", 1, peerEp);
@@ -3256,7 +3252,6 @@ public class RssTest extends AbstractTester {
         conf.defaultRoute.setRules(Collections.singletonList("default proxy"));
         conf.nameserver = new NameserverConfig();
         conf.nameserver.setRegisterPort(nsRegPort);
-        conf.nameserver.setSyncPort(nsSyncPort);
 
         RssClientConf.SocksServer std = new RssClientConf.SocksServer("std", 10,
                 AuthenticEndpoint.valueOf("127.0.0.1:" + stdPort));

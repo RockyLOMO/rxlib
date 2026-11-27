@@ -57,6 +57,16 @@ public class RpcClientConfig<T> {
     private RemotingCodecFactory codecFactory = FuryRemotingCodecFactory.createDefault();
     /** Method arguments omitted from call logs and trace snapshots (credentials). */
     private Set<String> sensitiveMethods = Collections.emptySet();
+    /**
+     * Methods explicitly safe to replay after an in-flight disconnect/reconnect.
+     * Non-idempotent methods (default) fail fast with ClientDisconnectedException once transmitted
+     * and are NEVER replayed after reconnect.
+     */
+    private Set<String> idempotentMethods = Collections.emptySet();
+
+    public boolean isIdempotentMethod(String methodName) {
+        return methodName != null && idempotentMethods != null && idempotentMethods.contains(methodName);
+    }
 
     public RpcClientConfig(TcpClientConfig tcpConfig) {
         this(new TransportConfig());

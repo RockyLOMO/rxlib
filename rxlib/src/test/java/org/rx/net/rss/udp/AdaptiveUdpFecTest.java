@@ -310,6 +310,44 @@ class AdaptiveUdpFecTest {
     }
 
     @Test
+    void weakEqualSizeShardsEmitFirstGroupParityAtK16AndK8() {
+        AtomicLong time = new AtomicLong(1_000_000L);
+        ArrayDeque<ByteBuf> wire = new ArrayDeque<>();
+        try (AdaptiveUdpFec fec = new AdaptiveUdpFec(UnpooledByteBufAllocator.DEFAULT, time::get, true, 32)) {
+            ByteBuf full = Unpooled.buffer(1237).writeZero(1237);
+            try {
+                for (int i = 0; i < 40; i++) {
+                    fec.write(full, wire::add);
+                    while (!wire.isEmpty()) wire.remove().release();
+                }
+                // Report 1 isolated loss -> weak enters target = 16
+                ByteBuf r1 = Unpooled.buffer(8).writeByte(AdaptiveUdpFec.REPORT).writeInt(39)
+                        .writeByte(1).writeByte(1).writeByte(0);
+                try { fec.read(r1, ByteBuf::release, ByteBuf::release); } finally { r1.release(); }
+                assertEquals(16, fec.currentTarget());
+
+                // Exact 16 equal-sized shards must immediately emit 1 parity frame on the very first group!
+                for (int i = 0; i < 16; i++) {
+                    fec.write(full, wire::add);
+                }
+                int parityCount = 0;
+                while (!wire.isEmpty()) {
+                    ByteBuf f = wire.remove();
+                    if (f.getUnsignedByte(f.readerIndex()) == AdaptiveUdpFec.PARITY) parityCount++;
+                    f.release();
+                }
+                assertEquals(1, parityCount, "first full K=16 group of equal-size shards must emit parity");
+                assertTrue(fec.parityBytes > 0);
+                assertEquals(0, fec.unprotectedTxGroups());
+            } finally {
+                full.release();
+            }
+        } finally {
+            while (!wire.isEmpty()) wire.remove().release();
+        }
+    }
+
+    @Test
     void sparseAndFastLossyFlowsRecoverWithoutExceedingParityBudget() {
         for (int pps : new int[]{20, 50, 100, 200, 300, 1000}) {
             try (Link link = new Link()) {

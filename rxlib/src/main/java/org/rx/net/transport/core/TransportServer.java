@@ -237,6 +237,13 @@ public final class TransportServer extends Disposable implements EventPublisher<
             if (hello == null) {
                 return;
             }
+            if (!TransportProtocol.verifyHelloAuth(config.getAuthSecret(), hello)) {
+                log.warn("TransportServer rejected unauthenticated handshake from {}", ctx.channel().remoteAddress());
+                completed = true;
+                cancelTimeout();
+                ctx.close();
+                return;
+            }
             completed = true;
             cancelTimeout();
 
@@ -254,7 +261,7 @@ public final class TransportServer extends Disposable implements EventPublisher<
             byte[] serverNonce = TransportProtocol.randomBytes(TransportProtocol.SERVER_NONCE_BYTES);
 
             ByteBuf ack = TransportProtocol.encodeHelloAck(ctx.alloc(), ackFlags, negotiatedMtu,
-                    serverUdpPort, sessionId, serverNonce, localPeerId);
+                    serverUdpPort, sessionId, hello.clientNonce, serverNonce, localPeerId, config.getAuthSecret());
             ctx.writeAndFlush(ack);
 
             Channel ch = ctx.channel();

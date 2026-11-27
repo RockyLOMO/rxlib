@@ -19,6 +19,13 @@ import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public final class UserRuleMatcher {
+    public enum GeoNotReadyPolicy {
+        /** Security-first default: unloaded Geo data fails closed on BLOCK rules instead of silently allowing traffic. */
+        FAIL_CLOSED_BLOCK,
+        /** Skip Geo rules when data has not finished loading yet. */
+        SKIP_UNREADY
+    }
+
     static final long GEO_MATCHER_RETRY_NANOS = TimeUnit.SECONDS.toNanos(1);
     private static final List<String> DEFAULT_ROUTE_RULES = Collections.unmodifiableList(Arrays.asList(
             "geosite:cn direct",
@@ -42,21 +49,31 @@ public final class UserRuleMatcher {
     }
 
     public static UserRuleMatcher compile(UserRule rule, V2RayGeoManager manager, String username) {
+        return compile(rule, manager, username, GeoNotReadyPolicy.FAIL_CLOSED_BLOCK);
+    }
+
+    public static UserRuleMatcher compile(UserRule rule, V2RayGeoManager manager, String username,
+                                          GeoNotReadyPolicy notReadyPolicy) {
         if (rule == null || Boolean.FALSE.equals(rule.getEnabled()) || CollectionUtils.isEmpty(rule.getRules())) {
             return null;
         }
-        return compileRules(rule.getRules(), manager, username);
+        return compileRules(rule.getRules(), manager, username, notReadyPolicy);
     }
 
     public static UserRuleMatcher compileDefaultRoute(UserRule rule, V2RayGeoManager manager) {
+        return compileDefaultRoute(rule, manager, GeoNotReadyPolicy.FAIL_CLOSED_BLOCK);
+    }
+
+    public static UserRuleMatcher compileDefaultRoute(UserRule rule, V2RayGeoManager manager,
+                                                      GeoNotReadyPolicy notReadyPolicy) {
         if (rule == null) {
-            return compileRules(DEFAULT_ROUTE_RULES, manager, "defaultRoute");
+            return compileRules(DEFAULT_ROUTE_RULES, manager, "defaultRoute", notReadyPolicy);
         }
         if (Boolean.FALSE.equals(rule.getEnabled())) {
             return null;
         }
         return compileRules(CollectionUtils.isEmpty(rule.getRules()) ? DEFAULT_ROUTE_RULES : rule.getRules(),
-                manager, "defaultRoute");
+                manager, "defaultRoute", notReadyPolicy);
     }
 
     static UserRule defaultRoute() {
@@ -66,12 +83,14 @@ public final class UserRuleMatcher {
         return rule;
     }
 
-    private static UserRuleMatcher compileRules(List<String> lines, V2RayGeoManager manager, String name) {
+    private static UserRuleMatcher compileRules(List<String> lines, V2RayGeoManager manager, String name,
+                                                GeoNotReadyPolicy notReadyPolicy) {
         V2RayGeoManager geoManager = manager == null ? V2RayGeoManager.INSTANCE : manager;
+        GeoNotReadyPolicy policy = notReadyPolicy == null ? GeoNotReadyPolicy.FAIL_CLOSED_BLOCK : notReadyPolicy;
         ArrayList<CompiledRule> compiled = new ArrayList<CompiledRule>(lines.size() + 1);
         boolean hasDefaultRule = false;
         for (String line : lines) {
-            CompiledRule ordered = compileOrderedRule(line, geoManager);
+            CompiledRule ordered = compileOrderedRule(line, geoManager, policy);
             if (ordered != null) {
                 compiled.add(ordered);
                 hasDefaultRule |= ordered instanceof DefaultRule;
@@ -162,7 +181,7 @@ public final class UserRuleMatcher {
         return hasColon || (hasDot && !hasHexLetter);
     }
 
-    private static CompiledRule compileOrderedRule(String line, V2RayGeoManager manager) {
+    private static CompiledRule compileOrderedRule(String line, V2RayGeoManager manager, GeoNotReadyPolicy notReadyPolicy) {
         String value = Strings.trimToNull(line);
         if (value == null) {
             return null;
@@ -177,10 +196,11 @@ public final class UserRuleMatcher {
         if (target == null || action == null) {
             throw new InvalidException("rss route rule invalid '{}'", line);
         }
-        return compileTargetRule(action, target, manager);
+        return compileTargetRule(action, target, manager, notReadyPolicy);
     }
 
-    private static CompiledRule compileTargetRule(RouteAction action, String target, V2RayGeoManager manager) {
+    private static CompiledRule compileTargetRule(RouteAction action, String target, V2RayGeoManager manager,
+                                                  GeoNotReadyPolicy notReadyPolicy) {
         String value = Strings.trimToNull(target);
         if (value == null) {
             throw new InvalidException("rss route rule target is empty");
@@ -190,13 +210,13 @@ public final class UserRuleMatcher {
             return endpointRule;
         }
         if (startsWithIgnoreCase(value, "geoip:")) {
-            return new GeoIpCodeRule(action, manager, value);
+            return new GeoIpCodeRule(action, manager, value, notReadyPolicy);
         }
         if (Strings.equalsIgnoreCase(value, "default")) {
             return new DefaultRule(action);
         }
         if (startsWithIgnoreCase(value, "geosite:")) {
-            return new GeoSiteCodeRule(action, manager, value);
+            return new GeoSiteCodeRule(action, manager, value, notReadyPolicy);
         }
         if (startsWithIgnoreCase(value, "ip:")) {
             return compileIpRule(action, value.substring(3), true);
@@ -447,20 +467,49 @@ public final class UserRuleMatcher {
         }
     }
 
+    private static final class BoundSite {
+        final long generation;
+        final GeoSiteMatcher matcher;
+
+        BoundSite(long generation, GeoSiteMatcher matcher) {
+            this.generation = generation;
+            this.matcher = matcher;
+        }
+    }
+
+    private static final class BoundIp {
+        final long generation;
+        final V2RayGeoIpMatcher.CodeMatcher matcher;
+
+        BoundIp(long generation, V2RayGeoIpMatcher.CodeMatcher matcher) {
+            this.generation = generation;
+            this.matcher = matcher;
+        }
+    }
+
     private static final class GeoSiteCodeRule extends CompiledRule {
         final V2RayGeoManager manager;
         final String code;
-        volatile GeoSiteMatcher matcher;
+        final GeoNotReadyPolicy notReadyPolicy;
+        volatile BoundSite bound;
         volatile long nextTryNanos;
 
-        GeoSiteCodeRule(RouteAction action, V2RayGeoManager manager, String code) {
+        GeoSiteCodeRule(RouteAction action, V2RayGeoManager manager, String code, GeoNotReadyPolicy notReadyPolicy) {
             super(action);
             this.manager = manager;
             this.code = code;
-            this.matcher = manager.tryCompileGeoSiteMatcher(code);
-            if (matcher == null) {
+            this.notReadyPolicy = notReadyPolicy;
+            manager.registerActiveSiteSelector(code);
+            V2RayGeoManager.GeoSnapshot snap = manager.snapshot();
+            if (snap.siteIndex != null) {
+                GeoSiteMatcher compiled = snap.siteIndex.matcher(code, null);
+                this.bound = new BoundSite(snap.siteGeneration, compiled);
+                if (compiled == null) {
+                    log.warn("rss route rule geosite selector '{}' not found in loaded geosite snapshot", code);
+                }
+            } else {
                 nextTryNanos = System.nanoTime() + GEO_MATCHER_RETRY_NANOS;
-                requestReload(manager);
+                requestInitialLoad(manager);
             }
         }
 
@@ -470,36 +519,48 @@ public final class UserRuleMatcher {
             if (!domainTarget) {
                 return false;
             }
-            GeoSiteMatcher m = matcher;
-            if (m == null) {
+            V2RayGeoManager.GeoSnapshot snap = manager.snapshot();
+            if (snap.siteIndex == null) {
                 long now = System.nanoTime();
-                if (now < nextTryNanos) {
-                    return false;
+                if (now >= nextTryNanos) {
+                    nextTryNanos = now + GEO_MATCHER_RETRY_NANOS;
+                    requestInitialLoad(manager);
                 }
-                nextTryNanos = now + GEO_MATCHER_RETRY_NANOS;
-                matcher = m = manager.tryCompileGeoSiteMatcher(code);
-                if (m == null) {
-                    requestReload(manager);
-                }
+                return action == RouteAction.BLOCK && notReadyPolicy == GeoNotReadyPolicy.FAIL_CLOSED_BLOCK;
             }
-            return m != null && m.matches(host);
+            BoundSite current = bound;
+            if (current == null || current.generation != snap.siteGeneration) {
+                GeoSiteMatcher next = snap.siteIndex.matcher(code, null);
+                current = new BoundSite(snap.siteGeneration, next);
+                bound = current;
+            }
+            return current.matcher != null && current.matcher.matches(host);
         }
     }
 
     private static final class GeoIpCodeRule extends CompiledRule {
         final V2RayGeoManager manager;
         final String code;
-        volatile V2RayGeoIpMatcher.CodeMatcher matcher;
+        final GeoNotReadyPolicy notReadyPolicy;
+        volatile BoundIp bound;
         volatile long nextTryNanos;
 
-        GeoIpCodeRule(RouteAction action, V2RayGeoManager manager, String code) {
+        GeoIpCodeRule(RouteAction action, V2RayGeoManager manager, String code, GeoNotReadyPolicy notReadyPolicy) {
             super(action);
             this.manager = manager;
             this.code = code;
-            this.matcher = manager.tryCompileGeoIpMatcher(code);
-            if (matcher == null) {
+            this.notReadyPolicy = notReadyPolicy;
+            manager.registerActiveIpSelector(code);
+            V2RayGeoManager.GeoSnapshot snap = manager.snapshot();
+            if (snap.ipMatcher != null) {
+                V2RayGeoIpMatcher.CodeMatcher compiled = snap.ipMatcher.matcher(code);
+                this.bound = new BoundIp(snap.ipGeneration, compiled);
+                if (compiled == null) {
+                    log.warn("rss route rule geoip selector '{}' not found in loaded geoip snapshot", code);
+                }
+            } else {
                 nextTryNanos = System.nanoTime() + GEO_MATCHER_RETRY_NANOS;
-                requestReload(manager);
+                requestInitialLoad(manager);
             }
         }
 
@@ -509,19 +570,22 @@ public final class UserRuleMatcher {
             if (dstIpBytes == null) {
                 return false;
             }
-            V2RayGeoIpMatcher.CodeMatcher m = matcher;
-            if (m == null) {
+            V2RayGeoManager.GeoSnapshot snap = manager.snapshot();
+            if (snap.ipMatcher == null) {
                 long now = System.nanoTime();
-                if (now < nextTryNanos) {
-                    return false;
+                if (now >= nextTryNanos) {
+                    nextTryNanos = now + GEO_MATCHER_RETRY_NANOS;
+                    requestInitialLoad(manager);
                 }
-                nextTryNanos = now + GEO_MATCHER_RETRY_NANOS;
-                matcher = m = manager.tryCompileGeoIpMatcher(code);
-                if (m == null) {
-                    requestReload(manager);
-                }
+                return action == RouteAction.BLOCK && notReadyPolicy == GeoNotReadyPolicy.FAIL_CLOSED_BLOCK;
             }
-            return m != null && m.matches(dstIpBytes);
+            BoundIp current = bound;
+            if (current == null || current.generation != snap.ipGeneration) {
+                V2RayGeoIpMatcher.CodeMatcher next = snap.ipMatcher.matcher(code);
+                current = new BoundIp(snap.ipGeneration, next);
+                bound = current;
+            }
+            return current.matcher != null && current.matcher.matches(dstIpBytes);
         }
     }
 
@@ -645,11 +709,11 @@ public final class UserRuleMatcher {
         }
     }
 
-    private static void requestReload(V2RayGeoManager manager) {
+    private static void requestInitialLoad(V2RayGeoManager manager) {
         try {
-            manager.reloadAsync();
+            manager.ensureLoadedAsync();
         } catch (RuntimeException e) {
-            log.warn("rss route rule geo reload request failed", e);
+            log.warn("rss route rule geo initial load request failed", e);
         }
     }
 }

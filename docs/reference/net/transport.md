@@ -9,9 +9,10 @@
 
 - **`TransportServer` / `TransportClient` / `TransportSession`**:
   原始 `ByteBuf` 可靠有序字节流服务端、客户端与会话抽象：
-  - 基于 `RXTC` v1 二进制握手完成会话 ID、能力位与 MTU 协商，通过 `FRAME_READY` 屏障避免 TCP 粘包与加解密/`AdaptiveTcpHandler` 切入竞争。
+  - 基于 `RXTC` v1 二进制握手完成会话 ID、能力位（`FLAG_ADAPTIVE_UDP`、`FLAG_AUTH`）与 MTU 协商，通过 `FRAME_READY` 屏障避免 TCP 粘包与加解密/`AdaptiveTcpHandler` 切入竞争。
+  - 当配置非空 `authSecret` 时，握手期强制启用 `FLAG_AUTH` 双向 16 字节 HMAC-SHA256 认证（`Hello` 携带 `clientNonce + clientMac`，`HelloAck` 携带 `serverNonce + serverMac`），在创建会话或进入任何 Fury 反序列化前验证，不通过立即断开。
   - `enableAdaptiveUdp = false` 时纯 TCP，不绑定、不创建任何 UDP Socket（`TransportServer.udpPort() == 0`）。
-  - `enableAdaptiveUdp = true` 时在单端口上复用 RSS `daily`（`AdaptiveTcpHandler` + `AdaptiveUdpPort`，不启用端口跳跃与包复制），提供单一层的 FEC + TCP 可靠修复。
+  - `enableAdaptiveUdp = true` 时在单端口上复用 RSS `daily`（`AdaptiveTcpHandler` + `AdaptiveUdpPort`，不启用端口跳跃与包复制），提供单一层的 FEC + TCP 可靠修复；支持动态 PMTU 探测与 `CHUNK` 收缩。
   - 会话提供 `send(ByteBuf)` / `sendAsync(ByteBuf)`、`attr(...)`、`isAdaptiveUdpActive()` 与清晰的所有权/释放语义。
 
 - **`DatagramTransport` / `DatagramTransportConfig`**:
@@ -28,10 +29,10 @@
 - **`SftpClient`**:
   基于 SFTP 协议的文件传输客户端。
 
-- **`UdpClient`（遗留隔离）**:
-  旧对象/消息 UDP 传输组件。RPC（原 `Hybrid*`）与 `NameserverImpl` 已全部迁移至 `org.rx.net.transport.core`，旧 `Hybrid*` 与 `KcpClient` 已删除；当前 `UdpClient` 仅剩 `org.rx.net.udp.UdpHolePunch*` 遗留调用（打洞模块待未来独立评估退役或迁移后即可彻底删除 `UdpClient`）。
+- **已退役删除**：
+  旧版对象/消息 `org.rx.net.transport.UdpClient`、`UdpClientConfig`、`UdpServerHandler`、`FuryUdpClientCodec`、`Hybrid*` 及 `org.rx.net.udp.UdpHolePunch*` 已彻底删除（2026-11-28）。RPC 与 `NameserverImpl` 全部运行在 `org.rx.net.transport.core` 之上；原生 UDP 数据报请使用 `DatagramTransport`。
 
 ## 适用场景
 - 原始二进制协议/自定义字节流服务（直接使用 `TransportServer` / `TransportClient`，无需构造 RPC facade）。
-- 独立 UDP 数据报或集群内部轻量同步（直接使用 `DatagramTransport`）。
-- 作为 RPC 与 RSS 共用的可靠传输内核。
+- 独立 UDP 数据报通信（直接使用 `DatagramTransport`）。
+- 作为 RPC、Nameserver 副本同步与 RSS 共用的可靠传输内核。

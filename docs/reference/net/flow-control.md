@@ -21,13 +21,14 @@
 
 控流的目标是控制吞吐速率或控制写入排队规模。
 
-当前实现分三类：
+当前实现分四类：
 
-- 全局限速：`NetworkFlowControl` 安装 Netty `GlobalChannelTrafficShapingHandler`，按 KB/s 配置、按 bytes/s 执行，并限制单次等待上限。
-- TCP 背压：`TcpBackpressureHandler` 在 outbound 不可写时暂停 inbound `autoRead`。
+- 用户/作用域共享限速（推荐用于多租户与 Shadowsocks 用户）：`BandwidthLimitConfig` + `BandwidthLimiter` + `TcpBandwidthPacer` + `BandwidthChannelHandler`，基于单调时钟令牌桶实现双向共享配额（TCP 切片平滑 pacing + 协调多原因读暂停 `Sockets.READ_PAUSE_BANDWIDTH`，UDP 超额即时早丢释放）。
+- 全局限速（既有能力，默认关闭）：`NetworkFlowControl` 安装 Netty `GlobalChannelTrafficShapingHandler`，按 KB/s 配置、按 bytes/s 执行，并限制单次等待上限。
+- TCP 背压：`TcpBackpressureHandler` 在 outbound 不可写时通过 `Sockets.pauseRead(..., READ_PAUSE_BACKPRESSURE)` 暂停 inbound `autoRead`。
 - UDP 过载保护：`UdpBackpressurePolicy` 通过 pending bytes / pending packets / `isWritable()` 决定是否接受本次发送。
 
-注意：`app.net.globalTraffic.enabled` 只控制全局 traffic shaping handler，不是 TCP/UDP 背压总开关。TCP 和 UDP 背压分别由 `tcpBackpressureEnabled`、`udpBackpressureEnabled` 控制。
+注意：`app.net.globalTraffic.enabled` 只控制全局 traffic shaping handler，不是 TCP/UDP 背压总开关，也不影响独立安装的 `BandwidthLimiter`。TCP 和 UDP 背压分别由 `tcpBackpressureEnabled`、`udpBackpressureEnabled` 控制。
 
 运行期关闭 `app.net.globalTraffic.enabled` 后，新 channel 不再安装全局 shaping；如果已有 `GlobalChannelTrafficShapingHandler`，刷新配置时 read/write limit 会降为 `0`，避免旧 handler 继续排队。
 
@@ -171,6 +172,29 @@ public final class UdpPipelineExample {
 
 不要用全局限速替代背压。限速会平滑吞吐，但如果上游持续写入且没有 pending 上限，仍可能造成排队和堆外内存压力。
 
+## 用户/作用域共享双向带宽限速（SS 用户与通用组件）
+
+为避免耦合 `GlobalChannelTrafficShapingHandler`，库提供独立、零反射的通用限速组件（位于 `org.rx.net`）：
+
+- **`BandwidthLimitConfig`**：配置 `uploadKiBps`、`downloadKiBps`（单位 `KiB/s`，`1 KiB = 1024 B`；`0`/未配置表示不限速且走零开销快路径，负值拒绝校验）。
+- **`BandwidthLimiter`**：按用户或任意作用域共享的双向单调时钟（`System.nanoTime()`）令牌桶，支持无额外突发 credit 放水的动态 `configure(...)`、单连接/单用户/进程三级待发队列上限与节流指标上报（`net.bandwidth.*`）。
+- **`TcpBandwidthPacer`**：严格 EventLoop 亲和的零拷贝 TCP 分片 pacing 队列，通过 `Sockets.READ_PAUSE_BANDWIDTH` 与背压/建连暂停掩码协作，并在 `pauseChannel` 收到 EOF 关闭后继续按速率排空发往 `writeChannel` 的剩余字节再触发半关闭/关闭。
+- **`BandwidthChannelHandler`**：可选挂载到任意 Netty Channel 的通用 `ChannelDuplexHandler`（通过 `NetworkFlowControl.installBandwidthLimiter(ch, limiter)` 安装，不会由 `NetworkFlowControl.install(ch)` 全局自动安装）。
+
+在 RSS `conf.yml` 中可直接按 `ShadowUser` 配置（支持配置热更新实时生效，**不重启 `ShadowsocksServer` 监听端口**）：
+
+```yaml
+shadowUsers:
+  - username: user_a
+    ssPort: 16900
+    ssPwd: "..."
+    bandwidth:
+      uploadKiBps: 512
+      downloadKiBps: 2048
+```
+
+该用户的多条并发 TCP 连接与所有 UDP 会话共享同一 `BandwidthLimiter`（按入站解密后明文有效载荷字节计费）。
+
 ## 监控与验证
 
 上线前至少关注：
@@ -178,6 +202,7 @@ public final class UdpPipelineExample {
 - 堆外内存：`jvm.direct.used.percent`、`jvm.direct.capacity.percent`、`jvm.direct.max.bytes`
 - 连接数：`net.connection.active.count`
 - 吞吐：`net.io.inbound.bytes.per.second`、`net.io.outbound.bytes.per.second`
+- 用户带宽限速：`net.bandwidth.admitted.bytes`、`net.bandwidth.drop.count`、`net.bandwidth.delay.count`、`net.bandwidth.pending.tcp.bytes`
 - 写积压：`net.write.pending.bytes`
 - 不可写通道：`net.write.unwritable.count`
 - EventLoop 队列：`net.eventLoop.pending.count`、`net.eventLoop.pending.max.count`
@@ -189,7 +214,7 @@ public final class UdpPipelineExample {
 推荐回归测试：
 
 ```bash
-mvn -pl rxlib -DskipTests=false -Dtest=NetworkFlowControlTest,TcpBackpressureHandlerTest,SocketsTest test
+mvn -pl rxlib -DskipTests=false "-Dtest=BandwidthLimiterTest,SsUserBandwidthIntegrationTest,NetworkFlowControlTest,TcpBackpressureHandlerTest,SocketsTest" "-DargLine=-Dio.netty.leakDetection.level=PARANOID" test
 ```
 
 网络链路改动后再补充集成测试：

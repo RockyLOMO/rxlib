@@ -84,7 +84,7 @@ public class NameserverHttpHandler implements HttpServer.Handler {
         vars.put("dnsPort", nameserver.config.getDnsPort());
         vars.put("dnsTtl", nameserver.config.getDnsTtl());
         vars.put("registerPort", nameserver.config.getRegisterPort());
-        vars.put("syncPort", nameserver.getSyncPort());
+        vars.put("replicaMode", "RPC (daily)");
         vars.put("sessionCount", nameserver.rs.sessions().size());
         vars.put("appCount", appRows.size());
         vars.put("instanceCount", instanceRows.size());
@@ -107,16 +107,17 @@ public class NameserverHttpHandler implements HttpServer.Handler {
         List<Map<String, Object>> rows = new ArrayList<Map<String, Object>>(sessions.size());
         for (TransportSession session : sessions.values()) {
             String appName = ifNull(session.<String>attr(Nameserver.APP_NAME_KEY), "NOT_REG");
+            String instanceId = session.attr(Nameserver.INSTANCE_ID_KEY);
             InetSocketAddress remoteEndpoint = session.remoteEndpoint();
             InetAddress address = remoteEndpoint == null ? null : remoteEndpoint.getAddress();
-            Map<String, Serializable> attrs = address == null ? null : nameserver.attrs.get(nameserver.instanceKey(appName, address));
+            Map<String, Serializable> attrs = instanceId == null ? null : nameserver.instanceAttrsSnapshot(appName, instanceId);
 
             Map<String, Object> row = new LinkedHashMap<String, Object>();
             row.put("appName", appName);
             row.put("address", address == null ? "-" : address.getHostAddress());
             row.put("tcpRemote", Sockets.toString(remoteEndpoint));
             row.put("connected", session.isConnected());
-            row.put("appId", attr(attrs, RxConfig.ConfigNames.APP_ID));
+            row.put("appId", instanceId != null ? instanceId : attr(attrs, RxConfig.ConfigNames.APP_ID));
             row.put("publicIp", attr(attrs, Nameserver.PUBLIC_IP_KEY));
             row.put("ping", heartbeat(session.heartbeatRttMillis()));
             row.put("attrs", formatAttrs(attrs));

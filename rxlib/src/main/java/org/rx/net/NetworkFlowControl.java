@@ -4,6 +4,7 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.local.LocalChannel;
 import io.netty.handler.traffic.GlobalChannelTrafficShapingHandler;
+import io.netty.util.AttributeKey;
 import io.netty.util.concurrent.EventExecutor;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.RxConfig;
@@ -18,6 +19,9 @@ import java.net.SocketAddress;
 public final class NetworkFlowControl {
     public static final NetworkFlowControl DEFAULT = new NetworkFlowControl();
     public static final String GLOBAL_TRAFFIC_HANDLER = "GLOBAL_TRAFFIC_SHAPING";
+    public static final String BANDWIDTH_LIMITER_HANDLER = "SCOPED_BANDWIDTH_LIMITER";
+    public static final AttributeKey<BandwidthLimiter> ATTR_BANDWIDTH_LIMITER =
+            AttributeKey.valueOf("netScopedBandwidthLimiter");
 
     private final Object trafficLock = new Object();
     private final UdpBackpressurePolicy udpBackpressurePolicy = new UdpBackpressurePolicy(this);
@@ -103,6 +107,46 @@ public final class NetworkFlowControl {
 
     public UdpBackpressurePolicy udpBackpressurePolicy() {
         return udpBackpressurePolicy;
+    }
+
+    /**
+     * Opt-in attachment of a scoped {@link BandwidthLimiter} to a specific channel.
+     * Does not affect or modify global traffic shaping.
+     */
+    public static void attachBandwidthLimiter(Channel channel, BandwidthLimiter limiter) {
+        if (channel != null) {
+            channel.attr(ATTR_BANDWIDTH_LIMITER).set(limiter);
+        }
+    }
+
+    public static BandwidthLimiter bandwidthLimiter(Channel channel) {
+        return channel == null ? null : channel.attr(ATTR_BANDWIDTH_LIMITER).get();
+    }
+
+    /**
+     * Opt-in installation of a standalone {@link BandwidthChannelHandler} on a specific channel
+     * (e.g. an independent proxy listener or upstream channel). Never auto-installed globally.
+     */
+    public static boolean installBandwidthLimiter(Channel channel, BandwidthLimiter limiter) {
+        return installBandwidthLimiter(channel, limiter,
+                BandwidthLimiter.Direction.UPLOAD, BandwidthLimiter.Direction.DOWNLOAD);
+    }
+
+    public static boolean installBandwidthLimiter(Channel channel, BandwidthLimiter limiter,
+                                                  BandwidthLimiter.Direction readDirection,
+                                                  BandwidthLimiter.Direction writeDirection) {
+        if (channel == null || limiter == null) {
+            return false;
+        }
+        attachBandwidthLimiter(channel, limiter);
+        ChannelPipeline pipeline = channel.pipeline();
+        if (pipeline.get(BANDWIDTH_LIMITER_HANDLER) != null
+                || pipeline.get(BandwidthChannelHandler.class) != null) {
+            return false;
+        }
+        pipeline.addLast(BANDWIDTH_LIMITER_HANDLER,
+                new BandwidthChannelHandler(limiter, readDirection, writeDirection));
+        return true;
     }
 
     GlobalChannelTrafficShapingHandler globalTrafficHandler() {
