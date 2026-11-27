@@ -6,7 +6,7 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import org.rx.net.http.HttpServer;
 import org.rx.net.http.ServerRequest;
 import org.rx.net.http.ServerResponse;
-import org.rx.net.transport.hybrid.HybridSession;
+import org.rx.net.transport.core.TransportSession;
 
 import java.net.Inet4Address;
 import java.net.InetAddress;
@@ -31,17 +31,17 @@ public final class WowEndpointRegistry implements HttpServer.Handler {
     private final byte[] writerKey, queryKey;
     private final long maxAgeMillis;
     private final LongSupplier clock;
-    private final IdentityHashMap<HybridSession, Long> generations = new IdentityHashMap<>();
+    private final IdentityHashMap<TransportSession, Long> generations = new IdentityHashMap<>();
     private long generation, version;
     private final AtomicReference<Snapshot> current = new AtomicReference<>();
 
     static final class Snapshot {
-        final HybridSession session;
+        final TransportSession session;
         final String ip, version;
         final long observedAt, generation;
         final boolean ready;
 
-        Snapshot(HybridSession session, String ip, long observedAt, long generation, String version, boolean ready) {
+        Snapshot(TransportSession session, String ip, long observedAt, long generation, String version, boolean ready) {
             this.session = session;
             this.ip = ip;
             this.observedAt = observedAt;
@@ -78,23 +78,23 @@ public final class WowEndpointRegistry implements HttpServer.Handler {
     }
 
     /** Called only after RSS RPC token + stateful handshake verification. Never performs DNS. */
-    synchronized boolean observe(String identity, String credential, HybridSession session, String readyIp, boolean ready) {
+    synchronized boolean observe(String identity, String credential, TransportSession session, String readyIp, boolean ready) {
         return observe(identity, credential, session, readyIp, ready, false);
     }
 
-    synchronized String observePeer(String identity, String credential, HybridSession session) {
+    synchronized String observePeer(String identity, String credential, TransportSession session) {
         if (!observe(identity, credential, session, null, false, true)) return null;
         return current.get().ip;
     }
 
-    private boolean observe(String identity, String credential, HybridSession session, String readyIp, boolean ready, boolean preserveReadiness) {
+    private boolean observe(String identity, String credential, TransportSession session, String readyIp, boolean ready, boolean preserveReadiness) {
         if (!enabled() || !clientId.equals(identity) || !MessageDigest.isEqual(writerKey, bytes(credential))
                 || session == null || !session.isConnected()) return false;
-        InetSocketAddress peer = session.tcpRemoteEndpoint();
+        InetSocketAddress peer = session.remoteEndpoint();
         InetAddress address = peer == null ? null : peer.getAddress();
         if (!publicIpv4(address)) return false;
         long now = clock.getAsLong();
-        Iterator<HybridSession> stale = generations.keySet().iterator();
+        Iterator<TransportSession> stale = generations.keySet().iterator();
         while (stale.hasNext()) if (!stale.next().isConnected()) stale.remove();
         Long order = generations.get(session);
         if (order == null) {

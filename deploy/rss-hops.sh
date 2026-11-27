@@ -5,7 +5,8 @@ command -v ip >/dev/null
 nft list tables >/dev/null
 nft --check -f - <<'NFT'
 add table inet rxrss_preflight
-add chain inet rxrss_preflight ingress { type nat hook prerouting priority dstnat; }
+add chain inet rxrss_preflight ingress { type nat hook prerouting priority -100; }
+add chain inet rxrss_preflight localout { type nat hook output priority -100; }
 delete table inet rxrss_preflight
 NFT
 # Preserve all existing reservations when writing the merged setting at runtime and boot.

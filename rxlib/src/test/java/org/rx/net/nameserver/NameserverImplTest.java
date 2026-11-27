@@ -10,7 +10,7 @@ import org.rx.net.dns.DnsServer;
 import org.rx.net.http.HttpServer;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RpcClientConfig;
-import org.rx.net.transport.UdpClient;
+import org.rx.net.transport.core.DatagramTransport;
 
 import java.io.Serializable;
 import java.lang.reflect.Field;
@@ -36,7 +36,7 @@ import static org.rx.core.Extends.sleep;
 class NameserverImplTest {
     @Test
     @Timeout(20)
-    void registerAndDeregisterUsesHybridSessionAttr() throws Exception {
+    void registerAndDeregisterUsesTransportSessionAttr() throws Exception {
         int dnsPort = freePort();
         int registerPort = freePort();
         int syncPort = freePort();
@@ -59,7 +59,7 @@ class NameserverImplTest {
 
     @Test
     @Timeout(20)
-    void clientDisconnectDeregistersBeforeHybridAttrsAreCleared() throws Exception {
+    void clientDisconnectDeregistersBeforeTransportAttrsAreCleared() throws Exception {
         int dnsPort = freePort();
         int registerPort = freePort();
         int syncPort = freePort();
@@ -354,12 +354,8 @@ class NameserverImplTest {
         return Remoting.createFacade(Nameserver.class, config);
     }
 
-    @SuppressWarnings("unchecked")
-    static Channel firstUdpChannel(UdpClient client) throws Exception {
-        Field channelsField = UdpClient.class.getDeclaredField("channels");
-        channelsField.setAccessible(true);
-        List<Channel> channels = (List<Channel>) channelsField.get(client);
-        return channels.get(0);
+    static Channel firstUdpChannel(DatagramTransport transport) {
+        return transport.channel();
     }
 
     static void assertContainsLoopback(List<InetAddress> hosts) {

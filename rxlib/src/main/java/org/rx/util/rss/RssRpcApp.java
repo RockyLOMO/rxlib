@@ -37,7 +37,7 @@ public final class RssRpcApp implements SocksRpcContract {
     public boolean observeWowEndpoint(org.rx.net.socks.WowEndpointObservation observation) {
         if (observation == null) return false;
         SocksRpcContract.requireValidRpcToken(observation.rpcToken);
-        org.rx.net.transport.hybrid.HybridSession session = RemotingContext.context().getClient();
+        org.rx.net.transport.core.TransportSession session = RemotingContext.context().getClient();
         org.rx.net.rpc.protocol.MetadataMessage metadata = session.attr("HandshakeMeta");
         WowEndpointRegistry registry = wowEndpoints;
         return metadata != null && metadata.getEventVersion() == SocksRpcContract.RPC_EVENT_VERSION
@@ -48,7 +48,7 @@ public final class RssRpcApp implements SocksRpcContract {
     public String getObservedPublicIp(org.rx.net.socks.WowEndpointObservation observation) {
         if (observation == null) return null;
         SocksRpcContract.requireValidRpcToken(observation.rpcToken);
-        org.rx.net.transport.hybrid.HybridSession session = RemotingContext.context().getClient();
+        org.rx.net.transport.core.TransportSession session = RemotingContext.context().getClient();
         org.rx.net.rpc.protocol.MetadataMessage metadata = session.attr("HandshakeMeta");
         WowEndpointRegistry registry = wowEndpoints;
         return metadata != null && metadata.getEventVersion() == SocksRpcContract.RPC_EVENT_VERSION && registry != null
@@ -123,7 +123,7 @@ public final class RssRpcApp implements SocksRpcContract {
     @Override
     public void addWhiteList(InetAddress endpoint, String token) {
         SocksRpcContract.requireValidRpcToken(token);
-        InetSocketAddress rpcPeer = RemotingContext.context().getClient().tcpRemoteEndpoint();
+        InetSocketAddress rpcPeer = RemotingContext.context().getClient().remoteEndpoint();
         InetAddress peerAddress = rpcPeer == null ? null : rpcPeer.getAddress();
         svrSide.get().getConfig().allowWhiteList(endpoint);
         if (peerAddress != null && !peerAddress.equals(endpoint)) {
@@ -139,6 +139,16 @@ public final class RssRpcApp implements SocksRpcContract {
 
     @Override
     public boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr, String token) {
+        RemotingContext ctx = RemotingContext.context();
+        org.rx.net.transport.core.TransportSession session = ctx == null ? null : ctx.getClient();
+        InetSocketAddress rpcPeer = session == null ? null : session.remoteEndpoint();
+        InetAddress peerIp = rpcPeer == null ? null : rpcPeer.getAddress();
+        // Behind NAT, client's local bind address/port differs from server-observed NAT peer.
+        // Only lock exact clientAddr when claimed IP matches the authenticated RPC peer IP;
+        // otherwise clear stale relay state and let SocksUdpRelayHandler whitelist + bind on first packet.
+        if (clientAddr != null && peerIp != null && !peerIp.equals(clientAddr.getAddress())) {
+            clientAddr = null;
+        }
         return svrSide.get().claimUdpRelay(relayPort, clientAddr, token);
     }
 

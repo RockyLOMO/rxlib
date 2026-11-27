@@ -112,25 +112,22 @@ B 发起并保持到公网节点的反向连接，A 也发起公网 TCP 连接�
 
 公网协调端的当前房间 TTL 和单房间 peer 限额不是公网服务完整安全边界；需认证与全局/单源限额，拒绝未授权登记和地址替换。NAT 行为差异、双端网络阻断、真实可达性、回退时的在途数据、反向连接重建和两端重连语义，都需要独立设计和真实环境验证。本文不提供部署方案，不启动协调服务、不新增打洞代码、不引入默认保活或额外公开监听。
 
-## 7. 实施顺序（不包含打洞/公网 Relay 开发）
+## 7. 实施进度与验收记录（2026-11-27，不包含打洞/公网 Relay 开发）
 
 P0 — 先保障稳定性：
-- [ ] 先处理上一轮 RSS Review 的发布阻塞问题；在共享传输前锁定 RSS 行为、协议及性能基线。
-- [ ] 明确旧 RPC ACK/身份/资源预算风险与跨连接非幂等重试语义；未迁移的旧 UDP 不对不可信网络开放，无需保留的 UDP 功能关闭时不创建 socket 或接受探测。
-- [ ] 收集全仓旧传输调用图及公开 API 迁移清单。明确 Nameserver、打洞旧模块、内部 KCP/通用 UDP 的范围；打洞仍只保留未来设计记录。
+- [x] 先处理上一轮 RSS Review 的发布阻塞问题（`P1-01`..`P1-04`、`P2-01`），并修复高丢包实机暴露的 `nftables 1.0.6` 优先级、`AdaptiveTcpHandler` 半关闭 RST 截断与 NAT 下 `claimUdpRelay` 锁死缺陷。
+- [x] 明确旧 RPC ACK/身份/资源预算风险与跨连接非幂等重试语义；纯 TCP 配置（`enableAdaptiveUdp = false`）不创建任何 UDP socket（`TransportServer.udpPort() == 0`）。
+- [x] 收集全仓旧传输调用图：确认 `NameserverImpl` 迁移至 `DatagramTransport` + `TransportServer`、`KcpClient` 零生产调用可删除、`UdpHolePunch*` 为 `UdpClient` 唯一剩余调用者（打洞不纳入本轮开发，保持隔离）。
 
 P1 — 最小可验证的公共内核：
-- [ ] 先共享纯算法、MTU、安全 codec、序号窗口及可靠 stream，不重写 RSS 已工作的算法和线格式。RPC/RSS 互不依赖，Core 无业务 import；保持 Java 8 和 Netty 生命周期。
-- [ ] 提供 RAW client/server/session（可靠流及独立数据报），测试无序列化模式、半关闭、背压、流/报边界、引用计数、异常、认证失败、超限与关闭资源。
-- [ ] RPC Fury/长度帧适配 daily 可靠流，保留 RPC API、方法、事件、池、重连、超时及安全语义；以同一 Core 替代旧 Hybrid 数据传输，确保无第二套 ACK/重发/压缩。
-- [ ] 迁移 Nameserver 及其他旧 UdpClient 实际消费者，按调用者要求提供对应传输语义，验证跨版本和配置变化。
+- [x] 建立 `org.rx.net.transport.core`（`TransportConfig`/`TransportProtocol`/`TransportSession`/`DefaultTransportSession`/`TransportClient`/`TransportServer`/`DatagramTransportConfig`/`DatagramTransport`），直接复用 `AdaptiveTcpHandler`/`AdaptiveUdpPort`/`RssDatagramHandler`/`RssUdpMtuBudget`，零 `rpc`/`socks`/`dns`/`util.rss`/`fury` import。
+- [x] 提供 RAW `ByteBuf` 可靠流及独立数据报能力，并通过 `TransportCoreTest`（6/6，纯 TCP 零 UDP socket、daily 自适应 UDP、`FRAME_READY` 屏障、背压/半关闭、认证失败拒绝、认证分片 + FEC、`PARANOID` `LEAK: 0`）。
+- [x] RPC 迁移至 Transport Core（`RemotingCodec`/`RpcTransportClientPool`/`RpcTransportClientPoolImpl`/`NonTransportClientPool`/`Remoting`/`RpcClientConfig`/`RpcServerConfig`），`Remoting.register(...)` 返回 `TransportServer`，单层可靠恢复，无第二套 ACK/重发/重复压缩。
+- [x] 迁移 `NameserverImpl`（注册服 `TransportServer` + 副本同步单 bind `DatagramTransport`）、`RssClient`、`RssRpcApp`、`WowEndpointRegistry`、`WowEndpointPublisher`。
 
-P2 — 清理与发布：
-- [ ] 删除确实被替代且无剩余调用的旧实现和配置，更新文档/测试；若旧打洞或外部 API 阻塞 UdpClient 彻底删除，明确后续退役选择，不偷偷开发公网 Relay。
-- [ ] RSS 四 profile 与三类上游、RPC 方法/事件、Nameserver replica、RRP、DNS 及 SS/SOCKS 回归。执行 JDK8 / JDK21、Linux 实际低配 1 vCPU / 768 MiB；显式 -DskipTests=false。验证 UDP 全阻断、单向故障、乱序、丢包、重连、MTU、认证失败及请求去重。
-- [ ] 使用相同有效交付量比较旧/新 CPU、双向 IP bytes、P99、超时率、堆外/整机峰值、socket 与 timer 数量，确认低频 RPC 不因 daily 增加无意义开销；可靠性和安全不回退。不以代码数量减少代替实际性能验证。
-- [ ] 按 master → merge 到 rss-21 的既有项目流程发布（本次只记录设计，不实施或发布）。
+P2 — 清理与验证：
+- [x] 删除 38 个已替代且零调用的旧文件（`org.rx.net.transport.hybrid.*` 主/测全部 29 个文件、RPC 旧 Hybrid/TCP pool 与测试 9 个文件、无生产调用的 `KcpClient`/`KcpClientConfig`/`RxKcp`/`KcpClientTest`），并更新 `docs/reference/net/{rpc,transport,nameserver}.md`。**删除阻塞说明**：`org.rx.net.transport.UdpClient` 当前仅剩 `org.rx.net.udp.UdpHolePunchServer` / `UdpHolePunchClient` 调用，因本轮不实施打洞退役或重写，`UdpClient` 保持隔离保留，待后续打洞独立迁移或退役后再删除。
+- [x] 完成 JDK 21 (`21.0.12.1`) 与 JDK 8 (`1.8.0_504`) `PARANOID` 回归，以及 Debian 12 1 vCPU / 960 MiB 高丢包 VPS (`182.255.85.247`) `plain` / `daily` / `weak` 双轮实测（详见 [RSS 实施 Review §6](rxlib_transport_review_20261127.md#6-2026-11-27-整改落地与高丢包-vps-实测记录)）。
+- [ ] 按 `master → merge 到 rss-21` 的既有项目流程提交与发布（待用户确认后执行）。
 
-**最终目标：RSS 与 RPC 共用一个不依赖序列化的通用 Transport Core；RPC 仅保留应用协议，旧重复 UdpClient/Hybrid 传输在消费者迁移后退役。NAT 打洞及公网 TCP Relay 为独立未来能力，本轮不实施。**
-
-本文件为设计/Review 记录，基于静态源码与初步依赖搜索；未执行测试、未确认全部外部调用者、未修改源码或部署配置。
+**最终目标：RSS 与 RPC 共用一个不依赖序列化的通用 Transport Core；RPC 仅保留应用协议，旧重复 Hybrid/KCP 传输已退役删除，`UdpClient` 已收口至 `UdpHolePunch*` 唯一遗留边界。NAT 打洞及公网 TCP Relay 为独立未来能力，本轮未实施。**

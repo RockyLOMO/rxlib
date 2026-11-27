@@ -5,8 +5,8 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
-import org.rx.net.transport.hybrid.HybridServer;
-import org.rx.net.transport.hybrid.HybridSession;
+import org.rx.net.transport.core.TransportServer;
+import org.rx.net.transport.core.TransportSession;
 import org.rx.util.function.Func;
 
 import static org.rx.core.Extends.require;
@@ -23,7 +23,7 @@ public final class RemotingContext {
     }
 
     @SneakyThrows
-    static <T> T invoke(Func<T> fn, HybridServer rs, HybridSession rc) {
+    static <T> T invoke(Func<T> fn, TransportServer rs, TransportSession rc) {
         CTX.set(new RemotingContext(rs, rc));
         try {
             return fn.invoke();
@@ -32,6 +32,6 @@ public final class RemotingContext {
         }
     }
 
-    final HybridServer server;
-    final HybridSession client;
+    final TransportServer server;
+    final TransportSession client;
 }

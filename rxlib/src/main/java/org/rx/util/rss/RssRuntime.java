@@ -31,9 +31,11 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.rx.core.Extends.eachQuietly;
@@ -54,8 +56,10 @@ final class RssRuntime implements AutoCloseable {
 
     final AtomicBoolean drainStarted = new AtomicBoolean();
     volatile ShadowBindHook shadowServerBindHook;
+    volatile Runnable reloadPostPublishHook;
 
     SwitchingRandomList<DnsResolveInterceptor> dnsInterceptors = new SwitchingRandomList<>();
+    volatile RuntimeGeneration generation;
     volatile UpstreamSnapshot upstreamSnapshot;
     volatile DnsServer dnsSvr;
     volatile NameserverImpl nameserverRef;
@@ -68,7 +72,6 @@ final class RssRuntime implements AutoCloseable {
         UpstreamSnapshot snapshot = buildUpstreams(conf);
         dnsInterceptors.setDelegate(snapshot.dnsInterceptors);
         upstreamSnapshot = snapshot;
-        startUpstreamHealthCheck(snapshot, conf);
 
         dnsSvr = createDnsServer(conf, dnsInterceptors);
         nameserverRef = new NameserverImpl(resolveNameserverConfig(conf), dnsSvr);
@@ -78,20 +81,37 @@ final class RssRuntime implements AutoCloseable {
 
         authenticator = new RssAuthenticator(conf.shadowUsers, conf.socksPwd.trim(), conf.memoryRetentionHours);
         inServer = createPrimaryInServer(conf);
+        RuntimeGeneration initialGeneration = new RuntimeGeneration(conf, snapshot, dnsSvr,
+                inServer.outConfRef.get(), inServer.standardConfRef.get());
+        generation = initialGeneration;
         app = new RssRpcApp(inServer.server, null);
 
         activeConf = conf;
         rssConf = conf;
         org.rx.core.RxConfig.INSTANCE.getNet().setPublicIpEndpoints(conf.publicIpEndpoints);
         applyShadowServersPlan(buildShadowServers(conf, inServer, true));
+        startUpstreamHealthCheck(snapshot, conf);
         clientInit(authenticator);
         addPublicIpWhiteList();
         configureAutoWhiteListSchedule(conf, this);
     }
 
+    RuntimeGeneration currentGeneration() {
+        return generation;
+    }
+
     synchronized void reload(RssClientConf oldConf, RssClientConf newConf) {
         RssClientConf currentConf = activeConf;
         log.info("rssConf reload start version old={} new={}", currentConf == null ? null : currentConf.hashCode(), newConf.hashCode());
+        RuntimeGeneration prevGeneration = generation;
+        UpstreamSnapshot prevUpstream = prevGeneration != null ? prevGeneration.upstreamSnapshot : upstreamSnapshot;
+        DnsServer prevDnsServer = dnsSvr;
+        SwitchingRandomList<DnsResolveInterceptor> prevDnsInterceptors = dnsInterceptors;
+        NameserverImpl prevNameserver = nameserverRef;
+        RssInServer prevInServer = inServer;
+        RssAuthenticator.AuthSettings prevAuthSettings = authenticator.currentSettings();
+        String[] prevPublicIpEndpoints = org.rx.core.RxConfig.INSTANCE.getNet().getPublicIpEndpoints();
+
         UpstreamSnapshot nextUpstream = null;
         InServersPlan inServersPlan = null;
         DnsServer nextDnsServer = null;
@@ -104,83 +124,172 @@ final class RssRuntime implements AutoCloseable {
         boolean restartNameserver = restartDns || nameserverRestartRequired(currentConf, newConf);
         boolean rebuildShadowServers = restartInServers || shadowServerRestartRequired(currentConf, newConf);
 
+        boolean authCommitted = false;
+        boolean nameserverPublished = false;
+        boolean dnsPublished = false;
+        boolean dnsDelegateSwitched = false;
+        boolean inServerSwitched = false;
+        boolean rrpCommitted = false;
+        boolean generationPublished = false;
+        org.rx.net.socks.RrpServer obsoleteRrpServer = null;
+        RssInServer obsoleteInServer = null;
+
         try {
+            // Prepare all fallible resources and immutable generation before publishing any live state.
+            RssAuthenticator.AuthSettings nextAuthSettings = authenticator.prepareReload(
+                    newConf.shadowUsers, newConf.socksPwd.trim(), newConf.memoryRetentionHours);
             nextUpstream = buildUpstreams(newConf);
             if (restartInServers) {
                 inServersPlan = prepareInServersPlan(newConf);
             }
+            RssInServer targetInServer = restartInServers ? inServersPlan.newInServer : inServer;
+            RssClient.OutboundProfiles nextOutboundProfiles = new RssClient.OutboundProfiles(newConf, targetInServer.inConf);
+            SocksConfig nextStandardConf = RssClient.standardSocksConfig(newConf);
+
             if (restartDns) {
                 nextDnsInterceptors = new SwitchingRandomList<>();
                 nextDnsInterceptors.setDelegate(nextUpstream.dnsInterceptors);
                 nextDnsServer = createDnsServer(newConf, nextDnsInterceptors);
             }
+            DnsServer targetDnsServer = restartDns ? nextDnsServer : dnsSvr;
             if (restartNameserver) {
-                DnsServer targetDnsServer = restartDns ? nextDnsServer : dnsSvr;
                 nextNameserver = new NameserverImpl(resolveNameserverConfig(newConf), targetDnsServer);
             }
 
-            RssInServer targetInServer = restartInServers ? inServersPlan.newInServer : inServer;
             rrpPlan = prepareRrpServerPlan(newConf);
             materializePortExclusiveRrpPlan(rrpPlan);
             shadowPlan = buildShadowServers(newConf, targetInServer, rebuildShadowServers);
 
-            UpstreamSnapshot oldUpstream = upstreamSnapshot;
-            DnsServer oldDnsServer = null;
-            NameserverImpl oldNameserver = null;
+            RuntimeGeneration nextGeneration = new RuntimeGeneration(newConf, nextUpstream, targetDnsServer,
+                    nextOutboundProfiles, nextStandardConf);
+
+            // Commit phase: publish atomically and defer closing obsolete resources until every step succeeds.
+            authenticator.applySettings(nextAuthSettings);
+            authCommitted = true;
 
             if (restartNameserver) {
-                oldNameserver = nameserverRef;
                 nameserverRef = nextNameserver;
                 nameserver = nextNameserver;
-                nextNameserver = null;
+                nameserverPublished = true;
             }
             if (restartDns) {
-                oldDnsServer = dnsSvr;
                 dnsSvr = nextDnsServer;
                 dnsInterceptors = nextDnsInterceptors;
                 InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(newConf.shadowDnsPort);
                 Sockets.injectNameService(java.util.Collections.singletonList(shadowDnsEp));
-                nextDnsServer = null;
-                nextDnsInterceptors = null;
+                dnsPublished = true;
             } else {
                 dnsInterceptors.setDelegate(nextUpstream.dnsInterceptors);
                 applyDnsConfig(dnsSvr, newConf, dnsInterceptors);
+                dnsDelegateSwitched = true;
             }
 
             if (restartInServers) {
-                commitInServersPlan(inServersPlan);
-                inServersPlan = null;
+                obsoleteInServer = inServersPlan.portExclusive ? null : inServer;
+                inServer = inServersPlan.newInServer;
+                app.setServer(inServer.server);
+                inServerSwitched = true;
             }
 
+            generation = nextGeneration;
             upstreamSnapshot = nextUpstream;
-            startUpstreamHealthCheck(nextUpstream, newConf);
-            nextUpstream = null;
-
-            authenticator.reload(newConf.shadowUsers, newConf.socksPwd.trim(), newConf.memoryRetentionHours);
-            applyShadowServersPlan(shadowPlan);
-            shadowPlan = null;
-            applyLiveConfig(newConf);
-            configureDdnsSchedule(newConf);
-            configureAutoWhiteListSchedule(newConf, this);
-            commitRrpServerPlan(rrpPlan);
-            rrpPlan = null;
             activeConf = newConf;
             rssConf = newConf;
+            generationPublished = true;
+
+            applyLiveConfig(newConf, nextOutboundProfiles, nextStandardConf);
+            configureDdnsSchedule(newConf);
+            configureAutoWhiteListSchedule(newConf, this);
+            obsoleteRrpServer = commitRrpServerPlanDeferredClose(rrpPlan);
+            rrpCommitted = true;
+
+            Runnable hook = reloadPostPublishHook;
+            if (hook != null) {
+                hook.run();
+            }
+
+            List<ShadowServerRef> obsoleteShadowServers = commitShadowServersPlanDeferredClose(shadowPlan);
+            if (inServersPlan != null) {
+                inServersPlan.newInServer = null;
+                inServersPlan.oldInServer = null;
+                inServersPlan.oldDetached = false;
+                inServersPlan.committed = true;
+            }
+            nextNameserver = null;
+            nextDnsServer = null;
+            nextDnsInterceptors = null;
+            nextUpstream = null;
+            shadowPlan = null;
+            rrpPlan = null;
+
+            startUpstreamHealthCheck(nextGeneration.upstreamSnapshot, newConf);
             addPublicIpWhiteList();
 
-            closeUpstreamsLater(oldUpstream);
-            trackClosingUpstream(oldUpstream);
-            closeNameserverQuietly(oldNameserver);
-            closeDnsServerQuietly(oldDnsServer);
+            // Close obsolete resources only after the new generation is completely committed.
+            closeInServerQuietly(obsoleteInServer);
+            for (ShadowServerRef obsoleteRef : obsoleteShadowServers) {
+                closeShadowServerQuietly(obsoleteRef);
+            }
+            tryClose(obsoleteRrpServer);
+            closeUpstreamsLater(prevUpstream);
+            trackClosingUpstream(prevUpstream);
+            if (restartNameserver) {
+                closeNameserverQuietly(prevNameserver);
+            }
+            if (restartDns) {
+                closeDnsServerQuietly(prevDnsServer);
+            }
             log.info("rssConf reload ok");
         } catch (Throwable e) {
-            closeUpstreamsQuietly(nextUpstream);
+            if (generationPublished) {
+                generation = prevGeneration;
+                upstreamSnapshot = prevUpstream;
+                activeConf = currentConf;
+                rssConf = currentConf;
+            }
+            org.rx.core.RxConfig.INSTANCE.getNet().setPublicIpEndpoints(prevPublicIpEndpoints);
+            if (authCommitted) {
+                authenticator.applySettings(prevAuthSettings);
+            }
+            if (nameserverPublished) {
+                nameserverRef = prevNameserver;
+                nameserver = prevNameserver;
+            }
+            if (dnsPublished) {
+                dnsSvr = prevDnsServer;
+                dnsInterceptors = prevDnsInterceptors;
+                if (currentConf != null) {
+                    Sockets.injectNameService(java.util.Collections.singletonList(
+                            Sockets.newLoopbackEndpoint(currentConf.shadowDnsPort)));
+                }
+            } else if (dnsDelegateSwitched && prevUpstream != null && prevDnsInterceptors != null) {
+                prevDnsInterceptors.setDelegate(prevUpstream.dnsInterceptors);
+                if (prevDnsServer != null && currentConf != null) {
+                    applyDnsConfig(prevDnsServer, currentConf, prevDnsInterceptors);
+                }
+            }
+            if (inServerSwitched) {
+                inServer = prevInServer;
+                if (prevInServer != null) {
+                    app.setServer(prevInServer.server);
+                }
+            }
+            if (prevGeneration != null && currentConf != null) {
+                applyLiveConfig(currentConf, prevGeneration.outboundProfiles, prevGeneration.standardConf);
+            }
+            if (rrpCommitted) {
+                rollbackCommittedRrpServerPlan(rrpPlan, obsoleteRrpServer);
+            } else {
+                rollbackRrpServerPlan(rrpPlan);
+                closeRrpServerPlanQuietly(rrpPlan);
+            }
+            configureDdnsSchedule(currentConf);
+            configureAutoWhiteListSchedule(currentConf, this);
             rollbackInServersPlan(inServersPlan);
             closeInServersPlanQuietly(inServersPlan);
+            closeUpstreamsQuietly(nextUpstream);
             closeNameserverQuietly(nextNameserver);
             closeDnsServerQuietly(nextDnsServer);
-            rollbackRrpServerPlan(rrpPlan);
-            closeRrpServerPlanQuietly(rrpPlan);
             closeShadowServersPlanQuietly(shadowPlan);
             log.error("rssConf reload failed, keep previous runtime", e);
             throw InvalidException.sneaky(e);
@@ -189,6 +298,11 @@ final class RssRuntime implements AutoCloseable {
 
     void addPublicIpWhiteList() {
         try {
+            RuntimeGeneration gen = generation;
+            UpstreamSnapshot snapshot = gen != null ? gen.upstreamSnapshot : upstreamSnapshot;
+            if (snapshot == null) {
+                return;
+            }
             InetAddress observed = null;
             try {
                 observed = Sockets.parseIpAddress(Sockets.getPublicIp());
@@ -196,7 +310,7 @@ final class RssRuntime implements AutoCloseable {
                 log.debug("No public IPv4 observation, registering authenticated RPC peer", unavailable);
             }
             InetAddress addr = observed;
-            eachQuietly(upstreamSnapshot.dnsInterceptors, interceptor -> {
+            eachQuietly(snapshot.dnsInterceptors, interceptor -> {
                 if (interceptor instanceof SocksRpcContract) {
                     ((SocksRpcContract) interceptor).addWhiteList(addr, SocksRpcContract.rpcToken());
                 }
@@ -334,7 +448,7 @@ final class RssRuntime implements AutoCloseable {
         SocksConfig inConf = new SocksConfig(resolveRuntimeListenAddress(conf, port, "rss-in-", uniqueLocalAddress));
         configureInboundConfig(conf, inConf);
         log.info("rssConf socksBindPort={}, inListenAddress={}", conf.socksBindPort, inConf.getListenAddress());
-        return createInSvr(conf, inConf, authenticator, this::firstRoute, () -> upstreamSnapshot);
+        return createInSvr(conf, inConf, authenticator, this::firstRoute, this::currentGeneration);
     }
 
     private SocketAddress resolveRuntimeListenAddress(RssClientConf conf, int listenPort, String localNamePrefix, boolean uniqueLocalAddress) {
@@ -407,26 +521,22 @@ final class RssRuntime implements AutoCloseable {
     private void firstRoute(SocksProxyServer server, SocksContext e) {
         InetSocketAddress dstEp = e.getFirstDestination();
         if (dstEp.getPort() == SocksRpcContract.DNS_PORT) {
-            UpstreamSnapshot snapshot = upstreamSnapshot;
-            RssClientConf conf = activeConf;
-            e.setUpstream(new RssDnsInterceptor(dstEp, e.getSource(), e.getUser(), conf.defaultRouteMatcher,
-                    dnsSvr, 60 * conf.dnsTtlMinutes,
-                    resolveUserSocksServers(snapshot.socksServers, snapshot.userSocksServers, e.getUser()), snapshot.dnsAnswers));
+            e.setUpstream(new RssDnsInterceptor(dstEp, e.getSource(), e.getUser(), this));
             e.setHandled(true);
         }
     }
 
-    private void applyLiveConfig(RssClientConf conf) {
+    private void applyLiveConfig(RssClientConf conf, RssClient.OutboundProfiles outboundProfiles, SocksConfig standardConf) {
         org.rx.core.RxConfig.INSTANCE.getNet().setPublicIpEndpoints(conf.publicIpEndpoints);
-        applyInServerConfig(conf, inServer);
+        applyInServerConfig(outboundProfiles, standardConf, inServer);
     }
 
-    private void applyInServerConfig(RssClientConf conf, RssInServer server) {
+    private void applyInServerConfig(RssClient.OutboundProfiles outboundProfiles, SocksConfig standardConf, RssInServer server) {
         if (server == null) {
             return;
         }
-        server.outConfRef.set(new RssClient.OutboundProfiles(conf, server.inConf));
-        server.standardConfRef.set(RssClient.standardSocksConfig(conf));
+        server.outConfRef.set(outboundProfiles);
+        server.standardConfRef.set(standardConf);
     }
 
     private ShadowServersPlan buildShadowServers(RssClientConf conf, RssInServer targetInServer,
@@ -440,7 +550,7 @@ final class RssRuntime implements AutoCloseable {
                 RssRoutePlan routePlan = RssRoutePlan.viaLocal(resolveShadowEndpoint(inSvrAddress, usr.getUsername()));
                 ShadowServerRef oldRef = shadowServers.get(username);
                 if (oldRef != null && oldRef.matches(usr, routePlan.signature, forceRebuild)) {
-                    oldRef.updateRouteMatcher(usr, conf);
+                    plan.matcherUpdates.add(new ShadowMatcherUpdate(oldRef, usr, conf));
                     plan.next.put(username, oldRef);
                     continue;
                 }
@@ -472,8 +582,31 @@ final class RssRuntime implements AutoCloseable {
         if (plan == null) {
             return;
         }
-        replaceShadowServers(plan.next);
+        List<ShadowServerRef> obsolete = commitShadowServersPlanDeferredClose(plan);
+        for (ShadowServerRef oldRef : obsolete) {
+            closeShadowServerQuietly(oldRef);
+        }
+    }
+
+    private List<ShadowServerRef> commitShadowServersPlanDeferredClose(ShadowServersPlan plan) {
+        if (plan == null) {
+            return Collections.emptyList();
+        }
+        for (ShadowMatcherUpdate update : plan.matcherUpdates) {
+            update.ref.updateRouteMatcher(update.user, update.conf);
+        }
+        List<ShadowServerRef> obsolete = new ArrayList<>();
+        for (Map.Entry<String, ShadowServerRef> entry : shadowServers.entrySet()) {
+            ShadowServerRef oldRef = entry.getValue();
+            ShadowServerRef nextRef = plan.next.get(entry.getKey());
+            if (oldRef != nextRef) {
+                obsolete.add(oldRef);
+            }
+        }
+        shadowServers.clear();
+        shadowServers.putAll(plan.next);
         plan.committed = true;
+        return obsolete;
     }
 
     private void closeShadowServersPlanQuietly(ShadowServersPlan plan) {
@@ -726,10 +859,23 @@ final class RssRuntime implements AutoCloseable {
         }
     }
 
+    static final class ShadowMatcherUpdate {
+        final ShadowServerRef ref;
+        final ShadowUser user;
+        final RssClientConf conf;
+
+        ShadowMatcherUpdate(ShadowServerRef ref, ShadowUser user, RssClientConf conf) {
+            this.ref = ref;
+            this.user = user;
+            this.conf = conf;
+        }
+    }
+
     static final class ShadowServersPlan {
         final Map<String, ShadowServerRef> next = new LinkedHashMap<>();
         final List<ShadowServerRef> created = new ArrayList<>();
         final List<ShadowRestart> stopped = new ArrayList<>();
+        final List<ShadowMatcherUpdate> matcherUpdates = new ArrayList<>();
         boolean committed;
     }
 
@@ -787,12 +933,32 @@ final class RssRuntime implements AutoCloseable {
         }
     }
 
+    static final class RuntimeGeneration {
+        final RssClientConf conf;
+        final UpstreamSnapshot upstreamSnapshot;
+        final DnsServer dnsServer;
+        final RssClient.OutboundProfiles outboundProfiles;
+        final SocksConfig standardConf;
+
+        RuntimeGeneration(RssClientConf conf, UpstreamSnapshot upstreamSnapshot, DnsServer dnsServer,
+                          RssClient.OutboundProfiles outboundProfiles, SocksConfig standardConf) {
+            this.conf = conf;
+            this.upstreamSnapshot = upstreamSnapshot;
+            this.dnsServer = dnsServer;
+            this.outboundProfiles = outboundProfiles;
+            this.standardConf = standardConf;
+        }
+    }
+
     static final class UpstreamSnapshot {
         final RssDnsInterceptor.Answers dnsAnswers = new RssDnsInterceptor.Answers();
         final RandomList<UpstreamSupport> socksServers;
         final RandomList<DnsResolveInterceptor> dnsInterceptors;
         final Map<String, RandomList<UpstreamSupport>> userSocksServers;
         final List<RssClientConf.SocksServer> configuredSocksServers;
+        final boolean hasRestrictedUpstreams;
+        final ConcurrentHashMap<String, RandomList<UpstreamSupport>> filteredSocksServers = new ConcurrentHashMap<>();
+        final AtomicInteger inFlightDnsQueries = new AtomicInteger();
         volatile ScheduledFuture<?> healthTask;
         volatile long closeCheckMillis;
         volatile long closeDeadlineMillis;
@@ -806,6 +972,39 @@ final class RssRuntime implements AutoCloseable {
             this.dnsInterceptors = dnsInterceptors;
             this.userSocksServers = copyUserSocksServers(userSocksServers);
             this.configuredSocksServers = copyConfiguredSocksServers(configuredSocksServers);
+            this.hasRestrictedUpstreams = detectRestrictedUpstreams(socksServers);
+        }
+
+        private static boolean detectRestrictedUpstreams(RandomList<UpstreamSupport> servers) {
+            if (servers == null) {
+                return false;
+            }
+            for (UpstreamSupport support : servers.readOnlySnapshot()) {
+                if (support != null && (support.isStandardSocks5() || support.getUdpClient() != null)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        boolean tryRetainDnsQuery() {
+            if (closed) {
+                return false;
+            }
+            inFlightDnsQueries.incrementAndGet();
+            if (closed) {
+                inFlightDnsQueries.decrementAndGet();
+                return false;
+            }
+            return true;
+        }
+
+        void releaseDnsQuery() {
+            inFlightDnsQueries.updateAndGet(v -> v > 0 ? v - 1 : 0);
+        }
+
+        int inFlightDnsQueryCount() {
+            return inFlightDnsQueries.get();
         }
 
         private static Map<String, RandomList<UpstreamSupport>> copyUserSocksServers(Map<String, RandomList<UpstreamSupport>> userSocksServers) {

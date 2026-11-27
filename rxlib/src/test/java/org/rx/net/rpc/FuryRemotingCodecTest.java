@@ -1,15 +1,11 @@
 package org.rx.net.rpc;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
-import io.netty.channel.embedded.EmbeddedChannel;
-import io.netty.util.ReferenceCountUtil;
+import io.netty.buffer.UnpooledByteBufAllocator;
 import io.netty.util.ResourceLeakDetector;
 import org.junit.jupiter.api.Test;
 import org.rx.bean.DateTime;
 import org.rx.core.Sys;
-import org.rx.net.transport.TcpChannelCodec;
-import org.rx.net.transport.TcpClientConfig;
 import org.rx.net.rpc.protocol.MethodMessage;
 import org.rx.net.transport.protocol.PingPacket;
 import org.rx.test.PersonBean;
@@ -32,25 +28,23 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FuryRemotingCodecTest {
     @Test
-    void roundTripMethodMessageAndPingPacket() {
+    void roundTripMethodMessageAndPingPacket() throws Exception {
         ResourceLeakDetector.Level oldLevel = ResourceLeakDetector.getLevel();
         ResourceLeakDetector.setLevel(ResourceLeakDetector.Level.PARANOID);
         try {
-            RpcClientConfig<Object> config = RpcClientConfig.statefulMode(new InetSocketAddress("127.0.0.1", 9527), 1);
             FuryRemotingCodecFactory factory = FuryRemotingCodecFactory.createDefault();
-            TcpChannelCodec codec = factory.newClientCodec(config);
-            List<String> allowedPrefixes = new ArrayList<>(factory.allowedClassPrefixes);
+            RemotingCodec codec = factory.newCodec();
 
             MethodMessage method = new MethodMessage(7, "create",
                     new Object[]{PersonBean.LeZhi, new UserEventArgs(PersonBean.LeZhi)}, "trace-7");
-            Object decodedMethod = roundTrip(codec, allowedPrefixes, method);
+            Object decodedMethod = roundTrip(codec, method);
             MethodMessage methodPack = assertInstanceOf(MethodMessage.class, decodedMethod);
             assertEquals(method.id, methodPack.id);
             assertEquals(method.methodName, methodPack.methodName);
             assertEquals(PersonBean.LeZhi.getName(), ((PersonBean) methodPack.parameters[0]).getName());
             assertEquals(PersonBean.LeZhi.getName(), ((UserEventArgs) methodPack.parameters[1]).getUser().getName());
 
-            Object decodedPing = roundTrip(codec, allowedPrefixes, new PingPacket());
+            Object decodedPing = roundTrip(codec, new PingPacket());
             assertInstanceOf(PingPacket.class, decodedPing);
         } finally {
             ResourceLeakDetector.setLevel(oldLevel);
@@ -58,16 +52,12 @@ class FuryRemotingCodecTest {
     }
 
     @Test
-    void codecSurvivesTcpConfigDeepClone() {
-        RpcClientConfig<Object> config = RpcClientConfig.statefulMode(new InetSocketAddress("127.0.0.1", 9528), 1);
+    void codecSurvivesDeepClone() throws Exception {
         FuryRemotingCodecFactory factory = FuryRemotingCodecFactory.createDefault();
-        config.getTcpConfig().setCodec(factory.newClientCodec(config));
+        RemotingCodec clone = Sys.deepClone(factory.newCodec());
+        assertNotNull(clone);
 
-        TcpClientConfig clone = Sys.deepClone(config.getTcpConfig());
-        assertNotNull(clone.getCodec());
-        List<String> allowedPrefixes = new ArrayList<>(factory.allowedClassPrefixes);
-
-        Object decoded = roundTrip(clone.getCodec(), allowedPrefixes, new MethodMessage(11, "ping", new Object[]{"ok"}, "trace-11"));
+        Object decoded = roundTrip(clone, new MethodMessage(11, "ping", new Object[]{"ok"}, "trace-11"));
         MethodMessage pack = assertInstanceOf(MethodMessage.class, decoded);
         assertEquals("ok", pack.parameters[0]);
     }
@@ -75,37 +65,25 @@ class FuryRemotingCodecTest {
     @Test
     void equivalentRemotingCodecsReuseSharedFuryLocal() {
         FuryRemotingCodecFactory factory = FuryRemotingCodecFactory.createDefault();
-        FuryRemotingCodecFactory.FuryRemotingUdpCodec first =
-                (FuryRemotingCodecFactory.FuryRemotingUdpCodec) factory.newCodec();
-        FuryRemotingCodecFactory.FuryRemotingUdpCodec second =
-                (FuryRemotingCodecFactory.FuryRemotingUdpCodec) factory.newCodec();
+        FuryRemotingCodecFactory.FuryRemotingCodec first =
+                (FuryRemotingCodecFactory.FuryRemotingCodec) factory.newCodec();
+        FuryRemotingCodecFactory.FuryRemotingCodec second =
+                (FuryRemotingCodecFactory.FuryRemotingCodec) factory.newCodec();
 
         first.fury();
         second.fury();
 
         assertSame(first.furyLocal, second.furyLocal);
-
-        List<String> allowedPrefixes = new ArrayList<>(factory.allowedClassPrefixes);
-        FuryRemotingCodecFactory.FuryMessageDecoder firstDecoder =
-                new FuryRemotingCodecFactory.FuryMessageDecoder(
-                        new FuryRemotingCodecFactory.FuryRemotingSupport(new ArrayList<>(allowedPrefixes)));
-        FuryRemotingCodecFactory.FuryMessageDecoder secondDecoder =
-                new FuryRemotingCodecFactory.FuryMessageDecoder(
-                        new FuryRemotingCodecFactory.FuryRemotingSupport(new ArrayList<>(allowedPrefixes)));
-
-        assertSame(firstDecoder.handlerSupport.furyLocal, secondDecoder.handlerSupport.furyLocal);
     }
 
     @Test
-    void roundTripDateTimeParameterWithCustomSerializer() {
-        RpcClientConfig<Object> config = RpcClientConfig.statefulMode(new InetSocketAddress("127.0.0.1", 9529), 1);
+    void roundTripDateTimeParameterWithCustomSerializer() throws Exception {
         FuryRemotingCodecFactory factory = FuryRemotingCodecFactory.createDefault();
-        TcpChannelCodec codec = factory.newClientCodec(config);
-        List<String> allowedPrefixes = new ArrayList<>(factory.allowedClassPrefixes);
+        RemotingCodec codec = factory.newCodec();
 
         DateTime dateTime = new DateTime(1711960245123L, TimeZone.getTimeZone("UTC"));
         MethodMessage method = new MethodMessage(15, "withDateTime", new Object[]{dateTime}, "trace-15");
-        Object decoded = roundTrip(codec, allowedPrefixes, method);
+        Object decoded = roundTrip(codec, method);
         MethodMessage pack = assertInstanceOf(MethodMessage.class, decoded);
         DateTime decodedDateTime = assertInstanceOf(DateTime.class, pack.parameters[0]);
         assertEquals(dateTime.getTime(), decodedDateTime.getTime());
@@ -114,17 +92,15 @@ class FuryRemotingCodecTest {
 
     @Test
     void roundTripInetAddressReturnValueWithCustomSerializer() throws Exception {
-        RpcClientConfig<Object> config = RpcClientConfig.statefulMode(new InetSocketAddress("127.0.0.1", 9530), 1);
         FuryRemotingCodecFactory factory = FuryRemotingCodecFactory.createDefault();
-        TcpChannelCodec codec = factory.newClientCodec(config);
-        List<String> allowedPrefixes = new ArrayList<>(factory.allowedClassPrefixes);
+        RemotingCodec codec = factory.newCodec();
 
         InetAddress ipv4 = InetAddress.getByName("198.51.100.7");
         InetAddress ipv6 = InetAddress.getByName("2001:db8::7");
         MethodMessage method = new MethodMessage(16, "resolveHost", new Object[]{null, null}, "trace-16");
         method.returnValue = new ArrayList<InetAddress>(Arrays.asList(ipv4, ipv6));
 
-        Object decoded = roundTrip(codec, allowedPrefixes, method);
+        Object decoded = roundTrip(codec, method);
         MethodMessage pack = assertInstanceOf(MethodMessage.class, decoded);
         List<?> addresses = assertInstanceOf(List.class, pack.returnValue);
         assertEquals(2, addresses.size());
@@ -132,13 +108,13 @@ class FuryRemotingCodecTest {
         assertEquals(ipv6, addresses.get(1));
 
         method.returnValue = Collections.singletonList(ipv4);
-        decoded = roundTrip(codec, allowedPrefixes, method);
+        decoded = roundTrip(codec, method);
         pack = assertInstanceOf(MethodMessage.class, decoded);
         addresses = assertInstanceOf(List.class, pack.returnValue);
         assertEquals(Collections.singletonList(ipv4), addresses);
 
         method.returnValue = Collections.emptyList();
-        decoded = roundTrip(codec, allowedPrefixes, method);
+        decoded = roundTrip(codec, method);
         pack = assertInstanceOf(MethodMessage.class, decoded);
         addresses = assertInstanceOf(List.class, pack.returnValue);
         assertTrue(addresses.isEmpty());
@@ -146,15 +122,13 @@ class FuryRemotingCodecTest {
 
     @Test
     void roundTripUnresolvedInetSocketAddressWithoutLocalDnsResolve() throws Exception {
-        RpcClientConfig<Object> config = RpcClientConfig.statefulMode(new InetSocketAddress("127.0.0.1", 9531), 1);
         FuryRemotingCodecFactory factory = FuryRemotingCodecFactory.createDefault();
-        TcpChannelCodec codec = factory.newClientCodec(config);
-        List<String> allowedPrefixes = new ArrayList<>(factory.allowedClassPrefixes);
+        RemotingCodec codec = factory.newCodec();
 
         InetSocketAddress endpoint = InetSocketAddress.createUnresolved("example.com", 443);
         MethodMessage method = new MethodMessage(17, "connect", new Object[]{endpoint}, "trace-17");
 
-        Object decoded = roundTrip(codec, allowedPrefixes, method);
+        Object decoded = roundTrip(codec, method);
         MethodMessage pack = assertInstanceOf(MethodMessage.class, decoded);
         InetSocketAddress decodedEndpoint = assertInstanceOf(InetSocketAddress.class, pack.parameters[0]);
         assertEquals("example.com", decodedEndpoint.getHostString());
@@ -163,7 +137,7 @@ class FuryRemotingCodecTest {
 
         InetSocketAddress ipLiteralEndpoint = InetSocketAddress.createUnresolved("198.51.100.8", 5300);
         method = new MethodMessage(18, "connectIp", new Object[]{ipLiteralEndpoint}, "trace-18");
-        decoded = roundTrip(codec, allowedPrefixes, method);
+        decoded = roundTrip(codec, method);
         pack = assertInstanceOf(MethodMessage.class, decoded);
         decodedEndpoint = assertInstanceOf(InetSocketAddress.class, pack.parameters[0]);
         assertEquals("198.51.100.8", decodedEndpoint.getHostString());
@@ -174,7 +148,7 @@ class FuryRemotingCodecTest {
         InetSocketAddress resolvedEndpoint = new InetSocketAddress(
                 InetAddress.getByAddress(new byte[]{(byte) 198, 51, 100, 9}), 5301);
         method = new MethodMessage(19, "connectResolvedIp", new Object[]{resolvedEndpoint}, "trace-19");
-        decoded = roundTrip(codec, allowedPrefixes, method);
+        decoded = roundTrip(codec, method);
         pack = assertInstanceOf(MethodMessage.class, decoded);
         decodedEndpoint = assertInstanceOf(InetSocketAddress.class, pack.parameters[0]);
         assertEquals(5301, decodedEndpoint.getPort());
@@ -182,44 +156,16 @@ class FuryRemotingCodecTest {
         assertEquals("198.51.100.9", decodedEndpoint.getAddress().getHostAddress());
     }
 
-    private static Object roundTrip(TcpChannelCodec codec, List<String> allowedPrefixes, Object message) {
-        EmbeddedChannel outbound = new EmbeddedChannel();
-        EmbeddedChannel inbound = new EmbeddedChannel(
-                new FuryRemotingCodecFactory.FuryMessageDecoder(
-                        new FuryRemotingCodecFactory.FuryRemotingSupport(new ArrayList<>(allowedPrefixes))));
+    private static Object roundTrip(RemotingCodec codec, Object message) throws Exception {
+        ByteBuf encoded = codec.encode(UnpooledByteBufAllocator.DEFAULT, message);
         try {
-            codec.install(outbound.pipeline());
-            assertTrue(outbound.writeOutbound(message));
-            ByteBuf encoded = Unpooled.buffer();
-            for (ByteBuf part; (part = outbound.readOutbound()) != null; ) {
-                try {
-                    encoded.writeBytes(part);
-                } finally {
-                    ReferenceCountUtil.release(part);
-                }
-            }
-            assertTrue(encoded.readableBytes() > Integer.BYTES);
-            ByteBuf frame = null;
-            try {
-                int frameLength = encoded.readInt();
-                assertEquals(frameLength, encoded.readableBytes());
-                frame = encoded.readRetainedSlice(frameLength);
-                assertTrue(inbound.writeInbound(frame));
-            } finally {
-                if (frame != null && frame.refCnt() > 0) {
-                    ReferenceCountUtil.release(frame);
-                }
-                if (encoded.refCnt() > 0) {
-                    ReferenceCountUtil.release(encoded);
-                }
-            }
-            inbound.checkException();
-            Object decoded = inbound.readInbound();
+            assertTrue(encoded.readableBytes() >= 8);
+            Object decoded = codec.decode(encoded);
             assertNotNull(decoded);
+            assertEquals(0, encoded.readableBytes());
             return decoded;
         } finally {
-            outbound.finishAndReleaseAll();
-            inbound.finishAndReleaseAll();
+            encoded.release();
         }
     }
 }

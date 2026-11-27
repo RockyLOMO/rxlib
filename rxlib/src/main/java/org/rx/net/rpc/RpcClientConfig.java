@@ -5,8 +5,8 @@ import lombok.Setter;
 import lombok.ToString;
 import org.rx.net.Sockets;
 import org.rx.net.transport.TcpClientConfig;
-import org.rx.net.transport.hybrid.HybridClient;
-import org.rx.net.transport.hybrid.HybridConfig;
+import org.rx.net.transport.core.TransportClient;
+import org.rx.net.transport.core.TransportConfig;
 import org.rx.util.function.TripleAction;
 
 import java.net.InetSocketAddress;
@@ -48,30 +48,30 @@ public class RpcClientConfig<T> {
         return config;
     }
 
-    private final HybridConfig hybridConfig;
+    private final TransportConfig transportConfig;
     private short eventVersion = DEFAULT_VERSION;
     private short minPoolSize;
     private short maxPoolSize = NON_POOL_SIZE;
     private int requestTimeoutMillis = -1;
-    private TripleAction<T, HybridClient> initHandler;
+    private TripleAction<T, TransportClient> initHandler;
     private RemotingCodecFactory codecFactory = FuryRemotingCodecFactory.createDefault();
     /** Method arguments omitted from call logs and trace snapshots (credentials). */
     private Set<String> sensitiveMethods = Collections.emptySet();
 
     public RpcClientConfig(TcpClientConfig tcpConfig) {
-        this(new HybridConfig());
-        hybridConfig.setTcpClientConfig(tcpConfig);
+        this(new TransportConfig());
+        transportConfig.setTcpClientConfig(tcpConfig);
     }
 
-    public RpcClientConfig(HybridConfig hybridConfig) {
-        this.hybridConfig = hybridConfig == null ? new HybridConfig() : hybridConfig;
-        if (this.hybridConfig.getTcpClientConfig() == null) {
-            this.hybridConfig.setTcpClientConfig(new TcpClientConfig());
+    public RpcClientConfig(TransportConfig transportConfig) {
+        this.transportConfig = transportConfig == null ? new TransportConfig() : transportConfig;
+        if (this.transportConfig.getTcpClientConfig() == null) {
+            this.transportConfig.setTcpClientConfig(new TcpClientConfig());
         }
     }
 
     public TcpClientConfig getTcpConfig() {
-        return hybridConfig.getTcpClientConfig();
+        return transportConfig.getTcpClientConfig();
     }
 
     public boolean isUsePool() {

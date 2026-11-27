@@ -1,14 +1,16 @@
 # 服务发现模块 (org.rx.net.nameserver)
 
-基于 Netty 实现的轻量级内部命名服务（Name Server），类似于微缩版的 Nacos 或 Eureka。
+基于 Netty 与共享 Transport Core 实现的轻量级内部命名服务（Name Server），类似于微缩版的 Nacos 或 Eureka。
 
 ## 核心类介绍
 
 - **`Nameserver`**:
-  命名服务器的服务端入口。主要负责维护服务列表及各个节点的健康状态。
+  命名服务器的服务端契约接口，负责服务实例注册、心跳保活与路由发现。
 
 - **`NameserverImpl`**:
-  服务端的核心逻辑实现类，包括服务注册、心跳保活检测、路由列表下发等功能。
+  服务端核心实现：
+  - 注册与发现服务入口通过 `Remoting.register(...)` 暴露在 `TransportServer` 上，会话属性直接绑定在 `TransportSession` 上，连接断开前自动注销实例。
+  - 副本同步通过共享 `DatagramTransport`（固定单端口绑定 `reusePortBindCount = 1`）+ `FuryUdpClientCodec` 实现，同步回调统一调度到后台线程池执行，不阻塞 Netty EventLoop。
 
 - **`NameserverClient`**:
   客户端。默认每 120 秒上报心跳。注册后把 DNS 端口注入 `Sockets.injectNameService`。

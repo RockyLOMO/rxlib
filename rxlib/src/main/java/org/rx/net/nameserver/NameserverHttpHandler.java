@@ -9,7 +9,7 @@ import org.rx.net.Sockets;
 import org.rx.net.http.HttpServer;
 import org.rx.net.http.ServerRequest;
 import org.rx.net.http.ServerResponse;
-import org.rx.net.transport.hybrid.HybridSession;
+import org.rx.net.transport.core.TransportSession;
 
 import java.io.Serializable;
 import java.net.InetAddress;
@@ -24,7 +24,6 @@ import java.util.Comparator;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 import static org.rx.core.Extends.ifNull;
@@ -104,11 +103,11 @@ public class NameserverHttpHandler implements HttpServer.Handler {
     }
 
     static List<Map<String, Object>> buildInstanceRows(NameserverImpl nameserver) {
-        Map<Long, HybridSession> sessions = nameserver.rs.sessions();
+        Map<Long, TransportSession> sessions = nameserver.rs.sessions();
         List<Map<String, Object>> rows = new ArrayList<Map<String, Object>>(sessions.size());
-        for (HybridSession session : sessions.values()) {
+        for (TransportSession session : sessions.values()) {
             String appName = ifNull(session.<String>attr(Nameserver.APP_NAME_KEY), "NOT_REG");
-            InetSocketAddress remoteEndpoint = session.tcpRemoteEndpoint();
+            InetSocketAddress remoteEndpoint = session.remoteEndpoint();
             InetAddress address = remoteEndpoint == null ? null : remoteEndpoint.getAddress();
             Map<String, Serializable> attrs = address == null ? null : nameserver.attrs.get(nameserver.instanceKey(appName, address));
 

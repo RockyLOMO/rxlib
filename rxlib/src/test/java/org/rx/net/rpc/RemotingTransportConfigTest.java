@@ -3,34 +3,32 @@ package org.rx.net.rpc;
 import org.junit.jupiter.api.Test;
 import org.rx.net.transport.TcpClientConfig;
 import org.rx.net.transport.TcpServerConfig;
-import org.rx.net.transport.hybrid.HybridConfig;
+import org.rx.net.transport.core.TransportConfig;
 
 import java.net.InetSocketAddress;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
-class RemotingHybridConfigTest {
+class RemotingTransportConfigTest {
     @Test
-    void statefulModeBuildsHybridClientConfig() {
+    void statefulModeBuildsTransportClientConfig() {
         InetSocketAddress endpoint = new InetSocketAddress("127.0.0.1", 25001);
         RpcClientConfig<Object> config = RpcClientConfig.statefulMode(endpoint, 7);
 
-        assertSame(config.getTcpConfig(), config.getHybridConfig().getTcpClientConfig());
+        assertSame(config.getTcpConfig(), config.getTransportConfig().getTcpClientConfig());
         assertEquals(endpoint, config.getTcpConfig().getServerEndpoint());
         assertTrue(config.getTcpConfig().isEnableReconnect());
+        assertTrue(config.getTransportConfig().isEnableAdaptiveUdp());
         assertEquals(7, config.getEventVersion());
         assertFalse(config.isUsePool());
     }
 
     @Test
-    void poolModeBuildsHybridClientConfig() {
+    void poolModeBuildsTransportClientConfig() {
         InetSocketAddress endpoint = new InetSocketAddress("127.0.0.1", 25002);
         RpcClientConfig<Object> config = RpcClientConfig.poolMode(endpoint, 2, 4);
 
-        assertSame(config.getTcpConfig(), config.getHybridConfig().getTcpClientConfig());
+        assertSame(config.getTcpConfig(), config.getTransportConfig().getTcpClientConfig());
         assertEquals(endpoint, config.getTcpConfig().getServerEndpoint());
         assertFalse(config.getTcpConfig().isEnableReconnect());
         assertEquals(2, config.getMinPoolSize());
@@ -39,13 +37,13 @@ class RemotingHybridConfigTest {
     }
 
     @Test
-    void constructorPreservesHybridServerConfig() {
-        HybridConfig hybridConfig = new HybridConfig();
+    void constructorPreservesTransportServerConfig() {
+        TransportConfig transportConfig = new TransportConfig();
         TcpServerConfig tcpServerConfig = new TcpServerConfig(26001);
-        hybridConfig.setTcpServerConfig(tcpServerConfig);
+        transportConfig.setTcpServerConfig(tcpServerConfig);
 
-        RpcServerConfig config = new RpcServerConfig(hybridConfig);
-        assertSame(hybridConfig, config.getHybridConfig());
+        RpcServerConfig config = new RpcServerConfig(transportConfig);
+        assertSame(transportConfig, config.getTransportConfig());
         assertSame(tcpServerConfig, config.getTcpConfig());
     }
 
@@ -55,6 +53,6 @@ class RemotingHybridConfigTest {
         RpcClientConfig<Object> config = new RpcClientConfig<Object>(tcpClientConfig);
 
         assertSame(tcpClientConfig, config.getTcpConfig());
-        assertSame(tcpClientConfig, config.getHybridConfig().getTcpClientConfig());
+        assertSame(tcpClientConfig, config.getTransportConfig().getTcpClientConfig());
     }
 }

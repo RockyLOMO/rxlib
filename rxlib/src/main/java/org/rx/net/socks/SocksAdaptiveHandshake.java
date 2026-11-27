@@ -135,6 +135,12 @@ final class SocksAdaptiveHandshake {
 
     static void install(Channel tcp, byte[] nonce, String password, AdaptiveUdpPort serverPort, int profile,
                         boolean udpHop, InetSocketAddress udpTarget, int localMtu) {
+        install(tcp, nonce, password, serverPort, profile, udpHop, udpTarget, localMtu, null);
+    }
+
+    static void install(Channel tcp, byte[] nonce, String password, AdaptiveUdpPort serverPort, int profile,
+                        boolean udpHop, InetSocketAddress udpTarget, int localMtu,
+                        java.util.function.Consumer<Boolean> udpHealthListener) {
         byte[] key;
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
@@ -153,6 +159,6 @@ final class SocksAdaptiveHandshake {
             throw new IllegalArgumentException("Incompatible adaptive UDP endpoints or MTU");
         }
         AdaptiveTcpHandler.install(tcp, ByteBuffer.wrap(nonce).getLong(), key, serverPort,
-                primary, alias, profile, udpHop, udpTarget, mtu);
+                primary, alias, profile, udpHop, udpTarget, mtu, udpHealthListener);
     }
 }

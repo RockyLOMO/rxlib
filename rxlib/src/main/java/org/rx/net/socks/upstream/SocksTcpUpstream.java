@@ -82,6 +82,10 @@ public class SocksTcpUpstream extends Upstream {
         return next.getEndpoint();
     }
 
+    public UpstreamSupport getUpstreamSupport() {
+        return next;
+    }
+
     public InetSocketAddress getAdaptiveUdpClient() {
         return next.getAdaptiveUdpClient();
     }
@@ -311,6 +315,7 @@ public class SocksTcpUpstream extends Upstream {
         proxyHandler.setUdpHop(((SocksConfig) config).isUdpHop());
         proxyHandler.setAdaptiveUdpMtu(((SocksConfig) config).resolveDailyUdpMtu());
         proxyHandler.setAdaptiveUdpAddress(next.getAdaptiveUdpClient());
+        proxyHandler.setUpstreamSupport(next);
         proxyHandler.setConnectTimeoutMillis(config.getConnectTimeoutMillis());
         channel.pipeline().addLast(proxyHandler);
     }

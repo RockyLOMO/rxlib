@@ -663,11 +663,13 @@ public class SocksUdpUpstream extends Upstream {
 
         if (error != null) {
             closeGroup(group, false);
+            next.recordFailure(UpstreamSupport.Capability.UDP);
             log.error("Failed to establish UDP upstream session on route {}", next.getRouteId(), error);
             future.completeExceptionally(error);
             return;
         }
         if (group == null || !group.isValid()) {
+            next.recordFailure(UpstreamSupport.Capability.UDP);
             future.completeExceptionally(new IllegalStateException("UDP upstream session group is null or invalid"));
             return;
         }
@@ -676,6 +678,7 @@ public class SocksUdpUpstream extends Upstream {
             future.completeExceptionally(new ClosedChannelException());
             return;
         }
+        next.recordSuccess(UpstreamSupport.Capability.UDP);
         bindGroup(channel, group);
         future.complete(group);
     }

@@ -4,12 +4,12 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 import org.rx.net.transport.TcpServerConfig;
-import org.rx.net.transport.hybrid.HybridConfig;
+import org.rx.net.transport.core.TransportConfig;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
-import java.util.Collections;
 import java.util.concurrent.Executor;
 
 @Getter
@@ -20,7 +20,7 @@ public class RpcServerConfig {
     public static final short EVENT_DISABLE_COMPUTE = -1;
     public static final short EVENT_LATEST_COMPUTE = 0;
 
-    private final HybridConfig hybridConfig;
+    private final TransportConfig transportConfig;
     private final List<Integer> eventBroadcastVersions = new ArrayList<Integer>();
     private short eventComputeVersion = EVENT_DISABLE_COMPUTE;
     private RemotingCodecFactory codecFactory = FuryRemotingCodecFactory.createDefault();
@@ -29,15 +29,15 @@ public class RpcServerConfig {
     private Set<String> sensitiveMethods = Collections.emptySet();
 
     public RpcServerConfig(TcpServerConfig tcpConfig) {
-        this(new HybridConfig());
-        hybridConfig.setTcpServerConfig(tcpConfig);
+        this(new TransportConfig());
+        transportConfig.setTcpServerConfig(tcpConfig);
     }
 
-    public RpcServerConfig(HybridConfig hybridConfig) {
-        this.hybridConfig = hybridConfig == null ? new HybridConfig() : hybridConfig;
+    public RpcServerConfig(TransportConfig transportConfig) {
+        this.transportConfig = transportConfig == null ? new TransportConfig() : transportConfig;
     }
 
     public TcpServerConfig getTcpConfig() {
-        return hybridConfig.getTcpServerConfig();
+        return transportConfig.getTcpServerConfig();
     }
 }

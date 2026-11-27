@@ -6,26 +6,32 @@ import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Disposable;
 import org.rx.core.ObjectPool;
 import org.rx.core.Sys;
-import org.rx.net.transport.hybrid.HybridClient;
-import org.rx.net.transport.hybrid.HybridConfig;
+import org.rx.exception.InvalidException;
+import org.rx.net.transport.core.TransportClient;
+import org.rx.net.transport.core.TransportConfig;
 
 import java.util.function.Consumer;
 
 @Slf4j
 @RequiredArgsConstructor
-class RpcHybridClientPoolImpl extends Disposable implements RpcHybridClientPool {
-    final ObjectPool<HybridClient> pool;
+class RpcTransportClientPoolImpl extends Disposable implements RpcTransportClientPool {
+    final ObjectPool<TransportClient> pool;
 
-    public RpcHybridClientPoolImpl(RpcClientConfig<?> template) {
+    public RpcTransportClientPoolImpl(RpcClientConfig<?> template) {
         int minIdleSize = Math.max(1, template.getMinPoolSize());
         int maxSize = Math.max(minIdleSize, template.getMaxPoolSize());
-        pool = new ObjectPool<HybridClient>(minIdleSize, maxSize, () -> {
-            HybridConfig config = Sys.deepClone(template.getHybridConfig());
-            HybridClient client = new HybridClient(config);
-            client.connect(config.getTcpClientConfig().getServerEndpoint());
-            log.debug("Create RpcHybridClient {}", client);
+        pool = new ObjectPool<TransportClient>(minIdleSize, maxSize, () -> {
+            TransportConfig config = Sys.deepClone(template.getTransportConfig());
+            TransportClient client = new TransportClient(config);
+            try {
+                client.connect(config.getTcpClientConfig().getServerEndpoint());
+            } catch (Throwable e) {
+                client.close();
+                throw e;
+            }
+            log.debug("Create RpcTransportClient {}", client);
             return client;
-        }, HybridClient::isConnected, null, client -> {
+        }, TransportClient::isConnected, null, client -> {
             client.getConfig().getTcpClientConfig().setEnableReconnect(false);
             client.resetHandlers();
         });
@@ -40,13 +46,13 @@ class RpcHybridClientPoolImpl extends Disposable implements RpcHybridClientPool 
 
     @SneakyThrows
     @Override
-    public HybridClient borrowClient() {
+    public TransportClient borrowClient() {
         checkNotClosed();
         return pool.borrow();
     }
 
     @Override
-    public HybridClient returnClient(HybridClient client) {
+    public TransportClient returnClient(TransportClient client) {
         if (client == null) {
             return null;
         }
@@ -58,7 +64,7 @@ class RpcHybridClientPoolImpl extends Disposable implements RpcHybridClientPool 
             pool.recycle(client);
         } catch (Throwable e) {
             if (!isClosed()) {
-                throw org.rx.exception.InvalidException.sneaky(e);
+                throw InvalidException.sneaky(e);
             }
             client.close();
         }
@@ -67,11 +73,11 @@ class RpcHybridClientPoolImpl extends Disposable implements RpcHybridClientPool 
 
     @Override
     public boolean isHealthy() {
-        return !isClosed() && pool.anyMatch(HybridClient::isConnected);
+        return !isClosed() && pool.anyMatch(TransportClient::isConnected);
     }
 
     @Override
-    public void forEachClient(Consumer<HybridClient> consumer) {
+    public void forEachClient(Consumer<TransportClient> consumer) {
         pool.forEach(consumer);
     }
 }

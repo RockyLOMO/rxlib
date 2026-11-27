@@ -1,21 +1,21 @@
 package org.rx.net.rpc;
 
 import lombok.Getter;
-import org.rx.net.transport.hybrid.HybridServer;
+import org.rx.net.transport.core.TransportServer;
 
 import java.net.InetSocketAddress;
 
 @Getter
 public final class RemotingClientHandle {
-    private final transient HybridServer server;
+    private final transient TransportServer server;
     private final long sessionId;
     private final String peerId;
-    private final InetSocketAddress tcpRemoteEndpoint;
+    private final InetSocketAddress remoteEndpoint;
 
-    RemotingClientHandle(HybridServer server, long sessionId, String peerId, InetSocketAddress tcpRemoteEndpoint) {
+    RemotingClientHandle(TransportServer server, long sessionId, String peerId, InetSocketAddress remoteEndpoint) {
         this.server = server;
         this.sessionId = sessionId;
         this.peerId = peerId;
-        this.tcpRemoteEndpoint = tcpRemoteEndpoint;
+        this.remoteEndpoint = remoteEndpoint;
     }
 }

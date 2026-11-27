@@ -1,27 +1,37 @@
-# 基础传输模块 (org.rx.net.transport)
+# 基础传输模块 (org.rx.net.transport & org.rx.net.transport.core)
 
-提供最基础的 TCP 和 UDP Client/Server 封装封装，高度抽取了 Netty 的样板代码。用于快速搭建网络端点应用。
+提供 Netty TCP/UDP 基础封装与共享传输内核（Transport Core），直接以原始 `ByteBuf` 为一等数据类型，不依赖 RPC、Fury、SOCKS5 或 DNS。
 
-## 核心类介绍
+## 共享传输内核 (org.rx.net.transport.core)
+
+- **`TransportConfig`**:
+  可靠字节流客户端/服务端统一配置，包含内嵌 `TcpClientConfig`/`TcpServerConfig`、`enableAdaptiveUdp`（默认 `true`，复用 RSS `daily` 单端口自适应 UDP 加速；设为 `false` 时纯 TCP 且零 UDP Socket）、`udpBindPort`、`udpMtu`、`authSecret`、`handshakeTimeoutMillis`、`maxFrameBytes`。
+
+- **`TransportServer` / `TransportClient` / `TransportSession`**:
+  原始 `ByteBuf` 可靠有序字节流服务端、客户端与会话抽象：
+  - 基于 `RXTC` v1 二进制握手完成会话 ID、能力位与 MTU 协商，通过 `FRAME_READY` 屏障避免 TCP 粘包与加解密/`AdaptiveTcpHandler` 切入竞争。
+  - `enableAdaptiveUdp = false` 时纯 TCP，不绑定、不创建任何 UDP Socket（`TransportServer.udpPort() == 0`）。
+  - `enableAdaptiveUdp = true` 时在单端口上复用 RSS `daily`（`AdaptiveTcpHandler` + `AdaptiveUdpPort`，不启用端口跳跃与包复制），提供单一层的 FEC + TCP 可靠修复。
+  - 会话提供 `send(ByteBuf)` / `sendAsync(ByteBuf)`、`attr(...)`、`isAdaptiveUdpActive()` 与清晰的所有权/释放语义。
+
+- **`DatagramTransport` / `DatagramTransportConfig`**:
+  原始 `ByteBuf` 无连接 UDP 传输组件，默认单端口绑定（`reusePortBindCount = 1`），支持直发/直收原始 datagram，也可通过 `installDatagramHandler(RssDatagramHandler)` 在 EventLoop 上同步挂载认证分片与 FEC 保护。
+
+## 基础 I/O 组件 (org.rx.net.transport)
 
 - **`TcpServer`**:
-  TCP 服务器封装。支持直接配置监听端口、SSL 证书，并通过事件或处理器钩子处理连接上线、接收报文、下线等事件。
+  基础 TCP 服务器封装，支持端口监听、SSL 与连接/报文回调。
 
 - **`TcpClient` / `AbstractTcpReconnectClient`**:
-  TCP 客户端封装。自带断线重连逻辑、连接状态管理以及快速发送/接收抽象。
-
-- **`UdpClient`**:
-  高性能的 UDP 客户端与服务端一体化组件（在 Netty 中 UDP Server 与 Client 边界相对模糊）。内置对广播、组播的支持。
+  基础 TCP 客户端与通用断线重连基类（`TransportClient` 亦继承自 `AbstractTcpReconnectClient`）。
 
 - **`SftpClient`**:
-  基于 SFTP 协议构建的文件传输客户端，封装了底层连接，并暴露出对远端文件系统的常用操作（上传、下载、列出目录）。
+  基于 SFTP 协议的文件传输客户端。
 
-- **`HybridServer` / `HybridClient`**:
-  混合传输组件。支持在 TCP 连接的基础上，根据网络状况和数据包大小自动切换到 UDP 通道。
-  - **默认行为**：默认开启 `enableUdpDirect` 和 `enableUdpHolePunch`。
-  - **端口绑定**：若未指定 `udpBindPort`（默认为 0），服务端会启动并绑定一个随机的可用 UDP 端口。
-  - **探测机制**：当客户端连接时，服务端会主动发起 UDP 探测包，尝试建立更高效的 UDP 直连。`udpSmallPacketThresholdBytes` 默认 8KiB，`udpProbeCount` 默认 6，`udpProbeTimeoutMillis` 默认 1500，`udpProbeIntervalMillis` 默认 120。`udpBindPort` 默认 0。
+- **`UdpClient`（遗留隔离）**:
+  旧对象/消息 UDP 传输组件。RPC（原 `Hybrid*`）与 `NameserverImpl` 已全部迁移至 `org.rx.net.transport.core`，旧 `Hybrid*` 与 `KcpClient` 已删除；当前 `UdpClient` 仅剩 `org.rx.net.udp.UdpHolePunch*` 遗留调用（打洞模块待未来独立评估退役或迁移后即可彻底删除 `UdpClient`）。
 
 ## 适用场景
-- 任何需要构建裸 TCP/UDP 服务的场景。
-- 业务方需要进行最原始的报文交换（如物联网网关）。
+- 原始二进制协议/自定义字节流服务（直接使用 `TransportServer` / `TransportClient`，无需构造 RPC facade）。
+- 独立 UDP 数据报或集群内部轻量同步（直接使用 `DatagramTransport`）。
+- 作为 RPC 与 RSS 共用的可靠传输内核。

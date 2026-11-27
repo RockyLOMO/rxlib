@@ -2176,9 +2176,18 @@ class SocksProxyServerIntegrationTest {
             } finally {
                 chNoHop.close().sync();
             }
+            // Allow the asynchronous UDP forwarder thread to drain any final in-flight datagram from chNoHop.
+            int c2sBefore = rawC2S.get();
+            for (int i = 0; i < 10; i++) {
+                Thread.sleep(25);
+                int cur = rawC2S.get();
+                if (cur == c2sBefore) {
+                    break;
+                }
+                c2sBefore = cur;
+            }
 
             // 2. 6898-like hopping stream on the same server stays direct and does not touch the udp2raw forwarder.
-            int c2sBefore = rawC2S.get();
             SocksConfig hopCfg = new SocksConfig();
             hopCfg.setAdaptiveTcp(true);
             hopCfg.setUdpHop(true);

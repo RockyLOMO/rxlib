@@ -3,9 +3,6 @@ package org.rx.net.rpc;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.ByteBufOutputStream;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.handler.codec.MessageToByteEncoder;
-import io.netty.handler.codec.MessageToMessageDecoder;
 import io.netty.util.concurrent.FastThreadLocal;
 import lombok.NoArgsConstructor;
 import org.apache.fury.Fury;
@@ -18,7 +15,6 @@ import org.rx.net.rpc.protocol.EventFlag;
 import org.rx.net.rpc.protocol.EventMessage;
 import org.rx.net.rpc.protocol.MetadataMessage;
 import org.rx.net.rpc.protocol.MethodMessage;
-import org.rx.net.transport.UdpClientCodec;
 import org.rx.net.transport.protocol.ErrorPacket;
 import org.rx.net.transport.protocol.PingPacket;
 
@@ -52,8 +48,8 @@ public class FuryRemotingCodecFactory implements RemotingCodecFactory {
     }
 
     @Override
-    public UdpClientCodec newCodec() {
-        return new FuryRemotingUdpCodec(new ArrayList<String>(allowedClassPrefixes));
+    public RemotingCodec newCodec() {
+        return new FuryRemotingCodec(new ArrayList<String>(allowedClassPrefixes));
     }
 
     static final class FuryRemotingSupport implements Serializable {
@@ -62,10 +58,6 @@ public class FuryRemotingCodecFactory implements RemotingCodecFactory {
 
         FuryRemotingSupport(List<String> allowedPrefixes) {
             this.allowedPrefixes = allowedPrefixes;
-        }
-
-        Fury newFury() {
-            return FuryCodecSupport.newFury(FuryRemotingCodecFactory.class, allowedPrefixes, this::registerTypes);
         }
 
         void registerTypes(Fury fury) {
@@ -85,23 +77,12 @@ public class FuryRemotingCodecFactory implements RemotingCodecFactory {
         }
     }
 
-    static abstract class FuryHandlerSupport {
-        final FuryRemotingSupport support;
-        final FastThreadLocal<Fury> furyLocal;
-
-        FuryHandlerSupport(FuryRemotingSupport support, String purpose) {
-            this.support = support;
-            this.furyLocal = FuryCodecSupport.sharedFuryLocal(FuryRemotingCodecFactory.class, purpose,
-                    support.allowedPrefixes, support::registerTypes);
-        }
-    }
-
-    static final class FuryRemotingUdpCodec implements UdpClientCodec {
+    static final class FuryRemotingCodec implements RemotingCodec {
         private static final long serialVersionUID = 2863199051413105376L;
         final List<String> allowedPrefixes;
         transient volatile FastThreadLocal<Fury> furyLocal;
 
-        FuryRemotingUdpCodec(List<String> allowedPrefixes) {
+        FuryRemotingCodec(List<String> allowedPrefixes) {
             this.allowedPrefixes = allowedPrefixes;
         }
 
@@ -162,6 +143,7 @@ public class FuryRemotingCodecFactory implements RemotingCodecFactory {
                 return fury.deserializeJavaObjectAndClass(toMemoryBuffer(payload, payloadLength));
             } finally {
                 fury.reset();
+                payload.skipBytes(payloadLength);
             }
         }
 
@@ -174,85 +156,12 @@ public class FuryRemotingCodecFactory implements RemotingCodecFactory {
                 local = furyLocal;
                 if (local == null) {
                     final FuryRemotingSupport support = new FuryRemotingSupport(allowedPrefixes);
-                    local = FuryCodecSupport.sharedFuryLocal(FuryRemotingCodecFactory.class, "remoting-udp",
+                    local = FuryCodecSupport.sharedFuryLocal(FuryRemotingCodecFactory.class, "remoting-core",
                             allowedPrefixes, support::registerTypes);
                     furyLocal = local;
                 }
             }
             return local.get();
-        }
-
-        MemoryBuffer toMemoryBuffer(ByteBuf frame, int payloadLength) {
-            return FuryCodecSupport.toMemoryBuffer(frame, frame.readerIndex(), payloadLength);
-        }
-    }
-
-    static final class FuryMessageEncoder extends MessageToByteEncoder<Object> {
-        final FuryHandlerSupport handlerSupport;
-
-        FuryMessageEncoder(FuryRemotingSupport support) {
-            handlerSupport = new FuryHandlerSupport(support, "remoting-tcp-encoder") {
-            };
-        }
-
-        @Override
-        protected void encode(ChannelHandlerContext ctx, Object msg, ByteBuf out) throws Exception {
-            out.writeShort(FRAME_MAGIC);
-            out.writeByte(FRAME_VERSION);
-            out.writeByte(CODEC_ID_FURY);
-            int lengthIndex = out.writerIndex();
-            out.writeInt(0);
-            int payloadStart = out.writerIndex();
-            Fury fury = handlerSupport.furyLocal.get();
-            try {
-                try (ByteBufOutputStream stream = new ByteBufOutputStream(out)) {
-                    fury.serializeJavaObjectAndClass(stream, msg);
-                }
-            } finally {
-                fury.reset();
-            }
-            out.setInt(lengthIndex, out.writerIndex() - payloadStart);
-        }
-    }
-
-    static final class FuryMessageDecoder extends MessageToMessageDecoder<ByteBuf> {
-        final FuryHandlerSupport handlerSupport;
-
-        FuryMessageDecoder(FuryRemotingSupport support) {
-            handlerSupport = new FuryHandlerSupport(support, "remoting-tcp-decoder") {
-            };
-        }
-
-        @Override
-        protected void decode(ChannelHandlerContext ctx, ByteBuf frame, List<Object> out) {
-            if (frame.readableBytes() < 8) {
-                throw new InvalidException("Fury frame too short {}", frame.readableBytes());
-            }
-
-            short magic = frame.readShort();
-            int version = frame.readUnsignedByte();
-            int codecId = frame.readUnsignedByte();
-            int payloadLength = frame.readInt();
-            if (magic != FRAME_MAGIC) {
-                throw new InvalidException("Fury frame magic mismatch {}", Integer.toHexString(magic & 0xFFFF));
-            }
-            if (version != FRAME_VERSION) {
-                throw new InvalidException("Fury frame version mismatch {}", version);
-            }
-            if (codecId != CODEC_ID_FURY) {
-                throw new InvalidException("Fury frame codec mismatch {}", codecId);
-            }
-            if (payloadLength < 0 || payloadLength != frame.readableBytes()) {
-                throw new InvalidException("Fury frame payload length mismatch payload={} actual={}", payloadLength, frame.readableBytes());
-            }
-
-            Fury fury = handlerSupport.furyLocal.get();
-            try {
-                out.add(fury.deserializeJavaObjectAndClass(toMemoryBuffer(frame, payloadLength)));
-            } finally {
-                fury.reset();
-                frame.skipBytes(payloadLength);
-            }
         }
 
         MemoryBuffer toMemoryBuffer(ByteBuf frame, int payloadLength) {

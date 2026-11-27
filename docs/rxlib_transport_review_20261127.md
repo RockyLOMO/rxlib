@@ -175,4 +175,38 @@ A/AAAA 已有缓存；HTTPS/TXT/MX/SRV 等其他查询通过独立 record exchan
 | P2 | 动态 PMTU、实际内存峰值 | 实测后决定 |
 | P3 | 更多类名、接口和包结构抽象 | 暂停 |
 
+## 6. 2026-11-27 整改落地与高丢包 VPS 实测记录
+
+### 6.1 整改状态汇总
+
+| 编号 | 项目 | 状态 | 关键落地文件 |
+|---|---|---|---|
+| **P1-01** | 热更新原子发布与回滚 | **已完成并单测验证** | `RssRuntime.java`（不可变 `RuntimeGeneration` 原子发布 + 全字段回滚）、`RssAuthenticator.java`（`prepareReload`/`applySettings`）、`RssClient.java`（RRP 延迟关闭/回滚） |
+| **P1-02** | 按能力预过滤兼容候选再按权重选路 | **已完成并单测验证** | `RssClient.java`、`RssRuntime.java`（先算 profile 再按能力过滤并复用 generation 缓存，fail-open 严守兼容候选边界） |
+| **P1-03** | 分能力独立健康状态 | **已完成并单测验证** | `UpstreamSupport.java`（`TCP`/`UDP`/`ADAPTIVE_UDP`/`RPC` 四能力独立无锁故障计数与冷却）、`Socks5ClientHandler.java`、`Socks5CommandRequestHandler.java`、`SocksUdpUpstream.java`、`AdaptiveTcpHandler.java`、`SocksAdaptiveHandshake.java`、`RssClient.java`、`RssDnsInterceptor.java` |
+| **P1-04** | DNS 查询快照与在途生命周期 | **已完成并单测验证** | `RssDnsInterceptor.java`、`RssRuntime.java`、`RssClient.java`（按次解析最新 `RuntimeGeneration`，重验用户存在性与 ACL，在途查询计入 `inFlightDnsQueries` 保活旧快照、释放即回收） |
+| **P2-01** | DNS resolver 故障切换与总预算 | **已完成并单测验证** | `DnsRecordExchange.java`（`TOTAL_DEADLINE_MILLIS = 3500`，多 resolver UDP/TCP 异常与超时自动切换） |
+| **P2-02** | 64 MiB 逻辑预算与低配实测 | **按建议保持预算并实机观测** | 保持 32+24+8 MiB 预算；在 Debian 12 1 vCPU / 960 MiB 实机观测到 Netty Direct 峰值 `≤ 2.4 MiB`、进程 `VmRSS` 稳定 `≤ 470 MiB` |
+| **P3** | 额外类名/接口抽象 | **按建议暂停** | 不做多余重命名 |
+
+### 6.2 高丢包实机部署暴露并修复的 3 处线上缺陷
+
+1. **Debian 12 `nftables v1.0.6` UDP hop 链优先级语法拒绝**：`rss-udp-hops.sh` 与 `deploy/rss-hops.sh` 中 `hook output priority dstnat` 在 `nftables 1.0.6` 报错，已统一改为数字优先级 `priority -100`（`NF_IP_PRI_NAT_DST`），实机 `nft --check` 与启动均通过。
+2. **高丢包大响应下 `AdaptiveTcpHandler` 提前 `close(fd)` 触发 Linux `TCP RST` 截断（`EOFException`）**：源站写完 512 KiB 立刻关闭后，服务端在 `SO_SNDBUF` 尚有 80–196 KiB 未经高丢包链路发完时调用 `close(fd)`，客户端回传的 `ACK` 帧触发内核 `TCP RST` 冲掉残余发送缓冲。已在 `AdaptiveTcpHandler.close(...)` 改为 `DuplexChannel.shutdownOutput()` 半关闭并在 `closing` 态保持 `autoRead` 排空对端控制帧（带安全超时），实机复测 `daily`/`weak` 冷启动与预热下载 100% 完整交付（0 `EOFException`）。
+3. **NAT 环境下 `plain` 普通 UDP `claimUdpRelay` 错误锁死**：客户端位于 NAT 后时上报内网私有 IP，与服务端观测的公网 RPC 对端 IP 不一致仍触发 `ATTR_CLIENT_LOCKED`，导致 `plain` UDP 100% 被 `unexpected-client` 丢弃。已在 `RssRpcApp.claimUdpRelay` 修正为仅在声明 IP 与已认证 RPC 对端 IP 一致时锁定，NAT 场景交由白名单 + 首包绑定，实机复测 `plain` UDP 交付率从 `0%` 恢复至 `74.0%–86.7%`。
+
+### 6.3 182.255.85.247（1 vCPU / 960 MiB，10%–15% 丢包 / 181.8 ms RTT）实测对比
+
+双轮交错顺序（R1: `plain → daily → weak`，R2: `weak → daily → plain`），每轮相同有效载荷（512 KiB 冷下载 + 512 KiB 预热下载 + 256 KiB 上传 + 58 次 256B 交互回显 + 150×256B 普通 UDP 回显），经真实 Shadowsocks `aes-256-gcm` 入口：
+
+| 模式 | 冷下载 512KiB (KiB/s) | 预热下载 512KiB (KiB/s) | 上传 256KiB (KiB/s) | 持续交互 P50 / P95 / P99 (ms) | 全交互 P95 (ms) | 普通 UDP 交付率 / P95 (ms) | 双向 Wire (KiB, TCP+UDP) | 服务端峰值 Direct / RSS |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| **`plain`** (R1/R2) | 14.3 / 15.2 | 12.7 / 18.4 | 106.1 / 133.1 | 189.1 / **999.2** / 1791.3<br>188.1 / **1379.7** / 1814.8 | 1791.3 / 1770.8 | 74.0% (1739.8)<br>86.7% (287.9) | 1742.9 (1657+86)<br>1684.8 (1589+96) | 0.25–2.35 MiB / 313–470 MiB |
+| **`daily`** (R1/R2) | 13.1 / 18.7 | 17.7 / 16.4 | 114.6 / 149.2 | 180.0 / **844.2** / 1535.2<br>190.2 / **773.7** / 1591.2 | 1768.3 / 1782.6 | 86.7% (687.2)<br>87.3% (283.3) | 1805.7 (1611+195)<br>1794.3 (1570+225) | 0.46–2.34 MiB / 331–469 MiB |
+| **`weak`** (R1/R2) | 12.7 / 11.1 | 14.5 / 12.6 | 66.5 / 127.2 | 186.3 / **395.2** / 981.6<br>187.1 / **424.9** / 3864.3 | **981.6 / 988.2** | 88.7% (**246.4**)<br>80.0% (**192.0**) | 2247.2 (1537+710)<br>2029.8 (1632+398) | 0.54–0.56 MiB / 388–422 MiB |
+
+实测结论：
+- **`weak` 在高丢包交互场景收益显著**：持续交互 P95 降至 `395–425 ms`（较 `plain` 降约 60%–65%，较 `daily` 降约 50%），全交互 P95 降至 `982–988 ms`（降约 44%），服务端 `rss.tcp.weak.probeAckedBeforeTcp` 命中 `5/5` 与 `5/6`，客户端 `rss.tcp.weak.sackSent` 触发 `39` / `25` 次选择性补洞；普通 UDP P95 最低（`192–246 ms`），FEC 恢复 `5–6` 包。
+- **单流大块下载待后续调优**：在 10%–15% 丢包下 `weak` 预热下载走 UDP 交付 `220–253 KiB`，但 `AdaptiveTcpStream` 内置 `AdaptiveUdpFec` 在 512 KiB 突发窗口回退前未及产生 parity（`rss.tcp.adaptive.fecParityBytes = 0`），导致部分丢失后通过 TCP 补发、总 wire 字节增加 20%–29% 且单流吞吐未超过 `daily`/`plain`。
+
 建议拆分最小可回归的改动，分别记录修复提交、实际测试及剩余风险；不要用进一步抽象替代故障修复，不重写现有 Adaptive TCP、XOR FEC、Game 复制、AES、SS、zlib/LZ4 或认证分片核心。此次提交仅新增 Review 文档，原设计计划、旧 Review、业务源码、部署配置保持不变。

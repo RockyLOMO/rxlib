@@ -6,8 +6,8 @@ import io.netty.util.concurrent.Future;
 import org.junit.jupiter.api.Test;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.nameserver.NameserverClient;
-import org.rx.net.transport.hybrid.HybridClient;
-import org.rx.net.transport.hybrid.HybridConfig;
+import org.rx.net.transport.core.TransportClient;
+import org.rx.net.transport.core.TransportConfig;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -62,22 +62,21 @@ public class SocketsInjectDnsLocalTest {
                 errors.append("bootstrapDirect=").append(e).append('\n');
             }
 
-            HybridConfig hybridConfig = new HybridConfig();
-            hybridConfig.getTcpClientConfig().setConnectTimeoutMillis(10 * 1000);
-            hybridConfig.getTcpClientConfig().setEnableReconnect(false);
-            hybridConfig.setEnableUdpDirect(false);
-            hybridConfig.setEnableUdpHolePunch(false);
-            try (HybridClient hybridClient = new HybridClient(hybridConfig)) {
-                InetSocketAddress hybridEndpoint = Sockets.newUnresolvedEndpoint("svc-mercury", 1211);
-                hybridClient.connect(hybridEndpoint);
-                System.out.println("hybridConnect=" + hybridEndpoint
-                        + ", connected=" + hybridClient.isConnected()
-                        + ", sessionReady=" + hybridClient.isSessionReady()
-                        + ", session=" + hybridClient.session());
-                hybridOk = hybridClient.isConnected();
+            TransportConfig transportConfig = new TransportConfig();
+            transportConfig.getTcpClientConfig().setConnectTimeoutMillis(10 * 1000);
+            transportConfig.getTcpClientConfig().setEnableReconnect(false);
+            transportConfig.setEnableAdaptiveUdp(false);
+            try (TransportClient transportClient = new TransportClient(transportConfig)) {
+                InetSocketAddress transportEndpoint = Sockets.newUnresolvedEndpoint("svc-mercury", 1211);
+                transportClient.connect(transportEndpoint);
+                System.out.println("transportConnect=" + transportEndpoint
+                        + ", connected=" + transportClient.isConnected()
+                        + ", sessionReady=" + transportClient.isSessionReady()
+                        + ", session=" + transportClient.session());
+                hybridOk = transportClient.isConnected();
             } catch (Throwable e) {
-                System.out.println("hybridConnectError=" + e);
-                errors.append("hybridConnect=").append(e).append('\n');
+                System.out.println("transportConnectError=" + e);
+                errors.append("transportConnect=").append(e).append('\n');
             }
         } finally {
             try {

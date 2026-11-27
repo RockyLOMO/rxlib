@@ -10,13 +10,14 @@ import org.rx.net.Sockets;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.http.HttpServer;
+import io.netty.buffer.ByteBuf;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RemotingContext;
 import org.rx.net.transport.FuryUdpClientCodec;
-import org.rx.net.transport.UdpClient;
-import org.rx.net.transport.UdpClientConfig;
-import org.rx.net.transport.hybrid.HybridServer;
-import org.rx.net.transport.hybrid.HybridSession;
+import org.rx.net.transport.core.DatagramTransport;
+import org.rx.net.transport.core.DatagramTransportConfig;
+import org.rx.net.transport.core.TransportServer;
+import org.rx.net.transport.core.TransportSession;
 
 import java.io.Serializable;
 import java.net.InetAddress;
@@ -79,13 +80,14 @@ public class NameserverImpl implements Nameserver {
 
     static final String NAME = "nameserver";
     final NameserverConfig config;
-    final HybridServer rs;
+    final TransportServer rs;
     @Getter
     final DnsServer dnsServer;
     final boolean ownDnsServer;
     @Setter
     long syncDelay = 500;
-    final UdpClient ss;
+    final DatagramTransport ss;
+    final FuryUdpClientCodec syncCodec;
     final Set<InetSocketAddress> svrEps = ConcurrentHashMap.newKeySet();
     // key String -> appName or appName#ip instance key
     final Map<Object, Map<String, Serializable>> attrs = new ConcurrentHashMap<>();
@@ -103,7 +105,7 @@ public class NameserverImpl implements Nameserver {
 
     public Map<String, List<InstanceInfo>> getInstances() {
         return Linq.from(rs.sessions().values()).groupByIntoMap(p -> ifNull(p.attr(APP_NAME_KEY), "NOT_REG"),
-                (k, p) -> getDiscoverInfos(k, p.select(x -> x.tcpRemoteEndpoint().getAddress()).toList(), Collections.emptyList()));
+                (k, p) -> getDiscoverInfos(k, p.select(x -> x.remoteEndpoint().getAddress()).toList(), Collections.emptyList()));
     }
 
     public NameserverImpl(@NonNull NameserverConfig config) {
@@ -119,54 +121,64 @@ public class NameserverImpl implements Nameserver {
         }
         svrEps.addAll(resolveReplicaEndpoints(Linq.from(config.getReplicaEndpoints()).select(Sockets::parseEndpoint).selectMany(Sockets::newAllEndpoints).toSet()));
 
-        rs = Remoting.registerHybrid(this, config.getRegisterPort(), false);
+        rs = Remoting.register(this, config.getRegisterPort(), false);
         rs.onDisconnected.add((s, e) -> {
-            HybridSession session = e.getValue();
+            TransportSession session = e.getValue();
             String appName = session.attr(APP_NAME_KEY);
             if (appName == null) {
                 return;
             }
 
-            doDeregister(appName, session.tcpRemoteEndpoint().getAddress(), true, true);
+            doDeregister(appName, session.remoteEndpoint().getAddress(), true, true);
         });
-        FuryUdpClientCodec syncCodec = FuryUdpClientCodec.createDefault();
+        syncCodec = FuryUdpClientCodec.createDefault();
         if (config.getUdpCodecAllowPrefixes() != null) {
             for (String prefix : new ArrayList<>(config.getUdpCodecAllowPrefixes())) {
                 syncCodec.allowPrefix(prefix);
             }
         }
-        UdpClientConfig syncConfig = new UdpClientConfig();
-        syncConfig.setCodec(syncCodec);
+        DatagramTransportConfig syncConfig = new DatagramTransportConfig(getSyncPort());
         // Nameserver replica sync 是低频控制面流量，固定单 bind，避免继承全局 SO_REUSEPORT 多路绑定。
         syncConfig.setReusePortBindCount(1);
-        ss = new UdpClient(getSyncPort(), syncConfig);
-        ss.onReceive.add((s, e) -> {
-            Object packet = e.getValue().packet;
-            log.info("ns: [{}] Replica {}", getSyncPort(), packet);
-            if (tryAs(packet, ReplicaFullSync.class, this::applyFullSync)) {
+        ss = DatagramTransport.bind(syncConfig);
+        ss.setReceiveHandler((sender, payload) -> {
+            Object packet;
+            try {
+                packet = syncCodec.decode(payload);
+            } catch (Throwable ex) {
+                log.warn("ns: [{}] Replica decode fail from {}", getSyncPort(), sender, ex);
                 return;
             }
-            if (tryAs(packet, ReplicaSnapshot.class, this::applySnapshot)) {
-                return;
-            }
-            if (!tryAs(packet, Map.class, p -> {
-                Map<Object, Map<String, Serializable>> sync = (Map<Object, Map<String, Serializable>>) p;
-                for (Map.Entry<Object, Map<String, Serializable>> entry : sync.entrySet()) {
-                    attrs(entry.getKey()).putAll(entry.getValue());
-                }
-            }) && !tryAs(packet, DeregisterInfo.class, p -> {
-                if (acceptReplicaVersion(p.sourceId, p.version)) {
-                    doDeregister(p.appName, p.address, false, false);
-                }
-            })) {
-                syncRegister((Set<InetSocketAddress>) packet);
-            }
+            Tasks.run(() -> handleReplicaPacket(packet));
         });
         long fullSyncPeriodMillis = config.getReplicaFullSyncPeriodMillis();
         if (fullSyncPeriodMillis > 0) {
             replicaFullSyncTask = Tasks.schedulePeriod(this::syncFullSnapshot, fullSyncPeriodMillis);
         }
         registerHttpPage();
+    }
+
+    @SuppressWarnings("unchecked")
+    private void handleReplicaPacket(Object packet) {
+        log.info("ns: [{}] Replica {}", getSyncPort(), packet);
+        if (tryAs(packet, ReplicaFullSync.class, this::applyFullSync)) {
+            return;
+        }
+        if (tryAs(packet, ReplicaSnapshot.class, this::applySnapshot)) {
+            return;
+        }
+        if (!tryAs(packet, Map.class, p -> {
+            Map<Object, Map<String, Serializable>> sync = (Map<Object, Map<String, Serializable>>) p;
+            for (Map.Entry<Object, Map<String, Serializable>> entry : sync.entrySet()) {
+                attrs(entry.getKey()).putAll(entry.getValue());
+            }
+        }) && !tryAs(packet, DeregisterInfo.class, p -> {
+            if (acceptReplicaVersion(p.sourceId, p.version)) {
+                doDeregister(p.appName, p.address, false, false);
+            }
+        })) {
+            syncRegister((Set<InetSocketAddress>) packet);
+        }
     }
 
     void registerHttpPage() {
@@ -265,7 +277,7 @@ public class NameserverImpl implements Nameserver {
 
         RemotingContext ctx = RemotingContext.context();
         ctx.getClient().attr(APP_NAME_KEY, appName);
-        InetAddress addr = ctx.getClient().tcpRemoteEndpoint().getAddress();
+        InetAddress addr = ctx.getClient().remoteEndpoint().getAddress();
         Sys.logCtx("remoteAddr", addr);
         doRegister(appName, weight, addr);
 
@@ -287,12 +299,12 @@ public class NameserverImpl implements Nameserver {
             throw new InvalidException("Must register first");
         }
 
-        doDeregister(appName, ctx.getClient().tcpRemoteEndpoint().getAddress(), false, true);
+        doDeregister(appName, ctx.getClient().remoteEndpoint().getAddress(), false, true);
     }
 
     void doDeregister(String appName, InetAddress addr, boolean isDisconnected, boolean shouldSync) {
         //Multiple instances of same app and same ip, such as k8s rolling updates.
-        int c = Linq.from(rs.sessions().values()).count(p -> eq(p.attr(APP_NAME_KEY), appName) && p.tcpRemoteEndpoint().getAddress().equals(addr));
+        int c = Linq.from(rs.sessions().values()).count(p -> eq(p.attr(APP_NAME_KEY), appName) && p.remoteEndpoint().getAddress().equals(addr));
         if (c == (isDisconnected ? 0 : 1)) {
             log.info("ns: deregister {}", appName);
             if (dnsServer.removeHosts(appName, Collections.singletonList(addr))) {
@@ -322,14 +334,14 @@ public class NameserverImpl implements Nameserver {
     @Override
     public <T extends Serializable> void instanceAttr(String appName, String key, T value) {
         RemotingContext ctx = RemotingContext.context();
-        attrs(instanceKey(appName, ctx.getClient().tcpRemoteEndpoint().getAddress())).put(key, value);
+        attrs(instanceKey(appName, ctx.getClient().remoteEndpoint().getAddress())).put(key, value);
         syncAttributes();
     }
 
     @Override
     public <T extends Serializable> T instanceAttr(String appName, String key) {
         RemotingContext ctx = RemotingContext.context();
-        return (T) attrs(instanceKey(appName, ctx.getClient().tcpRemoteEndpoint().getAddress())).get(key);
+        return (T) attrs(instanceKey(appName, ctx.getClient().remoteEndpoint().getAddress())).get(key);
     }
 
     @Override
@@ -345,7 +357,7 @@ public class NameserverImpl implements Nameserver {
         }
         if (exceptCurrent) {
             RemotingContext ctx = RemotingContext.context();
-            hosts.remove(ctx.getClient().tcpRemoteEndpoint().getAddress());
+            hosts.remove(ctx.getClient().remoteEndpoint().getAddress());
         }
         return hosts;
     }
@@ -364,7 +376,7 @@ public class NameserverImpl implements Nameserver {
         }
         if (exceptCurrent) {
             RemotingContext ctx = RemotingContext.context();
-            hosts.remove(ctx.getClient().tcpRemoteEndpoint().getAddress());
+            hosts.remove(ctx.getClient().remoteEndpoint().getAddress());
         }
         return getDiscoverInfos(appName, hosts, instanceAttrKeys);
     }
@@ -437,13 +449,15 @@ public class NameserverImpl implements Nameserver {
         }
     }
 
+    @SneakyThrows
     void sendReplicaPacket(InetSocketAddress endpoint, Object packet) throws TimeoutException {
         InetSocketAddress syncEndpoint = Sockets.newEndpoint(endpoint, getSyncPort());
         if (isLocalSyncEndpoint(syncEndpoint)) {
             log.debug("ns: skip replica self sync {}", Sockets.toString(syncEndpoint));
             return;
         }
-        ss.sendAsync(syncEndpoint, packet);
+        ByteBuf encoded = syncCodec.encode(ss.channel().alloc(), packet);
+        ss.send(syncEndpoint, encoded);
     }
 
     boolean isLocalSyncEndpoint(InetSocketAddress endpoint) {
@@ -505,8 +519,8 @@ public class NameserverImpl implements Nameserver {
             return -1L;
         }
         long best = -1L;
-        for (HybridSession session : rs.sessions().values()) {
-            InetSocketAddress endpoint = session.tcpRemoteEndpoint();
+        for (TransportSession session : rs.sessions().values()) {
+            InetSocketAddress endpoint = session.remoteEndpoint();
             if (endpoint == null || !address.equals(endpoint.getAddress())) {
                 continue;
             }

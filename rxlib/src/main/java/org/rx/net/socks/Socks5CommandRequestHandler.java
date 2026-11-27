@@ -420,6 +420,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
                 }
                 return;
             }
+            upstream.getUpstreamSupport().recordSuccess(org.rx.net.support.UpstreamSupport.Capability.TCP);
             relay(inbound, outbound, dstAddrType, e);
         });
         return true;
@@ -439,6 +440,14 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             ensureFrontendHandlers(inbound, outbound);
         }).attr(SocksContext.SOCKS_SVR, server).connect(e.getUpstream().getDestination()).addListener((ChannelFutureListener) f -> {
             if (!f.isSuccess()) {
+                if (e.getUpstream() instanceof SocksTcpUpstream) {
+                    Channel failedOut = f.channel();
+                    Socks5ClientHandler proxyHandler = failedOut == null ? null : failedOut.pipeline().get(Socks5ClientHandler.class);
+                    if (proxyHandler == null || !proxyHandler.isDestinationCommandError()) {
+                        ((SocksTcpUpstream) e.getUpstream()).getUpstreamSupport()
+                                .recordFailure(org.rx.net.support.UpstreamSupport.Capability.TCP);
+                    }
+                }
                 if (!inbound.isActive()) {
                     return;
                 }

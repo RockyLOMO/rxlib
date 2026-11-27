@@ -875,14 +875,13 @@ public class RssTest extends AbstractTester {
         org.rx.core.Cache.getInstance(org.rx.core.cache.MemoryCache.class);
         int rpcPort = freePort();
         SocksProxyServer backSvr = new SocksProxyServer(new SocksConfig(new LocalAddress("RSS_FAKE_RECOVER_RPC_BACK")));
-        TcpServer rpcServer = null;
+        org.rx.net.transport.core.TransportServer rpcServer = null;
         SocksRpcContract facade = null;
         String fakeHost = null;
         try {
             RssRpcApp app = new RssRpcApp(backSvr);
             RpcServerConfig rpcServerConf = new RpcServerConfig(new TcpServerConfig(rpcPort));
-            rpcServerConf.getHybridConfig().setEnableUdpDirect(false);
-            rpcServerConf.getHybridConfig().setEnableUdpHolePunch(false);
+            rpcServerConf.getTransportConfig().setEnableAdaptiveUdp(false);
             rpcServerConf.setEventComputeVersion(RpcServerConfig.EVENT_LATEST_COMPUTE);
             rpcServerConf.getEventBroadcastVersions().add(SocksRpcContract.RPC_EVENT_VERSION);
             rpcServerConf.getTcpConfig().setConnectTimeoutMillis(SocksRpcContract.FAKE_RECOVER_RPC_TIMEOUT_MILLIS);
@@ -890,13 +889,11 @@ public class RssTest extends AbstractTester {
 
             InetSocketAddress rpcEndpoint = new InetSocketAddress("127.0.0.1", rpcPort);
             RpcClientConfig<SocksRpcContract> rpcClientConf = RpcClientConfig.poolMode(rpcEndpoint, 1, 1);
-            rpcClientConf.getHybridConfig().setEnableUdpDirect(false);
-            rpcClientConf.getHybridConfig().setEnableUdpHolePunch(false);
+            rpcClientConf.getTransportConfig().setEnableAdaptiveUdp(false);
             SocksRpcContract delegate = Remoting.createFacade(SocksRpcContract.class, rpcClientConf);
             RpcClientConfig<SocksRpcContract> eventClientConf =
                     RpcClientConfig.statefulMode(rpcEndpoint, SocksRpcContract.RPC_EVENT_VERSION);
-            eventClientConf.getHybridConfig().setEnableUdpDirect(false);
-            eventClientConf.getHybridConfig().setEnableUdpHolePunch(false);
+            eventClientConf.getTransportConfig().setEnableAdaptiveUdp(false);
             SocksRpcContract eventDelegate = Remoting.createFacade(SocksRpcContract.class, eventClientConf);
             facade = new RssClient.ForwardingSocksRpcContract(delegate, eventDelegate);
             assertTrue(Remoting.ping(eventDelegate, 1000));
@@ -2199,7 +2196,7 @@ public class RssTest extends AbstractTester {
     public void pingUpstream_ReturnsTrueForLocalRssRpcFacadeAndRestoresWeight() throws Exception {
         int rpcPort = freePort();
         SocksProxyServer backSvr = new SocksProxyServer(new SocksConfig(new LocalAddress("RSS_HEALTH_RPC_BACK")));
-        TcpServer rpcServer = null;
+        org.rx.net.transport.core.TransportServer rpcServer = null;
         SocksRpcContract facade = null;
         RssClientConf oldConf = RssClient.rssConf;
         try {
@@ -2207,14 +2204,12 @@ public class RssTest extends AbstractTester {
             conf.upstreamHealthFailureThreshold = 3;
             RssClient.rssConf = conf;
             RpcServerConfig rpcServerConf = new RpcServerConfig(new TcpServerConfig(rpcPort));
-            rpcServerConf.getHybridConfig().setEnableUdpDirect(false);
-            rpcServerConf.getHybridConfig().setEnableUdpHolePunch(false);
+            rpcServerConf.getTransportConfig().setEnableAdaptiveUdp(false);
             rpcServer = Remoting.register(new RssRpcApp(backSvr), rpcServerConf);
 
             RpcClientConfig<SocksRpcContract> rpcClientConf = RpcClientConfig.poolMode(
                     new InetSocketAddress("127.0.0.1", rpcPort), 1, 1);
-            rpcClientConf.getHybridConfig().setEnableUdpDirect(false);
-            rpcClientConf.getHybridConfig().setEnableUdpHolePunch(false);
+            rpcClientConf.getTransportConfig().setEnableAdaptiveUdp(false);
             facade = Remoting.createFacade(SocksRpcContract.class, rpcClientConf);
             assertTrue(Remoting.ping(facade, 1000));
 
@@ -2256,18 +2251,16 @@ public class RssTest extends AbstractTester {
             }
         };
         SocksProxyServer primary = new SocksProxyServer(primaryConfig);
-        TcpServer rpcServer = null;
+        org.rx.net.transport.core.TransportServer rpcServer = null;
         SocksRpcContract facade = null;
         try {
             RpcServerConfig serverConfig = new RpcServerConfig(new TcpServerConfig(rpcPort));
-            serverConfig.getHybridConfig().setEnableUdpDirect(false);
-            serverConfig.getHybridConfig().setEnableUdpHolePunch(false);
+            serverConfig.getTransportConfig().setEnableAdaptiveUdp(false);
             rpcServer = Remoting.register(new RssRpcApp(primary), serverConfig);
 
             RpcClientConfig<SocksRpcContract> clientConfig = RpcClientConfig.poolMode(
                     new InetSocketAddress("127.0.0.1", rpcPort), 1, 1);
-            clientConfig.getHybridConfig().setEnableUdpDirect(false);
-            clientConfig.getHybridConfig().setEnableUdpHolePunch(false);
+            clientConfig.getTransportConfig().setEnableAdaptiveUdp(false);
             facade = Remoting.createFacade(SocksRpcContract.class, clientConfig);
 
             InetAddress reportedAddress = InetAddress.getByName("192.0.2.1");

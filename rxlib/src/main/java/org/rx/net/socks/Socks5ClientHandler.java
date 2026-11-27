@@ -26,6 +26,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import org.rx.core.Strings;
+import org.rx.net.support.UpstreamSupport;
 import org.rx.util.function.Action;
 
 import java.net.InetSocketAddress;
@@ -51,6 +52,8 @@ public final class Socks5ClientHandler extends ProxyHandler {
     @Setter private boolean udpHop = true;
     @Setter private InetSocketAddress adaptiveUdpAddress;
     @Setter private int adaptiveUdpMtu;
+    @Setter private UpstreamSupport upstreamSupport;
+    private volatile boolean destinationCommandError;
     private int offeredProfile = -1;
     private boolean negotiated;
     private String decoderName;
@@ -181,8 +184,16 @@ public final class Socks5ClientHandler extends ProxyHandler {
             }
 
             if (negotiated) {
+                UpstreamSupport support = upstreamSupport;
                 SocksAdaptiveHandshake.install(ctx.channel(), ctx.channel().attr(SocksAdaptiveHandshake.NONCE).getAndSet(null),
-                        password, null, offeredProfile, udpHop, adaptiveUdpAddress, adaptiveUdpMtu);
+                        password, null, offeredProfile, udpHop, adaptiveUdpAddress, adaptiveUdpMtu,
+                        support == null ? null : healthy -> {
+                            if (healthy) {
+                                support.recordSuccess(UpstreamSupport.Capability.ADAPTIVE_UDP);
+                            } else {
+                                support.recordFailure(UpstreamSupport.Capability.ADAPTIVE_UDP);
+                            }
+                        });
                 negotiated = false;
             }
             sendCommand(ctx);
@@ -192,9 +203,18 @@ public final class Socks5ClientHandler extends ProxyHandler {
         // This should be the last message from the server.
         Socks5CommandResponse res = (Socks5CommandResponse) response;
         if (res.status() != Socks5CommandStatus.SUCCESS) {
+            if (res.status() != Socks5CommandStatus.FAILURE) {
+                destinationCommandError = true;
+                if (upstreamSupport != null) {
+                    upstreamSupport.recordSuccess(UpstreamSupport.Capability.TCP);
+                }
+            }
             throw new ProxyConnectException(exceptionMessage("status: " + res.status()));
         }
 
+        if (upstreamSupport != null) {
+            upstreamSupport.recordSuccess(UpstreamSupport.Capability.TCP);
+        }
         if (commandType == Socks5CommandType.UDP_ASSOCIATE) {
             bindAddress = new InetSocketAddress(res.bndAddr(), res.bndPort());
         }
@@ -202,6 +222,10 @@ public final class Socks5ClientHandler extends ProxyHandler {
             handshakeCallback.invoke();
         }
         return true;
+    }
+
+    public boolean isDestinationCommandError() {
+        return destinationCommandError;
     }
 
     private Socks5AuthMethod socksAuthMethod() {
