@@ -17,6 +17,9 @@ public final class V2RayGeoIpMatcher implements Closeable {
     final Cache<String, String> lookupCache = MemoryCache.<String, String>rootBuilder()
             .maximumSize(8192)
             .build();
+    final Cache<String, CodeMatcher> codeMatcherCache = MemoryCache.<String, CodeMatcher>rootBuilder()
+            .maximumSize(256)
+            .build();
 
     V2RayGeoIpMatcher(V2RayGeoIpIndex index) {
         this.index = index;
@@ -43,11 +46,31 @@ public final class V2RayGeoIpMatcher implements Closeable {
      * 配置期预绑定 code；请求热点路径直接复用返回对象并传入已解析的 IP bytes。
      */
     public CodeMatcher matcher(String code) {
-        if (index == null) {
+        if (index == null || code == null) {
             return null;
         }
+        String key = GeoIPSearcher.trimAscii(code);
+        if (key == null || key.isEmpty()) {
+            return null;
+        }
+        String normalized = key.toLowerCase(java.util.Locale.ROOT);
+        if (normalized.startsWith("geoip:")) {
+            normalized = GeoIPSearcher.trimAscii(normalized.substring(6));
+            if (normalized == null || normalized.isEmpty()) {
+                return null;
+            }
+        }
+        CodeMatcher cached = codeMatcherCache.getIfPresent(normalized);
+        if (cached != null) {
+            return cached;
+        }
         V2RayGeoIpIndex.CodeMatcher matcher = index.matcher(code);
-        return matcher == null ? null : new CodeMatcher(matcher);
+        if (matcher == null) {
+            return null;
+        }
+        CodeMatcher created = new CodeMatcher(matcher);
+        CodeMatcher existing = codeMatcherCache.asMap().putIfAbsent(normalized, created);
+        return existing != null ? existing : created;
     }
 
     public String lookupCode(String ip) {
@@ -73,6 +96,7 @@ public final class V2RayGeoIpMatcher implements Closeable {
     @Override
     public void close() {
         lookupCache.invalidateAll();
+        codeMatcherCache.invalidateAll();
         tryClose(index);
     }
 
