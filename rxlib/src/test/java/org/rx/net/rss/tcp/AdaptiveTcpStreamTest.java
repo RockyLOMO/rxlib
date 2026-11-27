@@ -865,4 +865,68 @@ class AdaptiveTcpStreamTest {
             assertFalse(a.stream.usingUdp());
         }
     }
+
+    @Test
+    void dynamicPmtuProbeShrinkAndPathCachePreserveInFlightOrder() {
+        AdaptiveTcpStream.clearPmtuCache();
+        AtomicLong now = new AtomicLong(1_000_000L);
+        ArrayDeque<ByteBuf> tcpA = new ArrayDeque<>(), udpA = new ArrayDeque<>();
+        ArrayDeque<ByteBuf> tcpB = new ArrayDeque<>(), udpB = new ArrayDeque<>();
+        java.io.ByteArrayOutputStream delivered = new java.io.ByteArrayOutputStream();
+        try (AdaptiveTcpStream a = new AdaptiveTcpStream(UnpooledByteBufAllocator.DEFAULT, tcpA::add, udpA::add, ByteBuf::release, now::get, AdaptiveTcpStream.WEAK);
+             AdaptiveTcpStream b = new AdaptiveTcpStream(UnpooledByteBufAllocator.DEFAULT, tcpB::add, udpB::add, bytes -> {
+                 try {
+                     while (bytes.isReadable()) delivered.write(bytes.readByte());
+                 } finally {
+                     bytes.release();
+                 }
+             }, now::get, AdaptiveTcpStream.WEAK)) {
+            a.setPathKey("203.0.113.10:c2s");
+            a.tick();
+            while (!udpA.isEmpty()) { ByteBuf f = udpA.remove(); try { b.udp(f); } finally { f.release(); } }
+            while (!udpB.isEmpty()) { ByteBuf f = udpB.remove(); try { a.udp(f); } finally { f.release(); } }
+            assertTrue(a.usingUdp());
+            int initialChunk = a.udpChunkSize();
+            assertTrue(initialChunk > 1000);
+
+            // 1. Authenticated size-verified PMTU probe succeeds for 960B
+            assertTrue(a.sendPmtuProbe(960));
+            assertEquals(1, udpA.size());
+            assertEquals(960, udpA.peek().readableBytes());
+            while (!udpA.isEmpty()) { ByteBuf f = udpA.remove(); try { b.udp(f); } finally { f.release(); } }
+            assertEquals(1, udpB.size(), "peer must echo authenticated PMTU_ACK");
+            while (!udpB.isEmpty()) { ByteBuf f = udpB.remove(); try { a.udp(f); } finally { f.release(); } }
+            assertTrue(a.udpChunkSize() < initialChunk);
+            assertEquals(960, a.udpFrameLimit());
+
+            // 2. Write in-flight frames at 960B limit, then shrink chunk dynamically to 512B limit mid-flight
+            byte[] payload = new byte[2048];
+            new java.util.Random(42).nextBytes(payload);
+            ByteBuf big = Unpooled.wrappedBuffer(payload);
+            try {
+                a.write(big);
+            } finally {
+                big.release();
+            }
+            assertTrue(a.updateUdpFrameLimit(512));
+            assertEquals(512, a.udpFrameLimit());
+            // Oversized in-flight frames must have been drained safely to TCP without corruption
+            assertFalse(tcpA.isEmpty());
+            while (!tcpA.isEmpty()) { ByteBuf f = tcpA.remove(); try { b.tcp(f); } finally { f.release(); } }
+            while (!udpA.isEmpty()) { ByteBuf f = udpA.remove(); try { b.udp(f); } finally { f.release(); } }
+            assertArrayEquals(payload, delivered.toByteArray());
+
+            // 3. Path PMTU cache applies to subsequent stream on the same pathKey
+            try (AdaptiveTcpStream a2 = new AdaptiveTcpStream(UnpooledByteBufAllocator.DEFAULT, ByteBuf::release, ByteBuf::release, ByteBuf::release, now::get, AdaptiveTcpStream.WEAK)) {
+                a2.setPathKey("203.0.113.10:c2s");
+                assertEquals(960, a2.udpFrameLimit());
+            }
+        } finally {
+            while (!tcpA.isEmpty()) tcpA.remove().release();
+            while (!udpA.isEmpty()) udpA.remove().release();
+            while (!tcpB.isEmpty()) tcpB.remove().release();
+            while (!udpB.isEmpty()) udpB.remove().release();
+            AdaptiveTcpStream.clearPmtuCache();
+        }
+    }
 }

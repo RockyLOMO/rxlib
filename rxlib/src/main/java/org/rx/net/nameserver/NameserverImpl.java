@@ -229,6 +229,7 @@ public class NameserverImpl implements Nameserver {
                 RpcClientConfig<Nameserver> rpcConf = new RpcClientConfig<Nameserver>(transport);
                 rpcConf.setRequestTimeoutMillis(timeoutMillis);
                 rpcConf.setSensitiveMethods(REPLICA_SENSITIVE_METHODS);
+                rpcConf.setIdempotentMethods(REPLICA_SENSITIVE_METHODS);
                 rpcConf.setInitHandler((ns, rc) -> {
                     rc.onReconnected.add((s, e) -> onPeerReconnected());
                 });

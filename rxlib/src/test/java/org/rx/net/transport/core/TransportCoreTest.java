@@ -281,6 +281,50 @@ class TransportCoreTest {
         }
     }
 
+    @Test
+    @Timeout(20)
+    void authSecretMismatchOrMissing_RejectedBeforeSessionOrReceiveHandler() throws Exception {
+        int port = freePort();
+        TransportConfig serverConf = TransportConfig.pureTcpServer(port);
+        serverConf.setAuthSecret("strict-shared-secret");
+
+        java.util.concurrent.atomic.AtomicInteger connectedCount = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger receivedCount = new java.util.concurrent.atomic.AtomicInteger();
+        try (TransportServer server = new TransportServer(serverConf)) {
+            server.onConnected.add((s, e) -> connectedCount.incrementAndGet());
+            server.setReceiveHandler((session, buf) -> receivedCount.incrementAndGet());
+            server.start();
+
+            // 1. Wrong client auth secret is rejected before session or receiveHandler
+            TransportConfig wrongConf = TransportConfig.pureTcpClient(new InetSocketAddress("127.0.0.1", port));
+            wrongConf.setAuthSecret("wrong-secret");
+            wrongConf.getTcpClientConfig().setConnectTimeoutMillis(1500);
+            try (TransportClient wrongClient = new TransportClient(wrongConf)) {
+                assertThrows(Exception.class, () -> wrongClient.connect(new InetSocketAddress("127.0.0.1", port)));
+            }
+
+            // 2. Missing client auth secret is rejected before session or receiveHandler
+            TransportConfig noAuthConf = TransportConfig.pureTcpClient(new InetSocketAddress("127.0.0.1", port));
+            noAuthConf.getTcpClientConfig().setConnectTimeoutMillis(1500);
+            try (TransportClient noAuthClient = new TransportClient(noAuthConf)) {
+                assertThrows(Exception.class, () -> noAuthClient.connect(new InetSocketAddress("127.0.0.1", port)));
+            }
+
+            Thread.sleep(150);
+            assertEquals(0, connectedCount.get(), "Unauthenticated peer must never trigger onConnected");
+            assertEquals(0, receivedCount.get(), "Unauthenticated peer must never reach receiveHandler");
+
+            // 3. Matching secret succeeds
+            TransportConfig okConf = TransportConfig.pureTcpClient(new InetSocketAddress("127.0.0.1", port));
+            okConf.setAuthSecret("strict-shared-secret");
+            try (TransportClient okClient = new TransportClient(okConf)) {
+                okClient.connect(new InetSocketAddress("127.0.0.1", port));
+                okClient.send(Unpooled.copiedBuffer("ok", StandardCharsets.UTF_8));
+                awaitTrue(() -> receivedCount.get() == 1, 3000, "Authenticated client frame must be delivered");
+            }
+        }
+    }
+
     private static byte[] randomBytes(int len) {
         byte[] out = new byte[len];
         ThreadLocalRandom.current().nextBytes(out);

@@ -39,8 +39,12 @@ public abstract class DnsQueryUpstream extends Upstream {
             return;
         }
         DefaultDnsQuery query;
+        final int maxUdpResponseBytes;
         try {
-            query = DoHMessageCodec.decodeQuery(input.slice(start, input.readableBytes()));
+            ByteBuf querySlice = input.slice(start, input.readableBytes());
+            maxUdpResponseBytes = tcp ? 65535 : Math.min(DnsRecordExchange.EDNS_UDP_PAYLOAD_SIZE,
+                    DoHMessageCodec.extractEdnsUdpPayloadSize(querySlice));
+            query = DoHMessageCodec.decodeQuery(querySlice);
         } catch (RuntimeException malformed) {
             if (tcp) channel.close();
             return;
@@ -62,7 +66,7 @@ public abstract class DnsQueryUpstream extends Upstream {
                     } catch (Exception failure) {
                         response = error(query, DnsResponseCode.SERVFAIL);
                     }
-                    if (!tcp && response.length > 512) {
+                    if (!tcp && response.length > maxUdpResponseBytes) {
                         response = error(query, DnsResponseCode.NOERROR);
                         response[2] |= 2; // TC, retry over TCP
                     }

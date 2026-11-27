@@ -17,15 +17,67 @@ public final class DoHMessageCodec {
     }
 
     public static void encodeQuery(ByteBuf out, int id, String name, DnsRecordType type) {
+        encodeQuery(out, id, name, type, 0);
+    }
+
+    public static void encodeQuery(ByteBuf out, int id, String name, DnsRecordType type, int ednsUdpPayloadSize) {
+        boolean edns = ednsUdpPayloadSize > 512;
         out.writeShort(id & 0xffff);
         out.writeShort(0x0100);
         out.writeShort(1);
         out.writeShort(0);
         out.writeShort(0);
-        out.writeShort(0);
+        out.writeShort(edns ? 1 : 0);
         writeName(out, name);
         out.writeShort(type.intValue());
         out.writeShort(DnsRecord.CLASS_IN);
+        if (edns) {
+            // RFC 6891 OPT pseudo-RR: root name (0), type OPT (41), class = UDP payload size, TTL = 0, RDLENGTH = 0
+            out.writeByte(0);
+            out.writeShort(DnsRecordType.OPT.intValue());
+            out.writeShort(Math.min(65535, ednsUdpPayloadSize));
+            out.writeInt(0);
+            out.writeShort(0);
+        }
+    }
+
+    public static int extractEdnsUdpPayloadSize(ByteBuf in) {
+        if (in == null || in.readableBytes() < DNS_HEADER_BYTES) {
+            return 512;
+        }
+        ByteBuf dup = in.duplicate();
+        try {
+            dup.skipBytes(4); // id + flags
+            int qdCount = dup.readUnsignedShort();
+            int anCount = dup.readUnsignedShort();
+            int nsCount = dup.readUnsignedShort();
+            int arCount = dup.readUnsignedShort();
+            if (arCount <= 0) {
+                return 512;
+            }
+            for (int i = 0; i < qdCount; i++) {
+                readName(dup);
+                dup.skipBytes(4);
+            }
+            skipRecords(dup, anCount + nsCount);
+            for (int i = 0; i < arCount; i++) {
+                readName(dup);
+                int type = dup.readUnsignedShort();
+                int dnsClass = dup.readUnsignedShort();
+                dup.skipBytes(4); // ttl / ext-rcode / flags
+                int rdLen = dup.readUnsignedShort();
+                if (dup.readableBytes() < rdLen) {
+                    return 512;
+                }
+                dup.skipBytes(rdLen);
+                if (type == DnsRecordType.OPT.intValue()) {
+                    return Math.max(512, Math.min(4096, dnsClass));
+                }
+            }
+        } catch (RuntimeException ignored) {
+            return 512;
+        }
+        return 512;
     }
 
     public static DefaultDnsQuery decodeQuery(ByteBuf in) {

@@ -70,6 +70,9 @@ public final class Remoting {
     public static class ClientBean {
         final ResetEventWait syncRoot = new ResetEventWait();
         MethodMessage pack;
+        volatile boolean idempotent;
+        volatile boolean sent;
+        volatile Throwable error;
     }
 
     static final class ClientRef {
@@ -352,6 +355,7 @@ public final class Remoting {
             int requestId = clientBean.pack == null ? -1 : clientBean.pack.id;
             try {
                 if (isMethodCall) {
+                    clientBean.idempotent = config.isIdempotentMethod(methodMessage.methodName);
                     return Sys.callLog(contract, methodMessage.methodName,
                             () -> String.format("Client %s.%s [%s -> %s]", contract.getSimpleName(), methodMessage.methodName,
                                     currentLocalEndpoint(client), Sockets.toString(currentRemoteEndpoint(client))),
@@ -360,9 +364,12 @@ public final class Remoting {
                                 Map<Integer, ClientBean> waitMap = getClientBeans(client);
                                 waitMap.put(clientBean.pack.id, clientBean);
                                 try {
-                                    sendEncoded(activeSession(client, requestSession), ref.codec, methodMessage);
+                                    TransportSession target = activeSession(client, requestSession);
+                                    clientBean.sent = true;
+                                    sendEncoded(target, ref.codec, methodMessage);
                                 } catch (ClientDisconnectedException e) {
-                                    if (!client.getConfig().getTcpClientConfig().isEnableReconnect()) {
+                                    if (!client.getConfig().getTcpClientConfig().isEnableReconnect()
+                                            || (clientBean.sent && !clientBean.idempotent)) {
                                         throw e;
                                     }
                                 }
@@ -458,13 +465,14 @@ public final class Remoting {
             client = borrowFacadeClient(ref, facade, pool);
             TransportSession session = currentSession(client);
             getClientBeans(client).put(requestId, clientBean);
+            clientBean.sent = true;
             sendEncoded(activeSession(client, resolveSession(client, session)), ref.codec, clientBean.pack);
             int waitMillis = timeoutMillis > 0 ? timeoutMillis : resolveRequestTimeout(ref.config, client);
             if (!clientBean.syncRoot.waitOne(waitMillis)) {
                 return false;
             }
             clientBean.syncRoot.reset();
-            return clientBean.pack.errorMessage == null && Boolean.TRUE.equals(clientBean.pack.returnValue);
+            return clientBean.error == null && clientBean.pack.errorMessage == null && Boolean.TRUE.equals(clientBean.pack.returnValue);
         } catch (Throwable e) {
             log.debug("Remoting ping {} fail", ref.config.getTcpConfig().getServerEndpoint(), e);
             return false;
@@ -579,6 +587,7 @@ public final class Remoting {
         AtomicBoolean initHandlerInvoked = new AtomicBoolean();
         client.onError.add((s, e) -> e.setCancel(true));
         client.onDisconnected.add((s, e) -> {
+            failNonIdempotentPending(client);
             if (!client.getConfig().getTcpClientConfig().isEnableReconnect()) {
                 clientBeans.remove(client);
                 clientRefCounts.remove(client);
@@ -686,10 +695,43 @@ public final class Remoting {
         return clientBeans.computeIfAbsent(client, k -> new ConcurrentHashMap<Integer, ClientBean>());
     }
 
+    private static void failNonIdempotentPending(TransportClient client) {
+        Map<Integer, ClientBean> waitMap = clientBeans.get(client);
+        if (waitMap == null || waitMap.isEmpty()) {
+            return;
+        }
+        InetSocketAddress ep = currentRemoteEndpoint(client);
+        for (Map.Entry<Integer, ClientBean> entry : waitMap.entrySet()) {
+            ClientBean bean = entry.getValue();
+            if (bean != null && bean.sent && !bean.idempotent) {
+                if (waitMap.remove(entry.getKey(), bean)) {
+                    bean.error = new ClientDisconnectedException(ep);
+                    bean.syncRoot.set();
+                }
+            }
+        }
+    }
+
     private static void resendPending(TransportClient client, RemotingCodec codec, TransportSession newSession) {
-        for (ClientBean value : getClientBeans(client).values()) {
+        Map<Integer, ClientBean> waitMap = clientBeans.get(client);
+        if (waitMap == null || waitMap.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<Integer, ClientBean> entry : waitMap.entrySet()) {
+            ClientBean value = entry.getValue();
+            if (value == null || value.pack == null) {
+                continue;
+            }
+            if (value.sent && !value.idempotent) {
+                if (waitMap.remove(entry.getKey(), value)) {
+                    value.error = new ClientDisconnectedException(currentRemoteEndpoint(client));
+                    value.syncRoot.set();
+                }
+                continue;
+            }
             log.info("clientSide resent pack[{}] {}", value.pack.id, value.pack.methodName);
             try {
+                value.sent = true;
                 sendEncoded(newSession, codec, value.pack);
             } catch (ClientDisconnectedException ex) {
                 log.warn("clientSide resent pack[{}] fail", value.pack.id);
@@ -701,6 +743,9 @@ public final class Remoting {
     private static Object awaitMethodResponse(RpcClientConfig<?> config, TransportClient client, ClientBean clientBean) {
         int timeoutMillis = resolveRequestTimeout(config, client);
         if (!clientBean.syncRoot.waitOne(timeoutMillis)) {
+            if (clientBean.error != null) {
+                throw clientBean.error;
+            }
             if (!client.isConnected()) {
                 throw new ClientDisconnectedException(currentRemoteEndpoint(client));
             }
@@ -709,6 +754,9 @@ public final class Remoting {
             }
         }
         clientBean.syncRoot.reset();
+        if (clientBean.error != null) {
+            throw clientBean.error;
+        }
         if (clientBean.pack.errorMessage != null) {
             throw new RemotingException(clientBean.pack.errorMessage);
         }

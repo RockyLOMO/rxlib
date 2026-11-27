@@ -50,6 +50,38 @@ public class RemotingTest extends AbstractTester {
         }
     }
 
+    public interface ReplaySafetyService extends AutoCloseable {
+        int debitOnce();
+
+        int readIdempotent();
+
+        default void close() {
+        }
+    }
+
+    public static class ReplaySafetyServiceImpl implements ReplaySafetyService {
+        final AtomicInteger debitCount = new AtomicInteger();
+        final AtomicInteger readCount = new AtomicInteger();
+
+        @Override
+        public int debitOnce() {
+            int n = debitCount.incrementAndGet();
+            if (n == 1) {
+                RemotingContext.context().getClient().close();
+            }
+            return n;
+        }
+
+        @Override
+        public int readIdempotent() {
+            int n = readCount.incrementAndGet();
+            if (n == 1) {
+                RemotingContext.context().getClient().close();
+            }
+            return n;
+        }
+    }
+
     public interface DirectedEventService extends EventPublisher<DirectedEventService>, AutoCloseable {
         default void close() {
         }
@@ -841,5 +873,85 @@ public class RemotingTest extends AbstractTester {
         }
         assertTrue(latch.await(55, java.util.concurrent.TimeUnit.SECONDS), "部分任务未在超时前完成");
         assertNull(firstError.get(), () -> "并发调用出现异常: " + firstError.get());
+    }
+
+    @Test
+    @Order(7)
+    @Timeout(20)
+    void statefulReconnect_DoesNotReplayNonIdempotentCall_ButReplaysIdempotentCall() throws Exception {
+        int port = freePort();
+        InetSocketAddress endpoint = new InetSocketAddress("127.0.0.1", port);
+        ReplaySafetyServiceImpl impl = new ReplaySafetyServiceImpl();
+        startServer(impl, endpoint);
+
+        // 1. Non-idempotent method (default): server runs once and disconnects before reply.
+        // Client must fail fast with ClientDisconnectedException and NEVER replay on reconnect.
+        RpcClientConfig<ReplaySafetyService> nonIdemCfg = RpcClientConfig.statefulMode(endpoint, 0);
+        nonIdemCfg.setRequestTimeoutMillis(5000);
+        nonIdemCfg.getTcpConfig().setConnectTimeoutMillis(1500);
+        ReplaySafetyService nonIdemFacade = Remoting.createFacade(ReplaySafetyService.class, nonIdemCfg);
+        try {
+            long startMs = System.currentTimeMillis();
+            assertThrows(ClientDisconnectedException.class, nonIdemFacade::debitOnce);
+            long elapsedMs = System.currentTimeMillis() - startMs;
+            assertTrue(elapsedMs < 3500L, "Non-idempotent disconnect should fail fast instead of waiting full timeout, elapsed=" + elapsedMs);
+            // Allow background reconnect to complete and ensure no replay happens
+            sleep(600);
+            assertEquals(1, impl.debitCount.get(), "Non-idempotent call MUST NOT be replayed after reconnect");
+        } finally {
+            nonIdemFacade.close();
+        }
+
+        // 2. Explicitly idempotent method: replays after reconnect and returns result from second execution.
+        RpcClientConfig<ReplaySafetyService> idemCfg = RpcClientConfig.statefulMode(endpoint, 0);
+        idemCfg.setRequestTimeoutMillis(5000);
+        idemCfg.getTcpConfig().setConnectTimeoutMillis(1500);
+        idemCfg.setIdempotentMethods(java.util.Collections.singleton("readIdempotent"));
+        ReplaySafetyService idemFacade = Remoting.createFacade(ReplaySafetyService.class, idemCfg);
+        try {
+            int result = idemFacade.readIdempotent();
+            assertEquals(2, result, "Idempotent method should replay after reconnect and succeed");
+            assertEquals(2, impl.readCount.get());
+        } finally {
+            idemFacade.close();
+        }
+    }
+
+    @Test
+    @Order(8)
+    @Timeout(20)
+    void rpcAuthSecretMismatch_RejectedBeforeFuryDeserialization() throws Exception {
+        int port = freePort();
+        InetSocketAddress endpoint = new InetSocketAddress("127.0.0.1", port);
+        ReplaySafetyServiceImpl impl = new ReplaySafetyServiceImpl();
+        RpcServerConfig svrCfg = new RpcServerConfig(new TcpServerConfig(port));
+        svrCfg.getTransportConfig().setAuthSecret("rpc-handshake-secret");
+        TransportServer server = Remoting.register(impl, svrCfg);
+        try {
+            RpcClientConfig<ReplaySafetyService> badCfg = RpcClientConfig.poolMode(endpoint, 1, 1);
+            badCfg.getTransportConfig().setAuthSecret("wrong-rpc-secret");
+            badCfg.getTcpConfig().setConnectTimeoutMillis(1200);
+            ReplaySafetyService badFacade = Remoting.createFacade(ReplaySafetyService.class, badCfg);
+            try {
+                assertThrows(Exception.class, badFacade::readIdempotent);
+                assertEquals(0, impl.readCount.get(), "Rejected unauthenticated RPC client must never reach service");
+            } finally {
+                badFacade.close();
+            }
+
+            RpcClientConfig<ReplaySafetyService> okCfg = RpcClientConfig.poolMode(endpoint, 1, 1);
+            okCfg.getTransportConfig().setAuthSecret("rpc-handshake-secret");
+            okCfg.getTcpConfig().setConnectTimeoutMillis(1200);
+            ReplaySafetyService okFacade = Remoting.createFacade(ReplaySafetyService.class, okCfg);
+            try {
+                assertEquals(2, okFacade.debitOnce() == 1 ? 0 : 2); // first call disconnects, test direct compute
+            } catch (ClientDisconnectedException expectedOnFirstDebit) {
+                assertEquals(1, impl.debitCount.get());
+            } finally {
+                okFacade.close();
+            }
+        } finally {
+            server.close();
+        }
     }
 }

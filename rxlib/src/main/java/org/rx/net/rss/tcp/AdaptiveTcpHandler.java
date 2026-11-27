@@ -94,6 +94,12 @@ public final class AdaptiveTcpHandler extends ChannelDuplexHandler {
         this.ctx = ctx;
         stream = new AdaptiveTcpStream(ctx.alloc(), this::writeTcp, this::writeUdp,
                 ctx::fireChannelRead, System::nanoTime, profile, AdaptiveTcpStream.UDP_TAIL, udpFrameLimit);
+        if (ctx.channel().remoteAddress() instanceof InetSocketAddress) {
+            InetSocketAddress remote = (InetSocketAddress) ctx.channel().remoteAddress();
+            if (remote.getAddress() != null) {
+                stream.setPathKey(remote.getAddress().getHostAddress() + (server ? ":s2c" : ":c2s"));
+            }
+        }
         if (!server && !udpHop && udpTarget != null && udpTarget.isUnresolved()) {
             org.rx.net.Sockets.resolveUdpEndpointAsync(udpTarget, null).whenCompleteAsync((endpoint, error) -> {
                 if (closing || !ctx.channel().isActive()) return;
