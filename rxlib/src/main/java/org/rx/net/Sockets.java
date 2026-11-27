@@ -223,6 +223,7 @@ public final class Sockets {
     public static final String ZIP_ENCODER = "ZIP_ENCODER";
     public static final String ZIP_DECODER = "ZIP_DECODER";
     public static final String UDP_FINAL_EGRESS_GUARD = "UDP_FINAL_EGRESS_GUARD";
+    private static final FixedRecvByteBufAllocator UDP_RECV_ALLOCATOR = new FixedRecvByteBufAllocator(65536);
     public static final LengthFieldPrepender INT_LENGTH_FIELD_ENCODER = new LengthFieldPrepender(4);
     public static final AttributeKey<InetSocketAddress> ATTR_ORIGIN_REMOTE_ADDR = AttributeKey.valueOf("originRemoteAddr");
     static final AttributeKey<SocketAddress> ATTR_CONNECT_HINT = AttributeKey.valueOf("connectHint");
@@ -784,11 +785,11 @@ public final class Sockets {
         ServerBootstrapConfig config = bootstrap.config();
         EventLoopGroup group = config.group();
         if (group != null && !reactors.containsValue(group) && !localReactors.containsValue(group)) {
-            group.shutdownGracefully();
+            group.shutdownGracefully(0, 5, TimeUnit.SECONDS);
         }
         group = config.childGroup();
         if (group != null && !reactors.containsValue(group) && !localReactors.containsValue(group)) {
-            group.shutdownGracefully();
+            group.shutdownGracefully(0, 5, TimeUnit.SECONDS);
         }
     }
 
@@ -955,6 +956,7 @@ public final class Sockets {
         // 支持LengthField?
         boolean g = flags.has(TransportFlags.GFW);
         boolean rss = config instanceof SocksConfig && ((SocksConfig) config).getRequiredTcpCipherPorts() != null;
+        if (rss) ((SocksConfig) config).getRssEgressCodec().installServer(pipeline);
         if (!g && !rss) {
             if (flags.has(TransportFlags.COMPRESS_READ)) {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
@@ -987,7 +989,7 @@ public final class Sockets {
         }
 
         if (rss) {
-            pipeline.addLast(RssHopTls.serverSelector((SocksConfig) config));
+            pipeline.addLast(new RssTcpCodecSelector((SocksConfig) config));
         } else if (g) {
             if (flags.has(TransportFlags.COMPRESS_READ)) {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
@@ -1015,10 +1017,9 @@ public final class Sockets {
 
         ZlibWrapper zlib = ZlibWrapper.ZLIB;
         ChannelPipeline pipeline = channel.pipeline();
+        if (config instanceof SocksConfig) ((SocksConfig) config).getRssEgressCodec().install(pipeline);
         if (flags.has(TransportFlags.RSS_PSK_AES)) {
             pipeline.addLast(RssHopAes.clientHandler());
-        } else if (flags.has(TransportFlags.RSS_AUTHENTICATED_TLS)) {
-            pipeline.addLast(RssHopTls.clientHandler(channel, ((SocksConfig) config).getRssTlsContext(), SNISpoofing));
         } else if (flags.has(TransportFlags.TLS)) {
             SslContext tls = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
             if (SNISpoofing == null) {
@@ -1070,6 +1071,10 @@ public final class Sockets {
         DiagnosticMetrics.installNetIoHandler(pipeline, DiagnosticMetrics.netComponent(config,
                 config instanceof SocksConfig ? DiagnosticMetrics.NET_SOCKS_CLIENT : DiagnosticMetrics.NET_TRANSPORT_CLIENT));
         dumpPipeline("client", channel);
+        if (config.getSocksCarrierProxy() != null) {
+            org.rx.net.socks.RssSocksCarrier.installTcp(channel, config.getSocksCarrierProxy(), SNISpoofing, config.getConnectTimeoutMillis(),
+                    config instanceof SocksConfig ? ((SocksConfig) config).getSocksCarrierOuterMtu() : 0);
+        }
         return channel;
     }
 
@@ -1165,7 +1170,8 @@ public final class Sockets {
 
         OptimalSettings op = ifNull(config.getOptimalSettings(), OptimalSettings.EMPTY);
         op.calculate();
-        AdaptiveRecvByteBufAllocator recvByteBufAllocator = op.recvByteBufAllocator;
+        // UDP recvfrom truncates any datagram larger than the single-read buffer; pooled 64 KiB is released per tick.
+        FixedRecvByteBufAllocator recvByteBufAllocator = UDP_RECV_ALLOCATOR;
 
         // writeBufferWaterMark UDP无效
         Bootstrap b = new Bootstrap()
@@ -1693,6 +1699,12 @@ public final class Sockets {
         }
         // 非活跃通道或 ServerChannel 没有可刷出的出站缓冲，直接 close 避免残留打开句柄或对监听通道执行 writeAndFlush。
         if (!channel.isActive() || channel instanceof ServerChannel) {
+            channel.close();
+            return;
+        }
+        // Unconnected DatagramChannel cannot write Unpooled.EMPTY_BUFFER without a recipient (EDESTADDRREQ).
+        if (channel instanceof DatagramChannel && !((DatagramChannel) channel).isConnected()) {
+            channel.flush();
             channel.close();
             return;
         }

@@ -39,6 +39,9 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
     private final CompletableFuture<Channel> readyFuture = new CompletableFuture<>();
     @Setter private boolean adaptiveTcp;
     @Setter private int adaptiveProfile;
+    @Setter private boolean udpHop = true;
+    @Setter private InetSocketAddress adaptiveUdpAddress;
+    @Setter private int adaptiveUdpMtu;
     private int offeredProfile = -1;
     private boolean negotiated;
     private volatile State state = State.INIT;
@@ -147,7 +150,7 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
     private Object newInitialMessage() {
         if (adaptiveTcp && password != null && ctx.channel().remoteAddress() instanceof InetSocketAddress) {
             offeredProfile = adaptiveProfile;
-            return SocksAdaptiveHandshake.offer(offeredProfile);
+            return SocksAdaptiveHandshake.offer(offeredProfile, udpHop);
         }
         return socksAuthMethod() == Socks5AuthMethod.PASSWORD ? INIT_REQUEST_PASSWORD : INIT_REQUEST_NO_AUTH;
     }
@@ -168,7 +171,10 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
             return;
         }
         ctx.pipeline().replace(decoderName, decoderName, new Socks5PasswordAuthResponseDecoder());
-        if (negotiated) SocksAdaptiveHandshake.awaitNonce(ctx.pipeline(), decoderName);
+        if (negotiated) {
+            SocksAdaptiveHandshake.awaitNonce(ctx.pipeline(), decoderName);
+            SocksAdaptiveHandshake.sendMtu(ctx, adaptiveUdpMtu);
+        }
         ctx.writeAndFlush(new DefaultSocks5PasswordAuthRequest(
                 username != null ? username : Strings.EMPTY, password != null ? password : Strings.EMPTY));
     }
@@ -179,7 +185,8 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
             return;
         }
         if (negotiated) {
-            SocksAdaptiveHandshake.install(ctx.channel(), ctx.channel().attr(SocksAdaptiveHandshake.NONCE).getAndSet(null), password, null, offeredProfile);
+            SocksAdaptiveHandshake.install(ctx.channel(), ctx.channel().attr(SocksAdaptiveHandshake.NONCE).getAndSet(null),
+                    password, null, offeredProfile, udpHop, adaptiveUdpAddress, adaptiveUdpMtu);
             negotiated = false;
         }
         markReady(ctx);

@@ -20,8 +20,8 @@ done
 # Create atomically. An existing table is never flushed or taken over.
 {
     echo "create table inet $table"
-    echo "add chain inet $table ingress { type nat hook prerouting priority dstnat; policy accept; }"
-    echo "add chain inet $table localout { type nat hook output priority dstnat; policy accept; }"
+    echo "add chain inet $table ingress { type nat hook prerouting priority -100; policy accept; }"
+    echo "add chain inet $table localout { type nat hook output priority -100; policy accept; }"
     awk -v t="$table" -v f="$first" -v l="$last" 'BEGIN {
         printf "add map inet %s hops { type inet_service : inet_service; elements = { ", t
         for (p = f; p < l; p += 2) printf "%s%d : %d", p == f ? "" : ", ", p + 1, p

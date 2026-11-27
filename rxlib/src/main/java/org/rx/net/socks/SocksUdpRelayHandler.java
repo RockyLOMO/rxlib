@@ -637,6 +637,10 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             if (upstream == null) {
                 throw new IllegalStateException("UDP route upstream is null for " + dstEp);
             }
+            if (upstream instanceof org.rx.net.dns.DnsQueryUpstream) {
+                onRouteInitSuccess(relay, dstEp, dstEp, context, initState, ctxMap, routeMap, routeInitMap);
+                return;
+            }
             CompletableFuture<Void> readyFuture = upstream.initChannelAsync(relay);
             readyFuture.whenComplete((v, error) -> runOnRelayLoop(relay, () -> {
                 if (error != null) {
@@ -685,7 +689,7 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
                     ctxMap.put(relayAddress, context);
                 }
             }
-        } else {
+        } else if (!(upstream instanceof org.rx.net.dns.DnsQueryUpstream)) {
             ctxMap.put(upDstAddr, context);
         }
         routeMap.put(dstEp, context);
@@ -767,6 +771,20 @@ public class SocksUdpRelayHandler extends SimpleChannelInboundHandler<DatagramPa
             InetSocketAddress clientOriginAddr, InetSocketAddress dstEp,
             SocksContext context, boolean retained) {
         Upstream upstream = context.getUpstream();
+        if (upstream instanceof org.rx.net.dns.DnsQueryUpstream) {
+            try {
+                SocksConfig config = Sockets.getAttr(relay, SocksContext.SOCKS_SVR).config;
+                SocksUserTraffic.recordWrite(relay, context, inBuf.readableBytes(), 1L);
+                ((org.rx.net.dns.DnsQueryUpstream) upstream).query(relay, inBuf, false, reply -> {
+                    DatagramPacket packet = new DatagramPacket(UdpManager.socks5Encode(reply, dstEp), sender);
+                    SocksUserTraffic.recordRead(relay, context, packet.content().readableBytes(), 1L);
+                    Sockets.writeUdp(relay, packet, config, "socks.udp", udpMetricTags(relay, config, true, upstream));
+                });
+            } finally {
+                if (retained) inBuf.release();
+            }
+            return;
+        }
         Udp2rawUpstream udp2rawUpstream = upstream instanceof Udp2rawUpstream ? (Udp2rawUpstream) upstream : null;
         UdpClientUpstream udpClientUpstream = upstream instanceof UdpClientUpstream ? (UdpClientUpstream) upstream : null;
         SocksUdpUpstream socksUpstream = upstream instanceof SocksUdpUpstream ? (SocksUdpUpstream) upstream : null;

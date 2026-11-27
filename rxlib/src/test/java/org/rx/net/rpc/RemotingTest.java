@@ -8,10 +8,9 @@ import org.rx.core.EventArgs;
 import org.rx.core.EventPublisher;
 import org.rx.exception.InvalidException;
 import org.rx.net.transport.ClientDisconnectedException;
-import org.rx.net.transport.TcpServer;
 import org.rx.net.transport.TcpServerConfig;
-import org.rx.net.transport.hybrid.HybridClient;
-import org.rx.net.transport.hybrid.HybridServer;
+import org.rx.net.transport.core.TransportClient;
+import org.rx.net.transport.core.TransportServer;
 import org.rx.net.rpc.protocol.EventFlag;
 import org.rx.net.rpc.protocol.EventMessage;
 import org.rx.test.*;
@@ -101,21 +100,21 @@ public class RemotingTest extends AbstractTester {
         }
     }
 
-    static class CountingHybridClientPool implements RpcHybridClientPool {
-        final HybridClient client;
+    static class CountingTransportClientPool implements RpcTransportClientPool {
+        final TransportClient client;
         final AtomicInteger returnCount = new AtomicInteger();
 
-        CountingHybridClientPool(RpcClientConfig<?> config) {
-            client = new HybridClient(config.getHybridConfig());
+        CountingTransportClientPool(RpcClientConfig<?> config) {
+            client = new TransportClient(config.getTransportConfig());
         }
 
         @Override
-        public HybridClient borrowClient() {
+        public TransportClient borrowClient() {
             return client;
         }
 
         @Override
-        public HybridClient returnClient(HybridClient client) {
+        public TransportClient returnClient(TransportClient client) {
             returnCount.incrementAndGet();
             return null;
         }
@@ -132,13 +131,13 @@ public class RemotingTest extends AbstractTester {
     }
 
     static void closeClientPool(RpcClientConfig<?> config) throws Exception {
-        RpcHybridClientPool pool = Remoting.clientPools.remove(config);
+        RpcTransportClientPool pool = Remoting.clientPools.remove(config);
         if (pool instanceof AutoCloseable) {
             ((AutoCloseable) pool).close();
         }
     }
 
-    final Map<Object, TcpServer> serverHost = new ConcurrentHashMap<>();
+    final Map<Object, TransportServer> serverHost = new ConcurrentHashMap<>();
     final long startDelay = 4000;
     final String eventName = "onCallback";
 
@@ -150,17 +149,17 @@ public class RemotingTest extends AbstractTester {
     }
 
     <T> void restartServer(T svcImpl, InetSocketAddress ep, long delay) {
-        TcpServer rs = serverHost.remove(svcImpl);
+        TransportServer rs = serverHost.remove(svcImpl);
         sleep(delay);
         rs.close();
-        log.info("Close server on port {}", rs.getConfig().getListenPort());
+        log.info("Close server on port {}", rs.listenPort());
         sleep(delay);
         startServer(svcImpl, ep);
     }
 
     @AfterEach
     void teardown() {
-        for (TcpServer s : serverHost.values()) {
+        for (TransportServer s : serverHost.values()) {
             try {
                 s.close();
             } catch (Exception ignored) {
@@ -176,8 +175,8 @@ public class RemotingTest extends AbstractTester {
         int port = freePort();
         Object contract = new Object();
         RpcServerConfig conf = new RpcServerConfig(new TcpServerConfig(port));
-        TcpServer s1 = Remoting.register(contract, conf);
-        TcpServer s2 = Remoting.register(contract, conf);
+        TransportServer s1 = Remoting.register(contract, conf);
+        TransportServer s2 = Remoting.register(contract, conf);
         assertSame(s1, s2, "第二次 register 应命中 serverBeans 快路径");
         s1.close();
     }
@@ -261,16 +260,7 @@ public class RemotingTest extends AbstractTester {
         InetSocketAddress endpoint = new InetSocketAddress("127.0.0.1", port);
         UserManagerImpl impl = new UserManagerImpl();
         RpcServerConfig serverConfig = new RpcServerConfig(new TcpServerConfig(port));
-        AtomicInteger subscribePackets = new AtomicInteger();
-        HybridServer server = Remoting.registerHybrid(impl, serverConfig);
-        server.onReceive.add((s, e) -> {
-            if (e.getValue() instanceof EventMessage) {
-                EventMessage message = (EventMessage) e.getValue();
-                if (message.flag == EventFlag.SUBSCRIBE && "onCreate".equals(message.eventName)) {
-                    subscribePackets.incrementAndGet();
-                }
-            }
-        });
+        TransportServer server = Remoting.register(impl, serverConfig);
         try {
             RpcClientConfig<UserManager> config = RpcClientConfig.statefulMode(endpoint, 0);
             config.getTcpConfig().setConnectTimeoutMillis(1000);
@@ -280,7 +270,11 @@ public class RemotingTest extends AbstractTester {
             UserManager facade = Remoting.createFacade(UserManager.class, config);
             assertEquals(2, facade.computeLevel(1, 1));
 
-            awaitEquals(subscribePackets, 1, 3000);
+            awaitTrue(() -> {
+                Remoting.ServerBean sb = Remoting.serverBeans.get(impl);
+                Remoting.ServerBean.EventBean eb = sb == null ? null : sb.eventBeans.get("onCreate");
+                return eb != null && eb.subscribePacketCount.get() == 1;
+            }, 3000);
             facade.close();
         } finally {
             server.close();
@@ -516,16 +510,7 @@ public class RemotingTest extends AbstractTester {
         RpcServerConfig serverConfig = new RpcServerConfig(new TcpServerConfig(port));
         serverConfig.setEventComputeVersion((short) 1);
         serverConfig.getTcpConfig().setReactorName("temp");
-        HybridServer server = Remoting.registerHybrid(impl, serverConfig);
-        AtomicInteger subscribePackets = new AtomicInteger();
-        server.onReceive.add((s, e) -> {
-            if (e.getValue() instanceof EventMessage) {
-                EventMessage message = (EventMessage) e.getValue();
-                if (message.flag == EventFlag.SUBSCRIBE && eventName.equals(message.eventName)) {
-                    subscribePackets.incrementAndGet();
-                }
-            }
-        });
+        TransportServer server = Remoting.register(impl, serverConfig);
 
         RpcClientConfig<UserManager> config1 = RpcClientConfig.statefulMode(endpoint, 1);
         RpcClientConfig<UserManager> config2 = RpcClientConfig.statefulMode(endpoint, 2);
@@ -548,7 +533,11 @@ public class RemotingTest extends AbstractTester {
                 assertEquals("computed-work", e.getValue());
                 client2Latch.countDown();
             }, false);
-            awaitEquals(subscribePackets, 2, 5000);
+            awaitTrue(() -> {
+                Remoting.ServerBean sb = Remoting.serverBeans.get(impl);
+                Remoting.ServerBean.EventBean eb = sb == null ? null : sb.eventBeans.get(eventName);
+                return eb != null && eb.subscribePacketCount.get() >= 2;
+            }, 5000);
 
             facade2.publishEvent(eventName, RemotingEventArgs.compute("work"));
             assertTrue(client1Latch.await(5, TimeUnit.SECONDS), "compute 事件应先到计算订阅者");
@@ -611,7 +600,7 @@ public class RemotingTest extends AbstractTester {
         RpcServerConfig serverConfig = new RpcServerConfig(new TcpServerConfig(port));
         serverConfig.setEventComputeVersion(RpcServerConfig.EVENT_LATEST_COMPUTE);
         serverConfig.getTcpConfig().setConnectTimeoutMillis(100);
-        TcpServer server = Remoting.register(impl, serverConfig);
+        TransportServer server = Remoting.register(impl, serverConfig);
 
         RpcClientConfig<UserManager> config = RpcClientConfig.statefulMode(endpoint, 1);
         config.getTcpConfig().setConnectTimeoutMillis(1000);
@@ -663,6 +652,17 @@ public class RemotingTest extends AbstractTester {
             sleep(50);
         }
         assertEquals(expected, value.get());
+    }
+
+    static void awaitTrue(java.util.function.BooleanSupplier cond, long timeoutMillis) {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        while (System.currentTimeMillis() < deadline) {
+            if (cond.getAsBoolean()) {
+                return;
+            }
+            sleep(50);
+        }
+        assertTrue(cond.getAsBoolean());
     }
 
     static void awaitCallbackAfterCreate(UserManagerImpl impl, AtomicInteger callbacks, int expected, long timeoutMillis) {

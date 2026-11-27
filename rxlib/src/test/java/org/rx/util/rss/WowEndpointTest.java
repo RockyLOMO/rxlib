@@ -18,9 +18,9 @@ import org.rx.net.rpc.protocol.MethodMessage;
 import org.rx.net.socks.SocksProxyServer;
 import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.socks.WowEndpointObservation;
-import org.rx.net.transport.TcpServer;
 import org.rx.net.transport.TcpServerConfig;
-import org.rx.net.transport.hybrid.HybridSession;
+import org.rx.net.transport.core.TransportServer;
+import org.rx.net.transport.core.TransportSession;
 
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
@@ -45,10 +45,10 @@ class WowEndpointTest {
     static final String WRITER = "unit-test-writer-key-32-characters-minimum";
     static final String QUERY = "unit-test-query-key-32-characters-minimum";
 
-    static HybridSession peer(String ip) throws Exception {
-        HybridSession peer = mock(HybridSession.class);
+    static TransportSession peer(String ip) throws Exception {
+        TransportSession peer = mock(TransportSession.class);
         when(peer.isConnected()).thenReturn(true);
-        when(peer.tcpRemoteEndpoint()).thenReturn(new InetSocketAddress(InetAddress.getByName(ip), 42000));
+        when(peer.remoteEndpoint()).thenReturn(new InetSocketAddress(InetAddress.getByName(ip), 42000));
         return peer;
     }
 
@@ -68,7 +68,7 @@ class WowEndpointTest {
     @Test void identityAuthenticationFreshnessOfflineAndReadyEpoch() throws Exception {
         AtomicLong clock = new AtomicLong(1700000000000L);
         WowEndpointRegistry registry = new WowEndpointRegistry(ID, WRITER, QUERY, 45000, clock::get);
-        HybridSession old = peer("58.209.44.49"), next = peer("58.209.44.50");
+        TransportSession old = peer("58.209.44.49"), next = peer("58.209.44.50");
         assertFalse(registry.observe("other", WRITER, old, null, false));
         assertFalse(registry.observe(ID, QUERY, old, null, false));
         assertFalse(registry.observe(ID, "bad-writer", old, null, false));
@@ -104,7 +104,7 @@ class WowEndpointTest {
 
     @Test void oldConcurrentSessionCannotOverwriteOrResurrectLatest() throws Exception {
         WowEndpointRegistry registry = new WowEndpointRegistry(ID, WRITER, QUERY, 45000);
-        HybridSession old = peer("58.209.44.49"), next = peer("58.209.44.50");
+        TransportSession old = peer("58.209.44.49"), next = peer("58.209.44.50");
         registry.observe(ID, WRITER, old, null, false);
         registry.observe(ID, WRITER, next, null, false);
         CountDownLatch start = new CountDownLatch(1), done = new CountDownLatch(2);
@@ -125,6 +125,36 @@ class WowEndpointTest {
         for (String ip : new String[]{"127.0.0.1", "192.168.31.4", "10.1.2.3", "100.64.0.1", "169.254.1.1", "::1"})
             assertFalse(registry.observe(ID, WRITER, peer(ip), null, false), ip);
         assertFalse(registry.observe(ID, WRITER, null, null, false));
+    }
+
+    @Test void proxiedCarrierSkipsPublisherAndSameHostPeerIsRejected() throws Exception {
+        RssClientConf conf = new RssClientConf();
+        conf.wowEndpointClientId = ID;
+        conf.wowEndpointWriterKey = WRITER;
+        conf.wowEndpointRpcEndpoint = "202.91.34.9:9901";
+
+        RpcClientConfig<SocksRpcContract> direct = RpcClientConfig.statefulMode(
+                new InetSocketAddress("202.91.34.9", 9901), SocksRpcContract.RPC_EVENT_VERSION);
+        WowEndpointPublisher directPublisher = WowEndpointPublisher.configure(conf, direct);
+        assertNotNull(directPublisher);
+        directPublisher.close();
+
+        RpcClientConfig<SocksRpcContract> proxied = RpcClientConfig.statefulMode(
+                new InetSocketAddress("202.91.34.9", 9901), SocksRpcContract.RPC_EVENT_VERSION);
+        proxied.getTcpConfig().setSocksCarrierProxy(new org.rx.net.AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1080)));
+        assertNull(WowEndpointPublisher.configure(conf, proxied));
+
+        WowEndpointRegistry registry = new WowEndpointRegistry(ID, WRITER, QUERY, 45000);
+        TransportSession directSession = peer("58.209.44.49");
+        when(directSession.localEndpoint()).thenReturn(new InetSocketAddress(InetAddress.getByName("202.91.34.9"), 9901));
+        assertTrue(registry.observe(ID, WRITER, directSession, "58.209.44.49", true));
+
+        TransportSession sameHostProxySession = peer("202.91.34.9");
+        when(sameHostProxySession.localEndpoint()).thenReturn(new InetSocketAddress(InetAddress.getByName("202.91.34.9"), 9901));
+        assertFalse(registry.observe(ID, WRITER, sameHostProxySession, null, false));
+        assertNull(registry.observePeer(ID, WRITER, sameHostProxySession));
+        assertEquals("58.209.44.49", query(registry, QUERY, 200).getString("ip"));
+        assertTrue(registry.observe(ID, WRITER, directSession, "58.209.44.49", true));
     }
 
     @Test void fixedHttpRouteUsesRegistryAndIgnoresForwardedAndQueryIp() throws Exception {
@@ -168,15 +198,15 @@ class WowEndpointTest {
     @Test void realStatefulRpcAuthenticatesActualPeerAndReconnectsPublisher() throws Exception {
         String oldToken = RxConfig.INSTANCE.getRtoken(); RxConfig.INSTANCE.setRtoken("endpoint-test-rpc-token");
         WowEndpointRegistry registry = spy(new WowEndpointRegistry(ID, WRITER, QUERY, 45000));
-        RssRpcApp app = new RssRpcApp(mock(SocksProxyServer.class), null, registry);
+        RssRpcApp app = new RssRpcApp(mock(SocksProxyServer.class), registry);
         RpcServerConfig serverConfig = new RpcServerConfig(new TcpServerConfig(freePort()));
         serverConfig.setSensitiveMethods(Collections.singleton(WowEndpointRegistry.RPC_METHOD));
-        TcpServer server = Remoting.register(app, serverConfig);
+        TransportServer server = Remoting.register(app, serverConfig);
         SocksRpcContract stateful = null, pool = null;
         WowEndpointPublisher publisher = null;
         try {
             RssClientConf clientConf = new RssClientConf(); clientConf.wowEndpointClientId = ID; clientConf.wowEndpointWriterKey = WRITER;
-            RpcClientConfig<SocksRpcContract> config = RpcClientConfig.statefulMode(new InetSocketAddress("127.0.0.1", server.getConfig().getListenPort()), SocksRpcContract.RPC_EVENT_VERSION);
+            RpcClientConfig<SocksRpcContract> config = RpcClientConfig.statefulMode(new InetSocketAddress("127.0.0.1", server.listenPort()), SocksRpcContract.RPC_EVENT_VERSION);
             config.setRequestTimeoutMillis(3000);
             publisher = WowEndpointPublisher.configure(clientConf, config);
             stateful = Remoting.createFacade(SocksRpcContract.class, config);
@@ -185,10 +215,10 @@ class WowEndpointTest {
             assertFalse(stateful.observeWowEndpoint(valid));
             assertNull(stateful.getObservedPublicIp(valid));
             await(() -> mockingDetails(registry).getInvocations().stream().filter(i -> i.getMethod().getName().equals("observe")).count() >= 2);
-            ArgumentCaptor<HybridSession> sessions = ArgumentCaptor.forClass(HybridSession.class);
+            ArgumentCaptor<TransportSession> sessions = ArgumentCaptor.forClass(TransportSession.class);
             verify(registry, atLeast(2)).observe(eq(ID), eq(WRITER), sessions.capture(), any(), anyBoolean());
-            HybridSession first = sessions.getValue(); assertEquals("127.0.0.1", first.tcpRemoteEndpoint().getAddress().getHostAddress()); assertTrue(first.isConnected());
-            RpcClientConfig<SocksRpcContract> pooled = RpcClientConfig.poolMode(new InetSocketAddress("127.0.0.1", server.getConfig().getListenPort()), 1, 1);
+            TransportSession first = sessions.getValue(); assertEquals("127.0.0.1", first.remoteEndpoint().getAddress().getHostAddress()); assertTrue(first.isConnected());
+            RpcClientConfig<SocksRpcContract> pooled = RpcClientConfig.poolMode(new InetSocketAddress("127.0.0.1", server.listenPort()), 1, 1);
             pooled.setSensitiveMethods(Collections.singleton(WowEndpointRegistry.RPC_METHOD));
             pool = Remoting.createFacade(SocksRpcContract.class, pooled);
             assertFalse(pool.observeWowEndpoint(valid)); pool.close(); pool = null;
@@ -199,7 +229,7 @@ class WowEndpointTest {
             verify(registry, atLeast(3)).observe(eq(ID), eq(WRITER), sessions.capture(), any(), anyBoolean());
             assertNotSame(first, sessions.getValue()); assertTrue(sessions.getValue().isConnected());
             assertThrows(RuntimeException.class, () -> {
-                RpcClientConfig<SocksRpcContract> wrong = RpcClientConfig.statefulMode(new InetSocketAddress("127.0.0.1", server.getConfig().getListenPort()), 1);
+                RpcClientConfig<SocksRpcContract> wrong = RpcClientConfig.statefulMode(new InetSocketAddress("127.0.0.1", server.listenPort()), 1);
                 wrong.setSensitiveMethods(Collections.singleton(WowEndpointRegistry.RPC_METHOD));
                 try (SocksRpcContract bad = Remoting.createFacade(SocksRpcContract.class, wrong)) { bad.observeWowEndpoint(new WowEndpointObservation(ID, WRITER, "invalid", null, false)); }
             });

@@ -1,7 +1,10 @@
 # 技术方案 - RSS: 6896 加密可配与单用户关闭端口跳跃
 
-- 日期: 2026-11-25
-- 状态: 草稿，待确认后才改代码和现网
+> [!NOTE]
+> **历史归档文档**：本文保留作为 6896 `ssCipher` / `udpHop` 迁移与 `kcptun` 下线方案的历史记录。现行三类上游（`rss` / `socks5` / `udpclient`）、`-fixedUdpPort` 与传输配置请以 [rss-transport.md](./rss-transport.md) 为准。
+
+- 日期: 2026-11-25（2026-11-26 代码已落地）
+- 状态: Java 侧 `ssCipher` 与 `transport.udpHop`（含服务端 `-udpHop=0`、连接池/策略缓存隔离及热更新回滚）已在仓库实现并通过 JDK 8 / JDK 21 验证；现网配置切换与 `kcptun` 拆线待维护窗口确认后执行
 - 关联配置: rss client `/home/rss/conf.yml`
 - 范围: 只动 6896（`rGrey`）和它使用的 `main-tun`。6899、6898、6897 的 SS 加密、profile、上游保持现状。服务端全局 `udpHopPorts=20000-20127` 不关。
 
@@ -52,14 +55,13 @@ flowchart LR
 
 ### 3.2 仅该用户关闭端口跳跃
 
-`RssTransport` 增加 `Boolean udpHop`。不写时保持今天的行为：daily / game / weak 该跳跃的仍然跳跃。
+`RssTransport` 增加 `Boolean udpHop`（服务端同步提供 `SocksConfig.udpHop` / `-udpHop=0`）。不写时保持原有行为：daily / game / weak 默认跳跃。
 
 6896 写成 `udpHop: false`，同时 `profile: daily`。效果：
 
-- TCP 仍走 daily：zlib 3、自适应 XOR、TCP 修复。协商 ID 仍是 daily 的 0。
-- 这一条连接的 nonce 里两个端口写同一个值。客户端按现有 `primary != alias` 判断，不再开第二跳。
-- 服务端按 nonce 里的端口回包。两个值相同就不会在 20000–20127 之间换端口。服务端全局监听和 6898 的跳跃不改。
-- 该用户的普通 UDP 不申请跳跃会话，业务 UDP 走 `main-tun` 的 `udpClient`（udp2raw 4090）。不在 udp2raw 外面再套一层 RSS 端口跳跃。
+- TCP 仍走 daily：zlib 3、自适应 XOR、TCP 修复。握手采用 `NO_HOP_METHOD = 0x87`（旧服务端自动兼容回退），签名 nonce 内写入相同的 `primary == alias` 端口，客户端按 `primary != alias` 判断不再开第二跳。
+- 服务端按协商的单端口收发并回包，不在 20000–20127 之间轮换切换。服务端全局监听和 6898 的跳跃不改。
+- 该用户的普通 UDP 若走 `main-tun`（`udp2raw: true`），由 `Udp2rawUpstream` / `udpClient` 单通道承载；若在普通 RSS UDP 上显式配置 `udpHop: false`，亦通过 `SUPPORT_NO_HOP_UDP` 建立单端口会话，不在外层再套双端口轮换。
 
 6898 不写 `udpHop`，daily 跳跃保持。
 
@@ -119,8 +121,7 @@ sequenceDiagram
 - 两端进程列表里没有 `client_linux_amd64` / `server_linux_amd64`。crontab 不再拉起它们。udp2raw 仍在。
 - 配置写成不认识的算法时，日志拒绝热加载，四个现有端口保持改前行为。
 
-## 7. 待确认
+## 7. 现网变更边界
 
-1. `udpHop: false` 的口径是否就是上面第 3.2 节：daily 的 TCP 能力保留，只是这一条用户不跳端口，UDP 改走 udp2raw 单通道。
-2. 字段名用 `ssCipher` 和 `transport.udpHop` 是否可以。
-3. kcptun 是否按第 5 节的顺序拆掉。确认前不改代码，也不动现网进程。
+1. 代码层已完成 `ssCipher` 与 `transport.udpHop`（含 TCP/UDP 自适应 FEC 单端口模式、预热池/租约池/策略缓存隔离及热加载回滚）实现与双 JDK 测试验收。
+2. 现网 `/home/rss/conf.yml` 切换与 `kcptun` 拆线（第 5 节）属于独立运维操作，须在维护窗口确认后按序执行，本次不改动现网配置或启停远端进程。

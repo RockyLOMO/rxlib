@@ -76,7 +76,7 @@ import static org.rx.core.Sys.toJsonString;
 
 @Slf4j
 public class TestSocks extends AbstractTester {
-    final Map<Object, TcpServer> serverHost = new ConcurrentHashMap<>();
+    final Map<Object, org.rx.net.transport.core.TransportServer> serverHost = new ConcurrentHashMap<>();
     final long startDelay = 4000;
     final String eventName = "onCallback";
     final CopyOnWriteArraySet<String> bypassHosts = new CopyOnWriteArraySet<String>(RxConfig.INSTANCE.getNet().getBypassHosts()) {{
@@ -439,10 +439,10 @@ public class TestSocks extends AbstractTester {
     }
 
     <T> Future<?> restartServer(T svcImpl, InetSocketAddress ep, long startDelay) {
-        TcpServer rs = serverHost.remove(svcImpl);
+        org.rx.net.transport.core.TransportServer rs = serverHost.remove(svcImpl);
         sleep(startDelay);
         rs.close();
-        System.out.println("Close server on port " + rs.getConfig().getListenPort());
+        System.out.println("Close server on port " + rs.listenPort());
         return Tasks.setTimeout(() -> startServer(svcImpl, ep), startDelay);
     }
 

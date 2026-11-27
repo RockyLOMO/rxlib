@@ -24,6 +24,9 @@ import java.util.List;
 @Setter
 @ToString
 public class SocketConfig implements Serializable {
+    @lombok.ToString.Exclude
+    @com.alibaba.fastjson2.annotation.JSONField(serialize = false)
+    private AuthenticEndpoint socksCarrierProxy;
     private static final long serialVersionUID = 5312790348211652335L;
 
     public static final AttributeKey<SocketConfig> ATTR_CONF = AttributeKey.valueOf("conf");

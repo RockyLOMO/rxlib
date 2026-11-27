@@ -3,7 +3,6 @@ package org.rx.net.socks;
 import org.rx.net.rss.profile.RssProfile;
 
 import java.util.Arrays;
-import io.netty.handler.ssl.SslContext;
 import lombok.AccessLevel;
 import io.netty.channel.local.LocalAddress;
 import lombok.Getter;
@@ -63,8 +62,18 @@ public class SocksConfig extends SocketConfig {
     @ToString.Exclude
     private transient volatile Set<InetAddress> whiteList;
 
+    public static final int DEFAULT_DAILY_UDP_MTU = 1300;
     /** Negotiate RSS daily UDP (timed port hopping and adaptive FEC) over RPC. */
     private int dailyUdpFeatures;
+    /** Final RSS UDP tunnel datagram cap for daily/weak/game profiles; 0 disables tunnel MTU capping. */
+    private int dailyUdpMtu = DEFAULT_DAILY_UDP_MTU;
+    /** Physical SOCKS5 UDP payload ceiling before its destination header is removed. */
+    private int socksCarrierOuterMtu;
+
+    public int resolveDailyUdpMtu() {
+        int mtu = getUdpMtu();
+        return mtu > 0 ? mtu : Math.max(0, dailyUdpMtu);
+    }
 
     public boolean isDailyUdp() {
         return dailyUdpFeatures != 0;
@@ -77,10 +86,10 @@ public class SocksConfig extends SocketConfig {
         dailyUdpFeatures = features;
     }
     public static final int ADAPTIVE_GAME = RssProfile.GAME_ID, ADAPTIVE_WEAK = RssProfile.WEAK_ID;
+    private org.rx.net.RssEgressCodec rssEgressCodec = org.rx.net.RssEgressCodec.NONE;
     private boolean adaptiveTcp;
     private int adaptiveProfile;
-    @ToString.Exclude
-    private transient SslContext rssTlsContext;
+    private boolean udpHop = true;
     private int[] requiredTcpCipherPorts;
     private int[] requiredUdpCipherPorts;
 
@@ -123,6 +132,14 @@ public class SocksConfig extends SocketConfig {
     @Setter(AccessLevel.NONE)
     private int dailyPortFirst, dailyPortLast;
     private boolean redirectUdpHops;
+    private int fixedUdpPort;
+
+    public void setFixedUdpPort(int port) {
+        if (port < 0 || port > 65535) {
+            throw new IllegalArgumentException("fixedUdpPort must be 0..65535");
+        }
+        fixedUdpPort = port;
+    }
 
     /** Optional inclusive server UDP range. An unset range uses OS-assigned ephemeral ports. */
     public void setDailyPortRange(String range) {

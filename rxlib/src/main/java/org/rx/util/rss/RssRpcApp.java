@@ -14,8 +14,6 @@ import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.socks.UdpRelayGroupOpenRequest;
 import org.rx.net.socks.UdpRelayGroupOpenResult;
 import org.rx.net.socks.UdpRelayGroupUpdateResult;
-import org.rx.net.socks.Udp2rawOpenRequest;
-import org.rx.net.socks.Udp2rawOpenResult;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -33,14 +31,13 @@ public final class RssRpcApp implements SocksRpcContract {
     }
 
     private final AtomicReference<SocksProxyServer> svrSide;
-    private final AtomicReference<SocksProxyServer> udp2rawSvrSide;
     private final WowEndpointRegistry wowEndpoints;
 
     @Override
     public boolean observeWowEndpoint(org.rx.net.socks.WowEndpointObservation observation) {
         if (observation == null) return false;
         SocksRpcContract.requireValidRpcToken(observation.rpcToken);
-        org.rx.net.transport.hybrid.HybridSession session = RemotingContext.context().getClient();
+        org.rx.net.transport.core.TransportSession session = RemotingContext.context().getClient();
         org.rx.net.rpc.protocol.MetadataMessage metadata = session.attr("HandshakeMeta");
         WowEndpointRegistry registry = wowEndpoints;
         return metadata != null && metadata.getEventVersion() == SocksRpcContract.RPC_EVENT_VERSION
@@ -51,7 +48,7 @@ public final class RssRpcApp implements SocksRpcContract {
     public String getObservedPublicIp(org.rx.net.socks.WowEndpointObservation observation) {
         if (observation == null) return null;
         SocksRpcContract.requireValidRpcToken(observation.rpcToken);
-        org.rx.net.transport.hybrid.HybridSession session = RemotingContext.context().getClient();
+        org.rx.net.transport.core.TransportSession session = RemotingContext.context().getClient();
         org.rx.net.rpc.protocol.MetadataMessage metadata = session.attr("HandshakeMeta");
         WowEndpointRegistry registry = wowEndpoints;
         return metadata != null && metadata.getEventVersion() == SocksRpcContract.RPC_EVENT_VERSION && registry != null
@@ -62,27 +59,13 @@ public final class RssRpcApp implements SocksRpcContract {
         this(svrSide, null);
     }
 
-    public RssRpcApp(SocksProxyServer svrSide, SocksProxyServer udp2rawSvrSide) {
-        this(svrSide, udp2rawSvrSide, null);
-    }
-
-    public RssRpcApp(SocksProxyServer svrSide, SocksProxyServer udp2rawSvrSide, WowEndpointRegistry wowEndpoints) {
+    public RssRpcApp(SocksProxyServer svrSide, WowEndpointRegistry wowEndpoints) {
         this.svrSide = new AtomicReference<>(Objects.requireNonNull(svrSide, "svrSide"));
-        this.udp2rawSvrSide = new AtomicReference<>(udp2rawSvrSide);
         this.wowEndpoints = wowEndpoints;
     }
 
     public void setServer(SocksProxyServer svrSide) {
         this.svrSide.set(Objects.requireNonNull(svrSide, "svrSide"));
-    }
-
-    public void setUdp2rawServer(SocksProxyServer udp2rawSvrSide) {
-        this.udp2rawSvrSide.set(udp2rawSvrSide);
-    }
-
-    private SocksProxyServer udp2rawServer() {
-        SocksProxyServer server = udp2rawSvrSide.get();
-        return server != null ? server : svrSide.get();
     }
 
     @Override
@@ -131,21 +114,22 @@ public final class RssRpcApp implements SocksRpcContract {
     }
 
     @Override
+    @SneakyThrows
+    public byte[] queryDnsRecord(String domain, int type, boolean tcp, String token) {
+        SocksRpcContract.requireValidRpcToken(token);
+        return org.rx.net.dns.DnsRecordExchange.query(DnsClient.remoteNameServers(), domain, type, tcp);
+    }
+
+    @Override
     public void addWhiteList(InetAddress endpoint, String token) {
         SocksRpcContract.requireValidRpcToken(token);
-        InetSocketAddress rpcPeer = RemotingContext.context().getClient().tcpRemoteEndpoint();
+        InetSocketAddress rpcPeer = RemotingContext.context().getClient().remoteEndpoint();
         InetAddress peerAddress = rpcPeer == null ? null : rpcPeer.getAddress();
         svrSide.get().getConfig().allowWhiteList(endpoint);
         if (peerAddress != null && !peerAddress.equals(endpoint)) {
             svrSide.get().getConfig().allowWhiteList(peerAddress);
         }
-        SocksProxyServer udp2rawServer = udp2rawSvrSide.get();
-        if (udp2rawServer != null && udp2rawServer != svrSide.get()) {
-            udp2rawServer.getConfig().allowWhiteList(endpoint);
-            if (peerAddress != null && !peerAddress.equals(endpoint)) {
-                udp2rawServer.getConfig().allowWhiteList(peerAddress);
-            }
-        }
+
     }
 
     @Override
@@ -155,23 +139,22 @@ public final class RssRpcApp implements SocksRpcContract {
 
     @Override
     public boolean claimUdpRelay(int relayPort, InetSocketAddress clientAddr, String token) {
+        RemotingContext ctx = RemotingContext.context();
+        org.rx.net.transport.core.TransportSession session = ctx == null ? null : ctx.getClient();
+        InetSocketAddress rpcPeer = session == null ? null : session.remoteEndpoint();
+        InetAddress peerIp = rpcPeer == null ? null : rpcPeer.getAddress();
+        // Behind NAT, client's local bind address/port differs from server-observed NAT peer.
+        // Only lock exact clientAddr when claimed IP matches the authenticated RPC peer IP;
+        // otherwise clear stale relay state and let SocksUdpRelayHandler whitelist + bind on first packet.
+        if (clientAddr != null && peerIp != null && !peerIp.equals(clientAddr.getAddress())) {
+            clientAddr = null;
+        }
         return svrSide.get().claimUdpRelay(relayPort, clientAddr, token);
     }
 
     @Override
     public SocksRpcCapabilities capabilities(String token) {
-        SocksRpcCapabilities capabilities = svrSide.get().socksRpcCapabilities(token);
-        SocksProxyServer udp2rawServer = udp2rawSvrSide.get();
-        if (udp2rawServer == null || udp2rawServer == svrSide.get()) {
-            return capabilities;
-        }
-        SocksRpcCapabilities udp2rawCapabilities = udp2rawServer.socksRpcCapabilities(token);
-        if (udp2rawCapabilities.has(SocksRpcCapabilities.UDP2RAW_TUNNEL)) {
-            capabilities.addFlag(SocksRpcCapabilities.UDP2RAW_TUNNEL);
-            capabilities.setUdp2rawFixedEntry(udp2rawCapabilities.isUdp2rawFixedEntry());
-            capabilities.setMaxUdp2rawSessions(udp2rawCapabilities.getMaxUdp2rawSessions());
-        }
-        return capabilities;
+        return svrSide.get().socksRpcCapabilities(token);
     }
 
     @Override
@@ -197,21 +180,6 @@ public final class RssRpcApp implements SocksRpcContract {
     @Override
     public boolean closeUdpRelayGroup(String groupId, String token) {
         return svrSide.get().closeUdpRelayGroup(groupId, token);
-    }
-
-    @Override
-    public Udp2rawOpenResult openUdp2rawTunnel(Udp2rawOpenRequest request, String token) {
-        return udp2rawServer().openUdp2rawTunnel(request, token);
-    }
-
-    @Override
-    public boolean heartbeatUdp2rawTunnel(String tunnelId, String token) {
-        return udp2rawServer().heartbeatUdp2rawTunnel(tunnelId, token);
-    }
-
-    @Override
-    public boolean closeUdp2rawTunnel(String tunnelId, String token) {
-        return udp2rawServer().closeUdp2rawTunnel(tunnelId, token);
     }
 
     @SneakyThrows

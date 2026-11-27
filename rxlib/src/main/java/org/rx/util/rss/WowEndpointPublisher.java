@@ -4,7 +4,7 @@ import org.rx.core.Tasks;
 import org.rx.net.rpc.RpcClientConfig;
 import org.rx.net.socks.SocksRpcContract;
 import org.rx.net.socks.WowEndpointObservation;
-import org.rx.net.transport.hybrid.HybridClient;
+import org.rx.net.transport.core.TransportClient;
 
 import java.util.Collections;
 import java.io.File;
@@ -22,7 +22,7 @@ final class WowEndpointPublisher implements AutoCloseable {
     private final AtomicBoolean sending = new AtomicBoolean();
     private volatile boolean closed;
     private volatile ScheduledFuture<?> heartbeat;
-    private volatile HybridClient client;
+    private volatile TransportClient client;
     private volatile SocksRpcContract facade;
 
     WowEndpointPublisher(String identity, String writerKey, String readyFile) {
@@ -30,6 +30,7 @@ final class WowEndpointPublisher implements AutoCloseable {
     }
 
     static WowEndpointPublisher configure(RssClientConf conf, RpcClientConfig<SocksRpcContract> rpc) {
+        if (rpc == null || rpc.getTcpConfig() == null || rpc.getTcpConfig().getSocksCarrierProxy() != null) return null;
         if (conf.wowEndpointClientId == null || conf.wowEndpointClientId.isEmpty()
                 || conf.wowEndpointWriterKey == null || conf.wowEndpointWriterKey.length() < 32) return null;
         if (conf.wowEndpointRpcEndpoint != null && !conf.wowEndpointRpcEndpoint.isEmpty()) {
@@ -44,12 +45,12 @@ final class WowEndpointPublisher implements AutoCloseable {
     }
 
     String observedPublicIp() {
-        HybridClient active = client;
+        TransportClient active = client;
         if (closed || active == null || !active.isConnected()) return null;
         return facade.getObservedPublicIp(new WowEndpointObservation(identity, writerKey, SocksRpcContract.rpcToken(), null, false));
     }
 
-    private synchronized void start(SocksRpcContract facade, HybridClient client) {
+    private synchronized void start(SocksRpcContract facade, TransportClient client) {
         if (closed) return;
         this.facade = facade; this.client = client;
         // SessionReady is dispatched off EventLoop; registration cannot block network I/O.
@@ -59,7 +60,7 @@ final class WowEndpointPublisher implements AutoCloseable {
     }
 
     private void publish() {
-        HybridClient active = client;
+        TransportClient active = client;
         if (closed || active == null || !active.isConnected() || !sending.compareAndSet(false, true)) return;
         try {
             WowEndpointObservation observation = new WowEndpointObservation(identity, writerKey, SocksRpcContract.rpcToken(), null, false);

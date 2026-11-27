@@ -37,6 +37,148 @@ class AdaptiveUdpPortTest {
         verifyPath("::1");
     }
 
+    @Test
+    @Timeout(12)
+    void supportsSinglePortNoHopOnServerAndClient() throws Exception {
+        InetSocketAddress loopback = new InetSocketAddress("127.0.0.1", 0);
+        EventLoopGroup group = new NioEventLoopGroup(1);
+        BlockingQueue<Channel> accepted = new LinkedBlockingQueue<>();
+        Channel listener = new ServerBootstrap().group(group).channel(NioServerSocketChannel.class)
+                .childHandler(new ChannelInboundHandlerAdapter() {
+                    @Override public void channelActive(ChannelHandlerContext ctx) {
+                        accepted.add(ctx.channel());
+                    }
+                }).bind(loopback).sync().channel();
+        Channel tcp = new Bootstrap().group(group).channel(NioSocketChannel.class)
+                .handler(new ChannelInboundHandlerAdapter()).connect(listener.localAddress()).sync().channel();
+        Channel remote = accepted.poll(2, TimeUnit.SECONDS);
+        assertNotNull(remote);
+        byte[] key = new byte[32];
+        new SecureRandom().nextBytes(key);
+        BlockingQueue<Integer> inbound = new LinkedBlockingQueue<>();
+        try (AdaptiveUdpPort server = AdaptiveUdpPort.listen(loopback, 0, false, false)) {
+            assertFalse(server.isHopping());
+            assertEquals(server.port(), server.aliasPort());
+            server.register(19, key, remote, frame -> server.send(19, frame));
+            try (AdaptiveUdpPort client = AdaptiveUdpPort.client(19, key, tcp, server.port(), server.aliasPort(), frame -> {
+                try { inbound.add(frame.readInt()); } finally { frame.release(); }
+            })) {
+                assertFalse(client.isHopping());
+                assertEquals(client.port(), client.aliasPort());
+                for (int i = 0; i < 30 && inbound.isEmpty(); i++) {
+                    client.send(19, Unpooled.buffer(4).writeInt(42));
+                    Thread.sleep(20);
+                }
+                assertEquals(Integer.valueOf(42), inbound.poll(1, TimeUnit.SECONDS));
+            }
+        } finally {
+            tcp.close().sync();
+            remote.close().sync();
+            listener.close().sync();
+            group.shutdownGracefully(0, 1, TimeUnit.SECONDS).sync();
+        }
+    }
+
+    @Test
+    @Timeout(12)
+    void noHopClientRoutesThroughExternalUdp2rawForwarderAndServerAcceptsLoopback() throws Exception {
+        InetSocketAddress loopback = new InetSocketAddress("127.0.0.1", 0);
+        EventLoopGroup group = new NioEventLoopGroup(1);
+        BlockingQueue<Channel> accepted = new LinkedBlockingQueue<>();
+        Channel listener = new ServerBootstrap().group(group).channel(NioServerSocketChannel.class)
+                .childHandler(new ChannelInboundHandlerAdapter() {
+                    @Override public void channelActive(ChannelHandlerContext ctx) {
+                        accepted.add(ctx.channel());
+                    }
+                }).bind(loopback).sync().channel();
+        Channel tcp = new Bootstrap().group(group).channel(NioSocketChannel.class)
+                .handler(new ChannelInboundHandlerAdapter()).connect(listener.localAddress()).sync().channel();
+        Channel remote = accepted.poll(2, TimeUnit.SECONDS);
+        assertNotNull(remote);
+        byte[] key = new byte[32];
+        new SecureRandom().nextBytes(key);
+        BlockingQueue<Integer> inbound = new LinkedBlockingQueue<>();
+        java.util.concurrent.atomic.AtomicInteger c2s = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger s2c = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicBoolean running = new java.util.concurrent.atomic.AtomicBoolean(true);
+
+        // Server stays globally hopping (like rssServer 20000-20127), while this single stream is no-hop via udp2raw.
+        try (AdaptiveUdpPort server = AdaptiveUdpPort.listen(loopback, 0, false, true);
+             DatagramSocket rawClientSide = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+             DatagramSocket rawServerSide = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0))) {
+            assertTrue(server.isHopping());
+            rawClientSide.setSoTimeout(200);
+            rawServerSide.setSoTimeout(200);
+            InetSocketAddress rawEntry = (InetSocketAddress) rawClientSide.getLocalSocketAddress();
+            InetSocketAddress serverUdp = new InetSocketAddress("127.0.0.1", server.port());
+            java.util.concurrent.atomic.AtomicReference<InetSocketAddress> lastClientPeer = new java.util.concurrent.atomic.AtomicReference<>();
+            Thread c2sThread = new Thread(() -> {
+                byte[] buf = new byte[2048];
+                while (running.get()) {
+                    try {
+                        DatagramPacket p = new DatagramPacket(buf, buf.length);
+                        rawClientSide.receive(p);
+                        lastClientPeer.set((InetSocketAddress) p.getSocketAddress());
+                        c2s.incrementAndGet();
+                        rawServerSide.send(new DatagramPacket(p.getData(), p.getLength(), serverUdp));
+                    } catch (java.net.SocketTimeoutException ignored) {
+                    } catch (Exception e) {
+                        if (running.get()) break;
+                    }
+                }
+            });
+            Thread s2cThread = new Thread(() -> {
+                byte[] buf = new byte[2048];
+                while (running.get()) {
+                    try {
+                        DatagramPacket p = new DatagramPacket(buf, buf.length);
+                        rawServerSide.receive(p);
+                        InetSocketAddress cli = lastClientPeer.get();
+                        if (cli != null) {
+                            s2c.incrementAndGet();
+                            rawClientSide.send(new DatagramPacket(p.getData(), p.getLength(), cli));
+                        }
+                    } catch (java.net.SocketTimeoutException ignored) {
+                    } catch (Exception e) {
+                        if (running.get()) break;
+                    }
+                }
+            });
+            c2sThread.setDaemon(true);
+            s2cThread.setDaemon(true);
+            c2sThread.start();
+            s2cThread.start();
+
+            server.register(27, key, remote, false, frame -> server.send(27, frame));
+            try (AdaptiveUdpPort client = AdaptiveUdpPort.client(27, key, tcp, server.port(), server.port(), rawEntry, frame -> {
+                try { inbound.add(frame.readInt()); } finally { frame.release(); }
+            })) {
+                assertFalse(client.isHopping());
+                assertEquals(rawEntry, client.peerAddress(27));
+                // Tampered packet from loopback must still be rejected by HMAC.
+                byte[] bad = packet(key, 1, 1);
+                bad[17] ^= 1;
+                rawServerSide.send(new DatagramPacket(bad, bad.length, serverUdp));
+
+                for (int i = 0; i < 30 && inbound.isEmpty(); i++) {
+                    client.send(27, Unpooled.buffer(4).writeInt(777));
+                    Thread.sleep(20);
+                }
+                assertEquals(Integer.valueOf(777), inbound.poll(2, TimeUnit.SECONDS));
+                assertTrue(c2s.get() > 0 && s2c.get() > 0,
+                        "traffic must traverse external udp2raw forwarder c2s=" + c2s.get() + " s2c=" + s2c.get());
+                assertEquals(rawServerSide.getLocalSocketAddress(), server.peerAddress(27));
+            } finally {
+                running.set(false);
+            }
+        } finally {
+            tcp.close().sync();
+            remote.close().sync();
+            listener.close().sync();
+            group.shutdownGracefully(0, 1, TimeUnit.SECONDS).sync();
+        }
+    }
+
     private void verifyPath(String host) throws Exception {
         InetSocketAddress loopback = new InetSocketAddress(host, 0);
         EventLoopGroup group = new NioEventLoopGroup(1);

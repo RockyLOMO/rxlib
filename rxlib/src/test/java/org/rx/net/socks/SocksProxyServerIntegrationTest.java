@@ -1,21 +1,9 @@
 package org.rx.net.socks;
 
 import org.rx.net.rss.tcp.AdaptiveTcpHandler;
+import org.rx.net.RssEgressCodec;
 
-import org.junit.jupiter.api.io.TempDir;
-import io.netty.handler.ssl.SslContext;
-import io.netty.handler.ssl.SslHandler;
-import org.rx.net.RssHopTls;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.Files;
-import java.security.KeyStore;
-import java.security.PrivateKey;
-import java.security.cert.X509Certificate;
-import java.util.Base64;
-import java.io.File;
 import java.util.concurrent.TimeUnit;
-import javax.net.ssl.SSLException;
 import io.netty.handler.proxy.ProxyConnectException;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
@@ -896,7 +884,7 @@ class SocksProxyServerIntegrationTest {
         SocksProxyServer proxyA = null;
         SocksProxyServer proxyB = null;
         try {
-            SocksConfig configB = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            SocksConfig configB = new SocksConfig(Sockets.newLoopbackEndpoint(freeLoopbackTcpUdpPort()));
             configB.setEnableUdp2raw(true);
             configB.setUdp2rawAuthMode(Udp2rawAuthMode.FIRST_PACKET_MAC);
             proxyB = new SocksProxyServer(configB, null);
@@ -938,7 +926,7 @@ class SocksProxyServerIntegrationTest {
         SocksProxyServer proxyB = null;
         Channel udpClient = null;
         try {
-            SocksConfig configB = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            SocksConfig configB = new SocksConfig(Sockets.newLoopbackEndpoint(freeLoopbackTcpUdpPort()));
             configB.setEnableUdp2raw(true);
             configB.setUdp2rawAuthMode(Udp2rawAuthMode.FIRST_PACKET_MAC);
             proxyB = new SocksProxyServer(configB, null);
@@ -1004,7 +992,7 @@ class SocksProxyServerIntegrationTest {
         SocksProxyServer proxyA = null;
         SocksProxyServer proxyB = null;
         try {
-            SocksConfig configB = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            SocksConfig configB = new SocksConfig(Sockets.newLoopbackEndpoint(freeLoopbackTcpUdpPort()));
             configB.setEnableUdp2raw(true);
             configB.setUdp2rawAuthMode(Udp2rawAuthMode.FIRST_PACKET_MAC);
             configB.setUdpCompressEnabled(true);
@@ -1058,7 +1046,7 @@ class SocksProxyServerIntegrationTest {
         ShadowsocksServer ssServer = null;
         DatagramSocket clientSock = null;
         try {
-            SocksConfig configB = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            SocksConfig configB = new SocksConfig(Sockets.newLoopbackEndpoint(freeLoopbackTcpUdpPort()));
             configB.setEnableUdp2raw(true);
             configB.setUdp2rawAuthMode(Udp2rawAuthMode.FIRST_PACKET_MAC);
             proxyB = new SocksProxyServer(configB, null);
@@ -1156,7 +1144,7 @@ class SocksProxyServerIntegrationTest {
         ShadowsocksServer ssServer = null;
         DatagramSocket clientSock = null;
         try {
-            SocksConfig configB = new SocksConfig(Sockets.newLoopbackEndpoint(0));
+            SocksConfig configB = new SocksConfig(Sockets.newLoopbackEndpoint(freeLoopbackTcpUdpPort()));
             configB.setEnableUdp2raw(true);
             configB.setUdp2rawAuthMode(Udp2rawAuthMode.FIRST_PACKET_MAC);
             configB.setUdpCompressEnabled(true);
@@ -1259,12 +1247,17 @@ class SocksProxyServerIntegrationTest {
                 for (int i = 0; i < 15; i++) {
                     // Pack UDP Echo Request
                     ByteBuf addrBuf = Unpooled.buffer(64);
-                    UdpManager.encode(addrBuf, new InetSocketAddress("127.0.0.1", UDP_ECHO_PORT));
-                    byte[] payload = "ss-to-socks-chained".getBytes(StandardCharsets.UTF_8);
-                    addrBuf.writeBytes(payload);
+                    byte[] encrypted;
+                    try {
+                        UdpManager.encode(addrBuf, new InetSocketAddress("127.0.0.1", UDP_ECHO_PORT));
+                        byte[] payload = "ss-to-socks-chained".getBytes(StandardCharsets.UTF_8);
+                        addrBuf.writeBytes(payload);
 
-                    ByteBuf encryptedBuf = crypto.encrypt(addrBuf);
-                    byte[] encrypted = toBytes(encryptedBuf);
+                        ByteBuf encryptedBuf = crypto.encrypt(addrBuf);
+                        encrypted = toBytes(encryptedBuf);
+                    } finally {
+                        addrBuf.release();
+                    }
 
                     clientSock.send(new java.net.DatagramPacket(encrypted, encrypted.length, InetAddress.getByName("127.0.0.1"), ssPort));
 
@@ -1280,15 +1273,24 @@ class SocksProxyServerIntegrationTest {
                     byte[] receivedEncrypted = new byte[p.getLength()];
                     System.arraycopy(respBuf, 0, receivedEncrypted, 0, p.getLength());
 
-                    ByteBuf decBuf = crypto.decrypt(Unpooled.wrappedBuffer(receivedEncrypted));
-                    InetSocketAddress srcEp = UdpManager.decode(decBuf); // The real sender!
+                    ByteBuf encIn = Unpooled.wrappedBuffer(receivedEncrypted);
+                    ByteBuf decBuf = null;
+                    try {
+                        decBuf = crypto.decrypt(encIn);
+                        InetSocketAddress srcEp = UdpManager.decode(decBuf); // The real sender!
 
-                    byte[] echoed = new byte[decBuf.readableBytes()];
-                    decBuf.readBytes(echoed);
-                    assertEquals("ss-to-socks-chained", new String(echoed, StandardCharsets.UTF_8));
-                    assertEquals(UDP_ECHO_PORT, srcEp.getPort());
+                        byte[] echoed = new byte[decBuf.readableBytes()];
+                        decBuf.readBytes(echoed);
+                        assertEquals("ss-to-socks-chained", new String(echoed, StandardCharsets.UTF_8));
+                        assertEquals(UDP_ECHO_PORT, srcEp.getPort());
 
-                    log.info("Shadowsocks chained UDP relay success: src={}", srcEp);
+                        log.info("Shadowsocks chained UDP relay success: src={}", srcEp);
+                    } finally {
+                        encIn.release();
+                        if (decBuf != null) {
+                            decBuf.release();
+                        }
+                    }
                     ok = true;
                     break;
                 }
@@ -1413,7 +1415,7 @@ class SocksProxyServerIntegrationTest {
                         "proxyB should allocate RPC managed UDP relay group");
                 if (daily) {
                     assertTrue(proxyB.udpRelayRegistry.values().stream()
-                            .anyMatch(ch -> ch.pipeline().get(org.rx.net.rss.udp.DailyUdpWire.class) != null));
+                            .anyMatch(ch -> ch.pipeline().get(org.rx.net.rss.udp.RssDatagramHandler.class) != null));
                 }
                 assertEquals(0, proxyB.activeChannelCount(), "RPC relay group must not create standard SOCKS5 TCP control channels on proxyB");
                 assertShadowsocksUdpEcho(clientSock, ssPort, crypto, "ss-rpc-port-hop-2");
@@ -1851,70 +1853,43 @@ class SocksProxyServerIntegrationTest {
     @Test
     @Timeout(value = 20)
     void shadowsocksTcpAdaptiveHopSurvivesUdpOutage() throws Exception {
-        verifyAdaptiveHop(null, null, false);
+        verifyAdaptiveHop(RssEgressCodec.NONE, false, 15796);
     }
 
     @Test
     @Timeout(25)
     void pskAdaptiveHopSurvivesUdpOutage() throws Exception {
         org.junit.jupiter.api.Assumptions.assumeTrue(org.rx.net.RssHopAes.configured());
-        verifyAdaptiveHop(null, null, true);
+        verifyAdaptiveHop(RssEgressCodec.NONE, true, 15795);
     }
 
     @Test
-    @Timeout(35)
-    void verifiedTlsAdaptiveHopSurvivesUdpOutage(@TempDir Path dir) throws Exception {
-        KeyStore keys = testHopIdentity(dir);
-        X509Certificate cert = (X509Certificate) keys.getCertificate("hop");
-        PrivateKey key = (PrivateKey) keys.getKey("hop", "test-only".toCharArray());
-        File pem = writePem(dir, "CERTIFICATE", cert.getEncoded());
-        verifyAdaptiveHop(RssHopTls.serverContext(pem, writePem(dir, "PRIVATE KEY", key.getEncoded())),
-                RssHopTls.clientContext(pem), false);
+    @Timeout(25)
+    void storedEgressAdaptiveHopSurvivesUdpOutage() throws Exception {
+        verifyAdaptiveHop(RssEgressCodec.ZLIB_STORED, false, 15797);
     }
 
-    private static KeyStore testHopIdentity(Path dir) throws Exception {
-        Path file = dir.resolve("hop.p12");
-        String tool = Paths.get(System.getProperty("java.home"), "bin", "keytool").toString();
-        Process child = new ProcessBuilder(tool, "-genkeypair", "-alias", "hop", "-storetype", "PKCS12",
-                "-keystore", file.toString(), "-storepass", "test-only", "-keypass", "test-only", "-keyalg", "EC",
-                "-keysize", "256", "-dname", "CN=localhost", "-ext", "SAN=dns:localhost").redirectErrorStream(true).start();
-        try {
-            assertTrue(child.waitFor(10, TimeUnit.SECONDS));
-            assertEquals(0, child.exitValue());
-        } finally {
-            child.destroy();
-        }
-        KeyStore keys = KeyStore.getInstance("PKCS12");
-        try (InputStream in = Files.newInputStream(file)) {
-            keys.load(in, "test-only".toCharArray());
-        }
-        return keys;
+    @Test
+    @Timeout(25)
+    void storedEgressPskAdaptiveHopSurvivesUdpOutage() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(org.rx.net.RssHopAes.configured());
+        verifyAdaptiveHop(RssEgressCodec.ZLIB_STORED, true, 15798);
     }
 
-    private static File writePem(Path dir, String type, byte[] der) throws Exception {
-        String data = "-----BEGIN " + type + "-----\n" + Base64.getMimeEncoder().encodeToString(der)
-                + "\n-----END " + type + "-----\n";
-        return Files.write(dir.resolve(type + ".pem"), data.getBytes(StandardCharsets.US_ASCII)).toFile();
-    }
-
-    private void verifyAdaptiveHop(SslContext tlsServer, SslContext tlsClient, boolean psk) throws Exception {
-        // Reserve a test port per profile outside the ephemeral range: the hop binds both TCP and UDP.
-        SocksConfig cfg = new SocksConfig(psk ? 15795 : tlsServer == null ? 15796 : 15797);
+    private void verifyAdaptiveHop(RssEgressCodec egress, boolean psk, int port) throws Exception {
+        SocksConfig cfg = new SocksConfig(port);
+        cfg.setRequiredTcpCipherPorts(new int[0]);
+        cfg.setRssEgressCodec(egress);
         cfg.setAdaptiveTcp(true);
         cfg.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
         SocksConfig uplink = new SocksConfig();
         uplink.setAdaptiveTcp(true);
-        uplink.setAdaptiveProfile(psk ? 2 : tlsServer != null ? 1 : 0);
+        uplink.setAdaptiveProfile(psk ? 2 : 0);
+        uplink.setRssEgressCodec(egress);
         uplink.setTransportFlags(cfg.getTransportFlags());
         if (psk) {
             cfg.setRequiredTcpCipherPorts(new int[]{TCP_ECHO_PORT});
             uplink.setTransportFlags(TransportFlags.RSS_PSK_AES.flags(TransportFlags.COMPRESS_BOTH));
-        }
-        if (tlsServer != null) {
-            cfg.setRssTlsContext(tlsServer);
-            cfg.setRequiredTcpCipherPorts(new int[]{TCP_ECHO_PORT});
-            uplink.setTransportFlags(TransportFlags.RSS_AUTHENTICATED_TLS.flags());
-            uplink.setRssTlsContext(tlsClient);
         }
         ShadowsocksConfig ss = new ShadowsocksConfig(Sockets.newAnyEndpoint(0),
                 org.rx.net.socks.encryption.CipherKind.AES_256_GCM.getCipherName(), "external-ss");
@@ -1927,31 +1902,9 @@ class SocksProxyServerIntegrationTest {
             assertNotNull(remote.adaptivePort);
             if (psk) {
                 checkProtectedWarmConnection(remotePort, uplink, true, "localhost", TCP_ECHO_PORT);
-                checkProtectedWarmConnection(remotePort, new SocksConfig(), false, "localhost", TCP_ECHO_PORT);
-            }
-            if (tlsServer != null) {
-                InetSocketAddress destination = InetSocketAddress.createUnresolved("secure-origin.invalid", TCP_ECHO_PORT);
-                UpstreamSupport support = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("localhost", remotePort)),
-                        new LocalRpcFacade(remote));
-                assertSame(destination, new SocksTcpUpstream(destination, uplink, support).prepareDestination());
-                checkProtectedWarmConnection(remotePort, uplink, true, "localhost", TCP_ECHO_PORT);
-                // Exercise TLS alone and zlib inside TLS on the same SOCKS listener.
-                uplink.setTransportFlags(TransportFlags.RSS_AUTHENTICATED_TLS.flags(TransportFlags.COMPRESS_BOTH));
-                checkProtectedWarmConnection(remotePort, uplink, true, "localhost", TCP_ECHO_PORT);
-                checkProtectedWarmConnection(remotePort, uplink, false, "127.0.0.1", TCP_ECHO_PORT);
-                SocksConfig untrusted = new SocksConfig();
-                untrusted.setTransportFlags(uplink.getTransportFlags());
-                untrusted.setRssTlsContext(RssHopTls.clientContext(null));
-                checkProtectedWarmConnection(remotePort, untrusted, false, "localhost", TCP_ECHO_PORT);
-                SocksConfig plain = new SocksConfig();
-                plain.setTransportFlags(cfg.getTransportFlags());
-                checkProtectedWarmConnection(remotePort, plain, false, "localhost", TCP_ECHO_PORT);
-                try (ServerSocket ordinary = new ServerSocket(0, 8, InetAddress.getByName("127.0.0.1"))) {
-                    checkProtectedWarmConnection(remotePort, plain, true, "localhost", ordinary.getLocalPort());
-                    plain.setTransportFlags(TransportFlags.NONE.flags());
-                    checkProtectedWarmConnection(remotePort, plain, true, "localhost", ordinary.getLocalPort());
-                    checkProtectedWarmConnection(remotePort, plain, false, "localhost", TCP_ECHO_PORT);
-                }
+                SocksConfig unprotected = new SocksConfig();
+                unprotected.setRssEgressCodec(egress);
+                checkProtectedWarmConnection(remotePort, unprotected, false, "localhost", TCP_ECHO_PORT);
             }
             UpstreamSupport endpoint = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("localhost", remotePort),
                     "rss", "hop-test"), null);
@@ -2007,19 +1960,13 @@ class SocksProxyServerIntegrationTest {
             c.pipeline().addLast(warm);
         }).connect(address).sync().channel();
         try {
-            SslHandler ssl = ch.pipeline().get(SslHandler.class);
-            if (ssl != null && !success) {
-                assertThrows(SSLException.class, () -> ssl.handshakeFuture().sync());
-                return;
-            }
             warm.readyFuture().get(4, TimeUnit.SECONDS);
             ChannelFuture command = ch.eventLoop().submit(() -> warm.connect(new InetSocketAddress("127.0.0.1", target))).get();
             if (success) {
                 command.sync();
                 assertEquals(config.getTransportFlags().has(TransportFlags.COMPRESS_BOTH), Sockets.hasTcpCompressionHandlers(ch));
-                if (ssl != null) {
-                    assertEquals("TLS_AES_128_GCM_SHA256", ssl.engine().getSession().getCipherSuite());
-                }
+                assertEquals(config.getRssEgressCodec() == RssEgressCodec.ZLIB_STORED,
+                        ch.pipeline().context(RssEgressCodec.INNER_ANCHOR) != null);
             } else {
                 assertThrows(ProxyConnectException.class, command::sync);
             }
@@ -2057,6 +2004,355 @@ class SocksProxyServerIntegrationTest {
                         ch.eventLoop().submit(() -> warm.connect(new InetSocketAddress("127.0.0.1", TCP_ECHO_PORT))).get().sync();
                     } finally {
                         ch.close().sync();
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    @Timeout(value = 15)
+    void adaptiveNoHopStreamCoexistsWithHoppingStreamOnSameServer() throws Exception {
+        SocksConfig cfg = new SocksConfig(15800);
+        cfg.setAdaptiveTcp(true);
+        cfg.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
+        SocksUser user = new SocksUser("warm");
+        user.setPassword("test-pass");
+        try (SocksProxyServer server = new SocksProxyServer(cfg, new SocksAuthenticator(Collections.singletonList(user)))) {
+            assertTrue(server.adaptivePort.isHopping());
+            assertNotEquals(server.adaptivePort.port(), server.adaptivePort.aliasPort());
+            int port = ((InetSocketAddress) server.tcpChannels.get(0).localAddress()).getPort();
+            InetSocketAddress address = new InetSocketAddress("127.0.0.1", port);
+            for (boolean udpHop : new boolean[]{false, true}) {
+                SocksConfig uplink = new SocksConfig();
+                uplink.setAdaptiveTcp(true);
+                uplink.setUdpHop(udpHop);
+                uplink.setTransportFlags(cfg.getTransportFlags());
+                Socks5WarmupHandler warm = new Socks5WarmupHandler(address, "warm", "test-pass", 4000);
+                warm.setAdaptiveTcp(true);
+                warm.setUdpHop(udpHop);
+                Channel ch = Sockets.bootstrap(uplink, address, c -> {
+                    Sockets.addTcpClientHandler(c, uplink, address);
+                    c.pipeline().addLast(warm);
+                }).connect(address).sync().channel();
+                try {
+                    warm.readyFuture().get(4, TimeUnit.SECONDS);
+                    AdaptiveTcpHandler handler = ch.pipeline().get(AdaptiveTcpHandler.class);
+                    assertNotNull(handler);
+                    assertEquals(udpHop, handler.isUdpHopping());
+                    ch.eventLoop().submit(() -> warm.connect(new InetSocketAddress("127.0.0.1", TCP_ECHO_PORT))).get().sync();
+                    assertTrue(Sockets.hasTcpCompressionHandlers(ch));
+                    java.util.concurrent.BlockingQueue<String> echoed = new java.util.concurrent.LinkedBlockingQueue<>();
+                    ch.pipeline().addLast(new SimpleChannelInboundHandler<ByteBuf>() {
+                        @Override protected void channelRead0(ChannelHandlerContext ctx, ByteBuf msg) {
+                            echoed.add(msg.toString(StandardCharsets.UTF_8));
+                        }
+                    });
+                    ch.writeAndFlush(Unpooled.copiedBuffer("probe-" + udpHop, StandardCharsets.UTF_8)).sync();
+                    assertEquals("probe-" + udpHop, echoed.poll(4, TimeUnit.SECONDS));
+                    waitForCondition(handler::usingUdp, 4000, "adaptive UDP active for udpHop=" + udpHop);
+                    ch.writeAndFlush(Unpooled.copiedBuffer("udp-payload-" + udpHop, StandardCharsets.UTF_8)).sync();
+                    assertEquals("udp-payload-" + udpHop, echoed.poll(4, TimeUnit.SECONDS));
+                } finally {
+                    ch.close().sync();
+                }
+            }
+        }
+    }
+
+    @Test
+    @Timeout(value = 15)
+    void adaptiveNoHopHonorsNegotiatedMtuThroughForwarderWhileHoppingCoexists() throws Exception {
+        SocksConfig cfg = new SocksConfig(15810);
+        cfg.setAdaptiveTcp(true);
+        cfg.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
+        SocksUser user = new SocksUser("warm");
+        user.setPassword("test-pass");
+        int clientMtu = 512;
+        java.util.concurrent.atomic.AtomicInteger largestUplink = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger largestDownlink = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger rawC2S = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger rawS2C = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicBoolean running = new java.util.concurrent.atomic.AtomicBoolean(true);
+        try (SocksProxyServer server = new SocksProxyServer(cfg, new SocksAuthenticator(Collections.singletonList(user)));
+             DatagramSocket rawClientSide = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+             DatagramSocket rawServerSide = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0))) {
+            assertTrue(server.adaptivePort.isHopping());
+            rawClientSide.setSoTimeout(200);
+            rawServerSide.setSoTimeout(200);
+            InetSocketAddress rawEntry = (InetSocketAddress) rawClientSide.getLocalSocketAddress();
+            InetSocketAddress serverAdaptiveUdp = new InetSocketAddress("127.0.0.1", server.adaptivePort.port());
+            java.util.concurrent.atomic.AtomicReference<InetSocketAddress> lastClientPeer = new java.util.concurrent.atomic.AtomicReference<>();
+            Thread t1 = new Thread(() -> {
+                byte[] buf = new byte[2048];
+                while (running.get()) {
+                    try {
+                        java.net.DatagramPacket p = new java.net.DatagramPacket(buf, buf.length);
+                        rawClientSide.receive(p);
+                        lastClientPeer.set((InetSocketAddress) p.getSocketAddress());
+                        largestUplink.accumulateAndGet(p.getLength(), Math::max);
+                        rawC2S.incrementAndGet();
+                        rawServerSide.send(new java.net.DatagramPacket(p.getData(), p.getLength(), serverAdaptiveUdp));
+                    } catch (java.net.SocketTimeoutException ignored) {
+                    } catch (Exception e) {
+                        if (running.get()) break;
+                    }
+                }
+            });
+            Thread t2 = new Thread(() -> {
+                byte[] buf = new byte[2048];
+                while (running.get()) {
+                    try {
+                        java.net.DatagramPacket p = new java.net.DatagramPacket(buf, buf.length);
+                        rawServerSide.receive(p);
+                        InetSocketAddress cli = lastClientPeer.get();
+                        if (cli != null) {
+                            largestDownlink.accumulateAndGet(p.getLength(), Math::max);
+                            rawS2C.incrementAndGet();
+                            rawClientSide.send(new java.net.DatagramPacket(p.getData(), p.getLength(), cli));
+                        }
+                    } catch (java.net.SocketTimeoutException ignored) {
+                    } catch (Exception e) {
+                        if (running.get()) break;
+                    }
+                }
+            });
+            t1.setDaemon(true);
+            t2.setDaemon(true);
+            t1.start();
+            t2.start();
+
+            int port = ((InetSocketAddress) server.tcpChannels.get(0).localAddress()).getPort();
+            InetSocketAddress address = new InetSocketAddress("127.0.0.1", port);
+
+            // The fixed forwarder records complete authenticated UDP datagrams in both directions.
+            SocksConfig noHopCfg = new SocksConfig();
+            noHopCfg.setAdaptiveTcp(true);
+            noHopCfg.setUdpHop(false);
+            noHopCfg.setTransportFlags(cfg.getTransportFlags());
+            Socks5WarmupHandler noHopWarm = new Socks5WarmupHandler(address, "warm", "test-pass", 4000);
+            noHopWarm.setAdaptiveTcp(true);
+            noHopWarm.setUdpHop(false);
+            noHopWarm.setAdaptiveUdpAddress(rawEntry);
+            noHopWarm.setAdaptiveUdpMtu(clientMtu);
+            Channel chNoHop = Sockets.bootstrap(noHopCfg, address, c -> {
+                Sockets.addTcpClientHandler(c, noHopCfg, address);
+                c.pipeline().addLast(noHopWarm);
+            }).connect(address).sync().channel();
+            try {
+                noHopWarm.readyFuture().get(4, TimeUnit.SECONDS);
+                AdaptiveTcpHandler handler = chNoHop.pipeline().get(AdaptiveTcpHandler.class);
+                assertNotNull(handler);
+                assertFalse(handler.isUdpHopping());
+                assertEquals(rawEntry, handler.udpPeerAddress());
+                chNoHop.eventLoop().submit(() -> noHopWarm.connect(new InetSocketAddress("127.0.0.1", TCP_ECHO_PORT))).get().sync();
+                java.util.concurrent.BlockingQueue<String> echoed = new java.util.concurrent.LinkedBlockingQueue<>();
+                chNoHop.pipeline().addLast(new SimpleChannelInboundHandler<ByteBuf>() {
+                    @Override protected void channelRead0(ChannelHandlerContext ctx, ByteBuf msg) {
+                        echoed.add(msg.toString(StandardCharsets.UTF_8));
+                    }
+                });
+                chNoHop.writeAndFlush(Unpooled.copiedBuffer("probe-raw", StandardCharsets.UTF_8)).sync();
+                assertEquals("probe-raw", echoed.poll(4, TimeUnit.SECONDS));
+                waitForCondition(handler::usingUdp, 4000, "no-hop adaptive UDP via udp2raw forwarder must activate");
+                chNoHop.writeAndFlush(Unpooled.copiedBuffer("data-over-udp2raw", StandardCharsets.UTF_8)).sync();
+                assertEquals("data-over-udp2raw", echoed.poll(4, TimeUnit.SECONDS));
+                byte[] randomData = new byte[4096];
+                new java.util.Random(147).nextBytes(randomData);
+                String payload = java.util.Base64.getEncoder().encodeToString(randomData);
+                chNoHop.writeAndFlush(Unpooled.copiedBuffer(payload, StandardCharsets.US_ASCII)).sync();
+                StringBuilder response = new StringBuilder();
+                while (response.length() < payload.length()) {
+                    String part = echoed.poll(4, TimeUnit.SECONDS);
+                    assertNotNull(part);
+                    response.append(part);
+                }
+                assertEquals(payload, response.toString());
+                assertTrue(largestUplink.get() <= clientMtu && largestUplink.get() >= clientMtu - 8,
+                        "uplink=" + largestUplink.get());
+                assertTrue(largestDownlink.get() <= clientMtu, "downlink=" + largestDownlink.get());
+                assertTrue(rawC2S.get() > 0 && rawS2C.get() > 0,
+                        "adaptive UDP must traverse udp2raw forwarder c2s=" + rawC2S.get() + " s2c=" + rawS2C.get());
+            } finally {
+                chNoHop.close().sync();
+            }
+            // Allow the asynchronous UDP forwarder thread to drain any final in-flight datagram from chNoHop.
+            int c2sBefore = rawC2S.get();
+            for (int i = 0; i < 10; i++) {
+                Thread.sleep(25);
+                int cur = rawC2S.get();
+                if (cur == c2sBefore) {
+                    break;
+                }
+                c2sBefore = cur;
+            }
+
+            // 2. 6898-like hopping stream on the same server stays direct and does not touch the udp2raw forwarder.
+            SocksConfig hopCfg = new SocksConfig();
+            hopCfg.setAdaptiveTcp(true);
+            hopCfg.setUdpHop(true);
+            hopCfg.setTransportFlags(cfg.getTransportFlags());
+            Socks5WarmupHandler hopWarm = new Socks5WarmupHandler(address, "warm", "test-pass", 4000);
+            hopWarm.setAdaptiveTcp(true);
+            hopWarm.setUdpHop(true);
+            Channel chHop = Sockets.bootstrap(hopCfg, address, c -> {
+                Sockets.addTcpClientHandler(c, hopCfg, address);
+                c.pipeline().addLast(hopWarm);
+            }).connect(address).sync().channel();
+            try {
+                hopWarm.readyFuture().get(4, TimeUnit.SECONDS);
+                AdaptiveTcpHandler handler = chHop.pipeline().get(AdaptiveTcpHandler.class);
+                assertNotNull(handler);
+                assertTrue(handler.isUdpHopping());
+                chHop.eventLoop().submit(() -> hopWarm.connect(new InetSocketAddress("127.0.0.1", TCP_ECHO_PORT))).get().sync();
+                java.util.concurrent.BlockingQueue<String> echoed = new java.util.concurrent.LinkedBlockingQueue<>();
+                chHop.pipeline().addLast(new SimpleChannelInboundHandler<ByteBuf>() {
+                    @Override protected void channelRead0(ChannelHandlerContext ctx, ByteBuf msg) {
+                        echoed.add(msg.toString(StandardCharsets.UTF_8));
+                    }
+                });
+                chHop.writeAndFlush(Unpooled.copiedBuffer("probe-hop", StandardCharsets.UTF_8)).sync();
+                assertEquals("probe-hop", echoed.poll(4, TimeUnit.SECONDS));
+                waitForCondition(handler::usingUdp, 4000, "hopping adaptive UDP must activate");
+                chHop.writeAndFlush(Unpooled.copiedBuffer("data-hop", StandardCharsets.UTF_8)).sync();
+                assertEquals("data-hop", echoed.poll(4, TimeUnit.SECONDS));
+                assertEquals(c2sBefore, rawC2S.get(), "hopping stream must not route through udp2raw forwarder");
+            } finally {
+                chHop.close().sync();
+                running.set(false);
+            }
+        }
+    }
+
+    @Test
+    @Timeout(value = 15)
+    void udp2rawServerEntrySocketSurvivesIdleTimeoutWithoutClosing() throws Exception {
+        String prevRtoken = RxConfig.INSTANCE.getRtoken();
+        RxConfig.INSTANCE.setRtoken("udp2raw-idle-entry-token");
+        SocksConfig serverCfg = new SocksConfig(15815);
+        serverCfg.setEnableUdp2raw(true);
+        serverCfg.setUdpReadTimeoutSeconds(1);
+        serverCfg.setUdpWriteTimeoutSeconds(1);
+        try (SocksProxyServer serverB = new SocksProxyServer(serverCfg)) {
+            // Wait past the 1s udpReadTimeoutSeconds: fixed entry socket must stay open.
+            Thread.sleep(1500);
+            SocksRpcContract facade = new SocksRpcContract() {
+                @Override public boolean fakeEndpoint(String fakeHost, String realEndpoint, String token) { return true; }
+                @Override public void addWhiteList(InetAddress endpoint, String token) {}
+                @Override public java.util.List<InetAddress> resolveHost(InetAddress srcIp, String host) { return Collections.emptyList(); }
+                @Override public SocksRpcCapabilities capabilities(String token) { return serverB.socksRpcCapabilities(token); }
+                @Override public Udp2rawOpenResult openUdp2rawTunnel(Udp2rawOpenRequest request, String token) { return serverB.openUdp2rawTunnel(request, token); }
+                @Override public boolean heartbeatUdp2rawTunnel(String tunnelId, String token) { return serverB.heartbeatUdp2rawTunnel(tunnelId, token); }
+                @Override public boolean closeUdp2rawTunnel(String tunnelId, String token) { return serverB.closeUdp2rawTunnel(tunnelId, token); }
+            };
+            SocksConfig proxyACfg = new SocksConfig(15816);
+            try (SocksProxyServer proxyA = new SocksProxyServer(proxyACfg)) {
+                UpstreamSupport support = new UpstreamSupport(
+                        new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 15815), null, null), facade);
+                support.setUdp2raw(true);
+                SocksConfig routeCfg = new SocksConfig();
+                routeCfg.setUdpMtu(1300);
+                proxyA.onUdpRoute.replace((s, e) -> e.setUpstream(new org.rx.net.socks.upstream.Udp2rawUpstream(e.getFirstDestination(), routeCfg, support)));
+                assertTrue(sendUdpViaProxy(15816, "udp2raw-entry-still-open", 5));
+            }
+        } finally {
+            RxConfig.INSTANCE.setRtoken(prevRtoken);
+        }
+    }
+
+    @Test
+    @Timeout(value = 15)
+    void plainUdpPassthroughAllowsLargeDatagramsWhileExplicitMtuStillGuards() throws Exception {
+        SocksConfig upstreamCfg = new SocksConfig(0);
+        try (SocksProxyServer upstreamProxy = new SocksProxyServer(upstreamCfg);
+             DatagramSocket app = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0))) {
+            app.setSoTimeout(4000);
+            int upstreamPort = ((InetSocketAddress) upstreamProxy.tcpChannels.get(0).localAddress()).getPort();
+            UpstreamSupport support = new UpstreamSupport(
+                    new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", upstreamPort), null, null), null);
+
+            // 1. Default plain (udpMtu = 0): 2048B datagram passes end-to-end without artificial 1300B drop.
+            ShadowsocksConfig ssPlain = new ShadowsocksConfig(Sockets.newLoopbackEndpoint(0),
+                    org.rx.net.socks.encryption.CipherKind.AES_256_GCM.getCipherName(), "plain-mtu-pwd");
+            SocksConfig plainRoute = new SocksConfig();
+            assertEquals(0, plainRoute.getUdpMtu());
+            try (ShadowsocksServer ssServer = new ShadowsocksServer(ssPlain)) {
+                ssServer.onUdpRoute.replace((s, e) -> e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), plainRoute, support)));
+                int ssPort = ((InetSocketAddress) ssServer.udpChannels.get(0).localAddress()).getPort();
+                org.rx.net.socks.encryption.ICrypto crypto = org.rx.net.socks.encryption.ICrypto.get(
+                        ssPlain.getMethod(), ssPlain.getPassword(), true);
+                try {
+                    byte[] large = new byte[8192];
+                    new java.util.Random(12).nextBytes(large);
+                    ByteBuf req = Unpooled.buffer();
+                    UdpManager.encode(req, "127.0.0.1", UDP_ECHO_PORT);
+                    req.writeBytes(large);
+                    byte[] encrypted = toBytes(crypto.encrypt(req));
+                    app.send(new java.net.DatagramPacket(encrypted, encrypted.length, InetAddress.getByName("127.0.0.1"), ssPort));
+                    byte[] respBuf = new byte[16384];
+                    java.net.DatagramPacket resp = new java.net.DatagramPacket(respBuf, respBuf.length);
+                    app.receive(resp);
+                    ByteBuf clear = crypto.decrypt(Unpooled.wrappedBuffer(resp.getData(), 0, resp.getLength()));
+                    try {
+                        UdpManager.decode(clear);
+                        byte[] echoed = new byte[clear.readableBytes()];
+                        clear.readBytes(echoed);
+                        assertArrayEquals(large, echoed);
+                    } finally {
+                        clear.release();
+                    }
+                } finally {
+                    ((AutoCloseable) crypto).close();
+                }
+            }
+
+            // 2. Explicit udpMtu = 1200 on upstream relay: 2048B datagram is dropped by final egress guard while 512B succeeds.
+            SocksConfig cappedCfg = new SocksConfig(0);
+            cappedCfg.setUdpMtu(1200);
+            try (SocksProxyServer cappedProxy = new SocksProxyServer(cappedCfg)) {
+                int cappedPort = ((InetSocketAddress) cappedProxy.tcpChannels.get(0).localAddress()).getPort();
+                UpstreamSupport cappedSupport = new UpstreamSupport(
+                        new AuthenticEndpoint(new InetSocketAddress("127.0.0.1", cappedPort), null, null), null);
+                ShadowsocksConfig ssCapped = new ShadowsocksConfig(Sockets.newLoopbackEndpoint(0),
+                        org.rx.net.socks.encryption.CipherKind.AES_256_GCM.getCipherName(), "capped-mtu-pwd");
+                try (ShadowsocksServer ssServer = new ShadowsocksServer(ssCapped)) {
+                    ssServer.onUdpRoute.replace((s, e) -> e.setUpstream(new SocksUdpUpstream(e.getFirstDestination(), plainRoute, cappedSupport)));
+                    int ssPort = ((InetSocketAddress) ssServer.udpChannels.get(0).localAddress()).getPort();
+                    org.rx.net.socks.encryption.ICrypto crypto = org.rx.net.socks.encryption.ICrypto.get(
+                            ssCapped.getMethod(), ssCapped.getPassword(), true);
+                    try {
+                        byte[] over = new byte[2048];
+                        new java.util.Random(13).nextBytes(over);
+                        ByteBuf req = Unpooled.buffer();
+                        UdpManager.encode(req, "127.0.0.1", UDP_ECHO_PORT);
+                        req.writeBytes(over);
+                        byte[] encrypted = toBytes(crypto.encrypt(req));
+                        app.send(new java.net.DatagramPacket(encrypted, encrypted.length, InetAddress.getByName("127.0.0.1"), ssPort));
+                        app.setSoTimeout(400);
+                        byte[] respBuf = new byte[4096];
+                        assertThrows(java.net.SocketTimeoutException.class,
+                                () -> app.receive(new java.net.DatagramPacket(respBuf, respBuf.length)));
+
+                        app.setSoTimeout(4000);
+                        byte[] small = "small-under-1200".getBytes(StandardCharsets.UTF_8);
+                        ByteBuf smallReq = Unpooled.buffer();
+                        UdpManager.encode(smallReq, "127.0.0.1", UDP_ECHO_PORT);
+                        smallReq.writeBytes(small);
+                        byte[] smallEnc = toBytes(crypto.encrypt(smallReq));
+                        app.send(new java.net.DatagramPacket(smallEnc, smallEnc.length, InetAddress.getByName("127.0.0.1"), ssPort));
+                        java.net.DatagramPacket smallResp = new java.net.DatagramPacket(respBuf, respBuf.length);
+                        app.receive(smallResp);
+                        ByteBuf clear = crypto.decrypt(Unpooled.wrappedBuffer(smallResp.getData(), 0, smallResp.getLength()));
+                        try {
+                            UdpManager.decode(clear);
+                            byte[] echoed = new byte[clear.readableBytes()];
+                            clear.readBytes(echoed);
+                            assertArrayEquals(small, echoed);
+                        } finally {
+                            clear.release();
+                        }
+                    } finally {
+                        ((AutoCloseable) crypto).close();
                     }
                 }
             }
@@ -2299,6 +2595,27 @@ class SocksProxyServerIntegrationTest {
         byte[] out = new byte[read];
         System.arraycopy(buf, 0, out, 0, read);
         return out;
+    }
+
+    static int freeLoopbackTcpUdpPort() throws Exception {
+        for (int i = 0; i < 64; i++) {
+            try (ServerSocket tcp = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
+                int port = tcp.getLocalPort();
+                DatagramSocket udp = new DatagramSocket(null);
+                try {
+                    udp.setReuseAddress(false);
+                    udp.bind(new InetSocketAddress("127.0.0.1", port));
+                    return port;
+                } catch (java.net.SocketException busy) {
+                    // Retry if Windows already has a UDP socket bound to this port.
+                } finally {
+                    udp.close();
+                }
+            }
+        }
+        try (ServerSocket tcp = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
+            return tcp.getLocalPort();
+        }
     }
 
     static byte[] toBytes(ByteBuf buf) {

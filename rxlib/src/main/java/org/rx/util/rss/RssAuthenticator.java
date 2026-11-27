@@ -45,6 +45,14 @@ public class RssAuthenticator implements Authenticator {
     }
 
     public synchronized void reload(List<ShadowUser> shadowUsers, String socksPassword, int memoryRetentionHours) {
+        applySettings(prepareReload(shadowUsers, socksPassword, memoryRetentionHours));
+    }
+
+    synchronized AuthSettings currentSettings() {
+        return settings;
+    }
+
+    synchronized AuthSettings prepareReload(List<ShadowUser> shadowUsers, String socksPassword, int memoryRetentionHours) {
         if (shadowUsers == null) {
             throw new InvalidException("shadowUsers is empty");
         }
@@ -81,11 +89,17 @@ public class RssAuthenticator implements Authenticator {
                 nextSocksStore.put(socksUserName, socksUser);
             }
         }
+        return new AuthSettings(socksPassword, Math.max(1, memoryRetentionHours), nextShadowStore, nextSocksStore);
+    }
 
-        for (SocksUser user : nextSocksStore.values()) {
-            user.setPassword(socksPassword);
+    synchronized void applySettings(AuthSettings next) {
+        if (next == null) {
+            return;
         }
-        settings = new AuthSettings(socksPassword, Math.max(1, memoryRetentionHours), nextShadowStore, nextSocksStore);
+        for (SocksUser user : next.socksStore.values()) {
+            user.setPassword(next.socksPassword);
+        }
+        settings = next;
     }
 
     private void validateShadowUser(ShadowUser shadowUser) {

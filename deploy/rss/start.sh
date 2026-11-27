@@ -16,7 +16,6 @@ LOCAL_TIME=$(date +"%Y-%m-%d %H:%M:%S")
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 cd "${SCRIPT_DIR}" || exit 1
 if [[ -d transport ]]; then
-    [[ ! -f transport/ca.pem ]] || export RSS_TCP_TLS_CA="$PWD/transport/ca.pem"
     export RSS_TCP_AES_KEY="$(<transport/tcp-key)"
     export RSS_UDP_AES_KEY="$(<transport/udp-key)"
 fi

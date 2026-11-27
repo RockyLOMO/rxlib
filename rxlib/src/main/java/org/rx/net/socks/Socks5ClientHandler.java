@@ -26,6 +26,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import org.rx.core.Strings;
+import org.rx.net.support.UpstreamSupport;
 import org.rx.util.function.Action;
 
 import java.net.InetSocketAddress;
@@ -48,6 +49,11 @@ public final class Socks5ClientHandler extends ProxyHandler {
     private final Socks5CommandType commandType;
     @Setter private boolean adaptiveTcp;
     @Setter private int adaptiveProfile;
+    @Setter private boolean udpHop = true;
+    @Setter private InetSocketAddress adaptiveUdpAddress;
+    @Setter private int adaptiveUdpMtu;
+    @Setter private UpstreamSupport upstreamSupport;
+    private volatile boolean destinationCommandError;
     private int offeredProfile = -1;
     private boolean negotiated;
     private String decoderName;
@@ -130,7 +136,7 @@ public final class Socks5ClientHandler extends ProxyHandler {
     protected Object newInitialMessage(ChannelHandlerContext ctx) throws Exception {
         if (adaptiveTcp && commandType == Socks5CommandType.CONNECT && password != null && ctx.channel().remoteAddress() instanceof InetSocketAddress) {
             offeredProfile = adaptiveProfile;
-            return SocksAdaptiveHandshake.offer(offeredProfile);
+            return SocksAdaptiveHandshake.offer(offeredProfile, udpHop);
         }
         return socksAuthMethod() == Socks5AuthMethod.PASSWORD ? INIT_REQUEST_PASSWORD : INIT_REQUEST_NO_AUTH;
     }
@@ -156,7 +162,10 @@ public final class Socks5ClientHandler extends ProxyHandler {
             } else if (resAuthMethod == Socks5AuthMethod.PASSWORD) {
                 // In case of password authentication, send an authentication request.
                 ctx.pipeline().replace(decoderName, decoderName, new Socks5PasswordAuthResponseDecoder());
-                if (negotiated) SocksAdaptiveHandshake.awaitNonce(ctx.pipeline(), decoderName);
+                if (negotiated) {
+                SocksAdaptiveHandshake.awaitNonce(ctx.pipeline(), decoderName);
+                SocksAdaptiveHandshake.sendMtu(ctx, adaptiveUdpMtu);
+            }
                 sendToProxyServer(new DefaultSocks5PasswordAuthRequest(
                         username != null ? username : Strings.EMPTY, password != null ? password : Strings.EMPTY));
             } else {
@@ -175,7 +184,16 @@ public final class Socks5ClientHandler extends ProxyHandler {
             }
 
             if (negotiated) {
-                SocksAdaptiveHandshake.install(ctx.channel(), ctx.channel().attr(SocksAdaptiveHandshake.NONCE).getAndSet(null), password, null, offeredProfile);
+                UpstreamSupport support = upstreamSupport;
+                SocksAdaptiveHandshake.install(ctx.channel(), ctx.channel().attr(SocksAdaptiveHandshake.NONCE).getAndSet(null),
+                        password, null, offeredProfile, udpHop, adaptiveUdpAddress, adaptiveUdpMtu,
+                        support == null ? null : healthy -> {
+                            if (healthy) {
+                                support.recordSuccess(UpstreamSupport.Capability.ADAPTIVE_UDP);
+                            } else {
+                                support.recordFailure(UpstreamSupport.Capability.ADAPTIVE_UDP);
+                            }
+                        });
                 negotiated = false;
             }
             sendCommand(ctx);
@@ -185,9 +203,18 @@ public final class Socks5ClientHandler extends ProxyHandler {
         // This should be the last message from the server.
         Socks5CommandResponse res = (Socks5CommandResponse) response;
         if (res.status() != Socks5CommandStatus.SUCCESS) {
+            if (res.status() != Socks5CommandStatus.FAILURE) {
+                destinationCommandError = true;
+                if (upstreamSupport != null) {
+                    upstreamSupport.recordSuccess(UpstreamSupport.Capability.TCP);
+                }
+            }
             throw new ProxyConnectException(exceptionMessage("status: " + res.status()));
         }
 
+        if (upstreamSupport != null) {
+            upstreamSupport.recordSuccess(UpstreamSupport.Capability.TCP);
+        }
         if (commandType == Socks5CommandType.UDP_ASSOCIATE) {
             bindAddress = new InetSocketAddress(res.bndAddr(), res.bndPort());
         }
@@ -195,6 +222,10 @@ public final class Socks5ClientHandler extends ProxyHandler {
             handshakeCallback.invoke();
         }
         return true;
+    }
+
+    public boolean isDestinationCommandError() {
+        return destinationCommandError;
     }
 
     private Socks5AuthMethod socksAuthMethod() {

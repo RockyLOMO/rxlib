@@ -14,6 +14,7 @@ import org.rx.io.Bytes;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
+import org.rx.net.socks.upstream.Udp2rawUpstream;
 import org.rx.net.socks.upstream.Upstream;
 import org.rx.net.support.EndpointTracer;
 import java.net.InetSocketAddress;
@@ -75,6 +76,10 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
         SocksContext context = ctxMap != null ? ctxMap.get(sender) : null;
         if (context != null) {
+            if (context.getUpstream() instanceof Udp2rawUpstream) {
+                handleUdp2rawUpstreamResponse(relay, in, sender, context, config);
+                return;
+            }
             // If response from next-hop proxy is already wrapped, unwrap it; otherwise wrap the dest response
             if (inBuf.readableBytes() >= 3 && inBuf.getShort(inBuf.readerIndex()) == STREAM_MAGIC) {
                 handleClientModeResponse(relay, in, context, config);
@@ -288,10 +293,53 @@ public class Udp2rawHandler extends SimpleChannelInboundHandler<DatagramPacket> 
         }
     }
 
+    private void handleUdp2rawUpstreamResponse(Channel relay, DatagramPacket in,
+                                               InetSocketAddress sender, SocksContext context,
+                                               SocksConfig config) {
+        InetSocketAddress clientAddr = relay.attr(ATTR_CLIENT_ADDR).get();
+        if (clientAddr == null) {
+            return;
+        }
+        ByteBuf outBuf = ((Udp2rawUpstream) context.getUpstream()).decodeSocks5Response(relay, in);
+        if (outBuf == null) {
+            return;
+        }
+        if (config.isDebug()) {
+            log.info("UDP2RAW[{}] tunnel recv {}bytes {} => {}", config.getListenPort(), outBuf.readableBytes(), sender, clientAddr);
+        }
+        DatagramPacket packet = new DatagramPacket(outBuf, clientAddr);
+        SocksUserTraffic.recordRead(relay, context, packet.content().readableBytes(), 1L);
+        Sockets.UdpWriteResult result = Sockets.writeUdp(relay, packet, config, METRIC_PREFIX, "flow=tunnel-response");
+        if (result != Sockets.UdpWriteResult.ACCEPTED) {
+            log.warn("UDP2RAW[{}] tunnel drop response {} => {} result={}",
+                    config.getListenPort(), sender, clientAddr, result);
+        }
+    }
+
     private void writeClientModePacket(ChannelHandlerContext ctx, Channel relay, ByteBuf payload,
                                        InetSocketAddress clientEp, SocksContext context,
                                        InetSocketAddress udp2rawClient, SocksConfig config) {
         Upstream upstream = context.getUpstream();
+        if (upstream instanceof Udp2rawUpstream) {
+            Udp2rawUpstream udp2rawUpstream = (Udp2rawUpstream) upstream;
+            InetSocketAddress entryAddr = udp2rawUpstream.getUdpEntryAddress(relay);
+            if (entryAddr == null) {
+                Bytes.release(payload);
+                log.warn("UDP2RAW[{}] tunnel relay not ready for {}", config.getListenPort(), upstream.getDestination());
+                return;
+            }
+            ConcurrentMap<InetSocketAddress, SocksContext> ctxMap = relay.attr(ATTR_CTX_MAP).get();
+            if (ctxMap == null) {
+                relay.attr(ATTR_CTX_MAP).set(ctxMap = MemoryCache.<InetSocketAddress, SocksContext>rootBuilder().maximumSize(256).build().asMap());
+            }
+            ctxMap.put(entryAddr, context);
+            if (config.isDebug()) {
+                log.info("UDP2RAW[{}] tunnel send {}bytes {} => {}[{}]",
+                        config.getListenPort(), payload.readableBytes(), clientEp, entryAddr, upstream.getDestination());
+            }
+            udp2rawUpstream.writeSocks5Request(relay, payload, clientEp, upstream.getDestination(), context, true);
+            return;
+        }
         InetSocketAddress targetAddr = upstream instanceof SocksUdpUpstream
                 ? ((SocksUdpUpstream) upstream).selectUdpRelayAddress(relay) : null;
         if (targetAddr == null) {

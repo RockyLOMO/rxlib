@@ -88,6 +88,10 @@ public class DnsServer extends DnsResolverSupport {
         return this;
     }
 
+    public List<java.net.InetAddress> resolveDirectAddresses(String domain) throws Exception {
+        return upstreamClient.resolveAll(domain);
+    }
+
     public void clearCache() {
         clearDnsCache();
         upstreamClient.clearCache();

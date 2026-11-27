@@ -5,7 +5,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.local.LocalAddress;
 import org.junit.jupiter.api.Test;
-import org.rx.net.rss.udp.DailyUdpWire;
+import org.rx.net.rss.udp.RssDatagramHandler;
 import org.rx.net.udp.UdpRedundantEncoder;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.Sockets;
@@ -36,8 +36,8 @@ class DailyRelayGroupTest {
             UpstreamSupport next = new UpstreamSupport(new AuthenticEndpoint(loopback, null, null),
                     new SocksProxyServerIntegrationTest.LocalRpcFacade(server));
             SocksConfig clear = new SocksConfig(), second = new SocksConfig();
-            clear.setDailyUdpFeatures(DailyUdpWire.LZ4);
-            second.setDailyUdpFeatures(DailyUdpWire.FEC | (DailyUdpWire.hasCipherKey() ? DailyUdpWire.AES : 0));
+            clear.setDailyUdpFeatures(RssDatagramHandler.LZ4);
+            second.setDailyUdpFeatures(RssDatagramHandler.FEC | (RssDatagramHandler.hasCipherKey() ? RssDatagramHandler.AES : 0));
             SocksUdpUpstream a = new SocksUdpUpstream((InetSocketAddress) ordinary.getLocalSocketAddress(), clear, next);
             SocksUdpUpstream b = new SocksUdpUpstream((InetSocketAddress) target.getLocalSocketAddress(), second, next);
             assertNotEquals(a.poolKey(), b.poolKey());
@@ -58,7 +58,7 @@ class DailyRelayGroupTest {
                 assertThrows(SocketTimeoutException.class, () -> target.receive(new DatagramPacket(new byte[4], 4)));
                 int seq = 0;
                 for (SocksUdpUpstream up : new SocksUdpUpstream[]{a, b, a}) {
-                    DatagramSocket dst = up == b && DailyUdpWire.hasCipherKey() ? target : ordinary;
+                    DatagramSocket dst = up == b && RssDatagramHandler.hasCipherKey() ? target : ordinary;
                     dst.setSoTimeout(3000);
                     send(channel, up, dst, ++seq);
                     DatagramPacket packet = new DatagramPacket(new byte[4], 4);
@@ -81,15 +81,17 @@ class DailyRelayGroupTest {
             assertTrue(server.socksRpcCapabilities(token).has(SocksRpcCapabilities.PROFILE_UDP_V1));
             UdpRelayGroupOpenRequest req = new UdpRelayGroupOpenRequest();
             req.setMaxRelayCount(2);
-            req.setDailyFeatures(DailyUdpWire.GAME);
+            req.setDailyFeatures(RssDatagramHandler.GAME);
             assertFalse(server.openUdpRelayGroup(req, token).isSuccess());
             req.setProfileVersion(1);
             req.setClientSalt(UUID.randomUUID());
-            req.setDailyFeatures(DailyUdpWire.GAME | DailyUdpWire.FEC | DailyUdpWire.WEAK);
+            req.setDailyFeatures(RssDatagramHandler.GAME | RssDatagramHandler.FEC | RssDatagramHandler.WEAK);
             assertFalse(server.openUdpRelayGroup(req, token).isSuccess());
-            req.setDailyFeatures(DailyUdpWire.WEAK);
+            req.setDailyFeatures(RssDatagramHandler.WEAK);
             assertFalse(server.openUdpRelayGroup(req, token).isSuccess());
-            for (int features : new int[]{DailyUdpWire.GAME, DailyUdpWire.GAME | DailyUdpWire.FEC, DailyUdpWire.WEAK | DailyUdpWire.FEC}) {
+            req.setDailyFeatures(RssDatagramHandler.GAME | RssDatagramHandler.FEC);
+            assertFalse(server.openUdpRelayGroup(req, token).isSuccess());
+            for (int features : new int[]{RssDatagramHandler.GAME, RssDatagramHandler.WEAK | RssDatagramHandler.FEC}) {
                 req.setDailyFeatures(features);
                 UdpRelayGroupOpenResult result = server.openUdpRelayGroup(req, token);
                 assertTrue(result.isSuccess(), result.getErrorCode());
@@ -126,9 +128,13 @@ class DailyRelayGroupTest {
             assertEquals(1, legacy.getRelays().size());
 
             request.setMaxRelayCount(2);
-            request.setDailyFeatures(DailyUdpWire.FEC);
+            request.setDailyFeatures(RssDatagramHandler.FEC);
+            request.setUdpMtu(255);
+            assertEquals("INVALID_UDP_MTU", server.openUdpRelayGroup(request, rpcToken).getErrorCode());
+            request.setUdpMtu(256);
             UdpRelayGroupOpenResult daily = server.openUdpRelayGroup(request, rpcToken);
             assertTrue(daily.isSuccess(), daily.getErrorCode());
+            assertEquals(256, daily.getUdpMtu());
             assertNotEquals(rpcToken, daily.getToken());
             assertNotNull(UUID.fromString(daily.getToken()));
             assertEquals(2, daily.getRelays().size());
@@ -141,7 +147,7 @@ class DailyRelayGroupTest {
             assertFalse(server.openUdpRelayGroup(request, rpcToken).isSuccess());
             assertNotSame(primary, alias);
             assertSame(primary.eventLoop(), alias.eventLoop());
-            assertNotNull(primary.pipeline().get(DailyUdpWire.class));
+            assertNotNull(primary.pipeline().get(RssDatagramHandler.class));
             assertNull(primary.pipeline().get(UdpRedundantEncoder.class));
             assertNull(alias.pipeline().get(SocksUdpRelayHandler.class));
             alias.close().sync();

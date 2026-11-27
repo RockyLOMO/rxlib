@@ -2,7 +2,7 @@ package org.rx.util.rss;
 
 import org.rx.net.socks.SocksConfig;
 import org.rx.net.rss.profile.RssProfile;
-import org.rx.net.rss.udp.DailyUdpWire;
+import org.rx.net.rss.udp.RssDatagramHandler;
 
 import java.io.Serializable;
 
@@ -13,11 +13,42 @@ public final class RssTransport implements Serializable {
     public String profile = "plain";
     public Integer fec, tcp, udp;
     public Integer tcpCompressionLevel;
+    public Boolean udpHop;
+    public Integer udpMtu;
+    public RssClientConf.Egress egress;
+
+    boolean udpHop() {
+        return RssProfile.named(profile) != RssProfile.PLAIN && !Boolean.FALSE.equals(udpHop);
+    }
+
+    static boolean validUdpMtu(Integer mtu) {
+        return mtu == null || mtu == 0 || (mtu >= 256 && mtu <= 65507);
+    }
 
     boolean valid() {
-        return RssProfile.named(profile) != null
+        RssProfile selected = RssProfile.named(profile);
+        if (selected == null || fec != null && fec != selected.fecMask) {
+            return false;
+        }
+        if (egress != null) {
+            if (egress.udpCodec != null && !"none".equals(egress.udpCodec)) {
+                return false;
+            }
+            try {
+                org.rx.net.RssEgressCodec.parse(egress.tcpCodec);
+            } catch (IllegalArgumentException e) {
+                return false;
+            }
+        }
+        boolean plain = selected == RssProfile.PLAIN;
+        return (plain ? !Boolean.TRUE.equals(udpHop) && inRange(tcp, 3) : tcp == null || tcp == selected.tcpMask)
                 && (tcpCompressionLevel == null || tcpCompressionLevel >= 1 && tcpCompressionLevel <= 9)
-                && inRange(fec, 3) && inRange(tcp, 7) && inRange(udp, 3);
+                && validUdpMtu(udpMtu)
+                && inRange(udp, plain ? 0 : RssDatagramHandler.LZ4);
+    }
+
+    org.rx.net.RssEgressCodec tcpEgressCodec(org.rx.net.RssEgressCodec fallback) {
+        return egress == null ? fallback : org.rx.net.RssEgressCodec.parse(egress.tcpCodec);
     }
 
     private static boolean inRange(Integer value, int max) {
@@ -42,15 +73,19 @@ public final class RssTransport implements Serializable {
 
     int udpFeatures() {
         RssProfile policy = RssProfile.named(profile);
-        int features = udp != null ? udp : 0;
-        if ((fec() & 1) != 0) {
-            return features | DailyUdpWire.FEC | (policy == RssProfile.WEAK ? DailyUdpWire.WEAK : policy == RssProfile.GAME ? DailyUdpWire.GAME : 0);
+        if (policy == RssProfile.PLAIN) {
+            return 0;
         }
-        return features | (policy == RssProfile.GAME ? DailyUdpWire.GAME : 0);
+        int compression = udp == null ? RssDatagramHandler.LZ4 : udp;
+        switch (policy) {
+            case GAME: return compression | RssDatagramHandler.GAME;
+            case WEAK: return compression | RssDatagramHandler.FEC | RssDatagramHandler.WEAK;
+            default: return compression | RssDatagramHandler.FEC;
+        }
     }
 
     static int[] cipherPorts() {
-        return new int[]{21, 23, 25, 53, 80, 110, 143, 389, 587, 1883, 8080};
+        return new int[]{21, 23, 25, 80, 110, 143, 389, 587, 1883, 8080};
     }
 
     static int[] alreadyEncryptedPorts() {
@@ -58,14 +93,22 @@ public final class RssTransport implements Serializable {
     }
 
     static int[] udpCipherPorts() {
-        return new int[]{53};
+        return new int[0];
     }
 
     static boolean validPortLists(int[] cipher, int[] encrypted) {
         if (!SocksConfig.validCipherPorts(cipher) || !SocksConfig.validCipherPorts(encrypted)) {
             return false;
         }
+        for (int port : cipher) {
+            if (port == org.rx.net.socks.SocksRpcContract.DNS_PORT) {
+                return false;
+            }
+        }
         for (int port : encrypted) {
+            if (port == org.rx.net.socks.SocksRpcContract.DNS_PORT) {
+                return false;
+            }
             for (int required : cipher) {
                 if (port == required) {
                     return false;
