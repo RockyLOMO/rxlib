@@ -32,7 +32,7 @@ public final class PublicIpObserver {
         }
     }
 
-    static String observe(String[] endpoints) {
+    public static String observe(String[] endpoints) {
         return observe(endpoints, endpoint -> {
             HttpClient.Request request = HttpClient.request(io.netty.handler.codec.http.HttpMethod.GET, endpoint)
                     .proxy(Proxy.NO_PROXY).timeoutMillis(3000);

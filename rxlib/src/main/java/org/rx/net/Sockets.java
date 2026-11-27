@@ -2000,6 +2000,10 @@ public final class Sockets {
         return ips;
     }
 
+    public static List<EndpointCandidate> discoverLocalCandidates(int port, EndpointCandidate.Protocol protocol) {
+        return AddressDiscovery.discoverLocalCandidates(port, protocol, AddressDiscovery.LocalDiscoveryPolicy.DEFAULT);
+    }
+
     public static InetSocketAddress newLoopbackEndpoint(int port) {
         return new InetSocketAddress(getLoopbackAddress(), port);
     }
