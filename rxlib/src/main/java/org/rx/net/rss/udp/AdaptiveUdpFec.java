@@ -489,6 +489,18 @@ public final class AdaptiveUdpFec implements AutoCloseable {
         return recoveredData;
     }
 
+    public long paritySent() {
+        return paritySent;
+    }
+
+    public long unprotectedTxGroups() {
+        return unprotectedTxGroups;
+    }
+
+    public long sentData() {
+        return sentData;
+    }
+
     /** Drop outstanding send-side parity on path fallback or local backpressure. */
     public void cancelPendingParity() {
         containsTailProbe = false;
@@ -501,12 +513,18 @@ public final class AdaptiveUdpFec implements AutoCloseable {
         boolean probeGroup = containsTailProbe;
         containsTailProbe = false;
         int count = Integer.bitCount(sending.mask);
-        int encoded = count == 0 ? 0 : wireOverhead + MAX_OVERHEAD + sending.xor.readableBytes();
-        if (count >= MIN_SHARDS && (weak ? parityByteCredit >= 16L * encoded : parityCredit >= target)) {
+        int xorLen = count == 0 ? 0 : sending.xor.readableBytes();
+        int encoded = count == 0 ? 0 : wireOverhead + MAX_OVERHEAD + xorLen;
+        // For a full K=8/16 group of equal-size shards, tolerate the 2-byte SHARD(6) vs PARITY(8) header delta
+        // so the first full group immediately emits parity without relaxing the 25% hard ceiling at K=4.
+        long requiredWeakCredit = target > 4 && count >= target
+                ? 16L * (wireOverhead + 6 + xorLen)
+                : 16L * encoded;
+        if (count >= MIN_SHARDS && (weak ? parityByteCredit >= requiredWeakCredit : parityCredit >= target)) {
             paritySent++;
             parityBytes += encoded;
             if (probeGroup) probeGroupParityBytes += encoded;
-            if (weak) parityByteCredit -= 16L * encoded;
+            if (weak) parityByteCredit = Math.max(0L, parityByteCredit - 16L * encoded);
             protectedData += count;
             parityCredit = 0;
             int len = sending.xor.readableBytes();

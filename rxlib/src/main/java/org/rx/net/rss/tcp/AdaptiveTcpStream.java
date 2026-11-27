@@ -37,8 +37,10 @@ public final class AdaptiveTcpStream implements AutoCloseable {
     private long probeInterval = PROBE_INTERVAL, lastWrite, probeCount;
     private boolean wroteData, probePaused;
     private long windowDelay, lastWindow, pathSince, tcpNanos;
-    private long toUdp, toTcp, windowFallbacks, timeoutFallbacks, finFallbacks, tcpDelivered, udpDelivered;
-    private int peakPending;
+    private long toUdp, toTcp, windowFallbacks, bulkFallbacks, timeoutFallbacks, finFallbacks, tcpDelivered, udpDelivered;
+    private long ackedUdpFrames, udpDataFrames, udpDataPayloadBytes, directTcpFrames, directTcpBytes;
+    private long repairFramesTotal, repairPayloadBytesTotal;
+    private int peakPending, pendingPayloadBytes, consecutiveTailTimeouts;
     private final ByteBufAllocator alloc;
     private final Consumer<ByteBuf> tcpOut, udpOut, deliver;
     private final Consumer<ByteBuf> decoded = this::decoded;
@@ -120,17 +122,21 @@ public final class AdaptiveTcpStream implements AutoCloseable {
             wroteData = true;
             lastWrite = now;
         } else if (ready && bytes.isReadable()) {
-            int chunks = 1 + (bytes.readableBytes() - 1) / chunk;
+            int readable = bytes.readableBytes();
+            int chunks = 1 + (readable - 1) / chunk;
             int maxSlots = policy.maxWindow == WINDOW || srtt < REORDER_GRACE
                     ? Math.max(WINDOW, sendSlots) : policy.maxWindow;
-            if (pending.size() + chunks > maxSlots) {
-                drainPendingToTcp("reason=window");
+            boolean bulkOverflow = policy == RssProfile.WEAK
+                    && pendingPayloadBytes + readable > weakBulkByteLimit();
+            if (pending.size() + chunks > maxSlots || bulkOverflow) {
+                drainPendingToTcp(bulkOverflow ? "reason=bulk" : "reason=window");
             }
         }
         int offset = bytes.readerIndex();
         while (offset < bytes.writerIndex()) {
-            if (ready && !sendCapacity()) {
-                drainPendingToTcp("reason=window");
+            if (ready && (!sendCapacity()
+                    || (policy == RssProfile.WEAK && pendingPayloadBytes + Math.min(bytes.writerIndex() - offset, chunk) > weakBulkByteLimit()))) {
+                drainPendingToTcp(policy == RssProfile.WEAK ? "reason=bulk" : "reason=window");
             }
             int n = Math.min(bytes.writerIndex() - offset, ready ? chunk : MAX_TCP_FRAME - HEADER);
             ByteBuf frame = alloc.ioBuffer(HEADER + n, HEADER + n)
@@ -147,9 +153,14 @@ public final class AdaptiveTcpStream implements AutoCloseable {
                     tailArmed = false;
                 }
                 pending.add(frame);
+                pendingPayloadBytes += n;
+                udpDataFrames++;
+                udpDataPayloadBytes += n;
                 peakPending = Math.max(peakPending, pending.size());
                 fec.write(frame, udpOut);
             } else {
+                directTcpFrames++;
+                directTcpBytes += n;
                 tcpOut.accept(frame);
             }
             offset += n;
@@ -186,7 +197,16 @@ public final class AdaptiveTcpStream implements AutoCloseable {
                     probesAckedBeforeTcp++;
                     udpProbeOutstanding = false;
                 }
-                while (count-- > 0) pending.remove().release();
+                consecutiveTailTimeouts = 0;
+                ackedUdpFrames += count;
+                while (count-- > 0) {
+                    ByteBuf acked = pending.remove();
+                    pendingPayloadBytes -= acked.readableBytes() - HEADER;
+                    acked.release();
+                }
+                if (pendingPayloadBytes < 0) {
+                    pendingPayloadBytes = 0;
+                }
                 tailSent = false;
                 scheduleRepair();
                 tailArmed &= pending.size() == 1;
@@ -241,6 +261,18 @@ public final class AdaptiveTcpStream implements AutoCloseable {
         hasReliablePrefix = true;
         if (nextTx - reliableUntil <= 0) fec.cancelPendingParity();
         recordRepair(frames, bytes, "reason=sack");
+    }
+
+    private int weakBulkByteLimit() {
+        // Sustained bulk transfers should not blast 256 full-MTU unacked UDP frames before
+        // discovering window exhaustion; small/interactive flows keep the full high-RTT slot window.
+        if (bulkFallbacks > 0 && ackedUdpFrames < WINDOW) {
+            return (WINDOW / 2) * chunk;
+        }
+        if (ackedUdpFrames < WINDOW || repairFramesTotal * 4L > ackedUdpFrames + 16L) {
+            return WINDOW * chunk;
+        }
+        return policy.maxWindow * chunk;
     }
 
     private static boolean reserveSlots(int slots) {
@@ -453,7 +485,11 @@ public final class AdaptiveTcpStream implements AutoCloseable {
         }
         long now = clock.getAsLong();
         if (!pending.isEmpty() && now - deadline >= 0) {
-            drainPendingToTcp("reason=timeout");
+            if (policy == RssProfile.WEAK && pending.size() == 1 && !hasReliablePrefix && consecutiveTailTimeouts < 2) {
+                repairIsolatedTailToTcp(now);
+            } else {
+                drainPendingToTcp("reason=timeout");
+            }
         } else if (tailArmed && now - tailDeadline >= 0) {
             probeTail(now);
         }
@@ -524,12 +560,33 @@ public final class AdaptiveTcpStream implements AutoCloseable {
         drainPendingToTcp("reason=fin");
     }
 
-    private static void recordRepair(int frames, int bytes, String reason) {
-        if (frames == 0 || !DiagnosticMetrics.isEnabled()) return;
+    private void repairIsolatedTailToTcp(long now) {
+        ByteBuf tail = pending.peek();
+        if (tail == null) {
+            return;
+        }
+        tailArmed = false;
+        sampling = false;
+        probeHandedToTcp();
+        consecutiveTailTimeouts++;
+        hasReliablePrefix = true;
+        reliableUntil = tail.getInt(1) + 1;
+        int payload = tail.readableBytes() - HEADER;
+        tcpOut.accept(tail.retainedDuplicate());
+        fec.cancelPendingParity();
+        recordRepair(1, payload, "reason=tail-timeout");
+        deadline = now + repairDelay;
+    }
+
+    private void recordRepair(int frames, int bytes, String reason) {
+        if (frames == 0) return;
+        repairFramesTotal += frames;
+        repairPayloadBytesTotal += bytes;
+        if (!DiagnosticMetrics.isEnabled()) return;
         DiagnosticMetrics.record("rss.tcp.adaptive.repairFrames", frames, reason);
         DiagnosticMetrics.record("rss.tcp.adaptive.repairPayloadBytes", bytes, reason);
         DiagnosticMetrics.record("rss.tcp.adaptive.repairFramedBytes", bytes + frames * (HEADER + 2), reason);
-        if ("reason=timeout".equals(reason)) {
+        if ("reason=timeout".equals(reason) || "reason=tail-timeout".equals(reason)) {
             DiagnosticMetrics.record("rss.tcp.adaptive.timeoutRepairFrames", frames);
             DiagnosticMetrics.record("rss.tcp.adaptive.timeoutRepairBytes", bytes);
         }
@@ -547,6 +604,7 @@ public final class AdaptiveTcpStream implements AutoCloseable {
         tailArmed = tailSent = false;
         long now = clock.getAsLong();
         boolean wasReady = ready;
+        boolean isWindowOrBulk = "reason=window".equals(reason) || "reason=bulk".equals(reason);
         if (wasReady) {
             // Recent UDP writes justify one reprobe after handing pending data to TCP.
             wroteData = true;
@@ -554,12 +612,14 @@ public final class AdaptiveTcpStream implements AutoCloseable {
             probePaused = false;
             toTcp++;
             if ("reason=window".equals(reason)) windowFallbacks++;
+            else if ("reason=bulk".equals(reason)) bulkFallbacks++;
             else if ("reason=timeout".equals(reason)) timeoutFallbacks++;
             else if ("reason=fin".equals(reason)) finFallbacks++;
             pathSince = now;
         }
         ready = probing = sampling = false;
-        if ("reason=window".equals(reason)) {
+        consecutiveTailTimeouts = 0;
+        if (isWindowOrBulk) {
             windowDelay = windowDelay != 0 && now - lastWindow < TimeUnit.MINUTES.toNanos(1)
                     ? Math.min(MAX_PROBE_DELAY, windowDelay * 2) : PROBE_INTERVAL;
             lastWindow = now;
@@ -579,10 +639,35 @@ public final class AdaptiveTcpStream implements AutoCloseable {
                 tcpOut.accept(frame);
             }
         }
+        pendingPayloadBytes = 0;
         sackReceived = 0;
         hasReliablePrefix = false;
         releaseSendSlots();
         recordRepair(frames, bytes, reason);
+    }
+
+    long bulkFallbacks() {
+        return bulkFallbacks;
+    }
+
+    long directTcpBytes() {
+        return directTcpBytes;
+    }
+
+    long udpDataPayloadBytes() {
+        return udpDataPayloadBytes;
+    }
+
+    long repairPayloadBytesTotal() {
+        return repairPayloadBytesTotal;
+    }
+
+    long fecParityBytes() {
+        return fec.parityBytes;
+    }
+
+    long fecRecoveredPackets() {
+        return fec.recoveredPackets();
     }
 
     @Override public void close() {
@@ -608,6 +693,7 @@ public final class AdaptiveTcpStream implements AutoCloseable {
             DiagnosticMetrics.record("rss.tcp.adaptive.transitions", toUdp, "to=udp");
             DiagnosticMetrics.record("rss.tcp.adaptive.transitions", toTcp, "to=tcp");
             DiagnosticMetrics.record("rss.tcp.adaptive.fallbacks", windowFallbacks, "reason=window");
+            DiagnosticMetrics.record("rss.tcp.adaptive.fallbacks", bulkFallbacks, "reason=bulk");
             DiagnosticMetrics.record("rss.tcp.adaptive.fallbacks", timeoutFallbacks, "reason=timeout");
             DiagnosticMetrics.record("rss.tcp.adaptive.fallbacks", finFallbacks, "reason=fin");
             DiagnosticMetrics.record("rss.tcp.adaptive.tcpMillis", TimeUnit.NANOSECONDS.toMillis(
@@ -615,15 +701,26 @@ public final class AdaptiveTcpStream implements AutoCloseable {
             DiagnosticMetrics.record("rss.tcp.adaptive.peakPendingFrames", peakPending);
             DiagnosticMetrics.record("rss.tcp.adaptive.deliveredBytes", tcpDelivered, "path=tcp");
             DiagnosticMetrics.record("rss.tcp.adaptive.deliveredBytes", udpDelivered, "path=udp");
+            DiagnosticMetrics.record("rss.tcp.adaptive.udpDataFrames", udpDataFrames);
+            DiagnosticMetrics.record("rss.tcp.adaptive.udpDataPayloadBytes", udpDataPayloadBytes);
+            DiagnosticMetrics.record("rss.tcp.adaptive.directTcpFrames", directTcpFrames);
+            DiagnosticMetrics.record("rss.tcp.adaptive.directTcpBytes", directTcpBytes);
             DiagnosticMetrics.record("rss.tcp.adaptive.fecDataBytes", fec.dataBytes);
             DiagnosticMetrics.record("rss.tcp.adaptive.fecParityBytes", fec.parityBytes);
+            DiagnosticMetrics.record("rss.tcp.adaptive.fecParityFrames", fec.paritySent());
+            DiagnosticMetrics.record("rss.tcp.adaptive.fecUnprotectedTxGroups", fec.unprotectedTxGroups());
             DiagnosticMetrics.record("rss.tcp.adaptive.fecRecovered", fec.recoveredPackets());
+            if (udpDataPayloadBytes > 0) {
+                DiagnosticMetrics.record("rss.tcp.adaptive.retransmitRatio",
+                        (double) repairPayloadBytesTotal / (double) udpDataPayloadBytes);
+            }
         }
         ready = probing = false;
         fec.close();
         while (!pending.isEmpty()) {
             pending.remove().release();
         }
+        pendingPayloadBytes = 0;
         releaseSendSlots();
         releaseReceiveSlots();
         for (int i = 0; i < reordered.length; i++) {
