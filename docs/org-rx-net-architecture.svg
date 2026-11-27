@@ -1,0 +1,330 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1680" height="1210" viewBox="0 0 1680 1210">
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#070B14"/>
+    <stop offset="50%" stop-color="#0B1222"/>
+    <stop offset="100%" stop-color="#0D162B"/>
+  </linearGradient>
+  <linearGradient id="cardBg" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#152036" stop-opacity="0.96"/>
+    <stop offset="100%" stop-color="#0F172A" stop-opacity="0.98"/>
+  </linearGradient>
+  <linearGradient id="featCard" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#172440" stop-opacity="0.98"/>
+    <stop offset="100%" stop-color="#0F1A30" stop-opacity="0.98"/>
+  </linearGradient>
+  <linearGradient id="featStripBg" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0%" stop-color="#1E1B4B" stop-opacity="0.65"/>
+    <stop offset="50%" stop-color="#0F172A" stop-opacity="0.88"/>
+    <stop offset="100%" stop-color="#064E3B" stop-opacity="0.45"/>
+  </linearGradient>
+  <linearGradient id="headerAccent" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0%" stop-color="#38BDF8"/>
+    <stop offset="50%" stop-color="#818CF8"/>
+    <stop offset="100%" stop-color="#34D399"/>
+  </linearGradient>
+  <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+    <circle cx="1.5" cy="1.5" r="1" fill="#334155" fill-opacity="0.28"/>
+  </pattern>
+  <filter id="shadow" x="-8%" y="-8%" width="116%" height="122%">
+    <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#020617" flood-opacity="0.55"/>
+  </filter>
+  <filter id="glow" x="-10%" y="-10%" width="120%" height="120%">
+    <feGaussianBlur stdDeviation="5" result="blur"/>
+    <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+  <marker id="arrowCyan" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M 0 1.5 L 8.5 5 L 0 8.5 z" fill="#38BDF8"/>
+  </marker>
+  <marker id="arrowIndigo" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M 0 1.5 L 8.5 5 L 0 8.5 z" fill="#818CF8"/>
+  </marker>
+  <marker id="arrowAmber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M 0 1.5 L 8.5 5 L 0 8.5 z" fill="#FBBF24"/>
+  </marker>
+  <marker id="arrowEmerald" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M 0 1.5 L 8.5 5 L 0 8.5 z" fill="#34D399"/>
+  </marker>
+</defs>
+
+<rect width="1680" height="1210" fill="url(#bg)"/>
+<rect width="1680" height="1210" fill="url(#grid)"/>
+<ellipse cx="260" cy="110" rx="280" ry="120" fill="#38BDF8" fill-opacity="0.06"/>
+<ellipse cx="860" cy="540" rx="480" ry="190" fill="#6366F1" fill-opacity="0.08"/>
+<ellipse cx="1420" cy="960" rx="320" ry="140" fill="#10B981" fill-opacity="0.06"/>
+
+<!-- Header -->
+<rect x="40" y="22" width="1600" height="76" rx="16" fill="#0F172A" fill-opacity="0.90" stroke="#1E293B" stroke-width="1.2" filter="url(#shadow)"/>
+<rect x="40" y="22" width="6" height="76" rx="3" fill="url(#headerAccent)"/>
+<text x="68" y="57" fill="#F8FAFC" font-size="25.5" font-weight="800" font-family="Segoe UI, Microsoft YaHei, sans-serif">org.rx.net 整体架构总览</text>
+<text x="68" y="81" fill="#94A3B8" font-size="13.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">High-Performance Netty Stack · RPC 走 UDP 加速 · NAT 打洞直连 · TCP 兜底转发确保数据必达</text>
+
+<rect x="1418.8" y="45" width="191.2" height="28" rx="14" fill="#34D399" fill-opacity="0.14" stroke="#34D399" stroke-opacity="0.55" stroke-width="1"/>
+<text x="1514.3999999999999" y="63.5" text-anchor="middle" fill="#34D399" font-size="11.2" font-weight="700" font-family="Consolas, Segoe UI, monospace">TCP Zero-Loss Fallback</text>
+<rect x="1278.4" y="45" width="130.39999999999998" height="28" rx="14" fill="#FBBF24" fill-opacity="0.14" stroke="#FBBF24" stroke-opacity="0.55" stroke-width="1"/>
+<text x="1343.6000000000001" y="63.5" text-anchor="middle" fill="#FBBF24" font-size="11.2" font-weight="700" font-family="Consolas, Segoe UI, monospace">NAT Hole Punch</text>
+<rect x="1084.8000000000002" y="45" width="183.6" height="28" rx="14" fill="#A78BFA" fill-opacity="0.14" stroke="#A78BFA" stroke-opacity="0.55" stroke-width="1"/>
+<text x="1176.6000000000001" y="63.5" text-anchor="middle" fill="#A78BFA" font-size="11.2" font-weight="700" font-family="Consolas, Segoe UI, monospace">RPC over Adaptive UDP</text>
+<rect x="974.8000000000002" y="45" width="100.0" height="28" rx="14" fill="#38BDF8" fill-opacity="0.14" stroke="#38BDF8" stroke-opacity="0.55" stroke-width="1"/>
+<text x="1024.8000000000002" y="63.5" text-anchor="middle" fill="#38BDF8" font-size="11.2" font-weight="700" font-family="Consolas, Segoe UI, monospace">JDK 8 / 21</text>
+<rect x="40" y="118" width="1600" height="114" rx="16" fill="url(#featStripBg)" stroke="#818CF8" stroke-opacity="0.48" stroke-width="1.3" filter="url(#shadow)"/>
+<rect x="58" y="107" width="502.6" height="22" rx="11" fill="#0B1120" stroke="#A78BFA" stroke-opacity="0.68" stroke-width="1.15"/>
+<text x="75" y="122" fill="#A78BFA" font-size="11.5" font-weight="700" letter-spacing="0.4" font-family="Segoe UI, Microsoft YaHei, sans-serif">核心特色 · 多路径可靠传输与 NAT 穿透闭环 (Guaranteed Multi-Path Delivery)</text>
+<rect x="60" y="138" width="340" height="82" rx="12" fill="url(#featCard)" stroke="#38BDF8" stroke-opacity="0.58" stroke-width="1.3" filter="url(#shadow)"/>
+<circle cx="84" cy="162" r="12" fill="#38BDF8" fill-opacity="0.2" stroke="#38BDF8" stroke-width="1.3"/>
+<text x="84" y="166.5" text-anchor="middle" fill="#38BDF8" font-size="12" font-weight="800" font-family="Consolas, sans-serif">1</text>
+<text x="104" y="166.5" fill="#F8FAFC" font-size="14" font-weight="700" font-family="Segoe UI, Microsoft YaHei, sans-serif">RPC / RSS 业务入口</text>
+<text x="78" y="190" fill="#CBD5E1" font-size="11.5" font-family="Consolas, Microsoft YaHei, sans-serif">Remoting · SocksProxy · Nameserver</text>
+<text x="78" y="208" fill="#94A3B8" font-size="11" font-family="Segoe UI, Microsoft YaHei, sans-serif">统一接入 Transport Core，零感知底层切换</text>
+<rect x="456" y="138" width="358" height="82" rx="12" fill="url(#featCard)" stroke="#A78BFA" stroke-opacity="0.58" stroke-width="1.3" filter="url(#shadow)"/>
+<circle cx="480" cy="162" r="12" fill="#A78BFA" fill-opacity="0.2" stroke="#A78BFA" stroke-width="1.3"/>
+<text x="480" y="166.5" text-anchor="middle" fill="#A78BFA" font-size="12" font-weight="800" font-family="Consolas, sans-serif">2</text>
+<text x="500" y="166.5" fill="#F8FAFC" font-size="14" font-weight="700" font-family="Segoe UI, Microsoft YaHei, sans-serif">Adaptive UDP 优先直传</text>
+<text x="474" y="190" fill="#CBD5E1" font-size="11.5" font-family="Consolas, Microsoft YaHei, sans-serif">AdaptiveUdpPort · FEC · 弱网尾包探测</text>
+<text x="474" y="208" fill="#94A3B8" font-size="11" font-family="Segoe UI, Microsoft YaHei, sans-serif">RPC / 数据面默认走 UDP 降延迟、防队头阻塞</text>
+<rect x="870" y="138" width="358" height="82" rx="12" fill="url(#featCard)" stroke="#FBBF24" stroke-opacity="0.58" stroke-width="1.3" filter="url(#shadow)"/>
+<circle cx="894" cy="162" r="12" fill="#FBBF24" fill-opacity="0.2" stroke="#FBBF24" stroke-width="1.3"/>
+<text x="894" y="166.5" text-anchor="middle" fill="#FBBF24" font-size="12" font-weight="800" font-family="Consolas, sans-serif">3</text>
+<text x="914" y="166.5" fill="#F8FAFC" font-size="14" font-weight="700" font-family="Segoe UI, Microsoft YaHei, sans-serif">NAT 打洞穿透直连</text>
+<text x="888" y="190" fill="#CBD5E1" font-size="11.5" font-family="Consolas, Microsoft YaHei, sans-serif">UdpHolePunchServer / Client · Rendezvous</text>
+<text x="888" y="208" fill="#94A3B8" font-size="11" font-family="Segoe UI, Microsoft YaHei, sans-serif">双 NAT 协同打洞直连，减少公网中转绕路</text>
+<rect x="1284" y="138" width="336" height="82" rx="12" fill="url(#featCard)" stroke="#34D399" stroke-opacity="0.58" stroke-width="1.3" filter="url(#shadow)"/>
+<circle cx="1308" cy="162" r="12" fill="#34D399" fill-opacity="0.2" stroke="#34D399" stroke-width="1.3"/>
+<text x="1308" y="166.5" text-anchor="middle" fill="#34D399" font-size="12" font-weight="800" font-family="Consolas, sans-serif">4</text>
+<text x="1328" y="166.5" fill="#F8FAFC" font-size="14" font-weight="700" font-family="Segoe UI, Microsoft YaHei, sans-serif">TCP 兜底转发 · 确保必达</text>
+<text x="1302" y="190" fill="#CBD5E1" font-size="11.5" font-family="Consolas, Microsoft YaHei, sans-serif">AdaptiveTcpStream · TcpRelay 自动回落</text>
+<text x="1302" y="208" fill="#94A3B8" font-size="11" font-family="Segoe UI, Microsoft YaHei, sans-serif">UDP 阻断/高丢包/打洞失败自动切 TCP 补传</text>
+<path d="M 400 179 L 448 179" stroke="#38BDF8" stroke-width="2.2" marker-end="url(#arrowCyan)"/>
+<path d="M 814 179 L 862 179" stroke="#A78BFA" stroke-width="2.2" stroke-dasharray="5,3" marker-end="url(#arrowIndigo)"/>
+<text x="838" y="169" text-anchor="middle" fill="#A78BFA" font-size="9.5" font-weight="700" font-family="Segoe UI, Microsoft YaHei, sans-serif">NAT</text>
+<path d="M 1228 179 L 1276 179" stroke="#FBBF24" stroke-width="2.2" stroke-dasharray="5,3" marker-end="url(#arrowAmber)"/>
+<text x="1252" y="169" text-anchor="middle" fill="#FBBF24" font-size="9.5" font-weight="700" font-family="Segoe UI, Microsoft YaHei, sans-serif">兜底</text>
+<rect x="40" y="260" width="1600" height="228" rx="18" fill="#0F172A" fill-opacity="0.72" stroke="#38BDF8" stroke-opacity="0.24" stroke-width="1.2"/>
+<rect x="40" y="534" width="1600" height="246" rx="18" fill="#0F172A" fill-opacity="0.72" stroke="#818CF8" stroke-opacity="0.24" stroke-width="1.2"/>
+<rect x="40" y="824" width="1600" height="202" rx="18" fill="#0F172A" fill-opacity="0.72" stroke="#34D399" stroke-opacity="0.24" stroke-width="1.2"/>
+<rect x="40" y="1066" width="1600" height="96" rx="16" fill="#0F172A" fill-opacity="0.92" stroke="#60A5FA" stroke-opacity="0.45" stroke-width="1.3" filter="url(#shadow)"/>
+<path d="M 212 474 L 212 552" stroke="#38BDF8" stroke-width="2" fill="none" marker-end="url(#arrowCyan)"/>
+<path d="M 480 474 C 480 510, 420 510, 420 552" stroke="#38BDF8" stroke-width="1.8" stroke-dasharray="5,4" fill="none" marker-end="url(#arrowCyan)"/>
+<path d="M 590 474 C 590 510, 760 510, 760 552" stroke="#38BDF8" stroke-width="2" fill="none" marker-end="url(#arrowCyan)"/>
+<path d="M 840 474 C 840 508, 510 508, 510 552" stroke="#38BDF8" stroke-width="1.6" stroke-dasharray="4,4" fill="none" marker-end="url(#arrowCyan)"/>
+<path d="M 930 474 C 930 508, 1250 508, 1250 552" stroke="#38BDF8" stroke-width="1.6" fill="none" marker-end="url(#arrowCyan)"/>
+<path d="M 1190 474 C 1190 508, 1380 508, 1380 552" stroke="#38BDF8" stroke-width="1.6" fill="none" marker-end="url(#arrowCyan)"/>
+<path d="M 312 764 L 312 842" stroke="#818CF8" stroke-width="2" fill="none" marker-end="url(#arrowIndigo)"/>
+<path d="M 850 764 L 850 842" stroke="#818CF8" stroke-width="2" fill="none" marker-end="url(#arrowIndigo)"/>
+<path d="M 1388 764 L 1388 842" stroke="#818CF8" stroke-width="2" fill="none" marker-end="url(#arrowIndigo)"/>
+<path d="M 312 1010 L 312 1060" stroke="#34D399" stroke-width="2" fill="none" marker-end="url(#arrowEmerald)"/>
+<path d="M 840 1010 L 840 1060" stroke="#34D399" stroke-width="2" fill="none" marker-end="url(#arrowEmerald)"/>
+<path d="M 1368 1010 L 1368 1060" stroke="#34D399" stroke-width="2" fill="none" marker-end="url(#arrowEmerald)"/>
+<rect x="58" y="249" width="401.5" height="22" rx="11" fill="#0B1120" stroke="#38BDF8" stroke-opacity="0.68" stroke-width="1.15"/>
+<text x="75" y="264" fill="#38BDF8" font-size="11.5" font-weight="700" letter-spacing="0.4" font-family="Segoe UI, Microsoft YaHei, sans-serif">LAYER 1 · 应用与协议服务层 (Application &amp; Service Layer)</text>
+<rect x="58" y="523" width="559.4" height="22" rx="11" fill="#0B1120" stroke="#818CF8" stroke-opacity="0.68" stroke-width="1.15"/>
+<text x="75" y="538" fill="#818CF8" font-size="11.5" font-weight="700" letter-spacing="0.4" font-family="Segoe UI, Microsoft YaHei, sans-serif">LAYER 2 · 统一传输核心与自适应双轨引擎 (Unified Transport Core &amp; Adaptive Engine)</text>
+<rect x="58" y="813" width="561.3" height="22" rx="11" fill="#0B1120" stroke="#34D399" stroke-opacity="0.68" stroke-width="1.15"/>
+<text x="75" y="828" fill="#34D399" font-size="11.5" font-weight="700" letter-spacing="0.4" font-family="Segoe UI, Microsoft YaHei, sans-serif">LAYER 3 · 链路编解码、打洞抗丢包与流控背压层 (Wire Pipeline, Punch &amp; Flow Control)</text>
+<rect x="58" y="1055" width="443.3" height="22" rx="11" fill="#0B1120" stroke="#60A5FA" stroke-opacity="0.68" stroke-width="1.15"/>
+<text x="75" y="1070" fill="#60A5FA" font-size="11.5" font-weight="700" letter-spacing="0.4" font-family="Segoe UI, Microsoft YaHei, sans-serif">LAYER 4 · Netty 底座与内核原语 (Netty I/O &amp; Socket Foundation)</text>
+<rect x="60" y="282" width="304" height="192" rx="14" fill="url(#cardBg)" stroke="#38BDF8" stroke-opacity="0.35" stroke-width="1.1" filter="url(#shadow)"/>
+<rect x="74" y="282" width="276" height="3" rx="1.5" fill="#38BDF8"/>
+<text x="78" y="311" fill="#F8FAFC" font-size="16" font-weight="700" font-family="Segoe UI, Microsoft YaHei, Inter, sans-serif">RPC 远程调用</text>
+<rect x="306.6" y="295" width="43.4" height="20" rx="10" fill="#38BDF8" fill-opacity="0.18" stroke="#38BDF8" stroke-opacity="0.55" stroke-width="1"/>
+<text x="328.3" y="309" text-anchor="middle" fill="#38BDF8" font-size="10.5" font-weight="700" font-family="Consolas, Segoe UI, monospace">RPC</text>
+<text x="78" y="330" fill="#38BDF8" font-size="11.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">org.rx.net.rpc</text>
+<line x1="76" y1="340" x2="348" y2="340" stroke="#334155" stroke-opacity="0.65" stroke-width="1"/>
+<circle cx="82" cy="356" r="2.6" fill="#38BDF8"/>
+<text x="92" y="360" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">Remoting / RpcClientConfig</text>
+<text x="92" y="376" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">Pool &amp; Stateful 双模式，支持 UDP 加速</text>
+<circle cx="82" cy="392" r="2.6" fill="#38BDF8"/>
+<text x="92" y="396" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">RpcTransportClientPool</text>
+<text x="92" y="412" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">基于 Transport Core 连接池 + TCP 兜底</text>
+<circle cx="82" cy="428" r="2.6" fill="#38BDF8"/>
+<text x="92" y="432" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">FuryRemotingCodecFactory</text>
+<text x="92" y="448" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">Fury 序列化 + 敏感方法脱敏审计</text>
+<rect x="380" y="282" width="336" height="192" rx="14" fill="url(#cardBg)" stroke="#38BDF8" stroke-opacity="0.35" stroke-width="1.1" filter="url(#shadow)"/>
+<rect x="394" y="282" width="308" height="3" rx="1.5" fill="#38BDF8"/>
+<text x="398" y="311" fill="#F8FAFC" font-size="16" font-weight="700" font-family="Segoe UI, Microsoft YaHei, Inter, sans-serif">代理与隧道中继 (RSS)</text>
+<rect x="643.0" y="295" width="59.0" height="20" rx="10" fill="#38BDF8" fill-opacity="0.18" stroke="#38BDF8" stroke-opacity="0.55" stroke-width="1"/>
+<text x="672.5" y="309" text-anchor="middle" fill="#38BDF8" font-size="10.5" font-weight="700" font-family="Consolas, Segoe UI, monospace">PROXY</text>
+<text x="398" y="330" fill="#38BDF8" font-size="11.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">org.rx.net.socks / upstream</text>
+<line x1="396" y1="340" x2="700" y2="340" stroke="#334155" stroke-opacity="0.65" stroke-width="1"/>
+<circle cx="402" cy="356" r="2.6" fill="#38BDF8"/>
+<text x="412" y="360" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">SocksProxyServer / Shadowsocks</text>
+<text x="412" y="376" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">SOCKS5 + SS 入站、SO_REUSEPORT 复用</text>
+<circle cx="402" cy="392" r="2.6" fill="#38BDF8"/>
+<text x="412" y="396" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">RssSocksCarrier / Upstream</text>
+<text x="412" y="412" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">直连 RSS / SOCKS5 嵌套 / Udp2raw 出口</text>
+<circle cx="402" cy="428" r="2.6" fill="#38BDF8"/>
+<text x="412" y="432" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">UdpRelayGroup / AdaptiveHandshake</text>
+<text x="412" y="448" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">UDP 租约组、会话路由与热切排空</text>
+<rect x="732" y="282" width="304" height="192" rx="14" fill="url(#cardBg)" stroke="#38BDF8" stroke-opacity="0.35" stroke-width="1.1" filter="url(#shadow)"/>
+<rect x="746" y="282" width="276" height="3" rx="1.5" fill="#38BDF8"/>
+<text x="750" y="311" fill="#F8FAFC" font-size="16" font-weight="700" font-family="Segoe UI, Microsoft YaHei, Inter, sans-serif">DNS 与注册中心</text>
+<rect x="978.6" y="295" width="43.4" height="20" rx="10" fill="#38BDF8" fill-opacity="0.18" stroke="#38BDF8" stroke-opacity="0.55" stroke-width="1"/>
+<text x="1000.3000000000001" y="309" text-anchor="middle" fill="#38BDF8" font-size="10.5" font-weight="700" font-family="Consolas, Segoe UI, monospace">DNS</text>
+<text x="750" y="330" fill="#38BDF8" font-size="11.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">org.rx.net.dns / nameserver</text>
+<line x1="748" y1="340" x2="1020" y2="340" stroke="#334155" stroke-opacity="0.65" stroke-width="1"/>
+<circle cx="754" cy="356" r="2.6" fill="#38BDF8"/>
+<text x="764" y="360" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">DnsServer / DnsClient / DoH</text>
+<text x="764" y="376" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">异步递归、DoH、过期降级缓存</text>
+<circle cx="754" cy="392" r="2.6" fill="#38BDF8"/>
+<text x="764" y="396" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">DnsQueryUpstream / Interceptor</text>
+<text x="764" y="412" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">分流拦截、并发合并与熔断</text>
+<circle cx="754" cy="428" r="2.6" fill="#38BDF8"/>
+<text x="764" y="432" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">NameserverImpl / Client</text>
+<text x="764" y="448" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">基于 RPC 的服务注册与公网 IP 同步</text>
+<rect x="1052" y="282" width="276" height="192" rx="14" fill="url(#cardBg)" stroke="#38BDF8" stroke-opacity="0.35" stroke-width="1.1" filter="url(#shadow)"/>
+<rect x="1066" y="282" width="248" height="3" rx="1.5" fill="#38BDF8"/>
+<text x="1070" y="311" fill="#F8FAFC" font-size="16" font-weight="700" font-family="Segoe UI, Microsoft YaHei, Inter, sans-serif">HTTP 与探测</text>
+<rect x="1262.8" y="295" width="51.2" height="20" rx="10" fill="#38BDF8" fill-opacity="0.18" stroke="#38BDF8" stroke-opacity="0.55" stroke-width="1"/>
+<text x="1288.3999999999999" y="309" text-anchor="middle" fill="#38BDF8" font-size="10.5" font-weight="700" font-family="Consolas, Segoe UI, monospace">HTTP</text>
+<text x="1070" y="330" fill="#38BDF8" font-size="11.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">org.rx.net.http / ntp</text>
+<line x1="1068" y1="340" x2="1312" y2="340" stroke="#334155" stroke-opacity="0.65" stroke-width="1"/>
+<circle cx="1074" cy="356" r="2.6" fill="#38BDF8"/>
+<text x="1084" y="360" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">HttpServer / HttpClient</text>
+<text x="1084" y="376" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">Netty 异步 HTTP/TLS 与路由映射</text>
+<circle cx="1074" cy="392" r="2.6" fill="#38BDF8"/>
+<text x="1084" y="396" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">PublicIpObserver</text>
+<text x="1084" y="412" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">多源独立 HTTPS 投票直连探测</text>
+<circle cx="1074" cy="428" r="2.6" fill="#38BDF8"/>
+<text x="1084" y="432" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">NtpClient / PingClient</text>
+<text x="1084" y="448" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">时钟同步与连通性探测</text>
+<rect x="1344" y="282" width="276" height="192" rx="14" fill="url(#cardBg)" stroke="#38BDF8" stroke-opacity="0.35" stroke-width="1.1" filter="url(#shadow)"/>
+<rect x="1358" y="282" width="248" height="3" rx="1.5" fill="#38BDF8"/>
+<text x="1362" y="311" fill="#F8FAFC" font-size="16" font-weight="700" font-family="Segoe UI, Microsoft YaHei, Inter, sans-serif">路由与地理匹配</text>
+<rect x="1547.0" y="295" width="59.0" height="20" rx="10" fill="#38BDF8" fill-opacity="0.18" stroke="#38BDF8" stroke-opacity="0.55" stroke-width="1"/>
+<text x="1576.5" y="309" text-anchor="middle" fill="#38BDF8" font-size="10.5" font-weight="700" font-family="Consolas, Segoe UI, monospace">ROUTE</text>
+<text x="1362" y="330" fill="#38BDF8" font-size="11.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">org.rx.net.support</text>
+<line x1="1360" y1="340" x2="1604" y2="340" stroke="#334155" stroke-opacity="0.65" stroke-width="1"/>
+<circle cx="1366" cy="356" r="2.6" fill="#38BDF8"/>
+<text x="1376" y="360" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">UltraDomainTrieMatcher</text>
+<text x="1376" y="376" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">双数组 Trie 高速域名分流</text>
+<circle cx="1366" cy="392" r="2.6" fill="#38BDF8"/>
+<text x="1376" y="396" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">V2RayGeoManager</text>
+<text x="1376" y="412" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">GeoIP / GeoSite 零拷贝索引</text>
+<circle cx="1366" cy="428" r="2.6" fill="#38BDF8"/>
+<text x="1376" y="432" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">UpstreamSupport / Tracer</text>
+<text x="1376" y="448" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">权重路由、健康检查与端点追踪</text>
+<rect x="58" y="554" width="508" height="212" rx="16" fill="none" stroke="#818CF8" stroke-opacity="0.45" stroke-width="2" filter="url(#glow)"/>
+<rect x="60" y="556" width="504" height="208" rx="14" fill="url(#cardBg)" stroke="#818CF8" stroke-opacity="0.68" stroke-width="1.6" filter="url(#shadow)"/>
+<rect x="74" y="556" width="476" height="3" rx="1.5" fill="#818CF8"/>
+<text x="78" y="585" fill="#F8FAFC" font-size="16" font-weight="700" font-family="Segoe UI, Microsoft YaHei, Inter, sans-serif">统一传输核心 (Transport Core)</text>
+<rect x="498.79999999999995" y="569" width="51.2" height="20" rx="10" fill="#818CF8" fill-opacity="0.18" stroke="#818CF8" stroke-opacity="0.55" stroke-width="1"/>
+<text x="524.4" y="583" text-anchor="middle" fill="#818CF8" font-size="10.5" font-weight="700" font-family="Consolas, Segoe UI, monospace">CORE</text>
+<text x="78" y="604" fill="#818CF8" font-size="11.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">org.rx.net.transport.core</text>
+<line x1="76" y1="614" x2="548" y2="614" stroke="#334155" stroke-opacity="0.65" stroke-width="1"/>
+<circle cx="82" cy="630" r="2.6" fill="#818CF8"/>
+<text x="92" y="634" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">TransportClient / TransportServer</text>
+<text x="92" y="650" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">统一建连、断线重连、容量控制与心跳保活</text>
+<circle cx="82" cy="666" r="2.6" fill="#818CF8"/>
+<text x="92" y="670" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">TransportSession / DefaultTransportSession</text>
+<text x="92" y="686" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">UDP 优先数据面 + TCP 控制面/兜底转发统一抽象</text>
+<circle cx="82" cy="702" r="2.6" fill="#818CF8"/>
+<text x="92" y="706" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">TransportProtocol (Hello / HelloAck)</text>
+<text x="92" y="722" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">SessionId、ServerNonce、FLAG_ADAPTIVE_UDP、MTU 协商</text>
+<circle cx="82" cy="738" r="2.6" fill="#818CF8"/>
+<text x="92" y="742" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">DatagramTransport / DatagramTransportConfig</text>
+<text x="92" y="758" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">零分配原生 UDP 收发基础封装</text>
+<rect x="582" y="554" width="556" height="212" rx="16" fill="none" stroke="#A78BFA" stroke-opacity="0.45" stroke-width="2" filter="url(#glow)"/>
+<rect x="584" y="556" width="552" height="208" rx="14" fill="url(#cardBg)" stroke="#A78BFA" stroke-opacity="0.68" stroke-width="1.6" filter="url(#shadow)"/>
+<rect x="598" y="556" width="524" height="3" rx="1.5" fill="#A78BFA"/>
+<text x="602" y="585" fill="#F8FAFC" font-size="16" font-weight="700" font-family="Segoe UI, Microsoft YaHei, Inter, sans-serif">自适应双轨传输与数据报引擎 (RSS Engine)</text>
+<rect x="1047.4" y="569" width="74.6" height="20" rx="10" fill="#A78BFA" fill-opacity="0.18" stroke="#A78BFA" stroke-opacity="0.55" stroke-width="1"/>
+<text x="1084.7" y="583" text-anchor="middle" fill="#A78BFA" font-size="10.5" font-weight="700" font-family="Consolas, Segoe UI, monospace">UDP+TCP</text>
+<text x="602" y="604" fill="#A78BFA" font-size="11.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">org.rx.net.rss.{profile, tcp, udp}</text>
+<line x1="600" y1="614" x2="1120" y2="614" stroke="#334155" stroke-opacity="0.65" stroke-width="1"/>
+<circle cx="606" cy="630" r="2.6" fill="#A78BFA"/>
+<text x="616" y="634" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">AdaptiveTcpHandler / AdaptiveTcpStream</text>
+<text x="616" y="650" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">UDP 优先竞速 + TCP 自动补传兜底与半关闭排空</text>
+<circle cx="606" cy="666" r="2.6" fill="#A78BFA"/>
+<text x="616" y="670" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">AdaptiveUdpPort / RssUdpMtuBudget</text>
+<text x="616" y="686" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">复用 UDP 端口与路径 MTU 分片预算协商</text>
+<circle cx="606" cy="702" r="2.6" fill="#A78BFA"/>
+<text x="616" y="706" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">RssDatagramHandler / Cipher / Mac / Fragmenter</text>
+<text x="616" y="722" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">AES-GCM 加密、MAC 校验、LZ4 压缩与认证分片重组</text>
+<circle cx="606" cy="738" r="2.6" fill="#A78BFA"/>
+<text x="616" y="742" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">AdaptiveUdpFec / AdaptiveUdpReplication</text>
+<text x="616" y="758" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">weak/daily/game 配置化异或 FEC 与动态冗余复制</text>
+<rect x="1156" y="556" width="464" height="208" rx="14" fill="url(#cardBg)" stroke="#818CF8" stroke-opacity="0.35" stroke-width="1.1" filter="url(#shadow)"/>
+<rect x="1170" y="556" width="436" height="3" rx="1.5" fill="#818CF8"/>
+<text x="1174" y="585" fill="#F8FAFC" font-size="16" font-weight="700" font-family="Segoe UI, Microsoft YaHei, Inter, sans-serif">基础 TCP / UDP / SFTP 传输</text>
+<rect x="1554.8" y="569" width="51.2" height="20" rx="10" fill="#818CF8" fill-opacity="0.18" stroke="#818CF8" stroke-opacity="0.55" stroke-width="1"/>
+<text x="1580.3999999999999" y="583" text-anchor="middle" fill="#818CF8" font-size="10.5" font-weight="700" font-family="Consolas, Segoe UI, monospace">BASE</text>
+<text x="1174" y="604" fill="#818CF8" font-size="11.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">org.rx.net.transport</text>
+<line x1="1172" y1="614" x2="1604" y2="614" stroke="#334155" stroke-opacity="0.65" stroke-width="1"/>
+<circle cx="1178" cy="630" r="2.6" fill="#818CF8"/>
+<text x="1188" y="634" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">TcpServer / DefaultTcpClient</text>
+<text x="1188" y="650" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">原生 Netty TCP 服务端与自动重连兜底链路</text>
+<circle cx="1178" cy="666" r="2.6" fill="#818CF8"/>
+<text x="1188" y="670" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">TcpChannelCodec / protocol/*</text>
+<text x="1188" y="686" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">长度前缀帧编解码、Ack / Ping / Error 协议包</text>
+<circle cx="1178" cy="702" r="2.6" fill="#818CF8"/>
+<text x="1188" y="706" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">UdpClient / FuryUdpClientCodec</text>
+<text x="1188" y="722" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">通用 UDP 封装（支撑既有 UDP 打洞）</text>
+<circle cx="1178" cy="738" r="2.6" fill="#818CF8"/>
+<text x="1188" y="742" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">SftpClient  (KcpClient 已注释归档)</text>
+<text x="1188" y="758" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">基于 SSHD 的 SFTP 客户端；KCP 保留注释备份</text>
+<path d="M 564 660 L 584 660" stroke="#A78BFA" stroke-width="2.4" marker-start="url(#arrowIndigo)" marker-end="url(#arrowIndigo)"/>
+<rect x="60" y="846" width="504" height="164" rx="14" fill="url(#cardBg)" stroke="#34D399" stroke-opacity="0.35" stroke-width="1.1" filter="url(#shadow)"/>
+<rect x="74" y="846" width="476" height="3" rx="1.5" fill="#34D399"/>
+<text x="78" y="875" fill="#F8FAFC" font-size="16" font-weight="700" font-family="Segoe UI, Microsoft YaHei, Inter, sans-serif">协议标志、伪装与加密管道</text>
+<rect x="491.0" y="859" width="59.0" height="20" rx="10" fill="#34D399" fill-opacity="0.18" stroke="#34D399" stroke-opacity="0.55" stroke-width="1"/>
+<text x="520.5" y="873" text-anchor="middle" fill="#34D399" font-size="10.5" font-weight="700" font-family="Consolas, Segoe UI, monospace">CODEC</text>
+<text x="78" y="894" fill="#34D399" font-size="11.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">org.rx.net</text>
+<line x1="76" y1="904" x2="548" y2="904" stroke="#334155" stroke-opacity="0.65" stroke-width="1"/>
+<circle cx="82" cy="920" r="2.6" fill="#34D399"/>
+<text x="92" y="924" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">TransportFlags / RssTcpCodecSelector</text>
+<text x="92" y="940" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">端口级加密/绕过策略与双端 Pipeline 装配</text>
+<circle cx="82" cy="956" r="2.6" fill="#34D399"/>
+<text x="92" y="960" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">RssEgressCodec (none / zlib-stored)</text>
+<text x="92" y="976" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">按需出口伪装与服务端自动魔数识别</text>
+<circle cx="82" cy="992" r="2.6" fill="#34D399"/>
+<text x="92" y="996" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">RssHopAes / CipherEncoder / HttpPseudoHeader</text>
+<text x="92" y="1012" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">AES 传输加解密与 HTTP 伪装头编解码</text>
+<rect x="584" y="846" width="512" height="164" rx="14" fill="url(#cardBg)" stroke="#FBBF24" stroke-opacity="0.35" stroke-width="1.1" filter="url(#shadow)"/>
+<rect x="598" y="846" width="484" height="3" rx="1.5" fill="#FBBF24"/>
+<text x="602" y="875" fill="#F8FAFC" font-size="16" font-weight="700" font-family="Segoe UI, Microsoft YaHei, Inter, sans-serif">UDP 抗丢包、压缩与 NAT 打洞</text>
+<rect x="991.8" y="859" width="90.2" height="20" rx="10" fill="#FBBF24" fill-opacity="0.18" stroke="#FBBF24" stroke-opacity="0.55" stroke-width="1"/>
+<text x="1036.8999999999999" y="873" text-anchor="middle" fill="#FBBF24" font-size="10.5" font-weight="700" font-family="Consolas, Segoe UI, monospace">PUNCH+FEC</text>
+<text x="602" y="894" fill="#FBBF24" font-size="11.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">org.rx.net.udp / compress</text>
+<line x1="600" y1="904" x2="1080" y2="904" stroke="#334155" stroke-opacity="0.65" stroke-width="1"/>
+<circle cx="606" cy="920" r="2.6" fill="#FBBF24"/>
+<text x="616" y="924" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">UdpHolePunchServer / Client / Registry</text>
+<text x="616" y="940" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">NAT UDP 打洞穿透协调，失败无缝回落 TCP 中继</text>
+<circle cx="606" cy="956" r="2.6" fill="#FBBF24"/>
+<text x="616" y="960" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">UdpResilienceEncoder / Decoder / FecGroup</text>
+<text x="616" y="976" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">自适应 FEC 编码组、序号窗口与去重</text>
+<circle cx="606" cy="992" r="2.6" fill="#FBBF24"/>
+<text x="616" y="996" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">UdpCompress (LZ4) / UdpPortHopping</text>
+<text x="616" y="1012" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">按收益 LZ4 自动旁路压缩与端口跳变</text>
+<rect x="1116" y="846" width="504" height="164" rx="14" fill="url(#cardBg)" stroke="#34D399" stroke-opacity="0.35" stroke-width="1.1" filter="url(#shadow)"/>
+<rect x="1130" y="846" width="476" height="3" rx="1.5" fill="#34D399"/>
+<text x="1134" y="875" fill="#F8FAFC" font-size="16" font-weight="700" font-family="Segoe UI, Microsoft YaHei, Inter, sans-serif">全局流控、背压与诊断</text>
+<rect x="1554.8" y="859" width="51.2" height="20" rx="10" fill="#34D399" fill-opacity="0.18" stroke="#34D399" stroke-opacity="0.55" stroke-width="1"/>
+<text x="1580.3999999999999" y="873" text-anchor="middle" fill="#34D399" font-size="10.5" font-weight="700" font-family="Consolas, Segoe UI, monospace">FLOW</text>
+<text x="1134" y="894" fill="#34D399" font-size="11.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">org.rx.net</text>
+<line x1="1132" y1="904" x2="1604" y2="904" stroke="#334155" stroke-opacity="0.65" stroke-width="1"/>
+<circle cx="1138" cy="920" r="2.6" fill="#34D399"/>
+<text x="1148" y="924" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">NetworkFlowControl / NetworkTrafficConfig</text>
+<text x="1148" y="940" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">全局上下行限速与高/低水位背压控制</text>
+<circle cx="1138" cy="956" r="2.6" fill="#34D399"/>
+<text x="1148" y="960" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">TcpBackpressureHandler / UdpBackpressurePolicy</text>
+<text x="1148" y="976" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">TCP autoRead 联动与 UDP 待写队列上限保护</text>
+<circle cx="1138" cy="992" r="2.6" fill="#34D399"/>
+<text x="1148" y="996" fill="#E2E8F0" font-size="12.5" font-weight="600" font-family="Consolas, Cascadia Mono, monospace">UdpFinalEgressGuard / NetworkFlowDiagnostics</text>
+<text x="1148" y="1012" fill="#94A3B8" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">出口 MTU 守卫与流量/延迟实时诊断</text>
+<rect x="60" y="1088" width="300" height="58" rx="10" fill="#1E293B" fill-opacity="0.65" stroke="#60A5FA" stroke-opacity="0.28" stroke-width="1"/>
+<text x="74" y="1110" fill="#E2E8F0" font-size="12.5" font-weight="700" font-family="Consolas, Segoe UI, monospace">Sockets &amp; Bootstrap</text>
+<text x="74" y="1131" fill="#94A3B8" font-size="11" font-family="Segoe UI, Microsoft YaHei, sans-serif">SO_REUSEPORT · IPv4/IPv6 · DnsNameResolver</text>
+<rect x="375" y="1088" width="300" height="58" rx="10" fill="#1E293B" fill-opacity="0.65" stroke="#60A5FA" stroke-opacity="0.28" stroke-width="1"/>
+<text x="389" y="1110" fill="#E2E8F0" font-size="12.5" font-weight="700" font-family="Consolas, Segoe UI, monospace">EventLoopGroup</text>
+<text x="389" y="1131" fill="#94A3B8" font-size="11" font-family="Segoe UI, Microsoft YaHei, sans-serif">Epoll / NIO 线程亲和 · I/O 与业务池隔离</text>
+<rect x="690" y="1088" width="300" height="58" rx="10" fill="#1E293B" fill-opacity="0.65" stroke="#60A5FA" stroke-opacity="0.28" stroke-width="1"/>
+<text x="704" y="1110" fill="#E2E8F0" font-size="12.5" font-weight="700" font-family="Consolas, Segoe UI, monospace">PooledByteBufAllocator</text>
+<text x="704" y="1131" fill="#94A3B8" font-size="11" font-family="Segoe UI, Microsoft YaHei, sans-serif">Direct Buffer 堆外池化 · 零拷贝引用计数</text>
+<rect x="1005" y="1088" width="300" height="58" rx="10" fill="#1E293B" fill-opacity="0.65" stroke="#60A5FA" stroke-opacity="0.28" stroke-width="1"/>
+<text x="1019" y="1110" fill="#E2E8F0" font-size="12.5" font-weight="700" font-family="Consolas, Segoe UI, monospace">GlobalChannelHandler</text>
+<text x="1019" y="1131" fill="#94A3B8" font-size="11" font-family="Segoe UI, Microsoft YaHei, sans-serif">统一连接生命周期观测与异常收敛</text>
+<rect x="1320" y="1088" width="300" height="58" rx="10" fill="#1E293B" fill-opacity="0.65" stroke="#60A5FA" stroke-opacity="0.28" stroke-width="1"/>
+<text x="1334" y="1110" fill="#E2E8F0" font-size="12.5" font-weight="700" font-family="Consolas, Segoe UI, monospace">FuryCodec &amp; AuthenticEndpoint</text>
+<text x="1334" y="1131" fill="#94A3B8" font-size="11" font-family="Segoe UI, Microsoft YaHei, sans-serif">零反射高性能序列化与凭据端点模型</text>
+<text x="44" y="1190" fill="#64748B" font-size="11.5" font-family="Segoe UI, Microsoft YaHei, sans-serif">实线箭头：核心数据/调用路径　｜　虚线箭头：RPC 控制面 / NAT 协同 / 兜底回落　｜　RSS Server 基线：1 vCPU / 768 MiB RAM　｜　Updated: 2026-11-27</text>
+</svg>

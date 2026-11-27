@@ -86,7 +86,7 @@ egress:
 ## 5. 统一 UDP MTU 预算、认证分片与跳跃端口
 
 - `RssUdpMtuBudget` 统一负责加密决策前置、实际 AES 后置的 MTU 预算计算：`udpMtu` / `dailyUdpMtu` 表示净 RSS UDP payload 上限（不含外层 IP/UDP 头；`0` 表示该层不设显式限制，嵌套 SOCKS5 承载仅扣减一次外层 SOCKS5 UDP 头长）。
-- 普通增强 UDP（`RssDatagramHandler`）：按收益 LZ4（≥96 B、净省 ≥24 B 且 ≥12%，连续 8 次低收益旁路 30 秒）→ 按预算判断是否需要认证分片（`RssDatagramFragmenter`，`FRAG_MAGIC = 0x0001`，单会话上限 64 组 / 512 KiB、全局上限 16 MiB、超时 750 ms）→ `AdaptiveUdpFec`（daily/weak）或 `AdaptiveUdpReplication`（game）→ 外层 `RssDatagramCipher`（AES-128-GCM，`RSS_UDP_AES_KEY`）或 `RssDatagramMac` → 最终出口长度守卫。`plain` AES-only 不启用分片/FEC/复制/LZ4，超限直接失败绝不退回明文。
+- 普通增强 UDP（`RssDatagramHandler`）：按收益 LZ4（≥96 B、净省 ≥24 B 且 ≥12%，连续 8 次低收益旁路 30 秒）→ 按预算判断是否需要认证分片（`RssDatagramFragmenter`，`FRAG_MAGIC = 0x0001`，单会话上限 16 组 / 256 KiB、全局上限 24 MiB、超时 750 ms）→ `AdaptiveUdpFec`（daily/weak）或 `AdaptiveUdpReplication`（game）→ 外层 `RssDatagramCipher`（AES-128-GCM，`RSS_UDP_AES_KEY`）或 `RssDatagramMac` → 最终出口长度守卫。`plain` AES-only 不启用分片/FEC/复制/LZ4，超限直接失败绝不退回明文。
 - 自适应 TCP 的 UDP 数据面（`AdaptiveTcpStream` + `AdaptiveUdpPort`）：在握手阶段通过 `SocksAdaptiveHandshake`（v2 方法 `0x89` / `0x8a` / `0x8b`）交换有效 `udpMtu`，动态收缩 `CHUNK` 保证每个 DATA / PARITY 帧不超过预算，路径受限时平稳回退至可靠 TCP 修复。
 - 默认专用 UDP 端口段为 `20000-20127`（Server `-udpHopPorts=起始-结束`）。首对由全部自适应 TCP 共用，其余每对服务一个普通增强 UDP 组；Windows 绑定双 socket，Linux 使用 `nft` 将第二端口重定向至主端口（需要 `CAP_NET_ADMIN`）。
 - 外部 Shadowsocks 与 SOCKS5 `CONNECT` 保持客户端先 FIN 单向半关闭语义与背压感知 `HalfCloseWatch`（默认 120 s）。
