@@ -1,6 +1,7 @@
 package org.rx.net.socks;
 
 import org.rx.net.rss.tcp.AdaptiveTcpHandler;
+import org.rx.net.rss.RssUdpMtuBudget;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
@@ -24,7 +25,7 @@ import java.util.List;
 final class SocksAdaptiveHandshake {
     // The method identifies the wire profile. Peers without it may select ordinary SOCKS/TCP.
     private static final Socks5AuthMethod[] METHODS = {
-            new Socks5AuthMethod(0x83), new Socks5AuthMethod(0x84), new Socks5AuthMethod(0x85)
+            new Socks5AuthMethod(0x89), new Socks5AuthMethod(0x8a), new Socks5AuthMethod(0x8b)
     };
     private static final Socks5AuthMethod NO_HOP_METHOD = new Socks5AuthMethod(0x87);
     private static final String[] PROFILE_TAGS = {"profile=daily", "profile=game", "profile=weak"};
@@ -34,6 +35,7 @@ final class SocksAdaptiveHandshake {
     static final AttributeKey<Integer> NEGOTIATED = AttributeKey.valueOf("rssAdaptiveNegotiated");
     static final AttributeKey<Boolean> NO_HOP = AttributeKey.valueOf("rssAdaptiveNoHop");
     static final AttributeKey<byte[]> NONCE = AttributeKey.valueOf("rssAdaptiveNonce");
+    private static final AttributeKey<Integer> PEER_MTU = AttributeKey.valueOf("rssAdaptivePeerMtu");
     private static final SecureRandom RANDOM = new SecureRandom();
 
     static {
@@ -57,7 +59,10 @@ final class SocksAdaptiveHandshake {
     }
 
     static boolean selected(int profile, Socks5AuthMethod method) {
-        if (method.equals(Socks5AuthMethod.PASSWORD) || method.equals(Socks5AuthMethod.NO_AUTH)) {
+        if (method.equals(Socks5AuthMethod.NO_AUTH)) {
+            throw new IllegalStateException("Unauthenticated adaptive TCP fallback");
+        }
+        if (method.equals(Socks5AuthMethod.PASSWORD)) {
             DiagnosticMetrics.record("rss.tcp.adaptive.negotiationFallback", 1, PROFILE_TAGS[profile]);
             return false;
         }
@@ -76,16 +81,34 @@ final class SocksAdaptiveHandshake {
         return false;
     }
 
-    static byte[] sendNonce(ChannelHandlerContext ctx, AdaptiveUdpPort port) {
-        return sendNonce(ctx, port, true);
+    // V2 request prefixes the normal password exchange with a two-byte net RSS payload budget.
+    static void sendMtu(ChannelHandlerContext ctx, int mtu) {
+        if (!RssUdpMtuBudget.valid(mtu)) throw new IllegalArgumentException("Invalid adaptive UDP MTU");
+        ctx.write(ctx.alloc().buffer(2, 2).writeShort(mtu));
     }
 
-    static byte[] sendNonce(ChannelHandlerContext ctx, AdaptiveUdpPort port, boolean udpHop) {
+    static void awaitMtu(ChannelPipeline p) {
+        p.addBefore(Socks5PasswordAuthRequestDecoder.class.getSimpleName(), "rssAdaptiveMtu", new ByteToMessageDecoder() {
+            @Override protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) {
+                if (in.readableBytes() < 2) return;
+                int mtu = in.readUnsignedShort();
+                if (!RssUdpMtuBudget.valid(mtu)) {
+                    ctx.close();
+                    return;
+                }
+                ctx.channel().attr(PEER_MTU).set(mtu);
+                ctx.pipeline().remove(this);
+            }
+        });
+    }
+
+    static byte[] sendNonce(ChannelHandlerContext ctx, AdaptiveUdpPort port, boolean udpHop, int localMtu) {
+        int mtu = RssUdpMtuBudget.negotiate(localMtu, ctx.channel().attr(PEER_MTU).getAndSet(null));
         byte[] nonce = new byte[32];
         RANDOM.nextBytes(nonce);
         int primary = port.port();
         int alias = udpHop ? port.aliasPort() : primary;
-        ByteBuffer.wrap(nonce, 28, 4).putShort((short) primary).putShort((short) alias);
+        ByteBuffer.wrap(nonce, 26, 6).putShort((short) mtu).putShort((short) primary).putShort((short) alias);
         ctx.writeAndFlush(ctx.alloc().buffer(32, 32).writeBytes(nonce));
         return nonce;
     }
@@ -103,15 +126,15 @@ final class SocksAdaptiveHandshake {
     }
 
     static void install(Channel tcp, byte[] nonce, String password, AdaptiveUdpPort serverPort, int profile) {
-        install(tcp, nonce, password, serverPort, profile, true, null);
+        install(tcp, nonce, password, serverPort, profile, true, null, 0);
     }
 
     static void install(Channel tcp, byte[] nonce, String password, AdaptiveUdpPort serverPort, int profile, boolean udpHop) {
-        install(tcp, nonce, password, serverPort, profile, udpHop, null);
+        install(tcp, nonce, password, serverPort, profile, udpHop, null, 0);
     }
 
     static void install(Channel tcp, byte[] nonce, String password, AdaptiveUdpPort serverPort, int profile,
-                        boolean udpHop, InetSocketAddress udpTarget) {
+                        boolean udpHop, InetSocketAddress udpTarget, int localMtu) {
         byte[] key;
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
@@ -124,8 +147,12 @@ final class SocksAdaptiveHandshake {
             throw new IllegalStateException(e);
         }
         int primary = ByteBuffer.wrap(nonce).getShort(28) & 0xffff;
-        int alias = udpHop ? (ByteBuffer.wrap(nonce).getShort(30) & 0xffff) : primary;
+        int alias = ByteBuffer.wrap(nonce).getShort(30) & 0xffff;
+        int mtu = ByteBuffer.wrap(nonce).getShort(26) & 0xffff;
+        if (primary == 0 || alias == 0 || !udpHop && primary != alias || RssUdpMtuBudget.negotiate(mtu, localMtu) != mtu) {
+            throw new IllegalArgumentException("Incompatible adaptive UDP endpoints or MTU");
+        }
         AdaptiveTcpHandler.install(tcp, ByteBuffer.wrap(nonce).getLong(), key, serverPort,
-                primary, alias, profile, udpHop, udpTarget);
+                primary, alias, profile, udpHop, udpTarget, mtu);
     }
 }

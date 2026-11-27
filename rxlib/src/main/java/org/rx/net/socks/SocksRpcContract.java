@@ -120,6 +120,10 @@ public interface SocksRpcContract extends AutoCloseable, DnsResolveInterceptor, 
         return UdpRelayGroupOpenResult.unsupported();
     }
 
+    default byte[] queryDnsRecord(String domain, int type, boolean tcp, String token) {
+        throw new UnsupportedOperationException("DNS record RPC unavailable");
+    }
+
     default UdpRelayGroupUpdateResult addUdpRelays(String groupId, int count, String token) {
         return UdpRelayGroupUpdateResult.unsupported();
     }

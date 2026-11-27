@@ -27,13 +27,16 @@ public final class TcpWarmPoolKey implements Serializable {
         long cipherKeyHash = config.getCipherKey() == null ? 0L : CodecUtil.hash64(config.getCipherKey());
         boolean udpHop = !(config instanceof SocksConfig) || ((SocksConfig) config).isUdpHop();
         String adaptiveUdpText = !udpHop && adaptiveUdpClient != null ? Sockets.toString(adaptiveUdpClient) : null;
-        return new TcpWarmPoolKey(endpoint.getParameters().get(SocksConnectionTagRegistry.PARAM_NAME), addr, endpoint.getUsername(), endpoint.getPassword(),
+        return new TcpWarmPoolKey(endpoint.getParameters().get(org.rx.net.support.UpstreamSupport.POOL_GENERATION), endpoint.getParameters().get(SocksConnectionTagRegistry.PARAM_NAME), addr, endpoint.getUsername(), endpoint.getPassword(),
                 reactorName, config.getConnectTimeoutMillis(), config.getTransportFlags().getValue(), config.getCipher(), cipherKeyHash,
                 config instanceof SocksConfig && ((SocksConfig) config).isAdaptiveTcp(),
                 config instanceof SocksConfig ? ((SocksConfig) config).getAdaptiveProfile() : 0, config.getTcpCompressionLevel(),
-                udpHop, adaptiveUdpText);
+                udpHop, adaptiveUdpText, config instanceof SocksConfig
+                        ? ((SocksConfig) config).getRssEgressCodec() : org.rx.net.RssEgressCodec.NONE,
+                config instanceof SocksConfig && ((SocksConfig) config).isAdaptiveTcp() ? ((SocksConfig) config).resolveDailyUdpMtu() : 0);
     }
 
+    private final String routeGeneration;
     private final String trafficUser;
     private final String endpointText;
     private final String username;
@@ -48,6 +51,17 @@ public final class TcpWarmPoolKey implements Serializable {
     private final int tcpCompressionLevel;
     private final boolean udpHop;
     private final String adaptiveUdpClientText;
+    private final org.rx.net.RssEgressCodec rssEgressCodec;
+    private final int adaptiveUdpMtu;
+
+    public TcpWarmPoolKey(String trafficUser, String endpointText, String username, String password,
+                          String reactorName, int connectTimeoutMillis, int transportFlagsBits, short cipher,
+                          long cipherKeyHash, boolean adaptiveTcp, int adaptiveProfile, int tcpCompressionLevel,
+                          boolean udpHop, String adaptiveUdpClientText) {
+        this(null, trafficUser, endpointText, username, password, reactorName, connectTimeoutMillis, transportFlagsBits,
+                cipher, cipherKeyHash, adaptiveTcp, adaptiveProfile, tcpCompressionLevel, udpHop, adaptiveUdpClientText,
+                org.rx.net.RssEgressCodec.NONE, 0);
+    }
 
     public TcpWarmPoolKey(String trafficUser, String endpointText, String username, String password,
                           String reactorName, int connectTimeoutMillis, int transportFlagsBits, short cipher,
@@ -72,7 +86,8 @@ public final class TcpWarmPoolKey implements Serializable {
     }
 
     public boolean isSameEndpoint(AuthenticEndpoint endpoint) {
-        return endpointText.equals(Sockets.toString(endpoint.getEndpoint()))
+        return eq(routeGeneration, endpoint.getParameters().get(org.rx.net.support.UpstreamSupport.POOL_GENERATION))
+                && endpointText.equals(Sockets.toString(endpoint.getEndpoint()))
                 && eq(username, endpoint.getUsername())
                 && eq(password, endpoint.getPassword());
     }

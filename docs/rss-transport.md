@@ -1,10 +1,10 @@
 # RSS Client → RSS Server 传输配置
 
-适用于同版两端的内置 RSS 跳。外部 Shadowsocks 协议沿用原配置。直连目的地和显式绕过 RSS 的外部固定隧道执行自己的传输策略。
+适用于同版两端的内置 RSS 跳。外部 Shadowsocks 协议沿用原配置；直连目的地和标准第三方 SOCKS5 最终出口不注入 RSS 私有帧。
 
-## 用户策略
+## 1. 四种固定 Profile
 
-在 Client 的 `conf.yml` 中给已有的 SS 用户增加 `transport`。省略时使用 `plain`，普通 TCP 走 TCP，普通 UDP 单发。TCP 与 UDP 分别应用各自的端口规则。下面是已有 6898 用户的配置片段，其余身份和路由字段按原配置填写。
+在 Client 的 `conf.yml` 中给已有的 SS 用户增加 `transport`。省略时使用 `plain`。热更新影响新建连接和 UDP 会话；用户按外部 SS 用户名匹配，内部 SOCKS 账号可复用。
 
 ```yaml
 shadowUsers:
@@ -13,72 +13,97 @@ shadowUsers:
       profile: daily
 ```
 
-| `profile` | TCP 默认 | 普通 UDP 默认 |
-| --- | --- | --- |
-| `plain` | 普通 TCP | 单发 |
-| `daily` | zlib 3、自适应 XOR、TCP 修复 | 自适应 XOR |
-| `game` | zlib 3、自适应 XOR、按需扩窗 | 首份认证副本立即交付；按方向自适应 1～3 倍 |
-| `weak` | zlib 3、按编码字节预算的 XOR、按需扩窗、选择性 TCP 修复 | 按编码字节预算的 XOR |
+| `profile` | TCP 默认 | 普通业务 UDP 默认 | UDP 跳跃 | 额外 `udpclient` 承载 |
+| --- | --- | --- | --- | --- |
+| `plain` | 原可靠 TCP（端口 codec 按 §3） | 原生 UDP 单发（无 LZ4/FEC/复制/分片；必须保护端口保留 AES-128-GCM） | 不启用 | 禁止 |
+| `daily` | zlib 3 + `AdaptiveTcpStream` 自适应 XOR + TCP 修复 | 按收益 LZ4 + `AdaptiveUdpFec` 自适应 XOR + 认证分片 | 可配置（默认 `true`） | 支持（须 `udpHop: false`） |
+| `game` | zlib 3 + `AdaptiveTcpStream` 自适应 XOR + 按需扩窗 | 按收益 LZ4 + `AdaptiveUdpReplication` 自适应 1～3 倍（首份有效副本立即交付，不叠 FEC） | 可配置（默认 `true`） | 支持（须 `udpHop: false`） |
+| `weak` | zlib 3 + 按编码字节预算 XOR + 按需扩窗 + 选择性 TCP 修复 | 按收益 LZ4 + `AdaptiveUdpFec` 按编码字节预算 XOR + 认证分片 | 可配置（默认 `true`） | 支持（须 `udpHop: false`） |
 
-在已有用户的 `transport` 下设置 `profile: game` 或 `profile: weak` 即可。热更新影响新建连接和 UDP 会话。用户按外部 SS 用户名匹配，内部 SOCKS 账号可复用。
+收口后的固定规则：
 
-- `fec` 的 0/1/2/3 分别表示关、仅 UDP、仅 TCP、两者。上述四个 profile 默认依次为 0/3/2/3。`game` 显式开启 UDP FEC 时，该方向改用 XOR，每个原包只发一份。
-- `udpHop`（布尔值，省略默认 `true`）独立控制自适应 TCP/FEC 与增强普通 UDP 是否启用双端口 30 秒轮换跳跃；设为 `false`（或 Server 启动参数 `-udpHop=0`）时，完整保留 `daily` / `weak` / `game` 的压缩、自适应 XOR 校验与 TCP 修复能力，仅协商单端口（`primary == alias`，TCP 握手方法 `0x87` + RPC `SUPPORT_NO_HOP_UDP`），不再绑定别名端口或触发周期切换。`OutboundProfiles`、TCP 预热池与 UDP 租约池均按 `udpHop` 隔离缓存，单用户关闭不影响其他用户或服务端全局跳跃端口段。
-- `udpMtu`（整数，UDP 载荷字节数，不含 IP/UDP 头；可在 Client 顶层或单用户 `transport.udpMtu` 配置，Server 支持 `-udpMtu=`）：`plain` 默认 `0`（不设应用层主动截断，原生透传大包，显式配置正数时仍启用出口限长，`udp2raw` 路由保持 `1300`）；`daily` / `weak` / `game` 默认 `1300` 并通过 `openUdpRelayGroup` 协商有效上限。发送顺序为「业务数据报 → 按需 LZ4 压缩 → 压缩后判定是否超限 → 超限时按协商启用认证分片（`SUPPORT_UDP_FRAG`）→ FEC / 游戏副本 → 外层认证/加密 → 最终 MTU 守卫」，未超限小包保持零额外分片头字节。
-- `tcp` 的位 1、2、4 分别为 zlib、共享密钥 AES-128-GCM、校验证书的 TLS。AES 与 TLS 两位同时出现时使用 TLS。`udp` 的位 1、2 分别为 LZ4 和 AES。保留显式 0 和按目的端口覆盖。
-- `tcpCompressionLevel` 取 1～9，默认 3，压缩位开启时生效。Client 上的用户字段控制上行编码，Server 的 `-tcpCompressionLevel=3` 独立控制下行编码。解码允许两端使用不同级别。
-- TCP 新模式通过独立 SOCKS 方法在两端选择。旧 Server 选择常规认证时，该连接继续走 TCP，`rss.tcp.adaptive.negotiationFallback` 按请求的 profile 记录回退。普通 UDP 的新模式要求 RPC 明确确认版本与特性，旧端协商失败。
-- 游戏副本默认单发起步，按方向反馈升档。可用 `-Dapp.rss.game.initialCopies=2` 对照测试双发起步。weak 尾包探测可用 `-Dapp.rss.weak.tailProbe=tcp` 选择 TCP 候选。默认 UDP 探测使用新认证序号，超时仍由可靠 TCP 接管。
-- 游戏副本和两种增强 profile 的 UDP FEC 都逐包认证。启用 AES 时沿用部署密钥；其余端口由已加密的 RSS 控制 RPC 下发每组独立的认证密钥。认证完成后更新防重放窗口和回程地址；同一组的两个端口共享状态。
+- `profile` 是增强模式的唯一算法选择入口：增强模式下不再自由改写 `fec` / `tcp` / `udp` 组合以偏离 profile 语义；非算法参数（`tcpCompressionLevel`、`udpHop`、`udpMtu`、显式关闭普通 UDP LZ4 `udp: 0`）仍按规则配置。`plain` 保留既有 TCP 压缩配置与显式位掩码（`0..3`，仅 zlib + PSK AES）。
+- `udpHop`（布尔值，省略默认 `true`，`plain` 不支持 `true`）独立控制自适应 TCP/FEC 与增强普通 UDP 是否启用双端口 30 秒轮换跳跃；设为 `false`（或 Server `-udpHop=0`）时，保留 `daily` / `weak` / `game` 的压缩、XOR/副本与 TCP 修复能力，协商单端口（`primary == alias`，TCP 握手方法 `0x87` / `0x89`～`0x8b` + RPC `SUPPORT_NO_HOP_UDP`）。`OutboundProfiles`、TCP 预热池与 UDP 租约池均按 `udpHop`、MTU 与出口格式隔离缓存。
+- `tcpCompressionLevel` 取 `1..9`，默认 `3`，仅实际业务压缩开启时生效。Client 用户字段控制上行，Server `-tcpCompressionLevel=3` 控制下行，解码两端独立兼容。
+- 业务实际压缩只在 `AdaptiveTcpStream` 之上执行一次：自适应 TCP 的 UDP 快路径（FEC）与 TCP 修复帧复用同一份已编码业务流，绝不二次压缩或二次业务加密。
+- 游戏副本默认单发起步，按方向反馈升档（可用 `-Dapp.rss.game.initialCopies=2` 对照测试）；`weak` 尾包探测可用 `-Dapp.rss.weak.tailProbe=tcp` 选择 TCP 候选。
 
-## 按协议选择目标端口
+## 2. 三类完整上游
+
+RSS 上游作为完整逻辑对象同时具备 TCP 与 UDP 能力，配置在 `socksServers` 中通过 `type` 声明（默认为 `rss`）：
+
+| `type` | 典型配置字段 | 适用 Profile | 说明 |
+| --- | --- | --- | --- |
+| `rss` | `endpoint`（可选 `rpcEndpoint`、`egress`） | 全部 4 种 | 直连 RSS Server 的原生 TCP/SOCKS 入口、RPC 控制面与 UDP 数据面（支持跳跃或单端口）。 |
+| `socks5`（标准出口） | `endpoint`（不填 `rssEndpoint`） | 仅 `plain` | 标准第三方 SOCKS5 最终代理，不注入任何 RSS 私有 codec/出口包装；命中 `tcpCipherPorts` / `udpCipherPorts` 必须保护端口时显式拒绝，绝不静默降级为明文。 |
+| `socks5`（嵌套承载） | `endpoint`（外层代理）+ `rssEndpoint`（目标 RSS Server）+ 可选 `rpcEndpoint`、`egress` | 全部 4 种 | 通过 `RssSocksCarrier` 经外层 SOCKS5 `CONNECT` 与 `UDP ASSOCIATE` 完整承载 RSS TCP、RPC、自适应 UDP 与普通增强 UDP（如外接 Hysteria2 本地 SOCKS5）。 |
+| `udpclient` | `tcpClient` + `udpClient` + `adaptiveUdpClient`（+ `endpoint`/`rpcEndpoint`/`egress`） | 仅 `daily` / `weak` / `game` | 固定外部 UDP 映射（如外接 `udp2raw`），须显式配对可靠 TCP 与双路 UDP 入口，绑定 `udpHop: false` 与显式 `udpMtu`，服务端开启 `-fixedUdpPort=<port>` 由 `RssFixedUdpEntry` 按会话令牌解复用。 |
+
+不再保留 `kcptun` 或 RSS 专用的 `udp2raw` 路由类型/服务端 `-udp2rawPort`（改用 `-fixedUdpPort`）；旧的 `udp2rawClient` 等字段解析时直接拒绝。
+
+## 3. 全模式 DNS AOP、端口 Codec 策略与 PSK AES-128-GCM
+
+决策顺序：**认证与访问控制 → DNS AOP（TCP/UDP 53）→ `RssPortPolicy` → Profile 策略 → 选定上游承载**。
+
+### 3.1 DNS AOP（`RssDnsInterceptor`）
+
+- 全入口（Shadowsocks TCP/UDP 53、本地 SOCKS5 TCP/UDP 53）与全 4 种 profile 统一由 `RssDnsInterceptor` 在普通路由和 profile codec 之前截获。
+- 严格遵守用户/全局 `BLOCK` / `DIRECT` / `PROXY` 规则：
+  - `BLOCK` 优先于缓存与本地 hosts，直接返回 `REFUSED`。
+  - `DIRECT` 使用本地 hosts / 直连解析器。
+  - `PROXY` 从该用户可用上游中挑选健康且具备 RPC 能力的 RSS 对端（混合 `[socks5, rss]` 上游列表时自动跳过无 RPC 的第三方 `socks5`），A/AAAA 走 `resolveHost`，其余 RR 类型（如 `TXT` / `MX` / `SRV`）经 `queryDnsRecord`（`DnsRecordExchange`）透传；缓存键按路由动作、用户、来源 IP、对端路由 ID 与域名隔离。无可用健康 RPC 时返回 `SERVFAIL`，绝不暗中回退本地系统 DNS 或转发给第三方代理。
+- 非法/非 DNS 载荷在端口 53 上直接拒绝/关闭连接；UDP 响应超过 512 B 自动置 `TC` 提示客户端切 TCP 重试。
+- `RssServer` 默认通过 `enforceServerDnsPolicy` 拒绝意外直达服务端的原始 TCP/UDP 53 流量（除非显式通过 `-tcpCipherPorts` / `-udpCipherPorts` 放行并强制 AES），同时保持认证 DNS RPC 正常可用。
+
+### 3.2 默认端口表与加密边界
 
 | Client 顶层字段 | 默认目标端口 | 行为 |
 | --- | --- | --- |
-| `tcpCipherPorts` | 21、23、25、53、80、110、143、389、587、1883、8080 | 默认认证加密。覆盖 FTP 控制、Telnet、可明文或 STARTTLS 的邮件和目录协议、DNS、HTTP、MQTT |
-| `tcpAlreadyEncryptedPorts` | 22、443、465、636、853、990、993、995、8883 | 按 SSH、HTTPS、隐式 TLS 邮件、LDAPS、DoT、FTPS 和安全 MQTT 透传，跳过 RSS 压缩和加密；仍可走 TCP FEC |
-| `udpCipherPorts` | 53 | UDP DNS 走共享密钥 AES-128-GCM，并启用端口跳跃 |
-| `udpAlreadyEncryptedPorts` | 443、853 | QUIC、DoQ 跳过额外压缩和加密，沿用用户的 FEC 或游戏副本策略 |
+| `tcpCipherPorts` | `21, 23, 25, 80, 110, 143, 389, 587, 1883, 8080` | 必须认证加密：按策略实际 zlib（仅显式 `tcp: 3`）→ `RssHopAes`（PSK AES-128-GCM）。 |
+| `tcpCodecBypassPorts`（迁移别名 `tcpAlreadyEncryptedPorts`） | `22, 443, 465, 636, 853, 990, 993, 995, 8883` | 跳过业务实际压缩与业务加密；增强模式仍保留 TCP 自适应 FEC 与可靠修复。 |
+| `udpCipherPorts` | 空列表 `[]` | 可显式配置必须保护 UDP 端口：增强模式先按需 LZ4 → 分片/FEC 或多发 → `RssDatagramCipher`（AES-128-GCM）；`plain` 走 AES-only 保护（无 LZ4/FEC/复制/分片/跳跃）。 |
+| `udpCodecBypassPorts`（迁移别名 `udpAlreadyEncryptedPorts`） | `443, 853` | QUIC / DoQ 跳过业务 LZ4 与额外加密；增强模式仍保留 FEC 或游戏副本。 |
 
-端口号是策略约定，不能证明业务实际开启了加密。使用非标准端口时调整列表。每种协议的两张表不得重叠。Server 的 `-tcpCipherPorts` 与 `-udpCipherPorts` 可分别覆盖强制保护端口。UDP/80 使用用户的 UDP 策略。TCP 显式组合 `3` 先 zlib 再共享密钥 AES，`5` 先 zlib 再 TLS。日常模式的强制保护 TCP 端口只用共享密钥 AES，避免 HTTP Cookie 与可控输入共享压缩上下文泄漏长度。
+- 端口 `53` 保留给 `RssDnsInterceptor`，不允许配置进上述任意保护或旁路列表；同一协议的保护表与旁路表不允许重叠。
+- **RSS 业务 TCP 加密统一为 PSK AES-128-GCM（`RssHopAes`）**：两端读取同一个 32 字节 Base64 密钥 `RSS_TCP_AES_KEY`，由双向随机数派生每连接、每方向独立的 128 位密钥；不再维护 RSS 专用证书 TLS（`RssHopTls` 及 `RSS_TCP_TLS_*` 已移除）。缺失或非法密钥时配置拒绝启动，不静默退回明文。
 
-TCP 的 AES 模式由两端读取同一个 `RSS_TCP_AES_KEY`（32 个随机字节的 Base64），与 UDP 密钥独立。双方随机数和部署密钥派生每连接、每方向独立的 128 位 AES 密钥；握手一次往返，最多 16 KiB 的数据记录额外占 18 字节。此模式没有前向保密，变更密钥应协调两端发布。
+## 4. 独立真实 TCP 出口包装（`RssEgressCodec`）
 
-选择 TCP 的 TLS 位时，Server 读取 `RSS_TCP_TLS_CERT` 和 `RSS_TCP_TLS_KEY` 指向的 PEM 证书链与私钥。证书 SAN 需匹配 Client 上配置的 RSS 上游域名或 IP。Client 信任 JVM 信任库，私有 CA 可用 `RSS_TCP_TLS_CA` 指定 PEM 路径。验证失败关闭保护连接。TCP/FEC 先在 TCP 上协商，再探测 UDP；成功后直接拆分已编码的字节流，UDP 外层保留签名、防重放、FEC 和端口跳跃。UDP 不可用时继续 TCP。
+真实 TCP 连续流出口包装与业务实际压缩（zlib 3）完全解耦，**默认关闭（`none`），按需显式开启**：
 
-## UDP、MTU 分片与跳跃端口
+```yaml
+# 可配在 Client 顶层（全 RSS 路由默认）或单个 socksServers 条目下（按路由覆盖）
+egress:
+  tcpCodec: none          # 可选：none（默认） | zlib-stored
+  udpCodec: none          # 当前仅允许 none
+```
 
-普通 UDP 的任意扩展（FEC、副本、LZ4、AES）通过加密控制 RPC 建立关联（默认启用双端口跳跃；`udpHop: false` 或 `-udpHop=0` 时建立单端口关联）。能力或端口不足时该会话失败。LZ4 对至少 96 B 的包尝试，净省至少 24 B 且 12% 才使用，否则原包进入后续传输。压缩后仍超过有效单帧预算时，若双方协商具备 `SUPPORT_UDP_FRAG` 能力，则启用有界认证分片重组（`FRAG_MAGIC = 0x0001`；`weak` / `game` / `AES` 复用外层逐包认证，明文 `daily` 仅对分片报文附加控制面下发密钥派生的方向性 `HMAC-SHA256-128` 与防重放序号，正常小包零额外字节；单会话上限 64 并发组 / 512 KiB、进程全局上限 16 MiB、重组超时 750 ms，缺片过期整包丢弃不交付残包）。旧端未协商分片能力时，超限写操作立即以 `EncoderException` 明确失败并计入 `mtuDrop`。UDP AES 要求两端通过环境变量 `RSS_UDP_AES_KEY` 提供相同的 32 个随机字节的 Base64 编码。每次会话按双方随机值派生方向密钥；认证覆盖跳跃代数、序号及数据，接收端检查重放。TCP/FEC 不使用普通 UDP 的 LZ4 或 AES 管线。
+- 服务端通过启动参数 `-tcpEgressCodec=none`（默认）或 `-tcpEgressCodec=zlib-stored` 匹配对应出口格式。
+- `zlib-stored` 使用 `RSZ\x01`（`0x52535a01`）4 字节魔数前缀 + DEFLATE Level 0（无实际压缩的 stored block），在 Netty pipeline 最外层包裹真实 RSS TCP 物理流（`plain` 主流以及增强模式下的 TCP 主通道与修复帧）；`AdaptiveTcpStream` 的 UDP 快路径与普通业务 UDP 均**不经过** `RssEgressCodec`。
+- `none` 路径零额外 handler、零额外包装开销；标准第三方 `socks5` 路由禁止配置非 `none` 的 `egress.tcpCodec`。
+- 不同 `egress.tcpCodec` 在 `TcpWarmPoolKey` 与路由配置缓存中完全隔离，热更新仅作用于新连接。
 
-外部 Shadowsocks 与 SOCKS5 `CONNECT` 前端刻意采用**客户端先 FIN 单向半关闭**语义：客户端 `shutdownOutput`（含握手尚未完成前的首包带 FIN）在完成上游连接并刷空待发队列后向目标转发输出半关闭，同时启动感知下游背压的精确一次性 `HalfCloseWatch`（默认 120 秒无响应且非背压阻塞时回收，正常全双工连接零额外定时器）；后端关闭时刷空尾部下行字节并主动关闭前端连接，避免移动网络 NAT 空闲客户端长期滞留服务端句柄。
+## 5. 统一 UDP MTU 预算、认证分片与跳跃端口
 
-默认专用 UDP 范围为 `20000-20127`，Server 通过 `-udpHopPorts=起始-结束` 覆盖。范围长度必须为偶数，最少四端口。首对由全部 TCP/FEC 流共用，剩余端口每个普通 UDP 扩展会话占用一对，默认最多 63 组。两端按 30 秒轮换。外部安全组、主机过滤规则以及容器或 NAT 的 UDP 映射需放行整段范围。
+- `RssUdpMtuBudget` 统一负责加密决策前置、实际 AES 后置的 MTU 预算计算：`udpMtu` / `dailyUdpMtu` 表示净 RSS UDP payload 上限（不含外层 IP/UDP 头；`0` 表示该层不设显式限制，嵌套 SOCKS5 承载仅扣减一次外层 SOCKS5 UDP 头长）。
+- 普通增强 UDP（`RssDatagramHandler`）：按收益 LZ4（≥96 B、净省 ≥24 B 且 ≥12%，连续 8 次低收益旁路 30 秒）→ 按预算判断是否需要认证分片（`RssDatagramFragmenter`，`FRAG_MAGIC = 0x0001`，单会话上限 64 组 / 512 KiB、全局上限 16 MiB、超时 750 ms）→ `AdaptiveUdpFec`（daily/weak）或 `AdaptiveUdpReplication`（game）→ 外层 `RssDatagramCipher`（AES-128-GCM，`RSS_UDP_AES_KEY`）或 `RssDatagramMac` → 最终出口长度守卫。`plain` AES-only 不启用分片/FEC/复制/LZ4，超限直接失败绝不退回明文。
+- 自适应 TCP 的 UDP 数据面（`AdaptiveTcpStream` + `AdaptiveUdpPort`）：在握手阶段通过 `SocksAdaptiveHandshake`（v2 方法 `0x89` / `0x8a` / `0x8b`）交换有效 `udpMtu`，动态收缩 `CHUNK` 保证每个 DATA / PARITY 帧不超过预算，路径受限时平稳回退至可靠 TCP 修复。
+- 默认专用 UDP 端口段为 `20000-20127`（Server `-udpHopPorts=起始-结束`）。首对由全部自适应 TCP 共用，其余每对服务一个普通增强 UDP 组；Windows 绑定双 socket，Linux 使用 `nft` 将第二端口重定向至主端口（需要 `CAP_NET_ADMIN`）。
+- 外部 Shadowsocks 与 SOCKS5 `CONNECT` 保持客户端先 FIN 单向半关闭语义与背压感知 `HalfCloseWatch`（默认 120 s）。
 
-- **Windows Server**绑定两个 UDP socket，共用 EventLoop、会话和 FEC 状态。对外目标看到稳定的主端口。
-- **Linux Server**启动时用 `ip` 和 `nft` 在当前网络命名空间建立专有 inet NAT 表，第二端口重定向到第一端口。TCP/FEC 共用一个服务端 socket；每个普通 UDP relay 组各用一个服务端 socket。脚本按启动时的本机 IPv4/IPv6 地址建立入口规则。需要 `CAP_NET_ADMIN` 和空闲的专用端口段。规则安装失败会禁用跳跃扩展，普通传输仍可用。JVM 退出后辅助进程清理自己创建的表。若辅助进程和命名空间内的 JVM 同时被强杀且规则残留，先核对表名和归属再清理。
+## 6. 核心监控指标与堆外内存基线
 
-部署观察每方向 FEC 缺口与恢复数、压缩节省字节、TCP/UDP 切换、活跃组数及剩余端口对，同时对照 CPU、进程 RSS、Netty 堆外内存和 P95/P99。Server 按 1 核、768 MiB 整机预算设计。
-
-## Actions 发布
-
-两端工作流共用仓库 Secret `RSS_DEPLOY`。本机恢复副本在 `D:\home\.envKeys\rss\deploy.json`，签发用的 CA 私钥仅保存在该目录。轮换时先更新 JSON，再通过标准输入传给 `gh secret set RSS_DEPLOY`。每个 SSH 目标固定主机公钥。两端分别接收 TCP、UDP 共享密钥。Server 单独接收内部账号。启用证书 TLS 时，Client 接收信任证书，Server 接收证书及私钥。证书 SAN 要覆盖 Client 配置的实际 upstream。
-
-协议变更时先用 `rss-21` 手动发布主 Server，再发布 Gateway。两端各自的发布目录下保存本次 `.release-<run id>-<attempt>/deploy.log`、原启动脚本及变更过的用户配置；目录仅部署账号可访问。Server 的工作流在切换前验证 nft 权限并合并预留 UDP 端口；firewalld 活跃时同时放行运行时和永久端口。主 Server 当前的 nft INPUT 策略允许这段流量。上游安全组或 NAT 在主机权限之外，发布后需从 Client 走真实业务验证。工作流在本地监听以外还检查首尾 nft 映射和公网 TCP 入口。
-
-[Hysteria 2 的 Linux 端口重定向](https://v2.hysteria.network/docs/advanced/Port-Hopping/) · [IANA 端口登记](https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xhtml)
-
-启用诊断后，流关闭及周期性汇总会记录以下核心指标：
+启用诊断后，建议持续采集以下核心指标（按 1 vCPU / 768 MiB 服务端预算基线对照进程 RSS 与 Netty 堆外内存）：
 
 | 指标 | 含义 |
 | --- | --- |
-| `rss.tcp.weak.udpTailProbes`、`probeAckedBeforeTcp`、`probeHandedToTcp`、`probeOutstandingAtClose` | 单次 UDP 尾包探测次数，以及在 TCP 接管前收到累计确认、交给 TCP、关闭时仍待确认的次数。累计确认无法区分原包、探测副本和 FEC 恢复。 |
-| `rss.tcp.weak.probeGroupParityBytes`、`filteredDuplicates` | 含探测分片的组实际发出的校验字节（按 FEC 配置的封装开销计费），以及流接收端滤除的重复 DATA 次数。 |
-| `rss.tcp.weak.ackSent`、`ackIgnoredNoPending` | 累计 ACK 帧数按触发数据来源 `dataPath=tcp/udp/mixed` 分类。ACK 在 TCP 上发送。另记发送端收到 ACK 时待修复队列为空的次数。 |
-| `rss.tcp.weak.untrackedTcpFrames`、`gapSent`、`sackSent` | 顺序交付且超过 UDP 分片上限的普通 TCP 帧数、请求修复的 GAP 和 SACK 帧数。 |
-| `rss.tcp.adaptive.probes`、`transitions`、`fallbacks`、`tcpMillis`、`peakPendingFrames`、`deliveredBytes` | 自适应流关闭汇总：UDP 探测次数、`to=udp/tcp` 路径切换次数、`reason=window/timeout/fin` 回退次数、TCP 驻留毫秒数、待确认队列峰值及 `path=tcp/udp` 有效交付字节。 |
-| `rss.udp.daily.tx.unprotectedGroups`、`rx.unprotectedGroups` | 发送端未发校验即切组、接收端未收到校验即过期的分片组计数（30 秒周期汇总，按 `side=client/server` 区分）。 |
-| `rss.udp.daily.mtuDrop`、`finalMtuDrop`、`frag.tx.datagrams`、`frag.tx.fragments`、`frag.rx.reassembled`、`frag.rx.timeout`、`frag.rx.duplicate`、`frag.rx.invalid`、`frag.rx.budgetRejected` | 普通 UDP 超限拒绝、最终出口守卫丢弃，以及认证分片发送、成功重组、超时、重复、非法/验签失败与内存预算拒绝计数。 |
-| `rss.udp.fec.sessions.total`、`sessions.active`、`cache.bytes`、`cache.peakBytes` | UDP FEC 累计/当前活跃会话数，以及每会话有界 XOR 累加器直接内存当前占用与峰值字节（空闲 5 秒后一次性回收）。 |
-| `ss.aead.rejected`、`ss.salt.size`、`ss.salt.capacityEvictions`、`ss.salt.expiredReplacements`、`ss.salt.replayRejections` | 外部经典 Shadowsocks AEAD 认证/截断拒绝计数，以及共享 `SaltHistory` 当前条目数、容量公平淘汰、TTL 过期替换与重放拒绝汇总（30 秒限速记录）。 |
+| `rss.tcp.egress.rx.bytes`、`rss.tcp.egress.tx.bytes` | 真实 RSS TCP 物理出口包装（`zlib-stored`）的实际收发字节统计，独立于业务压缩统计。 |
+| `rss.tcp.adaptive.probes`、`transitions`、`fallbacks`、`tcpMillis`、`peakPendingFrames`、`deliveredBytes`、`udpUnavailable` | 自适应 TCP 流关闭汇总：探测、路径切换、`window/timeout/fin` 回退、TCP 驻留、待确认峰值及双路交付字节。 |
+| `rss.tcp.weak.udpTailProbes`、`probeAckedBeforeTcp`、`probeHandedToTcp`、`probeOutstandingAtClose`、`probeGroupParityBytes`、`filteredDuplicates`、`ackSent`、`untrackedTcpFrames`、`gapSent`、`sackSent` | `weak` 尾包探测、选择性 SACK/GAP 修复、去重与校验开销。 |
+| `rss.udp.daily.mtuDrop`、`finalMtuDrop`、`tx.unprotectedGroups`、`rx.unprotectedGroups`、`frag.tx.*`、`frag.rx.*` | 普通 UDP MTU 超限拒绝、出口守卫丢弃、未保护分片组，以及认证分片发送/重组/超时/验签失败/预算拒绝计数。 |
+| `rss.udp.fec.sessions.total`、`sessions.active`、`cache.bytes`、`cache.peakBytes` | UDP FEC 活跃会话数及每会话有界 XOR 累加器直接内存占用与峰值。 |
+| `rss.upstream.health`、`rss.upstream.health.failures` | 各逻辑上游健康状态与连续失败次数。 |
+| `ss.aead.rejected`、`ss.salt.*` | 外部 Shadowsocks AEAD 认证/截断拒绝与 `SaltHistory` 重放/淘汰指标。 |
+| **JVM / Netty 堆外内存指标（必选）** | `PooledByteBufAllocator.DEFAULT.metric().usedDirectMemory()` / `usedHeapMemory()`、JVM `BufferPoolMXBean("direct")`、EventLoop pending tasks、GC 停顿与进程 RSS（`-Dio.netty.leakDetection.level=SIMPLE` 线上常驻，压测/回归使用 `PARANOID` 确保 `LEAK: 0`）。 |
 
-比较链路开销时，按方向在丢包点之前计量实际 IP 字节，并同时记录业务交付率、P99、最长停顿、吞吐、活动连接、EventLoop 排队、Netty 堆外内存和进程 RSS。
+[Hysteria 2 的 Linux 端口重定向](https://v2.hysteria.network/docs/advanced/Port-Hopping/) · [IANA 端口登记](https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xhtml)

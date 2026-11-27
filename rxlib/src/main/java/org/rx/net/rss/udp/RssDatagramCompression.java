@@ -9,7 +9,7 @@ import java.util.concurrent.TimeUnit;
 
 /** Per-association, event-loop confined. Raw SOCKS5 datagrams start with two reserved zero bytes.
  * A nonzero prefix in the negotiated profile gives the length of one independent LZ4 block's output. */
-final class DailyUdpCompression {
+final class RssDatagramCompression {
     private static final int MIN_PAYLOAD = 96, PREFIX = 2;
     private static final long BYPASS_NANOS = TimeUnit.SECONDS.toNanos(30);
     private int lowGain;
@@ -18,7 +18,7 @@ final class DailyUdpCompression {
     /** Borrows the input. Returns an owned block, or null to send the original unchanged. */
     ByteBuf tryEncode(ByteBuf input, long now) {
         int len = input.readableBytes();
-        if (len < MIN_PAYLOAD || len > DailyUdpFragmenter.MAX_DATAGRAM_BYTES
+        if (len < MIN_PAYLOAD || len > RssDatagramFragmenter.MAX_DATAGRAM_BYTES
                 || lowGain == 8 && now - bypassStarted < BYPASS_NANOS) {
             return null;
         }

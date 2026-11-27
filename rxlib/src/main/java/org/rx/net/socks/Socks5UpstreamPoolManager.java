@@ -98,6 +98,7 @@ public final class Socks5UpstreamPoolManager extends Disposable {
             handler.setAdaptiveTcp(config.isAdaptiveTcp());
             handler.setAdaptiveProfile(config.getAdaptiveProfile());
             handler.setUdpHop(config.isUdpHop());
+            handler.setAdaptiveUdpMtu(config.resolveDailyUdpMtu());
             handler.setAdaptiveUdpAddress(adaptiveUdpClient);
             try {
                 ChannelFuture connectFuture = Sockets.bootstrap(config, serverEndpoint.getConnectEndpoint(), ch -> {

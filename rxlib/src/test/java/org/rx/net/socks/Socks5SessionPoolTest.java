@@ -53,7 +53,28 @@ class Socks5SessionPoolTest {
         TcpWarmPoolKey compressed = TcpWarmPoolKey.from(left, config, "reactor-a");
         assertNotEquals(weak, compressed);
         config.setUdpHop(false);
-        assertNotEquals(compressed, TcpWarmPoolKey.from(left, config, "reactor-a"));
+        TcpWarmPoolKey fixed = TcpWarmPoolKey.from(left, config, "reactor-a");
+        assertNotEquals(compressed, fixed);
+        config.setDailyUdpMtu(512);
+        assertNotEquals(fixed, TcpWarmPoolKey.from(left, config, "reactor-a"));
+    }
+
+    @Test
+    void rejectsMismatchedSinglePortAndMtuBeforeOpeningUdp() {
+        EmbeddedChannel channel = new EmbeddedChannel();
+        try {
+            byte[] nonce = new byte[32];
+            java.nio.ByteBuffer wire = java.nio.ByteBuffer.wrap(nonce);
+            wire.putShort(26, (short) 512).putShort(28, (short) 18000).putShort(30, (short) 18001);
+            assertThrows(IllegalArgumentException.class, () ->
+                    SocksAdaptiveHandshake.install(channel, nonce, "test", null, 0, false, null, 512));
+            wire.putShort(30, (short) 18000).putShort(26, (short) 513);
+            assertThrows(IllegalArgumentException.class, () ->
+                    SocksAdaptiveHandshake.install(channel, nonce, "test", null, 0, false, null, 512));
+            assertNull(channel.pipeline().get(AdaptiveTcpHandler.class));
+        } finally {
+            channel.finishAndReleaseAll();
+        }
     }
 
     @Test
@@ -64,6 +85,8 @@ class Socks5SessionPoolTest {
                     java.util.Collections.singletonList(new Socks5AuthMethod(0x86))));
             assertFalse(SocksAdaptiveHandshake.select(ch.pipeline().firstContext(),
                     java.util.Collections.singletonList(new Socks5AuthMethod(0x87))));
+            assertThrows(IllegalStateException.class, () -> SocksAdaptiveHandshake.selected(0, Socks5AuthMethod.NO_AUTH));
+            assertFalse(SocksAdaptiveHandshake.selected(0, Socks5AuthMethod.PASSWORD));
             assertNull(ch.readOutbound());
             for (int profile = 0; profile <= 2; profile++) {
                 assertTrue(SocksAdaptiveHandshake.select(ch.pipeline().firstContext(), SocksAdaptiveHandshake.offer(profile).authMethods()));
@@ -96,11 +119,11 @@ class Socks5SessionPoolTest {
         try {
             ByteBuf greeting = ch.readOutbound();
             try {
-                assertEquals(0x84, greeting.getUnsignedByte(greeting.writerIndex() - 1));
+                assertEquals(0x8a, greeting.getUnsignedByte(greeting.writerIndex() - 1));
             } finally {
                 greeting.release();
             }
-            ch.writeInbound(new DefaultSocks5InitialResponse(new Socks5AuthMethod(0x85)));
+            ch.writeInbound(new DefaultSocks5InitialResponse(new Socks5AuthMethod(0x8b)));
             java.util.concurrent.CompletionException error = assertThrows(java.util.concurrent.CompletionException.class,
                     () -> warm.readyFuture().join());
             assertTrue(error.getCause() instanceof ProxyConnectException);

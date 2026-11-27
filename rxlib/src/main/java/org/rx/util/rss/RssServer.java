@@ -1,7 +1,6 @@
 package org.rx.util.rss;
 
 import java.util.Arrays;
-import org.rx.net.RssHopTls;
 import io.netty.handler.codec.http.HttpMethod;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.Reflects;
@@ -10,7 +9,6 @@ import org.rx.core.Sys;
 import org.rx.net.AuthenticEndpoint;
 import org.rx.net.NetworkFlowControl;
 import org.rx.net.NetworkTrafficConfig;
-import org.rx.net.Sockets;
 import org.rx.net.TransportFlags;
 import org.rx.net.http.HttpClient;
 import org.rx.net.http.HttpServer;
@@ -24,13 +22,11 @@ import org.rx.net.socks.SocksUser;
 import org.rx.net.transport.TcpServerConfig;
 
 import java.util.Map;
-import java.util.Collections;
 
 import static org.rx.core.Extends.eq;
 
 @Slf4j
 public final class RssServer {
-    static final int UDP2RAW_MTU = RssClient.UDP2RAW_MTU;
     static HttpServer httpServer;
 
     private RssServer() {}
@@ -51,7 +47,9 @@ public final class RssServer {
             limits.setUdpProcessPendingPackets(4096);
         }
         NetworkFlowControl.refresh();
-        Integer udp2rawPort = Reflects.convertQuietly(options.get("udp2rawPort"), Integer.class);
+        if (options.containsKey("udp2rawPort")) {
+            throw new IllegalArgumentException("Replace udp2rawPort with fixedUdpPort and configure paired RSS UDP mappings");
+        }
         Integer rpcPort = Reflects.convertQuietly(options.get("rpcPort"), Integer.class);
         boolean debugFlag = "1".equals(options.get("debug"));
         AuthenticEndpoint shadowUser = Reflects.convertQuietly(options.get("shadowUser"), AuthenticEndpoint.class);
@@ -68,6 +66,7 @@ public final class RssServer {
 
         SocksConfig outConf = new SocksConfig(port);
         configureOutboundConfig(outConf, debugFlag);
+        outConf.setFixedUdpPort(Integer.parseInt(options.getOrDefault("fixedUdpPort", "0")));
         if (options.get("udpMtu") != null) {
             int mtu = Integer.parseInt(options.get("udpMtu").trim());
             if (!RssTransport.validUdpMtu(mtu)) {
@@ -92,21 +91,17 @@ public final class RssServer {
         }
         outConf.setRequiredTcpCipherPorts(parsePorts(options.get("tcpCipherPorts"), RssTransport.cipherPorts()));
         outConf.setRequiredUdpCipherPorts(parsePorts(options.get("udpCipherPorts"), RssTransport.udpCipherPorts()));
-        outConf.setRssTlsContext(RssHopTls.serverFromEnvironment());
-        if (outConf.getRequiredTcpCipherPorts().length != 0 && !org.rx.net.RssHopAes.configured() && outConf.getRssTlsContext() == null) {
-            log.warn("RSS protected TCP ports require RSS_TCP_AES_KEY or an explicitly configured TLS transport");
+        outConf.setRssEgressCodec(org.rx.net.RssEgressCodec.parse(options.get("tcpEgressCodec")));
+        if (outConf.getRequiredTcpCipherPorts().length != 0 && !org.rx.net.RssHopAes.configured()) {
+            throw new IllegalArgumentException("RSS protected TCP ports require RSS_TCP_AES_KEY");
+        }
+        if (outConf.getRequiredUdpCipherPorts().length != 0 && !org.rx.net.rss.udp.RssDatagramHandler.hasCipherKey()) {
+            throw new IllegalArgumentException("RSS protected UDP ports require RSS_UDP_AES_KEY");
         }
         Authenticator defAuth = (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS;
         configureHopRedirect(outConf);
         SocksProxyServer outSvr = new SocksProxyServer(outConf, defAuth);
-        SocksProxyServer outUdp2rawSvr = null;
-        if (udp2rawPort != null && udp2rawPort > 0) {
-            SocksConfig outTunConf = Sys.deepClone(outConf);
-            outTunConf.setRssTlsContext(outConf.getRssTlsContext());
-            configureUdp2rawOutboundConfig(outTunConf, debugFlag, udp2rawPort);
-            outUdp2rawSvr = new SocksProxyServer(outTunConf, defAuth);
-        }
-
+        enforceServerDnsPolicy(outSvr);
         int actualRpcPort = rpcPort == null ? port + 1 : rpcPort;
         RpcServerConfig rpcConf = new RpcServerConfig(new TcpServerConfig(actualRpcPort));
         rpcConf.getTcpConfig().setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CIPHER_BOTH).flags());
@@ -114,14 +109,11 @@ public final class RssServer {
         rpcConf.setEventComputeVersion(RpcServerConfig.EVENT_LATEST_COMPUTE);
         rpcConf.getEventBroadcastVersions().add(SocksRpcContract.RPC_EVENT_VERSION);
         WowEndpointRegistry wowEndpoints = WowEndpointRegistry.fromEnvironment();
-        RssRpcApp app = new RssRpcApp(outSvr, outUdp2rawSvr, wowEndpoints);
+        RssRpcApp app = new RssRpcApp(outSvr, wowEndpoints);
         java.util.Set<String> sensitiveMethods = new java.util.HashSet<>(WowEndpointRegistry.SENSITIVE_METHODS);
         sensitiveMethods.add("openUdpRelayGroup");
         rpcConf.setSensitiveMethods(sensitiveMethods);
         outSvr.setFakeEndpointResolver(app::recoverFakeEndpoint);
-        if (outUdp2rawSvr != null) {
-            outUdp2rawSvr.setFakeEndpointResolver(app::recoverFakeEndpoint);
-        }
         Remoting.register(app, rpcConf);
         serverInit();
         httpServer.requestAsync("/api/wow/endpoint", wowEndpoints);
@@ -145,6 +137,24 @@ public final class RssServer {
         log.warn("RSS UDP hop extensions unavailable: check nft, CAP_NET_ADMIN and dedicated port range");
     }
 
+    static void enforceServerDnsPolicy(SocksProxyServer server) {
+        SocksConfig config = server.getConfig();
+        server.onTcpRoute.replace((s, e) -> {
+            if (e.getFirstDestination().getPort() == SocksRpcContract.DNS_PORT
+                    && !config.requiresTcpCipher(SocksRpcContract.DNS_PORT)) {
+                throw new org.rx.exception.InvalidException("RSS server rejects raw TCP port 53; use authenticated DNS RPC");
+            }
+            SocksProxyServer.DIRECT_ROUTER.invoke(s, e);
+        });
+        server.onUdpRoute.replace((s, e) -> {
+            if (e.getFirstDestination().getPort() == SocksRpcContract.DNS_PORT
+                    && !config.requiresUdpCipher(SocksRpcContract.DNS_PORT)) {
+                throw new org.rx.exception.InvalidException("RSS server rejects raw UDP port 53; use authenticated DNS RPC");
+            }
+            SocksProxyServer.DIRECT_ROUTER.invoke(s, e);
+        });
+    }
+
     private static int[] parsePorts(String list, int[] defaults) {
         if (list == null) return defaults;
         return list.trim().isEmpty() ? new int[0] : Arrays.stream(list.split(",", -1))
@@ -163,17 +173,8 @@ public final class RssServer {
         config.setOptimalSettings(RssSupport.OUT_OPS);
 
         config.setUdpMtu(0);
-        config.setDailyUdpMtu(UDP2RAW_MTU);
+        config.setDailyUdpMtu(SocksConfig.DEFAULT_DAILY_UDP_MTU);
         config.setDailyUdpFeatures(31);
-    }
-
-    static void configureUdp2rawOutboundConfig(SocksConfig config, boolean debugFlag, int udp2rawPort) {
-        configureOutboundConfig(config, debugFlag);
-        config.setUdpMtu(UDP2RAW_MTU);
-        config.setListenAddress(Sockets.newAnyEndpoint(udp2rawPort));
-        // RSS Server 的独立 udp2raw 端口必须开启隧道服务能力，客户端 RPC open 才能成功。
-        config.setEnableUdp2raw(true);
-        RssSupport.configureUdp2raw(config);
     }
 
     static void serverInit() {

@@ -11,22 +11,22 @@ import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class DailyUdpCompressionTest {
+class RssDatagramCompressionTest {
     @Test
     void lostCompressedShardIsRecoveredBeforeDecompression() {
-        DailyUdpCompression codec = new DailyUdpCompression();
+        RssDatagramCompression codec = new RssDatagramCompression();
         int[] seen = {0};
-        try (UdpDailyFec tx = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, () -> 0);
-             UdpDailyFec rx = new UdpDailyFec(UnpooledByteBufAllocator.DEFAULT, () -> 0)) {
+        try (AdaptiveUdpFec tx = new AdaptiveUdpFec(UnpooledByteBufAllocator.DEFAULT, () -> 0);
+             AdaptiveUdpFec rx = new AdaptiveUdpFec(UnpooledByteBufAllocator.DEFAULT, () -> 0)) {
             tx.write(Unpooled.EMPTY_BUFFER, ByteBuf::release);
-            ByteBuf report = Unpooled.buffer().writeByte(UdpDailyFec.REPORT).writeInt(0).writeByte(4);
+            ByteBuf report = Unpooled.buffer().writeByte(AdaptiveUdpFec.REPORT).writeInt(0).writeByte(4);
             try {
                 tx.read(report, ByteBuf::release, ByteBuf::release);
             } finally {
                 report.release();
             }
             Consumer<ByteBuf> deliver = block -> {
-                ByteBuf data = DailyUdpCompression.decode(block, 1200);
+                ByteBuf data = RssDatagramCompression.decode(block, 1200);
                 assertNotNull(data);
                 try {
                     assertEquals(1200, data.readableBytes());
@@ -46,7 +46,7 @@ class DailyUdpCompressionTest {
                         tx.write(compressed, frame -> {
                             try {
                                 int pos = frame.readerIndex();
-                                if (frame.getByte(pos) != UdpDailyFec.SHARD || frame.getByte(pos + 5) != 1) {
+                                if (frame.getByte(pos) != AdaptiveUdpFec.SHARD || frame.getByte(pos + 5) != 1) {
                                     rx.read(frame, deliver, ByteBuf::release);
                                 }
                             } finally {
@@ -67,7 +67,7 @@ class DailyUdpCompressionTest {
 
     @Test
     void incompressibleTrafficBacksOffAndProbesAgain() {
-        DailyUdpCompression codec = new DailyUdpCompression();
+        RssDatagramCompression codec = new RssDatagramCompression();
         byte[] entropy = new byte[1200];
         new Random(42).nextBytes(entropy);
         ByteBuf noisy = Unpooled.wrappedBuffer(entropy).setShort(0, 0);
@@ -77,12 +77,12 @@ class DailyUdpCompressionTest {
                 assertNull(codec.tryEncode(noisy, i));
             }
             assertNull(codec.tryEncode(text, TimeUnit.SECONDS.toNanos(29)));
-            assertSame(noisy, DailyUdpCompression.decode(noisy.retain(), 1200));
+            assertSame(noisy, RssDatagramCompression.decode(noisy.retain(), 1200));
             noisy.release();
             ByteBuf block = codec.tryEncode(text, TimeUnit.SECONDS.toNanos(31));
             assertNotNull(block);
             assertTrue(block.readableBytes() < 100);
-            ByteBuf roundTrip = DailyUdpCompression.decode(block, 1200);
+            ByteBuf roundTrip = RssDatagramCompression.decode(block, 1200);
             assertEquals(0, block.refCnt());
             try {
                 assertEquals(text, roundTrip);
@@ -99,12 +99,12 @@ class DailyUdpCompressionTest {
     void corruptAndOversizedBlocksAreDroppedAndReleased() {
         ByteBuf input = Unpooled.buffer(1000).writeZero(1000);
         try {
-            ByteBuf block = new DailyUdpCompression().tryEncode(input, 0);
+            ByteBuf block = new RssDatagramCompression().tryEncode(input, 0);
             assertNotNull(block);
-            assertNull(DailyUdpCompression.decode(block, 999));
+            assertNull(RssDatagramCompression.decode(block, 999));
             assertEquals(0, block.refCnt());
             ByteBuf truncated = Unpooled.buffer().writeShort(1000).writeByte(255);
-            assertNull(DailyUdpCompression.decode(truncated, 1000));
+            assertNull(RssDatagramCompression.decode(truncated, 1000));
             assertEquals(0, truncated.refCnt());
         } finally {
             input.release();

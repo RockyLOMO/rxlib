@@ -1,21 +1,9 @@
 package org.rx.net.socks;
 
 import org.rx.net.rss.tcp.AdaptiveTcpHandler;
+import org.rx.net.RssEgressCodec;
 
-import org.junit.jupiter.api.io.TempDir;
-import io.netty.handler.ssl.SslContext;
-import io.netty.handler.ssl.SslHandler;
-import org.rx.net.RssHopTls;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.Files;
-import java.security.KeyStore;
-import java.security.PrivateKey;
-import java.security.cert.X509Certificate;
-import java.util.Base64;
-import java.io.File;
 import java.util.concurrent.TimeUnit;
-import javax.net.ssl.SSLException;
 import io.netty.handler.proxy.ProxyConnectException;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
@@ -1427,7 +1415,7 @@ class SocksProxyServerIntegrationTest {
                         "proxyB should allocate RPC managed UDP relay group");
                 if (daily) {
                     assertTrue(proxyB.udpRelayRegistry.values().stream()
-                            .anyMatch(ch -> ch.pipeline().get(org.rx.net.rss.udp.DailyUdpWire.class) != null));
+                            .anyMatch(ch -> ch.pipeline().get(org.rx.net.rss.udp.RssDatagramHandler.class) != null));
                 }
                 assertEquals(0, proxyB.activeChannelCount(), "RPC relay group must not create standard SOCKS5 TCP control channels on proxyB");
                 assertShadowsocksUdpEcho(clientSock, ssPort, crypto, "ss-rpc-port-hop-2");
@@ -1865,70 +1853,43 @@ class SocksProxyServerIntegrationTest {
     @Test
     @Timeout(value = 20)
     void shadowsocksTcpAdaptiveHopSurvivesUdpOutage() throws Exception {
-        verifyAdaptiveHop(null, null, false);
+        verifyAdaptiveHop(RssEgressCodec.NONE, false, 15796);
     }
 
     @Test
     @Timeout(25)
     void pskAdaptiveHopSurvivesUdpOutage() throws Exception {
         org.junit.jupiter.api.Assumptions.assumeTrue(org.rx.net.RssHopAes.configured());
-        verifyAdaptiveHop(null, null, true);
+        verifyAdaptiveHop(RssEgressCodec.NONE, true, 15795);
     }
 
     @Test
-    @Timeout(35)
-    void verifiedTlsAdaptiveHopSurvivesUdpOutage(@TempDir Path dir) throws Exception {
-        KeyStore keys = testHopIdentity(dir);
-        X509Certificate cert = (X509Certificate) keys.getCertificate("hop");
-        PrivateKey key = (PrivateKey) keys.getKey("hop", "test-only".toCharArray());
-        File pem = writePem(dir, "CERTIFICATE", cert.getEncoded());
-        verifyAdaptiveHop(RssHopTls.serverContext(pem, writePem(dir, "PRIVATE KEY", key.getEncoded())),
-                RssHopTls.clientContext(pem), false);
+    @Timeout(25)
+    void storedEgressAdaptiveHopSurvivesUdpOutage() throws Exception {
+        verifyAdaptiveHop(RssEgressCodec.ZLIB_STORED, false, 15797);
     }
 
-    private static KeyStore testHopIdentity(Path dir) throws Exception {
-        Path file = dir.resolve("hop.p12");
-        String tool = Paths.get(System.getProperty("java.home"), "bin", "keytool").toString();
-        Process child = new ProcessBuilder(tool, "-genkeypair", "-alias", "hop", "-storetype", "PKCS12",
-                "-keystore", file.toString(), "-storepass", "test-only", "-keypass", "test-only", "-keyalg", "EC",
-                "-keysize", "256", "-dname", "CN=localhost", "-ext", "SAN=dns:localhost").redirectErrorStream(true).start();
-        try {
-            assertTrue(child.waitFor(10, TimeUnit.SECONDS));
-            assertEquals(0, child.exitValue());
-        } finally {
-            child.destroy();
-        }
-        KeyStore keys = KeyStore.getInstance("PKCS12");
-        try (InputStream in = Files.newInputStream(file)) {
-            keys.load(in, "test-only".toCharArray());
-        }
-        return keys;
+    @Test
+    @Timeout(25)
+    void storedEgressPskAdaptiveHopSurvivesUdpOutage() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(org.rx.net.RssHopAes.configured());
+        verifyAdaptiveHop(RssEgressCodec.ZLIB_STORED, true, 15798);
     }
 
-    private static File writePem(Path dir, String type, byte[] der) throws Exception {
-        String data = "-----BEGIN " + type + "-----\n" + Base64.getMimeEncoder().encodeToString(der)
-                + "\n-----END " + type + "-----\n";
-        return Files.write(dir.resolve(type + ".pem"), data.getBytes(StandardCharsets.US_ASCII)).toFile();
-    }
-
-    private void verifyAdaptiveHop(SslContext tlsServer, SslContext tlsClient, boolean psk) throws Exception {
-        // Reserve a test port per profile outside the ephemeral range: the hop binds both TCP and UDP.
-        SocksConfig cfg = new SocksConfig(psk ? 15795 : tlsServer == null ? 15796 : 15797);
+    private void verifyAdaptiveHop(RssEgressCodec egress, boolean psk, int port) throws Exception {
+        SocksConfig cfg = new SocksConfig(port);
+        cfg.setRequiredTcpCipherPorts(new int[0]);
+        cfg.setRssEgressCodec(egress);
         cfg.setAdaptiveTcp(true);
         cfg.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
         SocksConfig uplink = new SocksConfig();
         uplink.setAdaptiveTcp(true);
-        uplink.setAdaptiveProfile(psk ? 2 : tlsServer != null ? 1 : 0);
+        uplink.setAdaptiveProfile(psk ? 2 : 0);
+        uplink.setRssEgressCodec(egress);
         uplink.setTransportFlags(cfg.getTransportFlags());
         if (psk) {
             cfg.setRequiredTcpCipherPorts(new int[]{TCP_ECHO_PORT});
             uplink.setTransportFlags(TransportFlags.RSS_PSK_AES.flags(TransportFlags.COMPRESS_BOTH));
-        }
-        if (tlsServer != null) {
-            cfg.setRssTlsContext(tlsServer);
-            cfg.setRequiredTcpCipherPorts(new int[]{TCP_ECHO_PORT});
-            uplink.setTransportFlags(TransportFlags.RSS_AUTHENTICATED_TLS.flags());
-            uplink.setRssTlsContext(tlsClient);
         }
         ShadowsocksConfig ss = new ShadowsocksConfig(Sockets.newAnyEndpoint(0),
                 org.rx.net.socks.encryption.CipherKind.AES_256_GCM.getCipherName(), "external-ss");
@@ -1941,31 +1902,9 @@ class SocksProxyServerIntegrationTest {
             assertNotNull(remote.adaptivePort);
             if (psk) {
                 checkProtectedWarmConnection(remotePort, uplink, true, "localhost", TCP_ECHO_PORT);
-                checkProtectedWarmConnection(remotePort, new SocksConfig(), false, "localhost", TCP_ECHO_PORT);
-            }
-            if (tlsServer != null) {
-                InetSocketAddress destination = InetSocketAddress.createUnresolved("secure-origin.invalid", TCP_ECHO_PORT);
-                UpstreamSupport support = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("localhost", remotePort)),
-                        new LocalRpcFacade(remote));
-                assertSame(destination, new SocksTcpUpstream(destination, uplink, support).prepareDestination());
-                checkProtectedWarmConnection(remotePort, uplink, true, "localhost", TCP_ECHO_PORT);
-                // Exercise TLS alone and zlib inside TLS on the same SOCKS listener.
-                uplink.setTransportFlags(TransportFlags.RSS_AUTHENTICATED_TLS.flags(TransportFlags.COMPRESS_BOTH));
-                checkProtectedWarmConnection(remotePort, uplink, true, "localhost", TCP_ECHO_PORT);
-                checkProtectedWarmConnection(remotePort, uplink, false, "127.0.0.1", TCP_ECHO_PORT);
-                SocksConfig untrusted = new SocksConfig();
-                untrusted.setTransportFlags(uplink.getTransportFlags());
-                untrusted.setRssTlsContext(RssHopTls.clientContext(null));
-                checkProtectedWarmConnection(remotePort, untrusted, false, "localhost", TCP_ECHO_PORT);
-                SocksConfig plain = new SocksConfig();
-                plain.setTransportFlags(cfg.getTransportFlags());
-                checkProtectedWarmConnection(remotePort, plain, false, "localhost", TCP_ECHO_PORT);
-                try (ServerSocket ordinary = new ServerSocket(0, 8, InetAddress.getByName("127.0.0.1"))) {
-                    checkProtectedWarmConnection(remotePort, plain, true, "localhost", ordinary.getLocalPort());
-                    plain.setTransportFlags(TransportFlags.NONE.flags());
-                    checkProtectedWarmConnection(remotePort, plain, true, "localhost", ordinary.getLocalPort());
-                    checkProtectedWarmConnection(remotePort, plain, false, "localhost", TCP_ECHO_PORT);
-                }
+                SocksConfig unprotected = new SocksConfig();
+                unprotected.setRssEgressCodec(egress);
+                checkProtectedWarmConnection(remotePort, unprotected, false, "localhost", TCP_ECHO_PORT);
             }
             UpstreamSupport endpoint = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("localhost", remotePort),
                     "rss", "hop-test"), null);
@@ -2021,19 +1960,13 @@ class SocksProxyServerIntegrationTest {
             c.pipeline().addLast(warm);
         }).connect(address).sync().channel();
         try {
-            SslHandler ssl = ch.pipeline().get(SslHandler.class);
-            if (ssl != null && !success) {
-                assertThrows(SSLException.class, () -> ssl.handshakeFuture().sync());
-                return;
-            }
             warm.readyFuture().get(4, TimeUnit.SECONDS);
             ChannelFuture command = ch.eventLoop().submit(() -> warm.connect(new InetSocketAddress("127.0.0.1", target))).get();
             if (success) {
                 command.sync();
                 assertEquals(config.getTransportFlags().has(TransportFlags.COMPRESS_BOTH), Sockets.hasTcpCompressionHandlers(ch));
-                if (ssl != null) {
-                    assertEquals("TLS_AES_128_GCM_SHA256", ssl.engine().getSession().getCipherSuite());
-                }
+                assertEquals(config.getRssEgressCodec() == RssEgressCodec.ZLIB_STORED,
+                        ch.pipeline().context(RssEgressCodec.INNER_ANCHOR) != null);
             } else {
                 assertThrows(ProxyConnectException.class, command::sync);
             }
@@ -2129,12 +2062,15 @@ class SocksProxyServerIntegrationTest {
 
     @Test
     @Timeout(value = 15)
-    void adaptiveNoHopRoutesThroughUdp2rawForwarderWithoutKcptunWhileHoppingCoexists() throws Exception {
+    void adaptiveNoHopHonorsNegotiatedMtuThroughForwarderWhileHoppingCoexists() throws Exception {
         SocksConfig cfg = new SocksConfig(15810);
         cfg.setAdaptiveTcp(true);
         cfg.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
         SocksUser user = new SocksUser("warm");
         user.setPassword("test-pass");
+        int clientMtu = 512;
+        java.util.concurrent.atomic.AtomicInteger largestUplink = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger largestDownlink = new java.util.concurrent.atomic.AtomicInteger();
         java.util.concurrent.atomic.AtomicInteger rawC2S = new java.util.concurrent.atomic.AtomicInteger();
         java.util.concurrent.atomic.AtomicInteger rawS2C = new java.util.concurrent.atomic.AtomicInteger();
         java.util.concurrent.atomic.AtomicBoolean running = new java.util.concurrent.atomic.AtomicBoolean(true);
@@ -2154,6 +2090,7 @@ class SocksProxyServerIntegrationTest {
                         java.net.DatagramPacket p = new java.net.DatagramPacket(buf, buf.length);
                         rawClientSide.receive(p);
                         lastClientPeer.set((InetSocketAddress) p.getSocketAddress());
+                        largestUplink.accumulateAndGet(p.getLength(), Math::max);
                         rawC2S.incrementAndGet();
                         rawServerSide.send(new java.net.DatagramPacket(p.getData(), p.getLength(), serverAdaptiveUdp));
                     } catch (java.net.SocketTimeoutException ignored) {
@@ -2170,6 +2107,7 @@ class SocksProxyServerIntegrationTest {
                         rawServerSide.receive(p);
                         InetSocketAddress cli = lastClientPeer.get();
                         if (cli != null) {
+                            largestDownlink.accumulateAndGet(p.getLength(), Math::max);
                             rawS2C.incrementAndGet();
                             rawClientSide.send(new java.net.DatagramPacket(p.getData(), p.getLength(), cli));
                         }
@@ -2187,7 +2125,7 @@ class SocksProxyServerIntegrationTest {
             int port = ((InetSocketAddress) server.tcpChannels.get(0).localAddress()).getPort();
             InetSocketAddress address = new InetSocketAddress("127.0.0.1", port);
 
-            // 1. 6896-like no-hop stream: direct TCP + Adaptive UDP via udp2raw forwarder (no kcptun).
+            // The fixed forwarder records complete authenticated UDP datagrams in both directions.
             SocksConfig noHopCfg = new SocksConfig();
             noHopCfg.setAdaptiveTcp(true);
             noHopCfg.setUdpHop(false);
@@ -2196,6 +2134,7 @@ class SocksProxyServerIntegrationTest {
             noHopWarm.setAdaptiveTcp(true);
             noHopWarm.setUdpHop(false);
             noHopWarm.setAdaptiveUdpAddress(rawEntry);
+            noHopWarm.setAdaptiveUdpMtu(clientMtu);
             Channel chNoHop = Sockets.bootstrap(noHopCfg, address, c -> {
                 Sockets.addTcpClientHandler(c, noHopCfg, address);
                 c.pipeline().addLast(noHopWarm);
@@ -2218,6 +2157,20 @@ class SocksProxyServerIntegrationTest {
                 waitForCondition(handler::usingUdp, 4000, "no-hop adaptive UDP via udp2raw forwarder must activate");
                 chNoHop.writeAndFlush(Unpooled.copiedBuffer("data-over-udp2raw", StandardCharsets.UTF_8)).sync();
                 assertEquals("data-over-udp2raw", echoed.poll(4, TimeUnit.SECONDS));
+                byte[] randomData = new byte[4096];
+                new java.util.Random(147).nextBytes(randomData);
+                String payload = java.util.Base64.getEncoder().encodeToString(randomData);
+                chNoHop.writeAndFlush(Unpooled.copiedBuffer(payload, StandardCharsets.US_ASCII)).sync();
+                StringBuilder response = new StringBuilder();
+                while (response.length() < payload.length()) {
+                    String part = echoed.poll(4, TimeUnit.SECONDS);
+                    assertNotNull(part);
+                    response.append(part);
+                }
+                assertEquals(payload, response.toString());
+                assertTrue(largestUplink.get() <= clientMtu && largestUplink.get() >= clientMtu - 8,
+                        "uplink=" + largestUplink.get());
+                assertTrue(largestDownlink.get() <= clientMtu, "downlink=" + largestDownlink.get());
                 assertTrue(rawC2S.get() > 0 && rawS2C.get() > 0,
                         "adaptive UDP must traverse udp2raw forwarder c2s=" + rawC2S.get() + " s2c=" + rawS2C.get());
             } finally {

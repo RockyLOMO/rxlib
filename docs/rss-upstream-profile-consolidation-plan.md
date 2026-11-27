@@ -1,8 +1,8 @@
 # RSS 上游与传输 Profile 收口方案
 
-- 日期：2026-11-26（第五版：独立最终出口包装层、TCP/UDP 承载边界及 MTU 收口）
+- 日期：2026-11-26（第五版：独立最终出口包装层、TCP/UDP 承载边界及 MTU 收口；2026-11-27 Java 核心收口实现与双 JDK 自动化验收已完成）
 - 审查基线：[14a05824](https://github.com/RockyLOMO/rxlib/commit/14a05824431f5b6118aec5a24330aca1d6f29c1e)
-- 状态：待实施的独立计划；本文不是已完成的代码变更。
+- 状态：**Java 核心实现与本地自动化矩阵验收已完成**（已定案：§13 `egress.tcpCodec` 默认 `none`、按路由或全局显式开启 `zlib-stored`，双端同步升级发布、不保留旧线格式/TLS 兼容分支）。现行运行配置请以 [rss-transport.md](./rss-transport.md) 为准；Linux 1 vCPU / 768 MiB 长期压测及真实 Hysteria2 / 外部 udp2raw 现网抓包基准留待部署窗口验证。
 - 优先级：正确交付、认证安全和兼容性为硬约束；真实流量低、CPU 低、内存适当放宽且有界。game 在合理流量预算内优先低延迟。
 - 本方案作为后续 RSS 上游/profile 设计的统一依据，覆盖旧方案中与本文冲突的上游分类、特殊路由及默认增强策略；历史 Review 和测试结果作为历史记录保留。
 

@@ -8,15 +8,15 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class DailyUdpCipherTest {
+class RssDatagramCipherTest {
     @Test
     void lateAuthenticatedFramesUseTheNegotiatedReorderWindow() {
-        for (int flags : new int[]{DailyUdpWire.AES, DailyUdpWire.AES | DailyUdpWire.FEC}) {
+        for (int flags : new int[]{RssDatagramHandler.AES, RssDatagramHandler.AES | RssDatagramHandler.FEC}) {
             byte[] psk = new byte[32];
             UUID token = UUID.randomUUID(), salt = UUID.randomUUID();
-            DailyUdpCipher tx = new DailyUdpCipher(psk, token, salt, false, flags);
-            DailyUdpCipher rx = new DailyUdpCipher(psk, token, salt, true, flags);
-            ByteBuf plain = Unpooled.buffer().writeZero(DailyUdpWire.HEADER_BYTES).writeByte(73);
+            RssDatagramCipher tx = new RssDatagramCipher(psk, token, salt, false, flags);
+            RssDatagramCipher rx = new RssDatagramCipher(psk, token, salt, true, flags);
+            ByteBuf plain = Unpooled.buffer().writeZero(RssDatagramHandler.HEADER_BYTES).writeByte(73);
             ByteBuf late = tx.seal(plain);
             try {
                 for (int i = 0; i < 320; i++) {
@@ -29,7 +29,7 @@ class DailyUdpCipherTest {
                         frame.release();
                     }
                 }
-                if ((flags & DailyUdpWire.FEC) != 0) {
+                if ((flags & RssDatagramHandler.FEC) != 0) {
                     ByteBuf data = rx.open(late);
                     assertNotNull(data);
                     data.release();
@@ -46,10 +46,10 @@ class DailyUdpCipherTest {
     void authenticatesHeadersAndRejectsReplayReflectionAndCrossSessionPackets() {
         byte[] psk = new byte[32];
         UUID token = UUID.randomUUID(), salt = UUID.randomUUID();
-        DailyUdpCipher client = new DailyUdpCipher(psk, token, salt, false, 7);
-        DailyUdpCipher server = new DailyUdpCipher(psk, token, salt, true, 7);
-        DailyUdpCipher other = new DailyUdpCipher(psk, token, UUID.randomUUID(), true, 7);
-        ByteBuf plain = Unpooled.buffer().writeZero(DailyUdpWire.HEADER_BYTES).writeInt(73);
+        RssDatagramCipher client = new RssDatagramCipher(psk, token, salt, false, 7);
+        RssDatagramCipher server = new RssDatagramCipher(psk, token, salt, true, 7);
+        RssDatagramCipher other = new RssDatagramCipher(psk, token, UUID.randomUUID(), true, 7);
+        ByteBuf plain = Unpooled.buffer().writeZero(RssDatagramHandler.HEADER_BYTES).writeInt(73);
         ByteBuf first = client.seal(plain), second = client.seal(plain);
         try {
             assertNull(client.open(first));

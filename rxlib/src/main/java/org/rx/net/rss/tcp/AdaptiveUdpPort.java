@@ -25,6 +25,11 @@ import java.util.concurrent.TimeUnit;
 public final class AdaptiveUdpPort implements AutoCloseable {
     public static final int MAX_FRAME_BYTES = 1400;
     private static final int PREFIX = 16, TAG = 16, MAX_PACKET = PREFIX + MAX_FRAME_BYTES + TAG;
+    static int frameLimit(int wireMtu) {
+        int limit = org.rx.net.rss.RssUdpMtuBudget.negotiate(wireMtu, PREFIX + AdaptiveTcpStream.MAX_UDP_FRAME + TAG);
+        return limit - PREFIX - TAG;
+    }
+
     private static final int QUEUE_LIMIT = 256;
     private static final byte CLIENT = 1, SERVER = 2;
 
@@ -39,14 +44,29 @@ public final class AdaptiveUdpPort implements AutoCloseable {
     private long txPackets, txBytes, rxPackets, rxBytes;
 
     private AdaptiveUdpPort(boolean server, InetSocketAddress local, int alias, boolean redirect, boolean hopping) {
+        this(server, local, alias, redirect, hopping, null, null, null, 0);
+    }
+
+    private AdaptiveUdpPort(boolean server, InetSocketAddress local, int alias, boolean redirect, boolean hopping,
+                            org.rx.net.AuthenticEndpoint proxy, InetSocketAddress firstPeer, InetSocketAddress secondPeer, int outerMtu) {
         this.server = server;
         virtualAlias = redirect ? alias : 0;
-        Bootstrap bootstrap = Sockets.udpBootstrap(null, ch -> ch.pipeline().addLast(new SimpleChannelInboundHandler<DatagramPacket>() {
+        Bootstrap bootstrap = Sockets.udpBootstrap(null, ch -> {
+            org.rx.net.socks.RssSocksCarrier carrier = proxy == null ? null
+                    : new org.rx.net.socks.RssSocksCarrier(firstPeer, secondPeer, true, outerMtu);
+            if (carrier != null) ch.pipeline().addLast(carrier);
+            ch.pipeline().addLast(new SimpleChannelInboundHandler<DatagramPacket>() {
+            @Override public void channelActive(ChannelHandlerContext ctx) throws Exception {
+                if (carrier != null) {
+                    carrier.open(ctx.channel(), proxy).whenComplete((v, error) -> { if (error != null) ctx.close(); });
+                }
+                super.channelActive(ctx);
+            }
             @Override protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket packet) {
                 receive(ctx.channel(), packet);
             }
-        })).option(ChannelOption.SO_REUSEADDR, false)
-                .option(ChannelOption.RCVBUF_ALLOCATOR, new FixedRecvByteBufAllocator(MAX_PACKET + 1));
+        }); }).option(ChannelOption.SO_REUSEADDR, false)
+                .option(ChannelOption.RCVBUF_ALLOCATOR, new FixedRecvByteBufAllocator(MAX_PACKET + (proxy == null ? 1 : 23)));
         bind = bootstrap.bind(local);
         bind.channel().closeFuture().addListener(f -> recordTraffic());
         try {
@@ -90,6 +110,11 @@ public final class AdaptiveUdpPort implements AutoCloseable {
 
     public static AdaptiveUdpPort client(long id, byte[] key, Channel tcp, int primary, int alias,
                                          InetSocketAddress udpTarget, Consumer<ByteBuf> recv) {
+        return client(id, key, tcp, primary, alias, udpTarget, MAX_FRAME_BYTES, recv);
+    }
+
+    static AdaptiveUdpPort client(long id, byte[] key, Channel tcp, int primary, int alias,
+                                  InetSocketAddress udpTarget, int frameLimit, Consumer<ByteBuf> recv) {
         InetSocketAddress local = tcp.localAddress() instanceof InetSocketAddress
                 ? (InetSocketAddress) tcp.localAddress() : null;
         boolean hopping = primary != alias;
@@ -98,14 +123,11 @@ public final class AdaptiveUdpPort implements AutoCloseable {
         InetSocketAddress aliasAddr;
         InetSocketAddress bindAddr;
         if (!hopping && udpTarget != null) {
-            InetSocketAddress resolved = udpTarget.isUnresolved()
-                    ? new InetSocketAddress(udpTarget.getHostString(), udpTarget.getPort())
-                    : udpTarget;
-            if (resolved.isUnresolved() || resolved.getAddress() == null || resolved.getPort() <= 0) {
+            if (udpTarget.isUnresolved() || udpTarget.getPort() <= 0) {
                 throw new IllegalArgumentException("Invalid adaptive UDP target: " + udpTarget);
             }
-            targetIp = resolved.getAddress();
-            primaryAddr = aliasAddr = resolved;
+            targetIp = udpTarget.getAddress();
+            primaryAddr = aliasAddr = udpTarget;
             if (targetIp.isLoopbackAddress()) {
                 bindAddr = new InetSocketAddress(targetIp, 0);
             } else if (local != null && local.getAddress() != null
@@ -115,16 +137,19 @@ public final class AdaptiveUdpPort implements AutoCloseable {
                 bindAddr = new InetSocketAddress(0);
             }
         } else {
-            targetIp = remoteIp(tcp);
+            InetSocketAddress carrierPeer = tcp.attr(org.rx.net.socks.RssSocksCarrier.INNER_PEER).get();
+            targetIp = carrierPeer != null ? carrierPeer.getAddress() : remoteIp(tcp);
             primaryAddr = new InetSocketAddress(targetIp, primary);
             aliasAddr = new InetSocketAddress(targetIp, alias);
             bindAddr = local != null && local.getAddress() != null
                     ? new InetSocketAddress(local.getAddress(), 0)
                     : new InetSocketAddress(0);
         }
-        AdaptiveUdpPort port = new AdaptiveUdpPort(false, bindAddr, 0, false, hopping);
+        Integer outerMtu = tcp.attr(org.rx.net.socks.RssSocksCarrier.OUTER_MTU).get();
+        AdaptiveUdpPort port = new AdaptiveUdpPort(false, bindAddr, 0, false, hopping,
+                tcp.attr(org.rx.net.socks.RssSocksCarrier.OUTER_PROXY).get(), primaryAddr, aliasAddr, outerMtu == null ? 0 : outerMtu);
         try {
-            Peer peer = new Peer(key, tcp, recv, targetIp, primaryAddr, false);
+            Peer peer = new Peer(key, tcp, recv, targetIp, primaryAddr, false, frameLimit);
             peer.alias = aliasAddr;
             port.add(id, peer);
             ChannelFutureListener closeOnFailure = f -> { if (!f.isSuccess()) port.close(); };
@@ -169,9 +194,13 @@ public final class AdaptiveUdpPort implements AutoCloseable {
     }
 
     public void register(long id, byte[] key, Channel tcp, boolean hopping, Consumer<ByteBuf> recv) {
+        register(id, key, tcp, hopping, MAX_FRAME_BYTES, recv);
+    }
+
+    void register(long id, byte[] key, Channel tcp, boolean hopping, int frameLimit, Consumer<ByteBuf> recv) {
         // No-hop streams may enter through a local single-port UDP tunnel (e.g. udp2raw -> 127.0.0.1:primary)
         // while TCP remains direct; still gated by stream id, replay window and per-stream HMAC-SHA256.
-        Peer peer = new Peer(key, tcp, recv, remoteIp(tcp), null, !hopping);
+        Peer peer = new Peer(key, tcp, recv, remoteIp(tcp), null, !hopping, frameLimit);
         add(id, peer);
         tcp.closeFuture().addListener(f -> {
             Peer current = peers.get(id);
@@ -197,8 +226,12 @@ public final class AdaptiveUdpPort implements AutoCloseable {
     public void send(long id, ByteBuf frame) {
         Channel udp = bind.channel();
         Peer peer = peers.get(id);
-        if (peer == null || peer.address == null || !bind.isSuccess() || !udp.isWritable()
-                || frame.readableBytes() > MAX_FRAME_BYTES || !reserve(pendingSends)) {
+        if (peer != null && frame.readableBytes() > peer.frameLimit) {
+            DiagnosticMetrics.record("rss.tcp.adaptive.finalMtuDrop", 1);
+            frame.release();
+            return;
+        }
+        if (peer == null || peer.address == null || !bind.isSuccess() || !udp.isWritable() || !reserve(pendingSends)) {
             frame.release();
             return;
         }
@@ -228,6 +261,10 @@ public final class AdaptiveUdpPort implements AutoCloseable {
                         peer.sign(server ? SERVER : CLIENT, wire, 0, PREFIX + length);
                         wire.writeBytes(peer.digest, 0, TAG);
                     }
+                    if (wire.readableBytes() > PREFIX + peer.frameLimit + TAG) {
+                        DiagnosticMetrics.record("rss.tcp.adaptive.finalMtuDrop", 1);
+                        return;
+                    }
                     ChannelFuture write = output.writeAndFlush(new DatagramPacket(wire, recipient));
                     wire = null;
                     submitted = true;
@@ -252,7 +289,7 @@ public final class AdaptiveUdpPort implements AutoCloseable {
         if (bytes < PREFIX + TAG || bytes > MAX_PACKET) return;
         long id = wire.getLong(i), seq = wire.getLong(i + 8);
         Peer peer = peers.get(id);
-        if (peer == null) return;
+        if (peer == null || bytes - PREFIX - TAG > peer.frameLimit) return;
         InetAddress senderIp = packet.sender().getAddress();
         boolean senderAllowed = peer.ip.equals(senderIp)
                 || (server && peer.allowLoopback && senderIp.isLoopbackAddress());
@@ -338,6 +375,7 @@ public final class AdaptiveUdpPort implements AutoCloseable {
         final Consumer<ByteBuf> recv;
         final Mac mac;
         final boolean allowLoopback;
+        final int frameLimit;
         final byte[] digest = new byte[32];
         volatile InetSocketAddress address;
         InetSocketAddress alias;
@@ -352,7 +390,8 @@ public final class AdaptiveUdpPort implements AutoCloseable {
         }
 
         Peer(byte[] key, Channel tcp, Consumer<ByteBuf> recv, InetAddress ip, InetSocketAddress address,
-             boolean allowLoopback) {
+             boolean allowLoopback, int frameLimit) {
+            this.frameLimit = frameLimit;
             if (key.length < 16) throw new IllegalArgumentException("short UDP session key");
             this.ip = ip;
             this.tcp = tcp;

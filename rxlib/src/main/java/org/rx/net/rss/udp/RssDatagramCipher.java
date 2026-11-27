@@ -17,8 +17,8 @@ import java.util.Base64;
 import java.util.UUID;
 
 /** Per-association directional keys. All frames, including hop probes and FEC feedback, are authenticated. */
-final class DailyUdpCipher {
-    private static final int HEADER = DailyUdpWire.HEADER_BYTES, SEQ = 8, TAG = 16;
+final class RssDatagramCipher {
+    private static final int HEADER = RssDatagramHandler.HEADER_BYTES, SEQ = 8, TAG = 16;
     static final int OVERHEAD = SEQ + TAG;
     // Bound the total GCM invocations and blocks under a directional traffic key.
     private static final long MAX_SEQ = 1L << 24, MAX_BYTES = 1L << 36;
@@ -41,11 +41,11 @@ final class DailyUdpCipher {
         return key;
     }
 
-    DailyUdpCipher(byte[] secret, UUID token, UUID salt, boolean server, int features) {
+    RssDatagramCipher(byte[] secret, UUID token, UUID salt, boolean server, int features) {
         if (secret == null || salt == null) {
             throw new IllegalArgumentException("UDP AES requires a deployment key and a fresh client salt");
         }
-        replay = new UdpSequenceWindow((features & (DailyUdpWire.FEC | DailyUdpWire.GAME)) != 0 ? UdpSequenceWindow.FEC_SIZE : 64);
+        replay = new UdpSequenceWindow((features & (RssDatagramHandler.FEC | RssDatagramHandler.GAME)) != 0 ? UdpSequenceWindow.FEC_SIZE : 64);
         try {
             Mac derive = Mac.getInstance("HmacSHA256");
             derive.init(new SecretKeySpec(secret, "HmacSHA256"));

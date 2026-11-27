@@ -166,19 +166,11 @@ class RssClientWeightedRoutingTest {
     }
 
     @Test
-    void shadowRoutePlan_FallsBackToWeightedSelectionWhenSourceIpMissing() {
-        UpstreamSupport primary = upstream("127.0.0.1", 1080, 1);
-        UpstreamSupport backup = upstream("127.0.0.1", 1081, 0);
-        RandomList<UpstreamSupport> servers = weightedServers(primary, backup);
-        RssRuntime.ShadowRoutePlan plan = RssRuntime.ShadowRoutePlan.direct(servers);
-        InetSocketAddress ssh = org.rx.net.Sockets.newUnresolvedEndpoint("example.com", 22);
-
-        assertSame(primary, plan.nextSupport(null, ssh, 60));
-        servers.setWeight(primary, 0);
-        servers.setWeight(backup, 1);
-
-        assertSame(backup, plan.nextSupport(null, ssh, 60),
-                "SS route plan 源 IP 缺失时不应使用同源 IP 粘滞缓存");
+    void shadowIngressUsesOneLocalEndpointBeforeTheUserSelectsAnUpstream() {
+        org.rx.net.AuthenticEndpoint local = org.rx.net.AuthenticEndpoint.valueOf("127.0.0.1:1080");
+        RssRuntime.RssRoutePlan plan = RssRuntime.RssRoutePlan.viaLocal(local);
+        InetSocketAddress target = org.rx.net.Sockets.newUnresolvedEndpoint("example.com", 22);
+        assertSame(local, plan.nextSupport(null, target, 60).getEndpoint());
     }
 
     @Test

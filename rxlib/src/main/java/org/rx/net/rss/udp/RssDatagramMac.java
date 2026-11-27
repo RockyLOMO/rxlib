@@ -11,15 +11,15 @@ import java.security.GeneralSecurityException;
 import java.util.UUID;
 
 /** Cleartext data with directional HMAC tags, using a fresh secret supplied by the encrypted control RPC. */
-final class DailyUdpMac {
-    private static final int HEADER = DailyUdpWire.HEADER_BYTES, SEQ = 8, TAG = 16;
+final class RssDatagramMac {
+    private static final int HEADER = RssDatagramHandler.HEADER_BYTES, SEQ = 8, TAG = 16;
     static final int OVERHEAD = SEQ + TAG;
     private final UdpSequenceWindow replay = new UdpSequenceWindow(UdpSequenceWindow.FEC_SIZE);
     private final Mac tx, rx;
     private final byte[] digest = new byte[32];
     private long sent;
 
-    DailyUdpMac(byte[] secret, UUID id, int features, boolean server) {
+    RssDatagramMac(byte[] secret, UUID id, int features, boolean server) {
         if (secret == null || secret.length != 32) throw new IllegalArgumentException("missing UDP session authentication key");
         try {
             Mac derive = Mac.getInstance("HmacSHA256");
@@ -59,7 +59,7 @@ final class DailyUdpMac {
     // Encode cleartext game data directly into its final authenticated datagram.
     ByteBuf sealGame(ByteBuf data, long tokenHigh, long tokenLow, int epoch, int copy, int seq) {
         if (sent == Long.MAX_VALUE) throw new IllegalStateException("UDP authentication sequence exhausted");
-        int size = HEADER + OVERHEAD + UdpGameRedundancy.DATA_HEADER + data.readableBytes();
+        int size = HEADER + OVERHEAD + AdaptiveUdpReplication.DATA_HEADER + data.readableBytes();
         ByteBuf wire = data.alloc().ioBuffer(size, size);
         try {
             wire.writeLong(tokenHigh).writeLong(tokenLow).writeInt(epoch).writeLong(++sent)

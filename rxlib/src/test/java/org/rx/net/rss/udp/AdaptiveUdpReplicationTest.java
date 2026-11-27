@@ -14,12 +14,12 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class UdpGameRedundancyTest {
+class AdaptiveUdpReplicationTest {
     private static final InetSocketAddress CLIENT = new InetSocketAddress("127.0.0.1", 15001);
     private static final InetSocketAddress SERVER = new InetSocketAddress("127.0.0.1", 15002);
     private static final InetSocketAddress ALIAS = new InetSocketAddress("127.0.0.1", 15003);
 
-    private static EmbeddedChannel channel(InetSocketAddress addr, DailyUdpWire wire) {
+    private static EmbeddedChannel channel(InetSocketAddress addr, RssDatagramHandler wire) {
         return new EmbeddedChannel(wire) {
             @Override public SocketAddress localAddress() { return addr; }
         };
@@ -34,8 +34,8 @@ class UdpGameRedundancyTest {
         String id = UUID.randomUUID().toString();
         byte[] key = new byte[32];
         AtomicLong now = new AtomicLong();
-        EmbeddedChannel client = channel(CLIENT, new DailyUdpWire(id, SERVER, ALIAS, null, now::get, DailyUdpWire.GAME, null, key));
-        EmbeddedChannel server = channel(SERVER, new DailyUdpWire(id, null, null, a -> false, now::get, DailyUdpWire.GAME, null, key));
+        EmbeddedChannel client = channel(CLIENT, new RssDatagramHandler(id, SERVER, ALIAS, null, now::get, RssDatagramHandler.GAME, null, key));
+        EmbeddedChannel server = channel(SERVER, new RssDatagramHandler(id, null, null, a -> false, now::get, RssDatagramHandler.GAME, null, key));
         try {
             for (int seq = 0; seq < 535; seq++) {
                 now.addAndGet(5_000_000L);
@@ -91,13 +91,13 @@ class UdpGameRedundancyTest {
 
     @Test
     void sustainedFeedbackDelayDisablesExtraCopiesBeforeCongestionCanPromoteThem() {
-        UdpGameRedundancy state = new UdpGameRedundancy(new AtomicLong());
+        AdaptiveUdpReplication state = new AdaptiveUdpReplication(new AtomicLong());
         for (int i = 0; i < 104; i++) {
             long sendTime = i * 10_000_000L;
             state.begin(sendTime);
             state.extra(i, 100, true, sendTime);
             if (i == 39 || i == 71 || i == 103) {
-                ByteBuf report = Unpooled.buffer(8).writeByte(UdpGameRedundancy.REPORT).writeInt(i - 8)
+                ByteBuf report = Unpooled.buffer(8).writeByte(AdaptiveUdpReplication.REPORT).writeInt(i - 8)
                         .writeByte(31).writeByte(60).writeByte(30);
                 try {
                     long delay = i == 39 ? 30_000_000L : 100_000_000L;
@@ -112,7 +112,7 @@ class UdpGameRedundancyTest {
 
     @Test
     void missingFeedbackAndLocalPressureBoundExtraTraffic() {
-        UdpGameRedundancy game = new UdpGameRedundancy(new AtomicLong());
+        AdaptiveUdpReplication game = new AdaptiveUdpReplication(new AtomicLong());
         for (int i = 0; i < 64; i++) {
             int seq = game.begin(0);
             assertEquals(1, game.copies);
@@ -130,12 +130,12 @@ class UdpGameRedundancyTest {
 
     @Test
     void delayedFeedbackCanGrowHistoryAndCountsExpiredWindows() {
-        UdpGameRedundancy state = new UdpGameRedundancy(new AtomicLong());
+        AdaptiveUdpReplication state = new AdaptiveUdpReplication(new AtomicLong());
         try {
             for (int i = 0; i < 1000; i++) {
                 state.begin(i * 1_000_000L);
                 if (i != 400 && i != 800 && i != 840) continue;
-                ByteBuf report = Unpooled.buffer(8).writeByte(UdpGameRedundancy.REPORT).writeInt(i - 310)
+                ByteBuf report = Unpooled.buffer(8).writeByte(AdaptiveUdpReplication.REPORT).writeInt(i - 310)
                         .writeByte(30).writeByte(30).writeByte(30);
                 try {
                     state.read(report, report.alloc(), i * 1_000_000L, true, ByteBuf::release, ByteBuf::release);
@@ -150,8 +150,8 @@ class UdpGameRedundancyTest {
     void directGameMacMatchesExistingFrameFormat() {
         UUID id = UUID.randomUUID();
         byte[] key = new byte[32];
-        DailyUdpMac original = new DailyUdpMac(key, id, DailyUdpWire.GAME, false);
-        DailyUdpMac direct = new DailyUdpMac(key, id, DailyUdpWire.GAME, false);
+        RssDatagramMac original = new RssDatagramMac(key, id, RssDatagramHandler.GAME, false);
+        RssDatagramMac direct = new RssDatagramMac(key, id, RssDatagramHandler.GAME, false);
         ByteBuf data = Unpooled.buffer().writeByte(11).writeLong(100);
         data.readByte();
         try {
@@ -170,7 +170,7 @@ class UdpGameRedundancyTest {
 
     @Test
     void mildResidualLossStepsDownFromTripleWithHysteresis() {
-        UdpGameRedundancy state = new UdpGameRedundancy(new AtomicLong());
+        AdaptiveUdpReplication state = new AdaptiveUdpReplication(new AtomicLong());
         try {
             long now = 1_000_000L;
             int lastSeq = 0;
@@ -184,7 +184,7 @@ class UdpGameRedundancyTest {
                 }
                 int phys = stepCopies == 1 ? 30 : 52;
                 int orig = stepCopies == 1 ? 30 : 26;
-                ByteBuf rep = Unpooled.buffer(8).writeByte(UdpGameRedundancy.REPORT).writeInt(lastSeq - 8)
+                ByteBuf rep = Unpooled.buffer(8).writeByte(AdaptiveUdpReplication.REPORT).writeInt(lastSeq - 8)
                         .writeByte(30).writeByte(phys).writeByte(orig);
                 try {
                     state.read(rep, rep.alloc(), now + 20_000_000L, true, ByteBuf::release, ByteBuf::release);
@@ -201,7 +201,7 @@ class UdpGameRedundancyTest {
                     lastSeq = state.begin(now);
                     for (int c = 1; c < state.copies; c++) state.extra(lastSeq, 100, true, now);
                 }
-                ByteBuf rep = Unpooled.buffer(8).writeByte(UdpGameRedundancy.REPORT).writeInt(lastSeq - 8)
+                ByteBuf rep = Unpooled.buffer(8).writeByte(AdaptiveUdpReplication.REPORT).writeInt(lastSeq - 8)
                         .writeByte(32).writeByte(94).writeByte(31);
                 try {
                     state.read(rep, rep.alloc(), now + 20_000_000L, true, ByteBuf::release, ByteBuf::release);
@@ -218,7 +218,7 @@ class UdpGameRedundancyTest {
                     lastSeq = state.begin(now);
                     for (int c = 1; c < state.copies; c++) state.extra(lastSeq, 100, true, now);
                 }
-                ByteBuf rep = Unpooled.buffer(8).writeByte(UdpGameRedundancy.REPORT).writeInt(lastSeq - 8)
+                ByteBuf rep = Unpooled.buffer(8).writeByte(AdaptiveUdpReplication.REPORT).writeInt(lastSeq - 8)
                         .writeByte(32).writeByte(63).writeByte(31);
                 try {
                     state.read(rep, rep.alloc(), now + 20_000_000L, true, ByteBuf::release, ByteBuf::release);
@@ -235,9 +235,9 @@ class UdpGameRedundancyTest {
     @Test
     void negotiatedProtectionRequiresIndependentSessionMaterial() {
         String id = UUID.randomUUID().toString();
-        assertThrows(IllegalArgumentException.class, () -> DailyUdpWire.server(id, a -> false, DailyUdpWire.GAME, null));
-        assertThrows(IllegalArgumentException.class, () -> DailyUdpWire.server(id, a -> false, DailyUdpWire.FEC | DailyUdpWire.WEAK, null));
-        assertThrows(IllegalArgumentException.class, () -> DailyUdpWire.server(id, a -> false, DailyUdpWire.WEAK, null, new byte[32]));
-        assertThrows(IllegalArgumentException.class, () -> DailyUdpWire.server(id, a -> false, DailyUdpWire.GAME | DailyUdpWire.WEAK | DailyUdpWire.FEC, null, new byte[32]));
+        assertThrows(IllegalArgumentException.class, () -> RssDatagramHandler.server(id, a -> false, RssDatagramHandler.GAME, null));
+        assertThrows(IllegalArgumentException.class, () -> RssDatagramHandler.server(id, a -> false, RssDatagramHandler.FEC | RssDatagramHandler.WEAK, null));
+        assertThrows(IllegalArgumentException.class, () -> RssDatagramHandler.server(id, a -> false, RssDatagramHandler.WEAK, null, new byte[32]));
+        assertThrows(IllegalArgumentException.class, () -> RssDatagramHandler.server(id, a -> false, RssDatagramHandler.GAME | RssDatagramHandler.WEAK | RssDatagramHandler.FEC, null, new byte[32]));
     }
 }

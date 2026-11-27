@@ -50,6 +50,7 @@ public final class Socks5ClientHandler extends ProxyHandler {
     @Setter private int adaptiveProfile;
     @Setter private boolean udpHop = true;
     @Setter private InetSocketAddress adaptiveUdpAddress;
+    @Setter private int adaptiveUdpMtu;
     private int offeredProfile = -1;
     private boolean negotiated;
     private String decoderName;
@@ -158,7 +159,10 @@ public final class Socks5ClientHandler extends ProxyHandler {
             } else if (resAuthMethod == Socks5AuthMethod.PASSWORD) {
                 // In case of password authentication, send an authentication request.
                 ctx.pipeline().replace(decoderName, decoderName, new Socks5PasswordAuthResponseDecoder());
-                if (negotiated) SocksAdaptiveHandshake.awaitNonce(ctx.pipeline(), decoderName);
+                if (negotiated) {
+                SocksAdaptiveHandshake.awaitNonce(ctx.pipeline(), decoderName);
+                SocksAdaptiveHandshake.sendMtu(ctx, adaptiveUdpMtu);
+            }
                 sendToProxyServer(new DefaultSocks5PasswordAuthRequest(
                         username != null ? username : Strings.EMPTY, password != null ? password : Strings.EMPTY));
             } else {
@@ -178,7 +182,7 @@ public final class Socks5ClientHandler extends ProxyHandler {
 
             if (negotiated) {
                 SocksAdaptiveHandshake.install(ctx.channel(), ctx.channel().attr(SocksAdaptiveHandshake.NONCE).getAndSet(null),
-                        password, null, offeredProfile, udpHop, adaptiveUdpAddress);
+                        password, null, offeredProfile, udpHop, adaptiveUdpAddress, adaptiveUdpMtu);
                 negotiated = false;
             }
             sendCommand(ctx);

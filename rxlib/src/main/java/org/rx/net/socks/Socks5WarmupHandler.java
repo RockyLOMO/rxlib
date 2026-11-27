@@ -41,6 +41,7 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
     @Setter private int adaptiveProfile;
     @Setter private boolean udpHop = true;
     @Setter private InetSocketAddress adaptiveUdpAddress;
+    @Setter private int adaptiveUdpMtu;
     private int offeredProfile = -1;
     private boolean negotiated;
     private volatile State state = State.INIT;
@@ -170,7 +171,10 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
             return;
         }
         ctx.pipeline().replace(decoderName, decoderName, new Socks5PasswordAuthResponseDecoder());
-        if (negotiated) SocksAdaptiveHandshake.awaitNonce(ctx.pipeline(), decoderName);
+        if (negotiated) {
+            SocksAdaptiveHandshake.awaitNonce(ctx.pipeline(), decoderName);
+            SocksAdaptiveHandshake.sendMtu(ctx, adaptiveUdpMtu);
+        }
         ctx.writeAndFlush(new DefaultSocks5PasswordAuthRequest(
                 username != null ? username : Strings.EMPTY, password != null ? password : Strings.EMPTY));
     }
@@ -182,7 +186,7 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
         }
         if (negotiated) {
             SocksAdaptiveHandshake.install(ctx.channel(), ctx.channel().attr(SocksAdaptiveHandshake.NONCE).getAndSet(null),
-                    password, null, offeredProfile, udpHop, adaptiveUdpAddress);
+                    password, null, offeredProfile, udpHop, adaptiveUdpAddress, adaptiveUdpMtu);
             negotiated = false;
         }
         markReady(ctx);

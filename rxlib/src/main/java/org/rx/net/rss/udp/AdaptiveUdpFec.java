@@ -15,7 +15,7 @@ import java.util.function.LongSupplier;
  * Each callback takes ownership of the supplied reference. Call tick while the session is active
  * and close when the link is released. Peer validation and port selection belong to the caller.
  */
-public final class UdpDailyFec implements AutoCloseable {
+public final class AdaptiveUdpFec implements AutoCloseable {
     static final int DATA = 0, SHARD = 1, PARITY = 2, REPORT = 3;
     public static final int MAX_OVERHEAD = 8; // parity: type, first sequence, count, XOR of lengths
     public static final int WIRE_HEADROOM = 20;
@@ -55,15 +55,15 @@ public final class UdpDailyFec implements AutoCloseable {
     long sampledData, missingData, recoveredData, evictedGroups, unprotectedRxGroups;
     private boolean observing, hasReport, hadClosePair, closed;
 
-    public UdpDailyFec(ByteBufAllocator allocator) {
+    public AdaptiveUdpFec(ByteBufAllocator allocator) {
         this(allocator, System::nanoTime);
     }
 
-    public UdpDailyFec(ByteBufAllocator allocator, LongSupplier clock) {
+    public AdaptiveUdpFec(ByteBufAllocator allocator, LongSupplier clock) {
         this(allocator, clock, false, 0);
     }
 
-    public UdpDailyFec(ByteBufAllocator allocator, LongSupplier clock, boolean weak, int wireOverheadBytes) {
+    public AdaptiveUdpFec(ByteBufAllocator allocator, LongSupplier clock, boolean weak, int wireOverheadBytes) {
         if (wireOverheadBytes < 0 || wireOverheadBytes > 65507) throw new IllegalArgumentException("wire overhead");
         this.weak = weak;
         this.wireOverhead = wireOverheadBytes;

@@ -22,26 +22,57 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class DailyUdpWireTest {
+class RssDatagramHandlerTest {
+    @Test
+    void plainAesEnforcesExactBudgetWithoutFragmenting() {
+        InetSocketAddress peer = new InetSocketAddress("127.0.0.1", 19001);
+        int mtu = 256;
+        int limit = mtu - RssDatagramHandler.HEADER_BYTES - RssDatagramCipher.OVERHEAD;
+        RssDatagramHandler wire = new RssDatagramHandler(UUID.randomUUID().toString(), peer, peer, null,
+                System::nanoTime, RssDatagramHandler.AES, UUID.randomUUID(), new byte[32], mtu, true);
+        io.netty.channel.embedded.EmbeddedChannel channel = new io.netty.channel.embedded.EmbeddedChannel(wire);
+        try {
+            for (int length = limit - 1; length <= limit + 1; length++) {
+                ByteBuf input = channel.alloc().buffer(length).writeZero(length);
+                io.netty.channel.ChannelFuture write = channel.writeAndFlush(new DatagramPacket(input, peer));
+                DatagramPacket record = channel.readOutbound();
+                if (length > limit) {
+                    assertFalse(write.isSuccess());
+                    assertNull(record);
+                } else {
+                    assertTrue(write.isSuccess());
+                    try {
+                        assertEquals(length + RssDatagramHandler.HEADER_BYTES + RssDatagramCipher.OVERHEAD, record.content().readableBytes());
+                    } finally {
+                        record.release();
+                    }
+                }
+                assertEquals(0, input.refCnt());
+            }
+        } finally {
+            channel.finishAndReleaseAll();
+        }
+    }
+
     @Test
     void ipv4ChangesReturnPortAndKeepsTargetTuple() throws Exception {
-        verifyHops(InetAddress.getByName("127.0.0.1"), DailyUdpWire.FEC);
+        verifyHops(InetAddress.getByName("127.0.0.1"), RssDatagramHandler.FEC);
     }
 
     @Test
     void ipv6ChangesReturnPortAndKeepsTargetTuple() throws Exception {
-        verifyHops(InetAddress.getByName("::1"), DailyUdpWire.FEC);
+        verifyHops(InetAddress.getByName("::1"), RssDatagramHandler.FEC);
     }
 
     @Test
     void negotiatedCompressionShrinksBothHopRepliesAndPreservesRawTarget() throws Exception {
-        verifyHops(InetAddress.getByName("127.0.0.1"), DailyUdpWire.LZ4);
-        verifyHops(InetAddress.getByName("::1"), DailyUdpWire.LZ4 | DailyUdpWire.FEC);
+        verifyHops(InetAddress.getByName("127.0.0.1"), RssDatagramHandler.LZ4);
+        verifyHops(InetAddress.getByName("::1"), RssDatagramHandler.LZ4 | RssDatagramHandler.FEC);
     }
 
     @Test
     void authenticatedUdpCombinationsHopAndEcho() throws Exception {
-        org.junit.jupiter.api.Assumptions.assumeTrue(DailyUdpWire.hasCipherKey(), "test deployment key required");
+        org.junit.jupiter.api.Assumptions.assumeTrue(RssDatagramHandler.hasCipherKey(), "test deployment key required");
         for (int flags : new int[]{2, 3, 6, 7}) {
             verifyHops(InetAddress.getByName("127.0.0.1"), flags);
         }
@@ -49,11 +80,12 @@ class DailyUdpWireTest {
 
     @Test
     void gameAndWeakHopWithAuthenticatedFeedback() throws Exception {
-        verifyHops(InetAddress.getByName("127.0.0.1"), DailyUdpWire.GAME);
-        verifyHops(InetAddress.getByName("127.0.0.1"), DailyUdpWire.GAME | DailyUdpWire.FEC);
-        verifyHops(InetAddress.getByName("::1"), DailyUdpWire.WEAK | DailyUdpWire.FEC | DailyUdpWire.LZ4);
-        if (DailyUdpWire.hasCipherKey()) {
-            verifyHops(InetAddress.getByName("::1"), DailyUdpWire.GAME | DailyUdpWire.AES);
+        verifyHops(InetAddress.getByName("127.0.0.1"), RssDatagramHandler.GAME);
+        assertThrows(IllegalArgumentException.class, () -> RssDatagramHandler.server(UUID.randomUUID().toString(),
+                address -> false, RssDatagramHandler.GAME | RssDatagramHandler.FEC, null, new byte[32]));
+        verifyHops(InetAddress.getByName("::1"), RssDatagramHandler.WEAK | RssDatagramHandler.FEC | RssDatagramHandler.LZ4);
+        if (RssDatagramHandler.hasCipherKey()) {
+            verifyHops(InetAddress.getByName("::1"), RssDatagramHandler.GAME | RssDatagramHandler.AES);
         }
     }
 
@@ -62,7 +94,7 @@ class DailyUdpWireTest {
         InetAddress ip = InetAddress.getByName("127.0.0.1");
         SocksConfig config = new SocksConfig(new LocalAddress(UUID.randomUUID().toString()));
         config.setDailyUdpFeatures(31);
-        int flags = DailyUdpWire.WEAK | DailyUdpWire.FEC | DailyUdpWire.LZ4;
+        int flags = RssDatagramHandler.WEAK | RssDatagramHandler.FEC | RssDatagramHandler.LZ4;
         try (DatagramSocket target = new DatagramSocket(new InetSocketAddress(ip, 0));
              SocksProxyServer server = new SocksProxyServer(config)) {
             assertTrue(server.socksRpcCapabilities().has(SocksRpcCapabilities.SUPPORT_NO_HOP_UDP));
@@ -86,7 +118,7 @@ class DailyUdpWireTest {
                         ctx.fireChannelRead(msg);
                     }
                 });
-                ch.pipeline().addLast(new DailyUdpWire(result.getToken(), primary, primary, null, clock::get, flags,
+                ch.pipeline().addLast(new RssDatagramHandler(result.getToken(), primary, primary, null, clock::get, flags,
                         req.getClientSalt(), result.getAuthSecret()));
                 ch.pipeline().addLast(new SimpleChannelInboundHandler<DatagramPacket>() {
                     @Override protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket packet) {
@@ -98,7 +130,7 @@ class DailyUdpWireTest {
             }).bind(new InetSocketAddress(ip, 0)).sync().channel();
             try {
                 for (int i = 0; i < 4; i++) {
-                    clock.set(i * DailyUdpWire.HOP_NANOS);
+                    clock.set(i * RssDatagramHandler.HOP_NANOS);
                     int value = 1200 << 16 | i;
                     ByteBuf b = UdpManager.socks5Encode(client.alloc().buffer(1200).writeInt(value).writeZero(1196),
                             (InetSocketAddress) target.getLocalSocketAddress());
@@ -120,19 +152,19 @@ class DailyUdpWireTest {
     @Test
     void compressibleOversizedFitsSinglePacketWhileIncompressibleFragmentsWithinMtuAcrossProfiles() throws Exception {
         for (int flags : new int[]{
-                DailyUdpWire.FEC | DailyUdpWire.LZ4,
-                DailyUdpWire.WEAK | DailyUdpWire.FEC | DailyUdpWire.LZ4,
-                DailyUdpWire.GAME | DailyUdpWire.LZ4,
-                DailyUdpWire.GAME}) {
+                RssDatagramHandler.FEC | RssDatagramHandler.LZ4,
+                RssDatagramHandler.WEAK | RssDatagramHandler.FEC | RssDatagramHandler.LZ4,
+                RssDatagramHandler.GAME | RssDatagramHandler.LZ4,
+                RssDatagramHandler.GAME}) {
             verifyMtuAndFragmentation(InetAddress.getByName("127.0.0.1"), flags, 1300, 1400);
         }
-        verifyMtuAndFragmentation(InetAddress.getByName("::1"), DailyUdpWire.WEAK | DailyUdpWire.FEC | DailyUdpWire.LZ4, 1280, 1300);
+        verifyMtuAndFragmentation(InetAddress.getByName("::1"), RssDatagramHandler.WEAK | RssDatagramHandler.FEC | RssDatagramHandler.LZ4, 1280, 1300);
     }
 
     private void verifyMtuAndFragmentation(InetAddress ip, int flags, int clientMtu, int serverMtu) throws Exception {
         int effectiveMtu = Math.min(clientMtu, serverMtu);
-        boolean lz4 = (flags & DailyUdpWire.LZ4) != 0;
-        boolean profiled = (flags & (DailyUdpWire.GAME | DailyUdpWire.WEAK)) != 0;
+        boolean lz4 = (flags & RssDatagramHandler.LZ4) != 0;
+        boolean profiled = (flags & (RssDatagramHandler.GAME | RssDatagramHandler.WEAK)) != 0;
         SocksConfig config = new SocksConfig(new LocalAddress(UUID.randomUUID().toString()));
         config.setDailyUdpFeatures(31);
         config.setDailyUdpMtu(serverMtu);
@@ -169,7 +201,7 @@ class DailyUdpWireTest {
                         super.write(ctx, msg, promise);
                     }
                 });
-                ch.pipeline().addLast(DailyUdpWire.client(result.getToken(), primary, primary, result.getUdpMtu(),
+                ch.pipeline().addLast(RssDatagramHandler.client(result.getToken(), primary, primary, result.getUdpMtu(),
                         flags, req.getClientSalt(), result.getAuthSecret(), true));
                 ch.pipeline().addLast(new SimpleChannelInboundHandler<DatagramPacket>() {
                     @Override protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket packet) {
@@ -203,8 +235,8 @@ class DailyUdpWireTest {
 
                 // 3. MTU boundary (-1, ==, +1) and incompressible 1400B, 1472B, 4096B, 32768B payloads.
                 int headerLen = ip.getAddress().length == 16 ? 22 : 10;
-                int wireOverhead = 20 + (((flags & (DailyUdpWire.GAME | DailyUdpWire.WEAK)) != 0) ? 24 : 0)
-                        + (((flags & DailyUdpWire.FEC) != 0) ? 8 : 5);
+                int wireOverhead = 20 + (((flags & (RssDatagramHandler.GAME | RssDatagramHandler.WEAK)) != 0) ? 24 : 0)
+                        + (((flags & RssDatagramHandler.FEC) != 0) ? 8 : 5);
                 int boundaryRaw = effectiveMtu - wireOverhead - headerLen;
                 java.util.Random rnd = new java.util.Random(42L + flags);
                 for (int size : new int[]{boundaryRaw - 1, boundaryRaw, boundaryRaw + 1, 1400, 1472, 4096, 32768}) {
@@ -259,9 +291,9 @@ class DailyUdpWireTest {
         io.netty.buffer.UnpooledByteBufAllocator alloc = io.netty.buffer.UnpooledByteBufAllocator.DEFAULT;
 
         // 1. Out-of-order, duplicate, late-duplicate, tampered HMAC, and missing-fragment expiry.
-        try (DailyUdpFragmenter tx = new DailyUdpFragmenter(token, DailyUdpWire.FEC, false, secret,
+        try (RssDatagramFragmenter tx = new RssDatagramFragmenter(token, RssDatagramHandler.FEC, false, secret,
                 globalBudget, 64 * 1024L, timeoutNanos);
-             DailyUdpFragmenter rx = new DailyUdpFragmenter(token, DailyUdpWire.FEC, true, secret,
+             RssDatagramFragmenter rx = new RssDatagramFragmenter(token, RssDatagramHandler.FEC, true, secret,
                      globalBudget, 64 * 1024L, timeoutNanos)) {
             byte[] data = new byte[3000];
             new java.util.Random(7).nextBytes(data);
@@ -315,7 +347,7 @@ class DailyUdpWireTest {
             assertEquals(-1L, rx.nextDelayMillis(10_000L + timeoutNanos));
 
             // Global budget exhaustion rejects excess fragments and recovers after close.
-            try (DailyUdpFragmenter tinyRx = new DailyUdpFragmenter(token, DailyUdpWire.FEC, true, secret,
+            try (RssDatagramFragmenter tinyRx = new RssDatagramFragmenter(token, RssDatagramHandler.FEC, true, secret,
                     globalBudget, 1500L, timeoutNanos)) {
                 java.util.List<ByteBuf> over = new java.util.ArrayList<>();
                 tx.fragment(alloc, src, 1200, (f, last) -> over.add(f));
@@ -329,10 +361,10 @@ class DailyUdpWireTest {
 
         // 2. FEC recovers a lost fragment of a 4096B incompressible datagram.
         AtomicLong clock = new AtomicLong(1_000_000L);
-        try (UdpDailyFec fecTx = new UdpDailyFec(alloc, clock::get, false, 20);
-             UdpDailyFec fecRx = new UdpDailyFec(alloc, clock::get, false, 20);
-             DailyUdpFragmenter fragTx = new DailyUdpFragmenter(token, DailyUdpWire.FEC, false, secret);
-             DailyUdpFragmenter fragRx = new DailyUdpFragmenter(token, DailyUdpWire.FEC, true, secret)) {
+        try (AdaptiveUdpFec fecTx = new AdaptiveUdpFec(alloc, clock::get, false, 20);
+             AdaptiveUdpFec fecRx = new AdaptiveUdpFec(alloc, clock::get, false, 20);
+             RssDatagramFragmenter fragTx = new RssDatagramFragmenter(token, RssDatagramHandler.FEC, false, secret);
+             RssDatagramFragmenter fragRx = new RssDatagramFragmenter(token, RssDatagramHandler.FEC, true, secret)) {
             // Enable parity on fecTx via one loss report after warmup.
             ByteBuf warmup = io.netty.buffer.Unpooled.buffer(16).writeZero(16);
             try {
@@ -393,7 +425,7 @@ class DailyUdpWireTest {
         // 3. Legacy unnegotiated wire fails promise on oversized write instead of silently claiming delivery.
         InetSocketAddress peer = new InetSocketAddress("127.0.0.1", 19999);
         io.netty.channel.embedded.EmbeddedChannel legacy = new io.netty.channel.embedded.EmbeddedChannel(
-                DailyUdpWire.client(token.toString(), peer, peer, 1300, DailyUdpWire.FEC, null, null, false));
+                RssDatagramHandler.client(token.toString(), peer, peer, 1300, RssDatagramHandler.FEC, null, null, false));
         try {
             byte[] oversized = new byte[1400];
             io.netty.channel.ChannelFuture future = legacy.writeAndFlush(
@@ -417,12 +449,12 @@ class DailyUdpWireTest {
         //    Receive 32 incomplete ~1200B fragments across 8 sessions (missing final slice).
         //    Without compaction, 32 retained slices would pin >= 32 * 65536 = 2 MiB of direct memory.
         AtomicLong globalBudget = new AtomicLong();
-        DailyUdpFragmenter[] rxSessions = new DailyUdpFragmenter[8];
-        DailyUdpFragmenter[] txSessions = new DailyUdpFragmenter[8];
+        RssDatagramFragmenter[] rxSessions = new RssDatagramFragmenter[8];
+        RssDatagramFragmenter[] txSessions = new RssDatagramFragmenter[8];
         for (int i = 0; i < rxSessions.length; i++) {
-            txSessions[i] = new DailyUdpFragmenter(token, DailyUdpWire.FEC, false, secret,
+            txSessions[i] = new RssDatagramFragmenter(token, RssDatagramHandler.FEC, false, secret,
                     globalBudget, 24L * 1024L * 1024L, timeoutNanos);
-            rxSessions[i] = new DailyUdpFragmenter(token, DailyUdpWire.FEC, true, secret,
+            rxSessions[i] = new RssDatagramFragmenter(token, RssDatagramHandler.FEC, true, secret,
                     globalBudget, 24L * 1024L * 1024L, timeoutNanos);
         }
         java.util.concurrent.CountDownLatch receivedLatch = new java.util.concurrent.CountDownLatch(32);
@@ -436,7 +468,7 @@ class DailyUdpWireTest {
                     ByteBuf content = msg.content();
                     maxRecvBacking.accumulateAndGet(content.capacity(), Math::max);
                     int idx = rxIndex.getAndIncrement();
-                    DailyUdpFragmenter targetRx = rxSessions[idx / 4];
+                    RssDatagramFragmenter targetRx = rxSessions[idx / 4];
                     assertNull(targetRx.accept(content.retain(), ctx.alloc(), 1_000L));
                     receivedLatch.countDown();
                 }
@@ -472,7 +504,7 @@ class DailyUdpWireTest {
             // Verify every pending fragment was compacted (not pinning 65536B backing buffers):
             // 32 * 65536B would require > 2 MiB; pooled direct memory delta must remain far below 512 KiB
             // (a single pooled direct arena chunk is reserved once; active pinned buffers are ~48 KiB).
-            for (DailyUdpFragmenter rx : rxSessions) {
+            for (RssDatagramFragmenter rx : rxSessions) {
                 assertEquals(1, rx.activeAssemblies());
             }
             // Verify compact backing capacity directly on a 65536B parent buffer slice.
@@ -496,7 +528,7 @@ class DailyUdpWireTest {
             assertTrue(beforeUsed >= 0L);
 
             // Expire all sessions and verify active assemblies & global budget drop cleanly to 0.
-            for (DailyUdpFragmenter rx : rxSessions) {
+            for (RssDatagramFragmenter rx : rxSessions) {
                 rx.expire(2_000L + timeoutNanos);
                 assertEquals(0, rx.activeAssemblies());
                 assertEquals(0, rx.bufferedBytes());
@@ -504,16 +536,16 @@ class DailyUdpWireTest {
             assertEquals(0L, globalBudget.get());
         } finally {
             receiver.close().sync();
-            for (DailyUdpFragmenter rx : rxSessions) rx.close();
-            for (DailyUdpFragmenter tx : txSessions) tx.close();
+            for (RssDatagramFragmenter rx : rxSessions) rx.close();
+            for (RssDatagramFragmenter tx : txSessions) tx.close();
         }
 
         // 2. First-fragment budget rejection must NOT leave a dangling empty Assembly slot active,
         //    and allocation failure during compact copy or final reassembly must release slot & budget cleanly.
         AtomicLong tinyBudget = new AtomicLong();
-        try (DailyUdpFragmenter tx = new DailyUdpFragmenter(token, DailyUdpWire.FEC, false, secret,
+        try (RssDatagramFragmenter tx = new RssDatagramFragmenter(token, RssDatagramHandler.FEC, false, secret,
                 tinyBudget, 500L, timeoutNanos);
-             DailyUdpFragmenter rx = new DailyUdpFragmenter(token, DailyUdpWire.FEC, true, secret,
+             RssDatagramFragmenter rx = new RssDatagramFragmenter(token, RssDatagramHandler.FEC, true, secret,
                      tinyBudget, 500L, timeoutNanos)) {
             byte[] data = new byte[2500];
             new java.util.Random(55).nextBytes(data);
@@ -529,9 +561,9 @@ class DailyUdpWireTest {
 
         // 3. Simulated allocation failure during both fragment copy and final reassembly output.
         AtomicLong failBudget = new AtomicLong();
-        try (DailyUdpFragmenter tx = new DailyUdpFragmenter(token, DailyUdpWire.FEC, false, secret,
+        try (RssDatagramFragmenter tx = new RssDatagramFragmenter(token, RssDatagramHandler.FEC, false, secret,
                 failBudget, 1024 * 1024L, timeoutNanos);
-             DailyUdpFragmenter rx = new DailyUdpFragmenter(token, DailyUdpWire.FEC, true, secret,
+             RssDatagramFragmenter rx = new RssDatagramFragmenter(token, RssDatagramHandler.FEC, true, secret,
                      failBudget, 1024 * 1024L, timeoutNanos)) {
             byte[] data = new byte[2500];
             new java.util.Random(77).nextBytes(data);
@@ -599,7 +631,7 @@ class DailyUdpWireTest {
                             }
                         }
                     },
-                    DailyUdpWire.client(token.toString(), peer, peer, 1300, DailyUdpWire.FEC, null, secret, true));
+                    RssDatagramHandler.client(token.toString(), peer, peer, 1300, RssDatagramHandler.FEC, null, secret, true));
             try {
                 io.netty.channel.ChannelPromise promise = ch.newPromise();
                 promise.addListener(f -> completions.incrementAndGet());
@@ -622,10 +654,10 @@ class DailyUdpWireTest {
                     @Override public void write(ChannelHandlerContext ctx, Object msg, io.netty.channel.ChannelPromise promise) {
                         DatagramPacket pkt = (DatagramPacket) msg;
                         ByteBuf b = pkt.content();
-                        int fecType = b.readableBytes() > DailyUdpWire.HEADER_BYTES
-                                ? b.getUnsignedByte(b.readerIndex() + DailyUdpWire.HEADER_BYTES) : -1;
+                        int fecType = b.readableBytes() > RssDatagramHandler.HEADER_BYTES
+                                ? b.getUnsignedByte(b.readerIndex() + RssDatagramHandler.HEADER_BYTES) : -1;
                         pkt.release();
-                        if (fecType == UdpDailyFec.PARITY) {
+                        if (fecType == AdaptiveUdpFec.PARITY) {
                             parityFails.incrementAndGet();
                             promise.tryFailure(new java.io.IOException("parity-drop"));
                         } else {
@@ -634,7 +666,7 @@ class DailyUdpWireTest {
                         }
                     }
                 },
-                new DailyUdpWire(token.toString(), peer, peer, null, clock::get, DailyUdpWire.FEC, null, secret, 1300, true),
+                new RssDatagramHandler(token.toString(), peer, peer, null, clock::get, RssDatagramHandler.FEC, null, secret, 1300, true),
                 new ChannelInboundHandlerAdapter() {
                     @Override public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
                         // Swallow voidPromise failure notification for non-critical FEC parity packets.
@@ -668,11 +700,11 @@ class DailyUdpWireTest {
         // 3. GAME mode with copies=2: failing extra copies (copy >= 1) must NOT fail original promise,
         //    whereas failing an original copy (copy == 0) MUST fail the original promise!
         UUID salt = UUID.randomUUID();
-        DailyUdpWire gameWire = DailyUdpWire.client(token.toString(), peer, peer, 1300, DailyUdpWire.GAME, salt, secret, true);
+        RssDatagramHandler gameWire = RssDatagramHandler.client(token.toString(), peer, peer, 1300, RssDatagramHandler.GAME, salt, secret, true);
         try {
-            java.lang.reflect.Field gf = DailyUdpWire.class.getDeclaredField("game");
+            java.lang.reflect.Field gf = RssDatagramHandler.class.getDeclaredField("game");
             gf.setAccessible(true);
-            ((UdpGameRedundancy) gf.get(gameWire)).copies = 2;
+            ((AdaptiveUdpReplication) gf.get(gameWire)).copies = 2;
         } catch (ReflectiveOperationException e) {
             throw new AssertionError(e);
         }
@@ -683,7 +715,7 @@ class DailyUdpWireTest {
                         DatagramPacket pkt = (DatagramPacket) msg;
                         ByteBuf b = pkt.content();
                         // Game + MAC: header(20) + macSeq(8) + copyByte(1)
-                        int copyIdx = b.getUnsignedByte(b.readerIndex() + DailyUdpWire.HEADER_BYTES + 8);
+                        int copyIdx = b.getUnsignedByte(b.readerIndex() + RssDatagramHandler.HEADER_BYTES + 8);
                         pkt.release();
                         if (copyIdx > 0) {
                             extraFails.incrementAndGet();
@@ -721,7 +753,7 @@ class DailyUdpWireTest {
                         promise.trySuccess();
                     }
                 },
-                DailyUdpWire.client(token.toString(), peer, peer, 1300, DailyUdpWire.FEC, null, secret, true));
+                RssDatagramHandler.client(token.toString(), peer, peer, 1300, RssDatagramHandler.FEC, null, secret, true));
         try {
             io.netty.channel.ChannelPromise promise = syncFailCh.newPromise();
             syncFailCh.writeAndFlush(new DatagramPacket(io.netty.buffer.Unpooled.wrappedBuffer(oversized), peer), promise);
@@ -734,7 +766,8 @@ class DailyUdpWireTest {
     }
 
     private void verifyHops(InetAddress ip, int flags) throws Exception {
-        boolean lz4 = (flags & DailyUdpWire.LZ4) != 0;
+        boolean plainAes = flags == RssDatagramHandler.AES;
+        boolean lz4 = (flags & RssDatagramHandler.LZ4) != 0;
         SocksConfig config = new SocksConfig(new LocalAddress(UUID.randomUUID().toString()));
         config.setDailyUdpFeatures(31);
         String redirectedRange = System.getenv("RSS_TEST_REDIRECTED_RANGE");
@@ -748,12 +781,13 @@ class DailyUdpWireTest {
             UdpRelayGroupOpenRequest req = new UdpRelayGroupOpenRequest();
             req.setMaxRelayCount(2);
             req.setDailyFeatures(flags);
-            if ((flags & (DailyUdpWire.GAME | DailyUdpWire.WEAK)) != 0) req.setProfileVersion(1);
+            if ((flags & (RssDatagramHandler.GAME | RssDatagramHandler.WEAK)) != 0) req.setProfileVersion(1);
             req.setClientSalt(UUID.randomUUID());
             UdpRelayGroupOpenResult result = server.openUdpRelayGroup(req, SocksRpcContract.rpcToken());
             assertTrue(result.isSuccess(), result.getErrorCode());
             InetSocketAddress primary = new InetSocketAddress(ip, result.getRelays().get(0).getRelayAddress().getPort());
-            InetSocketAddress alias = new InetSocketAddress(ip, result.getRelays().get(1).getRelayAddress().getPort());
+            assertEquals(plainAes ? 1 : 2, result.getRelays().size());
+            InetSocketAddress alias = plainAes ? primary : new InetSocketAddress(ip, result.getRelays().get(1).getRelayAddress().getPort());
             AtomicLong clock = new AtomicLong();
             BlockingQueue<Integer> wirePorts = new LinkedBlockingQueue<>(), delivered = new LinkedBlockingQueue<>();
             BlockingQueue<Integer> wireSizes = new LinkedBlockingQueue<>();
@@ -763,7 +797,7 @@ class DailyUdpWireTest {
                     @Override public void channelRead(ChannelHandlerContext ctx, Object msg) {
                         DatagramPacket pkt = (DatagramPacket) msg;
                         int hop = pkt.content().getInt(pkt.content().readerIndex() + 16);
-                        if (hop > generation) {
+                        if (plainAes || hop > generation) {
                             generation = hop;
                             wirePorts.add(pkt.sender().getPort());
                             wireSizes.add(pkt.content().readableBytes());
@@ -771,8 +805,8 @@ class DailyUdpWireTest {
                         ctx.fireChannelRead(msg);
                     }
                 });
-                ch.pipeline().addLast(new DailyUdpWire(result.getToken(), primary, alias, null, clock::get, flags, req.getClientSalt(),
-                        (flags & DailyUdpWire.AES) != 0 ? DailyUdpCipher.configuredKey() : result.getAuthSecret()));
+                ch.pipeline().addLast(new RssDatagramHandler(result.getToken(), primary, alias, null, clock::get, flags, req.getClientSalt(),
+                        (flags & RssDatagramHandler.AES) != 0 ? RssDatagramCipher.configuredKey() : result.getAuthSecret()));
                 ch.pipeline().addLast(new SimpleChannelInboundHandler<DatagramPacket>() {
                     @Override protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket packet) {
                         ByteBuf b = packet.content();
@@ -783,7 +817,7 @@ class DailyUdpWireTest {
             }).bind(new InetSocketAddress(ip, 0)).sync().channel();
             try {
                 for (int i = 0; i < 3; i++) {
-                    clock.set(i * DailyUdpWire.HOP_NANOS);
+                    clock.set(i * RssDatagramHandler.HOP_NANOS);
                     int value = 1200 << 16 | i; // A raw target payload beginning with a plausible LZ4 length.
                     ByteBuf b = UdpManager.socks5Encode(client.alloc().buffer(1200).writeInt(value).writeZero(1196),
                             (InetSocketAddress) target.getLocalSocketAddress());

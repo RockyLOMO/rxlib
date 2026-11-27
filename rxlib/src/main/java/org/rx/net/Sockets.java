@@ -956,6 +956,7 @@ public final class Sockets {
         // 支持LengthField?
         boolean g = flags.has(TransportFlags.GFW);
         boolean rss = config instanceof SocksConfig && ((SocksConfig) config).getRequiredTcpCipherPorts() != null;
+        if (rss) ((SocksConfig) config).getRssEgressCodec().install(pipeline);
         if (!g && !rss) {
             if (flags.has(TransportFlags.COMPRESS_READ)) {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
@@ -988,7 +989,7 @@ public final class Sockets {
         }
 
         if (rss) {
-            pipeline.addLast(RssHopTls.serverSelector((SocksConfig) config));
+            pipeline.addLast(new RssTcpCodecSelector((SocksConfig) config));
         } else if (g) {
             if (flags.has(TransportFlags.COMPRESS_READ)) {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
@@ -1016,10 +1017,9 @@ public final class Sockets {
 
         ZlibWrapper zlib = ZlibWrapper.ZLIB;
         ChannelPipeline pipeline = channel.pipeline();
+        if (config instanceof SocksConfig) ((SocksConfig) config).getRssEgressCodec().install(pipeline);
         if (flags.has(TransportFlags.RSS_PSK_AES)) {
             pipeline.addLast(RssHopAes.clientHandler());
-        } else if (flags.has(TransportFlags.RSS_AUTHENTICATED_TLS)) {
-            pipeline.addLast(RssHopTls.clientHandler(channel, ((SocksConfig) config).getRssTlsContext(), SNISpoofing));
         } else if (flags.has(TransportFlags.TLS)) {
             SslContext tls = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
             if (SNISpoofing == null) {
@@ -1071,6 +1071,10 @@ public final class Sockets {
         DiagnosticMetrics.installNetIoHandler(pipeline, DiagnosticMetrics.netComponent(config,
                 config instanceof SocksConfig ? DiagnosticMetrics.NET_SOCKS_CLIENT : DiagnosticMetrics.NET_TRANSPORT_CLIENT));
         dumpPipeline("client", channel);
+        if (config.getSocksCarrierProxy() != null) {
+            org.rx.net.socks.RssSocksCarrier.installTcp(channel, config.getSocksCarrierProxy(), SNISpoofing, config.getConnectTimeoutMillis(),
+                    config instanceof SocksConfig ? ((SocksConfig) config).getSocksCarrierOuterMtu() : 0);
+        }
         return channel;
     }
 

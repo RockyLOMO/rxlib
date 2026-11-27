@@ -16,9 +16,9 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Negotiated, authenticated best-effort UDP fragmentation and reassembly for oversized RSS datagrams.
- * Event-loop confined per {@link DailyUdpWire} association; shares a process-wide byte budget.
+ * Event-loop confined per {@link RssDatagramHandler} association; shares a process-wide byte budget.
  */
-final class DailyUdpFragmenter implements AutoCloseable {
+final class RssDatagramFragmenter implements AutoCloseable {
     static final int MAX_DATAGRAM_BYTES = 65507;
     static final int FRAG_MAGIC = 1;
     static final int PLAIN_HEADER_BYTES = 10; // magic(2) + msgId(4) + index(1) + count(1) + totalLen(2)
@@ -55,12 +55,12 @@ final class DailyUdpFragmenter implements AutoCloseable {
     long txDatagrams, txFragments;
     long rxReassembled, rxTimeouts, rxDuplicates, rxInvalid, rxBudgetRejected;
 
-    DailyUdpFragmenter(UUID token, int features, boolean server, byte[] fragAuthSecret) {
+    RssDatagramFragmenter(UUID token, int features, boolean server, byte[] fragAuthSecret) {
         this(token, features, server, fragAuthSecret, GLOBAL_BUFFERED_BYTES,
                 DEFAULT_GLOBAL_BUDGET_BYTES, TimeUnit.MILLISECONDS.toNanos(DEFAULT_TIMEOUT_MILLIS));
     }
 
-    DailyUdpFragmenter(UUID token, int features, boolean server, byte[] fragAuthSecret,
+    RssDatagramFragmenter(UUID token, int features, boolean server, byte[] fragAuthSecret,
                        AtomicLong globalBudget, long maxGlobalBytes, long timeoutNanos) {
         this.globalBudget = globalBudget;
         this.maxGlobalBytes = maxGlobalBytes;
@@ -155,9 +155,9 @@ final class DailyUdpFragmenter implements AutoCloseable {
         for (int idx = 0; idx < count; idx++) {
             int sliceLen = Math.min(maxSlice, remaining);
             int frameLen = overheadBytes() + sliceLen;
-            ByteBuf frag = alloc.ioBuffer(DailyUdpWire.HEADER_BYTES + frameLen,
-                    DailyUdpWire.HEADER_BYTES + frameLen + 16);
-            frag.setIndex(DailyUdpWire.HEADER_BYTES, DailyUdpWire.HEADER_BYTES);
+            ByteBuf frag = alloc.ioBuffer(RssDatagramHandler.HEADER_BYTES + frameLen,
+                    RssDatagramHandler.HEADER_BYTES + frameLen + 16);
+            frag.setIndex(RssDatagramHandler.HEADER_BYTES, RssDatagramHandler.HEADER_BYTES);
             boolean handedOff = false;
             try {
                 int bodyStart = frag.writerIndex();

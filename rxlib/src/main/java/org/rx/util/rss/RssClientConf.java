@@ -27,27 +27,51 @@ public class RssClientConf {
                     if (obj == null) {
                         return null;
                     }
+                    for (String field : obj.keySet()) {
+                        switch (field) {
+                            case "id": case "weight": case "type": case "endpoint": case "rssEndpoint":
+                            case "rpcEndpoint": case "tcpClient": case "udpClient": case "adaptiveUdpClient":
+                            case "egress":
+                                break;
+                            default:
+                                throw new IllegalArgumentException("Unknown RSS upstream field: " + field);
+                        }
+                    }
                     SocksServer server = new SocksServer();
+                    String type = obj.getString("type");
+                    if (type != null) {
+                        server.type = UpstreamType.valueOf(type.trim().toUpperCase(java.util.Locale.ROOT));
+                    }
+                    server.rssEndpoint = readSocksServerEndpoint(obj.get("rssEndpoint"));
+                    server.rpcEndpoint = readSocketAddress(obj.get("rpcEndpoint"));
                     server.setId(obj.getString("id"));
                     server.setWeight(obj.getInteger("weight"));
                     Object endpoint = obj.get("endpoint");
                     server.setEndpoint(readSocksServerEndpoint(endpoint));
-                    server.setUdp2raw(Boolean.TRUE.equals(obj.getBoolean("udp2raw")));
                     server.setTcpClient(readSocksServerEndpoint(obj.get("tcpClient")));
                     server.setUdpClient(readSocketAddress(obj.get("udpClient")));
                     server.setAdaptiveUdpClient(readSocketAddress(obj.get("adaptiveUdpClient")));
+                    server.setEgress(readEgress(obj.get("egress")));
                     return server;
                 });
     }
 
     public int logFlags;
+    public Egress egress = new Egress();
+
+    public static class Egress {
+        public String tcpCodec = "none";
+        public String udpCodec = "none";
+    }
 
     // socks
     public List<ShadowUser> shadowUsers;
     public int[] tcpCipherPorts = RssTransport.cipherPorts();
-    public int[] tcpAlreadyEncryptedPorts = RssTransport.alreadyEncryptedPorts();
+    @JSONField(alternateNames = {"tcpAlreadyEncryptedPorts"})
+    public int[] tcpCodecBypassPorts = RssTransport.alreadyEncryptedPorts();
     public int[] udpCipherPorts = RssTransport.udpCipherPorts();
-    public int[] udpAlreadyEncryptedPorts = {443, 853};
+    @JSONField(alternateNames = {"udpAlreadyEncryptedPorts"})
+    public int[] udpCodecBypassPorts = {443, 853};
     public UserRule defaultRoute;
     @JSONField(serialize = false, deserialize = false)
     @ToString.Exclude
@@ -60,7 +84,7 @@ public class RssClientConf {
     // Close TCP relays only when neither direction has made progress.
     public int tcpTimeoutSeconds = 60 * 2;
     public int udpTimeoutSeconds = 60 * 10;
-    // 全局可选 UDP payload MTU 上限（字节，不含 IP/UDP 头）；null 表示 plain=0（透传）、daily/weak/game/udp2raw=1300。
+    // 全局可选 UDP payload MTU 上限（字节，不含 IP/UDP 头）；null 表示 plain=0（透传）、daily/weak/game=1300。
     public Integer udpMtu;
     public int rpcMinSize = 2;
     public int rpcMaxSize = 6;
@@ -127,7 +151,7 @@ public class RssClientConf {
         if (endpoint instanceof Map) {
             return new JSONObject((Map<String, Object>) endpoint).to(AuthenticEndpoint.class);
         }
-        return null;
+        throw new IllegalArgumentException("Invalid upstream endpoint");
     }
 
     private static InetSocketAddress readSocketAddress(Object endpoint) {
@@ -140,26 +164,63 @@ public class RssClientConf {
         if (endpoint instanceof String) {
             return Sockets.parseEndpoint((String) endpoint);
         }
-        return null;
+        throw new IllegalArgumentException("Invalid upstream socket address");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Egress readEgress(Object raw) {
+        if (raw == null) {
+            return null;
+        }
+        if (raw instanceof Egress) {
+            return (Egress) raw;
+        }
+        if (!(raw instanceof Map)) {
+            throw new IllegalArgumentException("Invalid RSS egress configuration");
+        }
+        JSONObject obj = raw instanceof JSONObject ? (JSONObject) raw : new JSONObject((Map<String, Object>) raw);
+        for (String field : obj.keySet()) {
+            if (!"tcpCodec".equals(field) && !"udpCodec".equals(field)) {
+                throw new IllegalArgumentException("Unknown RSS egress field: " + field);
+            }
+        }
+        Egress egress = new Egress();
+        String tcpCodec = obj.getString("tcpCodec");
+        if (tcpCodec != null) {
+            egress.tcpCodec = tcpCodec;
+        }
+        String udpCodec = obj.getString("udpCodec");
+        if (udpCodec != null) {
+            egress.udpCodec = udpCodec;
+        }
+        return egress;
+    }
+
+    public enum UpstreamType {
+        RSS, SOCKS5, UDPCLIENT
     }
 
     @Getter
     @Setter
-    @ToString
+    @ToString(onlyExplicitlyIncluded = true)
     public static class SocksServer implements Serializable {
         private static final long serialVersionUID = 6049607274827395471L;
 
+        @ToString.Include
         public String id;
+        @ToString.Include
+        public UpstreamType type = UpstreamType.RSS;
+        public AuthenticEndpoint rssEndpoint;
+        public InetSocketAddress rpcEndpoint;
         public Integer weight;
         public AuthenticEndpoint endpoint;
-        // 标记该上游作为 udp2raw 入口上游。
-        public boolean udp2raw;
-        // TCP 走外部固定隧道时仅覆盖 endpoint 地址；账号密码默认沿用当前 socksServer。
         public AuthenticEndpoint tcpClient;
-        // UDP 走 udp2raw/hysteria 等客户端时的固定 UDP 目标。
+        // 固定外部 UDP client 的普通业务 UDP 数据面映射目标。
         public InetSocketAddress udpClient;
-        // Adaptive TCP/UDP (udpHop=false) 走外部单口 UDP 隧道（如 udp2raw）时的固定 UDP 目标。
+        // 固定外部 UDP client 的 TCP adaptive UDP (udpHop=false) 数据面映射目标。
         public InetSocketAddress adaptiveUdpClient;
+        // 可选单路由物理 TCP 出口包装策略（默认继承顶层 egress，标准第三方 SOCKS5 仅允许 none）。
+        public Egress egress;
 
         public SocksServer() {
         }
