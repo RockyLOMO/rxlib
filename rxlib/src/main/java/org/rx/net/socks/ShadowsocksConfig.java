@@ -5,8 +5,8 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
+import org.rx.net.BandwidthLimiter;
 import org.rx.net.SocketConfig;
-import java.net.InetSocketAddress;
 import org.rx.net.socks.encryption.ICrypto;
 
 import java.net.InetSocketAddress;
@@ -32,6 +32,9 @@ public class ShadowsocksConfig extends SocketConfig {
     private int udpOutboundPoolMaxSize = 8192;
     private int udpOutboundPoolWarnSize = 4096;
     private int udpOutboundPoolMaxPerSource = 256;
+    /** Optional per-user/listener shared bidirectional bandwidth limiter. Null = unlimited fast path. */
+    @ToString.Exclude
+    private volatile transient BandwidthLimiter bandwidthLimiter;
 
     public void setUdpOutboundPoolMaxSize(int udpOutboundPoolMaxSize) {
         this.udpOutboundPoolMaxSize = Math.max(0, udpOutboundPoolMaxSize);

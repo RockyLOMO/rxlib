@@ -1670,6 +1670,12 @@ public final class Sockets {
         return "gt1500";
     }
 
+    public static final int READ_PAUSE_BACKPRESSURE = 1;
+    public static final int READ_PAUSE_CONNECT_PENDING = 1 << 1;
+    public static final int READ_PAUSE_BANDWIDTH = 1 << 2;
+    private static final AttributeKey<java.util.concurrent.atomic.AtomicInteger> ATTR_READ_PAUSE_MASK =
+            AttributeKey.valueOf("rxReadPauseMask");
+
     /**
      * 优雅暂停 read（避免重复调用 setAutoRead）
      */
@@ -1690,6 +1696,77 @@ public final class Sockets {
             // 如果之前有积压的 read，可以立即拉数据，减少一个 EventLoop 轮次延迟
             ch.read();
         }
+    }
+
+    /**
+     * 按位标记暂停读取原因；多个原因并存时，仅当全部原因清除后才恢复 autoRead。
+     */
+    public static void pauseRead(Channel ch, int reasonMask) {
+        if (ch == null || reasonMask == 0) {
+            return;
+        }
+        java.util.concurrent.atomic.AtomicInteger holder = ch.attr(ATTR_READ_PAUSE_MASK).get();
+        if (holder == null) {
+            java.util.concurrent.atomic.AtomicInteger created = new java.util.concurrent.atomic.AtomicInteger(reasonMask);
+            java.util.concurrent.atomic.AtomicInteger existing = ch.attr(ATTR_READ_PAUSE_MASK).setIfAbsent(created);
+            if (existing != null) {
+                existing.getAndUpdate(m -> m | reasonMask);
+            }
+        } else {
+            holder.getAndUpdate(m -> m | reasonMask);
+        }
+        applyAutoRead(ch, false);
+    }
+
+    /**
+     * 清除指定暂停原因；若已无其他暂停原因且通道仍打开，则恢复 autoRead。
+     */
+    public static void resumeRead(Channel ch, int reasonMask) {
+        if (ch == null || reasonMask == 0) {
+            return;
+        }
+        java.util.concurrent.atomic.AtomicInteger holder = ch.attr(ATTR_READ_PAUSE_MASK).get();
+        int remaining = holder == null ? 0 : holder.updateAndGet(m -> m & ~reasonMask);
+        if (remaining == 0 && ch.isOpen()) {
+            applyAutoRead(ch, true);
+        }
+    }
+
+    public static int readPauseMask(Channel ch) {
+        if (ch == null) {
+            return 0;
+        }
+        java.util.concurrent.atomic.AtomicInteger holder = ch.attr(ATTR_READ_PAUSE_MASK).get();
+        return holder == null ? 0 : holder.get();
+    }
+
+    public static boolean isReadPaused(Channel ch) {
+        return readPauseMask(ch) != 0;
+    }
+
+    private static void applyAutoRead(Channel ch, boolean enable) {
+        if (!ch.isRegistered() || ch.eventLoop().inEventLoop()) {
+            if (enable) {
+                if (readPauseMask(ch) == 0 && ch.isOpen()) {
+                    enableAutoRead(ch);
+                }
+            } else {
+                disableAutoRead(ch);
+            }
+            return;
+        }
+        ch.eventLoop().execute(() -> {
+            if (!ch.isOpen()) {
+                return;
+            }
+            if (enable) {
+                if (readPauseMask(ch) == 0) {
+                    enableAutoRead(ch);
+                }
+            } else if (readPauseMask(ch) != 0) {
+                disableAutoRead(ch);
+            }
+        });
     }
 
     // ctx.channel()会为null

@@ -327,7 +327,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
     private void awaitFakeEndpointRegistration(Channel inbound, Socks5AddressType dstAddrType, SocksContext e,
             short[] reconnectionAttempts, CompletableFuture<Boolean> registration) {
         AtomicBoolean resumed = new AtomicBoolean();
-        Sockets.disableAutoRead(inbound);
+        Sockets.pauseRead(inbound, Sockets.READ_PAUSE_CONNECT_PENDING);
         ScheduledFuture<?> timeoutTask = inbound.eventLoop().schedule(() -> {
             if (!resumed.compareAndSet(false, true)) {
                 return;
@@ -374,7 +374,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
             Sockets.closeOnFlushed(inbound);
         } finally {
             if (inbound.isOpen()) {
-                Sockets.enableAutoRead(inbound);
+                Sockets.resumeRead(inbound, Sockets.READ_PAUSE_CONNECT_PENDING);
             }
         }
     }

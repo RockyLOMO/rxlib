@@ -115,6 +115,9 @@ public class RssAuthenticator implements Authenticator {
         if (Strings.isEmpty(shadowUser.getUsername())) {
             throw new InvalidException("ShadowUser {} username is empty", shadowUser);
         }
+        if (shadowUser.getBandwidth() != null && !shadowUser.getBandwidth().isValid()) {
+            throw new InvalidException("ShadowUser {} invalid bandwidth {}", shadowUser.getUsername(), shadowUser.getBandwidth());
+        }
     }
 
     @Override

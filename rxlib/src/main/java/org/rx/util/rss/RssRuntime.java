@@ -8,6 +8,8 @@ import org.rx.core.Strings;
 import org.rx.core.Tasks;
 import org.rx.exception.InvalidException;
 import org.rx.net.AuthenticEndpoint;
+import org.rx.net.BandwidthLimitConfig;
+import org.rx.net.BandwidthLimiter;
 import org.rx.net.Sockets;
 import org.rx.net.dns.DnsResolveInterceptor;
 import org.rx.net.dns.DnsServer;
@@ -49,6 +51,7 @@ final class RssRuntime implements AutoCloseable {
     final RssAuthenticator authenticator;
     final RssRpcApp app;
     final Map<String, ShadowServerRef> shadowServers = new LinkedHashMap<>();
+    final Map<String, BandwidthLimiter> userBandwidthLimiters = new ConcurrentHashMap<>();
     final CopyOnWriteArrayList<UpstreamSnapshot> closingUpstreamSnapshots = new CopyOnWriteArrayList<>();
     interface ShadowBindHook {
         void beforeBind(ShadowUser user) throws Exception;
@@ -333,6 +336,7 @@ final class RssRuntime implements AutoCloseable {
             closeShadowServerQuietly(ref);
         }
         shadowServers.clear();
+        userBandwidthLimiters.clear();
         closeInServerQuietly(inServer);
         closeNameserverQuietly(nameserverRef);
         closeDnsServerQuietly(dnsSvr);
@@ -549,8 +553,10 @@ final class RssRuntime implements AutoCloseable {
                 String username = usr.getUsername();
                 RssRoutePlan routePlan = RssRoutePlan.viaLocal(resolveShadowEndpoint(inSvrAddress, usr.getUsername()));
                 ShadowServerRef oldRef = shadowServers.get(username);
+                BandwidthLimitConfig nextBw = usr.getBandwidth() == null ? null : usr.getBandwidth().copy();
                 if (oldRef != null && oldRef.matches(usr, routePlan.signature, forceRebuild)) {
                     plan.matcherUpdates.add(new ShadowMatcherUpdate(oldRef, usr, conf));
+                    plan.bandwidthUpdates.add(new ShadowBandwidthUpdate(oldRef, username, nextBw, null));
                     plan.next.put(username, oldRef);
                     continue;
                 }
@@ -559,17 +565,23 @@ final class RssRuntime implements AutoCloseable {
                     samePortRestarts.add(new ShadowRestart(usr, oldRef, routePlan));
                     continue;
                 }
-                ShadowServerRef ref = createShadowServer(conf, usr, routePlan);
+                BandwidthLimiter prepared = prepareShadowBandwidthLimiter(username, nextBw);
+                ShadowServerRef ref = createShadowServer(conf, usr, routePlan, false, prepared);
                 plan.created.add(ref);
+                plan.bandwidthUpdates.add(new ShadowBandwidthUpdate(ref, username, nextBw, prepared));
                 plan.next.put(username, ref);
             }
             for (ShadowRestart restart : samePortRestarts) {
                 // 同端口密码变化无法双实例并行绑定，只能接受短暂不可用窗口。
                 closeShadowServerQuietly(restart.oldRef);
                 plan.stopped.add(restart);
-                ShadowServerRef ref = createShadowServer(conf, restart.user, restart.routePlan);
+                String username = restart.user.getUsername();
+                BandwidthLimitConfig nextBw = restart.user.getBandwidth() == null ? null : restart.user.getBandwidth().copy();
+                BandwidthLimiter prepared = prepareShadowBandwidthLimiter(username, nextBw);
+                ShadowServerRef ref = createShadowServer(conf, restart.user, restart.routePlan, false, prepared);
                 plan.created.add(ref);
-                plan.next.put(restart.user.getUsername(), ref);
+                plan.bandwidthUpdates.add(new ShadowBandwidthUpdate(ref, username, nextBw, prepared));
+                plan.next.put(username, ref);
             }
             return plan;
         } catch (Throwable e) {
@@ -595,12 +607,31 @@ final class RssRuntime implements AutoCloseable {
         for (ShadowMatcherUpdate update : plan.matcherUpdates) {
             update.ref.updateRouteMatcher(update.user, update.conf);
         }
+        for (ShadowBandwidthUpdate update : plan.bandwidthUpdates) {
+            boolean enabled = update.nextConfig != null && update.nextConfig.isEnabled();
+            BandwidthLimiter limiter = userBandwidthLimiters.get(update.username);
+            if (limiter == null) {
+                if (enabled) {
+                    limiter = update.preparedLimiter != null
+                            ? update.preparedLimiter
+                            : new BandwidthLimiter(update.username, update.nextConfig);
+                    userBandwidthLimiters.put(update.username, limiter);
+                }
+            } else {
+                limiter.configure(enabled ? update.nextConfig : BandwidthLimitConfig.unlimited());
+            }
+            update.ref.bandwidth = update.nextConfig;
+            update.ref.server.getConfig().setBandwidthLimiter(enabled ? limiter : null);
+        }
         List<ShadowServerRef> obsolete = new ArrayList<>();
         for (Map.Entry<String, ShadowServerRef> entry : shadowServers.entrySet()) {
             ShadowServerRef oldRef = entry.getValue();
             ShadowServerRef nextRef = plan.next.get(entry.getKey());
             if (oldRef != nextRef) {
                 obsolete.add(oldRef);
+            }
+            if (nextRef == null) {
+                userBandwidthLimiters.remove(entry.getKey());
             }
         }
         shadowServers.clear();
@@ -629,10 +660,12 @@ final class RssRuntime implements AutoCloseable {
             user.setSsPwd(oldRef.ssPwd);
             user.setSsCipher(oldRef.ssCipher);
             user.setRouteMatcher(oldRef.routeMatcher);
+            user.setBandwidth(oldRef.bandwidth == null ? null : oldRef.bandwidth.copy());
             UserRule route = new UserRule();
             route.setSrcSteeringTTL(oldRef.srcSteeringTTL);
             user.setRoute(route);
-            ShadowServerRef restored = createShadowServer(activeConf, user, oldRef.routePlan, true);
+            BandwidthLimiter existing = userBandwidthLimiters.get(oldRef.username);
+            ShadowServerRef restored = createShadowServer(activeConf, user, oldRef.routePlan, true, existing);
             shadowServers.put(restored.username, restored);
             log.warn("restored shadow server after reload failure user={} port={} cipher={}",
                     oldRef.username, oldRef.ssPort, oldRef.ssCipher);
@@ -653,11 +686,23 @@ final class RssRuntime implements AutoCloseable {
         shadowServers.putAll(next);
     }
 
-    private ShadowServerRef createShadowServer(RssClientConf conf, ShadowUser usr, RssRoutePlan routePlan) {
-        return createShadowServer(conf, usr, routePlan, false);
+    private BandwidthLimiter prepareShadowBandwidthLimiter(String username, BandwidthLimitConfig config) {
+        BandwidthLimiter existing = userBandwidthLimiters.get(username);
+        if (existing != null) {
+            return existing;
+        }
+        if (config != null && config.isEnabled()) {
+            return new BandwidthLimiter(username, config);
+        }
+        return null;
     }
 
-    private ShadowServerRef createShadowServer(RssClientConf conf, ShadowUser usr, RssRoutePlan routePlan, boolean restoring) {
+    private ShadowServerRef createShadowServer(RssClientConf conf, ShadowUser usr, RssRoutePlan routePlan) {
+        return createShadowServer(conf, usr, routePlan, false, null);
+    }
+
+    private ShadowServerRef createShadowServer(RssClientConf conf, ShadowUser usr, RssRoutePlan routePlan,
+                                               boolean restoring, BandwidthLimiter bandwidthLimiter) {
         ShadowBindHook hook = shadowServerBindHook;
         if (!restoring && hook != null) {
             try {
@@ -670,12 +715,16 @@ final class RssRuntime implements AutoCloseable {
         ShadowsocksConfig ssConf = new ShadowsocksConfig(Sockets.newAnyEndpoint(usr.getSsPort()),
                 cipher, usr.getSsPwd());
         configureShadowConfig(conf, ssConf);
+        if (usr.getBandwidth() != null && usr.getBandwidth().isEnabled() && bandwidthLimiter != null) {
+            ssConf.setBandwidthLimiter(bandwidthLimiter);
+        }
         enableShadowIngressReusePort(ssConf);
         ShadowsocksServer ssSvr = new ShadowsocksServer(ssConf);
         SocksConfig toInConf = new SocksConfig();
         toInConf.setOptimalSettings(RssSupport.IN_OPS);
         ShadowServerRef ref = new ShadowServerRef(usr.getUsername(), usr.getSsPort(), usr.getSsPwd(), cipher,
-                routePlan, ssSvr, usr.getRouteMatcher(), sourceSteeringTtl(usr, conf));
+                routePlan, ssSvr, usr.getRouteMatcher(), sourceSteeringTtl(usr, conf),
+                usr.getBandwidth() == null ? null : usr.getBandwidth().copy());
         ssSvr.onTcpRoute.replace((s, e) -> {
             InetSocketAddress dstEp = e.getFirstDestination();
             RssClientConf currentConf = rssConf;
@@ -819,9 +868,11 @@ final class RssRuntime implements AutoCloseable {
         final ShadowsocksServer server;
         volatile UserRuleMatcher routeMatcher;
         volatile int srcSteeringTTL;
+        volatile BandwidthLimitConfig bandwidth;
 
         ShadowServerRef(String username, int ssPort, String ssPwd, String ssCipher, RssRoutePlan routePlan,
-                        ShadowsocksServer server, UserRuleMatcher routeMatcher, int srcSteeringTTL) {
+                        ShadowsocksServer server, UserRuleMatcher routeMatcher, int srcSteeringTTL,
+                        BandwidthLimitConfig bandwidth) {
             this.username = username;
             this.ssPort = ssPort;
             this.ssPwd = ssPwd;
@@ -830,6 +881,7 @@ final class RssRuntime implements AutoCloseable {
             this.server = server;
             this.routeMatcher = routeMatcher;
             this.srcSteeringTTL = Math.max(0, srcSteeringTTL);
+            this.bandwidth = bandwidth;
         }
 
         void updateRouteMatcher(ShadowUser user, RssClientConf conf) {
@@ -871,11 +923,27 @@ final class RssRuntime implements AutoCloseable {
         }
     }
 
+    static final class ShadowBandwidthUpdate {
+        final ShadowServerRef ref;
+        final String username;
+        final BandwidthLimitConfig nextConfig;
+        final BandwidthLimiter preparedLimiter;
+
+        ShadowBandwidthUpdate(ShadowServerRef ref, String username, BandwidthLimitConfig nextConfig,
+                              BandwidthLimiter preparedLimiter) {
+            this.ref = ref;
+            this.username = username;
+            this.nextConfig = nextConfig;
+            this.preparedLimiter = preparedLimiter;
+        }
+    }
+
     static final class ShadowServersPlan {
         final Map<String, ShadowServerRef> next = new LinkedHashMap<>();
         final List<ShadowServerRef> created = new ArrayList<>();
         final List<ShadowRestart> stopped = new ArrayList<>();
         final List<ShadowMatcherUpdate> matcherUpdates = new ArrayList<>();
+        final List<ShadowBandwidthUpdate> bandwidthUpdates = new ArrayList<>();
         boolean committed;
     }
 

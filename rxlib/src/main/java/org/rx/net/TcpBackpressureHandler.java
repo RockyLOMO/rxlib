@@ -27,9 +27,9 @@ public class TcpBackpressureHandler extends ChannelInboundHandlerAdapter {
 
     public static void install(Channel inbound, Channel outbound) {
         install(inbound, outbound, (in, out) -> {
-            Sockets.disableAutoRead(in);
+            Sockets.pauseRead(in, Sockets.READ_PAUSE_BACKPRESSURE);
         }, (in, out, e) -> {
-            Sockets.enableAutoRead(in);
+            Sockets.resumeRead(in, Sockets.READ_PAUSE_BACKPRESSURE);
         });
     }
 
@@ -40,9 +40,9 @@ public class TcpBackpressureHandler extends ChannelInboundHandlerAdapter {
 
     public static boolean installIfAbsent(Channel inbound, Channel outbound) {
         return install0(inbound, outbound, (in, out) -> {
-            Sockets.disableAutoRead(in);
+            Sockets.pauseRead(in, Sockets.READ_PAUSE_BACKPRESSURE);
         }, (in, out, e) -> {
-            Sockets.enableAutoRead(in);
+            Sockets.resumeRead(in, Sockets.READ_PAUSE_BACKPRESSURE);
         }, true);
     }
 
@@ -177,8 +177,8 @@ public class TcpBackpressureHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
-        // outbound 刚连上时恢复 captured inbound 读取
-        if (inbound != null && inbound.isOpen()) {
+        // outbound 刚连上时恢复 captured inbound 读取（不覆盖其他活跃暂停原因，如建连排队或带宽整形）
+        if (inbound != null && inbound.isOpen() && !Sockets.isReadPaused(inbound)) {
             Sockets.enableAutoRead(inbound);
         }
         super.channelActive(ctx);

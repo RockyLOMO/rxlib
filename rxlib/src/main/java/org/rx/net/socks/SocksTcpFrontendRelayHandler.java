@@ -9,8 +9,11 @@ import io.netty.util.AttributeKey;
 import io.netty.util.ReferenceCountUtil;
 
 import lombok.extern.slf4j.Slf4j;
+import org.rx.net.BandwidthLimiter;
+import org.rx.net.NetworkFlowControl;
 import org.rx.net.Sockets;
 import org.rx.net.TcpBackpressureHandler;
+import org.rx.net.TcpBandwidthPacer;
 
 import java.util.ArrayDeque;
 
@@ -21,6 +24,8 @@ public class SocksTcpFrontendRelayHandler extends ChannelInboundHandlerAdapter {
 
     private static final AttributeKey<PendingConnect> PENDING = AttributeKey.valueOf("socksTcpPendingConnect");
     static final AttributeKey<HalfCloseWatch> HALF_CLOSE_WATCH = AttributeKey.valueOf("socksTcpHalfCloseWatch");
+    static final AttributeKey<TcpBandwidthPacer> ATTR_UPLOAD_PACER = AttributeKey.valueOf("socksTcpUploadPacer");
+    static final AttributeKey<TcpBandwidthPacer> ATTR_DOWNLOAD_PACER = AttributeKey.valueOf("socksTcpDownloadPacer");
     private static final long DEFAULT_HALF_CLOSE_IDLE_MILLIS = Math.max(100L,
             Long.getLong("rx.socks.halfCloseIdleMillis", 120_000L));
     static volatile long halfCloseIdleNanos = java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(DEFAULT_HALF_CLOSE_IDLE_MILLIS);
@@ -60,6 +65,10 @@ public class SocksTcpFrontendRelayHandler extends ChannelInboundHandlerAdapter {
 
         private static boolean isBackpressured(Channel inbound, Channel outbound) {
             if (!inbound.isWritable() || !outbound.config().isAutoRead()) {
+                return true;
+            }
+            TcpBandwidthPacer dl = inbound.attr(ATTR_DOWNLOAD_PACER).get();
+            if (dl != null && dl.hasPending()) {
                 return true;
             }
             Channel.Unsafe unsafe = inbound.unsafe();
@@ -120,13 +129,17 @@ public class SocksTcpFrontendRelayHandler extends ChannelInboundHandlerAdapter {
                 outbound.flush();
                 if (inputShutdown) {
                     halfCloseOutbound(inbound, outbound);
-                } else if (resumeReads && (outbound.isWritable() || outbound.pipeline().get(TcpBackpressureHandler.class) == null)) {
-                    Sockets.enableAutoRead(inbound);
+                } else if (resumeReads) {
+                    Sockets.resumeRead(inbound, Sockets.READ_PAUSE_CONNECT_PENDING);
+                }
+                TcpBandwidthPacer up = inbound.attr(ATTR_UPLOAD_PACER).get();
+                if (up != null) {
+                    up.onWritabilityChanged();
                 }
             } else if (inputShutdown) {
                 inbound.close();
             } else if (resumeReads && inbound.isActive()) {
-                Sockets.enableAutoRead(inbound);
+                Sockets.resumeRead(inbound, Sockets.READ_PAUSE_CONNECT_PENDING);
             }
         }
     }
@@ -184,17 +197,39 @@ public class SocksTcpFrontendRelayHandler extends ChannelInboundHandlerAdapter {
         });
     }
 
+    static BandwidthLimiter resolveBandwidthLimiter(Channel inbound) {
+        if (inbound == null) {
+            return null;
+        }
+        ShadowsocksServer server = Sockets.getAttr(inbound, ShadowsocksConfig.SVR, false);
+        if (server != null) {
+            BandwidthLimiter limiter = server.config.getBandwidthLimiter();
+            if (limiter != null) {
+                return limiter;
+            }
+        }
+        return NetworkFlowControl.bandwidthLimiter(inbound);
+    }
+
+    private static void handleInputShutdown(Channel inbound) {
+        PendingConnect pending = inbound.attr(PENDING).get();
+        if (pending != null) {
+            pending.inputShutdown = true;
+            return;
+        }
+        SocksContext sc = SocksContext.ctx(inbound, false);
+        halfCloseOutbound(inbound, sc != null && sc.outbound != null ? sc.outbound.channel() : null);
+    }
+
     @Override
     public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
         if (evt instanceof ChannelInputShutdownEvent) {
             Channel inbound = ctx.channel();
-            PendingConnect pending = inbound.attr(PENDING).get();
-            if (pending != null) {
-                pending.inputShutdown = true;
+            TcpBandwidthPacer up = inbound.attr(ATTR_UPLOAD_PACER).get();
+            if (up != null && up.deferEof(() -> handleInputShutdown(inbound))) {
                 return;
             }
-            SocksContext sc = SocksContext.ctx(inbound, false);
-            halfCloseOutbound(inbound, sc != null && sc.outbound != null ? sc.outbound.channel() : null);
+            handleInputShutdown(inbound);
             return;
         }
         super.userEventTriggered(ctx, evt);
@@ -205,14 +240,52 @@ public class SocksTcpFrontendRelayHandler extends ChannelInboundHandlerAdapter {
         Channel inbound = ctx.channel();
         SocksContext sc = SocksContext.ctx(inbound);
         SocksUserTraffic.recordWrite(sc, msg);
+
+        if (msg instanceof ByteBuf) {
+            TcpBandwidthPacer up = inbound.attr(ATTR_UPLOAD_PACER).get();
+            BandwidthLimiter limiter = resolveBandwidthLimiter(inbound);
+            if (up != null || (limiter != null && limiter.isEnabled(BandwidthLimiter.Direction.UPLOAD))) {
+                if (up == null) {
+                    up = new TcpBandwidthPacer(
+                            inbound,
+                            null,
+                            () -> isUploadWriteReady(inbound, sc),
+                            BandwidthLimiter.Direction.UPLOAD,
+                            () -> resolveBandwidthLimiter(inbound),
+                            buf -> forwardUploaded(inbound, sc, buf));
+                    inbound.attr(ATTR_UPLOAD_PACER).set(up);
+                }
+                up.offer((ByteBuf) msg);
+                return;
+            }
+        }
+
+        forwardUploaded(inbound, sc, msg);
+    }
+
+    private static boolean isUploadWriteReady(Channel inbound, SocksContext sc) {
+        if (!inbound.isActive()) {
+            return false;
+        }
+        PendingConnect pending = inbound.attr(PENDING).get();
+        if (pending != null || !sc.isOutboundReady()) {
+            return pending == null
+                    || (pending.bytes < inbound.config().getWriteBufferHighWaterMark()
+                    && pending.messages.size() < 256);
+        }
+        Channel outbound = sc.outbound.channel();
+        return outbound.isActive() && outbound.isWritable();
+    }
+
+    private static void forwardUploaded(Channel inbound, SocksContext sc, Object msg) {
         PendingConnect pending = inbound.attr(PENDING).get();
         if (pending != null || !sc.isOutboundReady()) {
             boolean first = pending == null;
             if (first) {
                 pending = new PendingConnect();
                 inbound.attr(PENDING).set(pending);
-                pending.resumeReads = inbound.config().isAutoRead();
-                Sockets.disableAutoRead(inbound);
+                pending.resumeReads = true;
+                Sockets.pauseRead(inbound, Sockets.READ_PAUSE_CONNECT_PENDING);
             }
             int size = ((ByteBuf) msg).readableBytes();
             int limit = inbound.config().getWriteBufferHighWaterMark();
@@ -243,9 +316,14 @@ public class SocksTcpFrontendRelayHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
-        HalfCloseWatch watch = ctx.channel().attr(HALF_CLOSE_WATCH).get();
+        Channel inbound = ctx.channel();
+        HalfCloseWatch watch = inbound.attr(HALF_CLOSE_WATCH).get();
         if (watch != null) {
             watch.touch();
+        }
+        TcpBandwidthPacer dl = inbound.attr(ATTR_DOWNLOAD_PACER).get();
+        if (dl != null) {
+            dl.onWritabilityChanged();
         }
         super.channelWritabilityChanged(ctx);
     }
@@ -253,6 +331,14 @@ public class SocksTcpFrontendRelayHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
         Channel inbound = ctx.channel();
+        TcpBandwidthPacer up = inbound.attr(ATTR_UPLOAD_PACER).getAndSet(null);
+        if (up != null) {
+            up.close();
+        }
+        TcpBandwidthPacer dl = inbound.attr(ATTR_DOWNLOAD_PACER).getAndSet(null);
+        if (dl != null) {
+            dl.close();
+        }
         HalfCloseWatch watch = inbound.attr(HALF_CLOSE_WATCH).getAndSet(null);
         if (watch != null) {
             watch.cancel();

@@ -13,6 +13,7 @@ import org.rx.core.Tasks;
 import org.rx.core.cache.MemoryCache;
 import org.rx.diagnostic.DiagnosticMetrics;
 import org.rx.io.Bytes;
+import org.rx.net.BandwidthLimiter;
 import org.rx.net.Sockets;
 import org.rx.net.socks.upstream.SocksUdpUpstream;
 import org.rx.net.socks.upstream.Udp2rawUpstream;
@@ -854,6 +855,16 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
                 responseDst = realDstEp;
             }
 
+            BandwidthLimiter limiter = server.config.getBandwidthLimiter();
+            if (limiter != null && !limiter.tryConsumeUdp(BandwidthLimiter.Direction.DOWNLOAD, outBuf.readableBytes())) {
+                if (releaseOutBuf) {
+                    Bytes.release(outBuf);
+                }
+                DiagnosticMetrics.record("ss.udp.drop.count", 1D,
+                        "reason=bandwidth-limit,path=backend");
+                return;
+            }
+
             UdpManager.HeaderTemplate responseHeader = addressHeaderTemplate(binding.inbound, realDstEp);
             int responseBytes = outBuf.readableBytes() + responseHeader.length();
             if (!reserveSourcePending(binding.inbound, srcEp, responseBytes,
@@ -915,6 +926,11 @@ public class SSUdpProxyHandler extends SimpleChannelInboundHandler<DatagramPacke
         InetSocketAddress srcEp = in.sender();
         InetSocketAddress dstEp = inbound.attr(ShadowsocksConfig.REMOTE_DEST).get();
         ShadowsocksServer server = Sockets.getAttr(inbound, ShadowsocksConfig.SVR);
+        BandwidthLimiter limiter = server.config.getBandwidthLimiter();
+        if (limiter != null && !limiter.tryConsumeUdp(BandwidthLimiter.Direction.UPLOAD, inBuf.readableBytes())) {
+            recordUdpDrop("bandwidth-limit", srcEp, dstEp, null, inBuf.readableBytes());
+            return;
+        }
         ConcurrentMap<RouteKey, SocksContext> routeMap = routeMap(inbound);
         ConcurrentMap<RouteKey, RouteInitState> routeInitMap = routeInitMap(inbound);
 

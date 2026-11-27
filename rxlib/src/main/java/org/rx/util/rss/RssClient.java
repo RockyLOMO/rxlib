@@ -509,6 +509,10 @@ public final class RssClient {
             if (!normalizeAndValidateUserRoute(user)) {
                 return false;
             }
+            if (user.bandwidth != null && !user.bandwidth.isValid()) {
+                log.warn("Invalid bandwidth config for user {}: {}", user.getUsername(), user.bandwidth);
+                return false;
+            }
         }
         if (shouldScheduleDdns(conf) && !CollectionUtils.isEmpty(conf.ddnsDomains)) {
             if (Strings.isEmpty(conf.ddnsApiKey)) {

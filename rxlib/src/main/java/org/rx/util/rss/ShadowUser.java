@@ -8,6 +8,7 @@ import lombok.ToString;
 import org.rx.bean.DateTime;
 import org.rx.core.Linq;
 import org.rx.core.Strings;
+import org.rx.net.BandwidthLimitConfig;
 import org.rx.net.socks.TrafficLoginInfo;
 import org.rx.net.socks.TrafficUser;
 import org.rx.net.socks.encryption.CipherKind;
@@ -36,6 +37,7 @@ public class ShadowUser implements Serializable, TrafficUser {
     // 为空表示使用全局 socksServers；非空时只使用这些上游 id。
     List<String> socksServers;
     UserRule route;
+    BandwidthLimitConfig bandwidth;
     @Getter(AccessLevel.PACKAGE)
     @Setter(AccessLevel.PACKAGE)
     @JSONField(serialize = false, deserialize = false)
