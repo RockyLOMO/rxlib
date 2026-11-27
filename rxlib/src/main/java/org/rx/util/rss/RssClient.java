@@ -710,8 +710,10 @@ public final class RssClient {
                 boolean standard = spec.type == RssClientConf.UpstreamType.SOCKS5 && spec.rssEndpoint == null;
                 AuthenticEndpoint outer = spec.rssEndpoint == null ? null : resolveCarrierEndpoint(spec.endpoint, conf);
                 AuthenticEndpoint peer = spec.rssEndpoint == null ? spec.endpoint : resolveCarrierEndpoint(spec.rssEndpoint, conf);
+                org.rx.net.RssEgressCodec routeOverride = standard || spec.egress == null
+                        ? null : org.rx.net.RssEgressCodec.parse(spec.egress.tcpCodec);
                 org.rx.net.RssEgressCodec routeEgress = standard ? org.rx.net.RssEgressCodec.NONE
-                        : (spec.egress != null ? org.rx.net.RssEgressCodec.parse(spec.egress.tcpCodec) : defaultEgress);
+                        : (routeOverride != null ? routeOverride : defaultEgress);
                 SocksRpcContract facade = null;
                 if (!standard) {
                     InetSocketAddress rpc = spec.rpcEndpoint != null ? spec.rpcEndpoint
@@ -723,8 +725,8 @@ public final class RssClient {
                 Map<String, String> parameters = new LinkedHashMap<>(dial.getParameters());
                 parameters.put(UpstreamSupport.POOL_GENERATION, java.util.UUID.randomUUID().toString());
                 dial = new AuthenticEndpoint(dial.getEndpoint(), dial.getUsername(), dial.getPassword(), parameters);
-                UpstreamSupport support = outer != null || (!standard && routeEgress != defaultEgress)
-                        ? new BoundRoute(dial, facade, outer, routeEgress) : new UpstreamSupport(dial, facade);
+                UpstreamSupport support = outer != null || routeOverride != null
+                        ? new BoundRoute(dial, facade, outer, routeOverride) : new UpstreamSupport(dial, facade);
                 support.setRouteId(spec.id);
                 support.setStandardSocks5(standard);
                 support.setRssEgressCodec(routeEgress);
@@ -1655,18 +1657,20 @@ public final class RssClient {
         BoundRoute(AuthenticEndpoint peer, SocksRpcContract facade, AuthenticEndpoint proxy, org.rx.net.RssEgressCodec egress) {
             super(peer, facade);
             this.proxy = proxy;
-            this.egress = egress == null ? org.rx.net.RssEgressCodec.NONE : egress;
+            this.egress = egress;
         }
 
         SocksConfig bind(SocksConfig base, boolean tcp) {
-            if (proxy == null && (!tcp || egress == base.getRssEgressCodec())) {
+            if (proxy == null && (!tcp || egress == null || egress == base.getRssEgressCodec())) {
                 return base;
             }
             synchronized (this) {
                 SocksConfig config = configs.get(base);
                 if (config == null) {
                     config = Sys.deepClone(base);
-                    config.setRssEgressCodec(egress);
+                    if (egress != null) {
+                        config.setRssEgressCodec(egress);
+                    }
                     if (proxy != null) {
                         config.setSocksCarrierProxy(proxy);
                         config.setUdpLeasePoolEnabled(false);
@@ -1783,8 +1787,9 @@ public final class RssClient {
                 boolean hop = policy.udpHop();
                 int profile = adaptive ? policy.adaptiveProfile() : 0;
                 int level = (mask & 1) == 0 ? 0 : policy.compressionLevel();
+                org.rx.net.RssEgressCodec egress = policy.tcpEgressCodec(base.getRssEgressCodec());
                 long key = mask | (adaptive ? 8 : 0) | (profile << 4) | (level << 6)
-                        | (hop ? 0 : (1 << 10)) | ((long) tcpUdpMtu << 11);
+                        | (hop ? 0 : (1 << 10)) | ((long) tcpUdpMtu << 11) | ((long) egress.ordinal() << 28);
                 SocksConfig cached = cache.get(key);
                 if (cached == null) {
                     SocksConfig c = Sys.deepClone(base);
@@ -1792,6 +1797,7 @@ public final class RssClient {
                     c.setAdaptiveProfile(profile);
                     c.setDailyUdpMtu(tcpUdpMtu);
                     c.setUdpHop(hop);
+                    c.setRssEgressCodec(egress);
                     if (level != 0) c.setTcpCompressionLevel(level);
                     TransportFlags protection = (mask & 2) != 0 ? TransportFlags.RSS_PSK_AES : TransportFlags.NONE;
                     c.setTransportFlags(protection.flags((mask & 1) != 0 ? TransportFlags.COMPRESS_BOTH : TransportFlags.NONE));

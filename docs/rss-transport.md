@@ -78,7 +78,7 @@ egress:
   udpCodec: none          # 当前仅允许 none
 ```
 
-- 服务端通过启动参数 `-tcpEgressCodec=none`（默认）或 `-tcpEgressCodec=zlib-stored` 匹配对应出口格式。
+- 服务端通过启动参数 `-tcpEgressCodec=none`（默认）、`-tcpEgressCodec=zlib-stored`（强制）或 `-tcpEgressCodec=auto`（单端口按连接自动识别 `RSZ\x01` 与裸连接，适用于 `plain` 开启 `zlib-stored` 而增强模式使用 `none` 的混跑场景）。Client 端支持在顶层 `egress`、单条 `socksServers[].egress` 或单用户 `shadowUsers[].transport.egress` 分别配置 `tcpCodec: none | zlib-stored`。
 - `zlib-stored` 使用 `RSZ\x01`（`0x52535a01`）4 字节魔数前缀 + DEFLATE Level 0（无实际压缩的 stored block），在 Netty pipeline 最外层包裹真实 RSS TCP 物理流（`plain` 主流以及增强模式下的 TCP 主通道与修复帧）；`AdaptiveTcpStream` 的 UDP 快路径与普通业务 UDP 均**不经过** `RssEgressCodec`。
 - `none` 路径零额外 handler、零额外包装开销；标准第三方 `socks5` 路由禁止配置非 `none` 的 `egress.tcpCodec`。
 - 不同 `egress.tcpCodec` 在 `TcpWarmPoolKey` 与路由配置缓存中完全隔离，热更新仅作用于新连接。

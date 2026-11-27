@@ -2647,6 +2647,15 @@ public class RssTest extends AbstractTester {
             assertNotEquals(
                     org.rx.net.socks.TcpWarmPoolKey.from(storedPeer.getEndpoint(), boundStored1, "u"),
                     org.rx.net.socks.TcpWarmPoolKey.from(storedPeer.getEndpoint(), boundRaw, "u"));
+
+            // Per-user transport.egress overrides top-level default (e.g. plain=zlib-stored, daily=none).
+            String perUserJson = "{\"egress\":{\"tcpCodec\":\"none\"},\"shadowUsers\":["
+                    + "{\"ssPort\":6899,\"username\":\"p\",\"socksUser\":\"p\",\"transport\":{\"profile\":\"plain\",\"egress\":{\"tcpCodec\":\"zlib-stored\"}}},"
+                    + "{\"ssPort\":6898,\"username\":\"d\",\"socksUser\":\"d\",\"transport\":{\"profile\":\"daily\",\"egress\":{\"tcpCodec\":\"none\"}}}]}";
+            RssClientConf perUser = JSON.parseObject(perUserJson, RssClientConf.class);
+            RssClient.OutboundProfiles perUserProfiles = new RssClient.OutboundProfiles(perUser, new SocksConfig());
+            assertEquals(org.rx.net.RssEgressCodec.ZLIB_STORED, perUserProfiles.tcp(perUser.shadowUsers.get(0), 443).getRssEgressCodec());
+            assertEquals(org.rx.net.RssEgressCodec.NONE, perUserProfiles.tcp(perUser.shadowUsers.get(1), 443).getRssEgressCodec());
         } finally {
             RssClient.closeUpstreamsQuietly(snapshot);
         }

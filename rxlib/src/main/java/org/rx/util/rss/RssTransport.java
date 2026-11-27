@@ -15,6 +15,7 @@ public final class RssTransport implements Serializable {
     public Integer tcpCompressionLevel;
     public Boolean udpHop;
     public Integer udpMtu;
+    public RssClientConf.Egress egress;
 
     boolean udpHop() {
         return RssProfile.named(profile) != RssProfile.PLAIN && !Boolean.FALSE.equals(udpHop);
@@ -29,11 +30,25 @@ public final class RssTransport implements Serializable {
         if (selected == null || fec != null && fec != selected.fecMask) {
             return false;
         }
+        if (egress != null) {
+            if (egress.udpCodec != null && !"none".equals(egress.udpCodec)) {
+                return false;
+            }
+            try {
+                org.rx.net.RssEgressCodec.parse(egress.tcpCodec);
+            } catch (IllegalArgumentException e) {
+                return false;
+            }
+        }
         boolean plain = selected == RssProfile.PLAIN;
         return (plain ? !Boolean.TRUE.equals(udpHop) && inRange(tcp, 3) : tcp == null || tcp == selected.tcpMask)
                 && (tcpCompressionLevel == null || tcpCompressionLevel >= 1 && tcpCompressionLevel <= 9)
                 && validUdpMtu(udpMtu)
                 && inRange(udp, plain ? 0 : RssDatagramHandler.LZ4);
+    }
+
+    org.rx.net.RssEgressCodec tcpEgressCodec(org.rx.net.RssEgressCodec fallback) {
+        return egress == null ? fallback : org.rx.net.RssEgressCodec.parse(egress.tcpCodec);
     }
 
     private static boolean inRange(Integer value, int max) {

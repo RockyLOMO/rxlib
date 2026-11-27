@@ -119,6 +119,62 @@ class RssEgressCodecTest {
     }
 
     @Test
+    void serverAutoAcceptsBothZlibStoredAndPlainNoneWithoutDeadlock() {
+        assertThrows(IllegalArgumentException.class, () -> RssEgressCodec.parse("auto"));
+        assertEquals(RssEgressCodec.AUTO, RssEgressCodec.parseServer("auto"));
+        SecretKeySpec key = new SecretKeySpec(new byte[32], "HmacSHA256");
+        SocksConfig config = new SocksConfig();
+        config.setTcpCompressionLevel(3);
+
+        // 1. ZLIB_STORED client -> AUTO server (with RssHopAes + inner zlib 3).
+        EmbeddedChannel storedClient = new EmbeddedChannel(), autoServer1 = new EmbeddedChannel();
+        try {
+            RssEgressCodec.ZLIB_STORED.install(storedClient.pipeline());
+            RssEgressCodec.AUTO.installServer(autoServer1.pipeline());
+            storedClient.pipeline().addLast(new RssHopAes(true, key));
+            storedClient.pipeline().addLast(Sockets.newTcpCompressionEncoder(config,
+                    io.netty.handler.codec.compression.ZlibWrapper.ZLIB));
+            autoServer1.pipeline().addLast(new RssTcpCodecSelector(config, key));
+
+            byte[] data = new byte[8192];
+            Arrays.fill(data, (byte) 9);
+            storedClient.writeOutbound(Unpooled.wrappedBuffer(data));
+            transfer(storedClient, autoServer1, 64);
+            transfer(autoServer1, storedClient, 64);
+            transfer(storedClient, autoServer1, 64);
+            assertTrue(RssHopAes.authenticated(autoServer1.pipeline()));
+            assertArrayEquals(data, take(autoServer1, data.length));
+            assertNotNull(autoServer1.pipeline().context(RssEgressCodec.INNER_ANCHOR));
+        } finally {
+            storedClient.finishAndReleaseAll();
+            autoServer1.finishAndReleaseAll();
+        }
+
+        // 2. NONE client (3-byte raw SOCKS5 greeting) -> AUTO server removes detector on byte 1!
+        EmbeddedChannel autoServer2 = new EmbeddedChannel();
+        try {
+            RssEgressCodec.AUTO.installServer(autoServer2.pipeline());
+            byte[] socksGreeting = new byte[]{0x05, 0x01, 0x00};
+            assertTrue(autoServer2.writeInbound(Unpooled.wrappedBuffer(socksGreeting)));
+            assertNull(autoServer2.pipeline().get("rssEgressAuto"));
+            assertNull(autoServer2.pipeline().context(RssEgressCodec.INNER_ANCHOR));
+            assertArrayEquals(socksGreeting, take(autoServer2, socksGreeting.length));
+        } finally {
+            autoServer2.finishAndReleaseAll();
+        }
+
+        // 3. Invalid RSZ version -> AUTO server closes cleanly.
+        EmbeddedChannel autoServer3 = new EmbeddedChannel();
+        try {
+            RssEgressCodec.AUTO.installServer(autoServer3.pipeline());
+            assertFalse(autoServer3.writeInbound(Unpooled.buffer(4, 4).writeInt(0x52535a02)));
+            assertFalse(autoServer3.isOpen());
+        } finally {
+            autoServer3.finishAndReleaseAll();
+        }
+    }
+
+    @Test
     void compressionRunsOnceAboveAdaptiveStreamAndEgressWrapsOnlyPhysicalTcp() {
         SecretKeySpec key = new SecretKeySpec(new byte[32], "HmacSHA256");
         SocksConfig config = new SocksConfig();

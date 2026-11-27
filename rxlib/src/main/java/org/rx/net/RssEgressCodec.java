@@ -18,11 +18,12 @@ import java.util.List;
 
 /** Physical RSS TCP stream format. The UDP fast path never visits these handlers. */
 public enum RssEgressCodec {
-    NONE, ZLIB_STORED;
+    NONE, ZLIB_STORED, AUTO;
 
     /** Insert the adaptive frame decoder AFTER this physical-layer handler. */
     public static final String INNER_ANCHOR = "rssEgressInner";
     private static final int PREFACE = 0x52535a01; // RSZ, version 1
+    private static final int PREFACE_FIRST_BYTE = (PREFACE >>> 24) & 0xff; // 'R'
 
     public static RssEgressCodec parse(String name) {
         if (name == null || "none".equals(name)) return NONE;
@@ -30,8 +31,48 @@ public enum RssEgressCodec {
         throw new IllegalArgumentException("Unknown RSS TCP egress codec: " + name);
     }
 
+    public static RssEgressCodec parseServer(String name) {
+        if ("auto".equals(name)) return AUTO;
+        return parse(name);
+    }
+
     void install(ChannelPipeline pipeline) {
         if (this == NONE) return;
+        if (this == AUTO) {
+            throw new IllegalStateException("AUTO egress codec is only supported on RSS server");
+        }
+        installStored(pipeline, null);
+    }
+
+    void installServer(ChannelPipeline pipeline) {
+        if (this == NONE) return;
+        if (this == ZLIB_STORED) {
+            installStored(pipeline, null);
+            return;
+        }
+        // Per-connection detection: 'R' (0x52) does not collide with SOCKS5 (0x05), zlib (*8), or RssHopAes (0xa5).
+        pipeline.addLast("rssEgressAuto", new ByteToMessageDecoder() {
+            @Override protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) {
+                if (!in.isReadable()) return;
+                if (in.getUnsignedByte(in.readerIndex()) != PREFACE_FIRST_BYTE) {
+                    ctx.pipeline().remove(this);
+                    return;
+                }
+                if (in.readableBytes() < 4) return;
+                if (in.readInt() != PREFACE) {
+                    in.skipBytes(in.readableBytes());
+                    ctx.close();
+                    return;
+                }
+                ctx.writeAndFlush(ctx.alloc().buffer(4, 4).writeInt(PREFACE))
+                        .addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
+                installStoredHandlersAfter(ctx.pipeline(), ctx.name());
+                ctx.pipeline().remove(this);
+            }
+        });
+    }
+
+    private static void installStored(ChannelPipeline pipeline, String unused) {
         boolean measure = DiagnosticMetrics.isEnabled();
         if (measure) pipeline.addLast("rssEgressWireBytes", new ByteCounter("layer=wire"));
         pipeline.addLast("rssEgressPreface", new ByteToMessageDecoder() {
@@ -65,7 +106,23 @@ public enum RssEgressCodec {
                 ctx.pipeline().remove(this);
             }
         });
-        pipeline.addLast("rssEgressDecoder", new JdkZlibDecoder(ZlibWrapper.ZLIB, 1 << 20) {
+        pipeline.addLast("rssEgressDecoder", newStoredDecoder());
+        pipeline.addLast(measure ? "rssEgressEncoder" : INNER_ANCHOR,
+                pipeline.channel().isActive() ? newStoredEncoder() : StartEncoder.INSTANCE);
+        if (measure) pipeline.addLast(INNER_ANCHOR, new ByteCounter("layer=input"));
+    }
+
+    private static void installStoredHandlersAfter(ChannelPipeline pipeline, String anchor) {
+        boolean measure = DiagnosticMetrics.isEnabled();
+        if (measure) pipeline.addBefore(anchor, "rssEgressWireBytes", new ByteCounter("layer=wire"));
+        pipeline.addAfter(anchor, "rssEgressDecoder", newStoredDecoder());
+        String encName = measure ? "rssEgressEncoder" : INNER_ANCHOR;
+        pipeline.addAfter("rssEgressDecoder", encName, newStoredEncoder());
+        if (measure) pipeline.addAfter(encName, INNER_ANCHOR, new ByteCounter("layer=input"));
+    }
+
+    private static ChannelHandler newStoredDecoder() {
+        return new JdkZlibDecoder(ZlibWrapper.ZLIB, 1 << 20) {
             @Override protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
                 try {
                     super.decode(ctx, in, out);
@@ -75,10 +132,7 @@ public enum RssEgressCodec {
                     throw malformed;
                 }
             }
-        });
-        pipeline.addLast(measure ? "rssEgressEncoder" : INNER_ANCHOR,
-                pipeline.channel().isActive() ? newStoredEncoder() : StartEncoder.INSTANCE);
-        if (measure) pipeline.addLast(INNER_ANCHOR, new ByteCounter("layer=input"));
+        };
     }
 
     private static ChannelHandler newStoredEncoder() {

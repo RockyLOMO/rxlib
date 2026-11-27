@@ -37,14 +37,14 @@ LOCAL_TIME=$(date +"%Y-%m-%d %H:%M:%S")
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 cd "$SCRIPT_DIR" || exit 1
 if [[ -d transport ]]; then
-    [[ ! -f transport/cert.pem ]] || export RSS_TCP_TLS_CERT="$PWD/transport/cert.pem" RSS_TCP_TLS_KEY="$PWD/transport/key.pem"
     export RSS_TCP_AES_KEY="$(<transport/tcp-key)"
     export RSS_UDP_AES_KEY="$(<transport/udp-key)"
     RSS_SHADOW_USER=$(<transport/shadow-user)
 fi
 
 PORT=${PORT:-9900}
-UDP2RAW_PORT=${UDP2RAW_PORT:-9910}
+FIXED_UDP_PORT=${FIXED_UDP_PORT:-9910}
+TCP_EGRESS_CODEC=${TCP_EGRESS_CODEC:-auto}
 HTTP_SERVER_PORT=${HTTP_SERVER_PORT:-8082}
 REQUIRED_TCP_PORTS=("${PORT}" "${HTTP_SERVER_PORT}")
 # 延迟优先：默认关闭 JVM 全局 shaping，避免小文件/尾包进入应用层延迟队列。
@@ -394,12 +394,12 @@ fi
 echo "${YELLOW}[${LOCAL_TIME}] 正在启动 ${PORT}/tcp 的进程，HttpServer 端口 ${HTTP_SERVER_PORT}/tcp..."
 rotate_app_out
 install_app_log_cron
-UDP2RAW_ARG=""
-if [ -n "${UDP2RAW_PORT}" ]; then
-  UDP2RAW_ARG="-udp2rawPort=${UDP2RAW_PORT}"
+FIXED_UDP_ARG=""
+if [ -n "${FIXED_UDP_PORT}" ]; then
+  FIXED_UDP_ARG="-fixedUdpPort=${FIXED_UDP_PORT}"
 fi
 # Bound glibc arena retention for this Java process; allow an explicit environment override.
 MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-4}" \
-nohup java ${MEM_OPTIONS} ${GC_OPTIONS} ${APP_OPTIONS} ${DUMP_OPTS} -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} -shadowMode=1 ${UDP2RAW_ARG} -debug=0 "-shadowUser=${RSS_SHADOW_USER:?missing RSS transport credentials}" "-udpHopPorts=20000-20127" >>"${APP_LOG_FILE}" 2>&1 &
+nohup java ${MEM_OPTIONS} ${GC_OPTIONS} ${APP_OPTIONS} ${DUMP_OPTS} -Dfile.encoding=UTF-8 -jar app.jar -port=${PORT} -shadowMode=1 ${FIXED_UDP_ARG} "-tcpEgressCodec=${TCP_EGRESS_CODEC}" -debug=0 "-shadowUser=${RSS_SHADOW_USER:?missing RSS transport credentials}" "-udpHopPorts=20000-20127" >>"${APP_LOG_FILE}" 2>&1 &
 APP_PID=$!
 wait_for_startup "${APP_PID}" || exit 1

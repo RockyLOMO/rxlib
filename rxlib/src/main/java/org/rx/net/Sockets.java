@@ -956,7 +956,7 @@ public final class Sockets {
         // 支持LengthField?
         boolean g = flags.has(TransportFlags.GFW);
         boolean rss = config instanceof SocksConfig && ((SocksConfig) config).getRequiredTcpCipherPorts() != null;
-        if (rss) ((SocksConfig) config).getRssEgressCodec().install(pipeline);
+        if (rss) ((SocksConfig) config).getRssEgressCodec().installServer(pipeline);
         if (!g && !rss) {
             if (flags.has(TransportFlags.COMPRESS_READ)) {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
