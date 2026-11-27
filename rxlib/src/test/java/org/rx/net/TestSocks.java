@@ -52,7 +52,6 @@ import org.rx.net.support.UpstreamSupport;
 import org.rx.net.transport.SftpClient;
 import org.rx.net.transport.TcpServer;
 import org.rx.net.transport.TcpServerConfig;
-import org.rx.net.transport.UdpClient;
 import org.rx.test.*;
 //import org.rx.third.apache.ntp.*;
 import java.io.InputStream;
@@ -465,31 +464,6 @@ public class TestSocks extends AbstractTester {
             });
         }
         latch.await();
-    }
-
-    @SneakyThrows
-    @Test
-    public void udpRpc() {
-        UdpClient c1 = new UdpClient(endpoint_3307.getPort());
-        c1.onReceive.add((s, e) -> log.info("client1 recv {}", toJsonString(e)));
-        UdpClient c2 = new UdpClient(endpoint_3308.getPort());
-        AtomicInteger count = new AtomicInteger();
-        c2.onReceive.add((s, e) -> {
-            log.info("client2 recv {}", toJsonString(e));
-            if (count.incrementAndGet() < 2) {
-                throw new InvalidException("error");
-            }
-        });
-
-        c1.sendAsync(endpoint_3307, "我是1");
-        for (int i = 0; i < 10; i++) {
-            int finalI = i;
-            Tasks.run(() -> c2.sendAsync(endpoint_3307, "我是2 + " + finalI));
-        }
-
-        c1.sendAsync(endpoint_3308, str_name_wyf, 15000, true);
-        System.out.println("done");
-        _wait();
     }
     //endregion
 

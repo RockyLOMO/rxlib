@@ -18,6 +18,7 @@ import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.rx.core.Extends.*;
 import static org.rx.core.Sys.toJsonString;
@@ -36,6 +37,7 @@ public final class NameserverClient extends Disposable {
     static final int DEFAULT_RETRY_PERIOD = 1000;
     static final int DEFAULT_RETRY = 2;
     static final int DEFAULT_HEALTH_PERIOD = 120 * 1000;
+    static final AtomicLong INSTANCE_SEQ = new AtomicLong();
     static final List<RandomList<NsInfo>> group = new CopyOnWriteArrayList<>();
     static final ResetEventWait syncRoot = new ResetEventWait();
 
@@ -57,6 +59,8 @@ public final class NameserverClient extends Disposable {
     public final Delegate<Nameserver, Nameserver.AppChangedEventArgs> onAppAddressChanged = Delegate.create();
     @Getter
     final String appName;
+    @Getter
+    final String instanceId;
     final RandomList<NsInfo> holder = new RandomList<>();
     final Set<InetSocketAddress> svrEps = ConcurrentHashMap.newKeySet();
     volatile Func<String> publicIpResolver = Sockets::getPublicIp;
@@ -70,7 +74,14 @@ public final class NameserverClient extends Disposable {
     }
 
     public NameserverClient(String appName) {
+        this(appName, RxConfig.INSTANCE.getId() + "-" + INSTANCE_SEQ.incrementAndGet());
+    }
+
+    public NameserverClient(String appName, String instanceId) {
         this.appName = appName;
+        this.instanceId = Strings.isEmpty(instanceId)
+                ? RxConfig.INSTANCE.getId() + "-" + INSTANCE_SEQ.incrementAndGet()
+                : instanceId;
         group.add(holder);
     }
 
@@ -123,7 +134,7 @@ public final class NameserverClient extends Disposable {
                 Action handshake = () -> {
                     try {
                         Integer lastDp = tuple.dnsPort;
-                        if (eq(tuple.dnsPort = tuple.ns.register(appName, svrEps), lastDp)) {
+                        if (eq(tuple.dnsPort = tuple.ns.register(appName, RandomList.DEFAULT_WEIGHT, instanceId, svrEps), lastDp)) {
                             log.debug("nsc: login ns ok {} -> {}", regEp, tuple.dnsPort);
                             tuple.failCount = 0;
                             return;
@@ -147,7 +158,7 @@ public final class NameserverClient extends Disposable {
                         }
                         Tasks.setTimeout(() -> {
                             try {
-                                tuple.dnsPort = tuple.ns.register(appName, svrEps);
+                                tuple.dnsPort = tuple.ns.register(appName, RandomList.DEFAULT_WEIGHT, instanceId, svrEps);
                                 tuple.failCount = 0;
                                 registerInstanceAttrs(tuple.ns);
                                 reInject();
@@ -211,6 +222,7 @@ public final class NameserverClient extends Disposable {
 
     void registerInstanceAttrs(Nameserver ns) {
         ns.instanceAttr(appName, RxConfig.ConfigNames.APP_ID, RxConfig.INSTANCE.getId());
+        ns.instanceAttr(appName, Nameserver.INSTANCE_ID_KEY, instanceId);
         String publicIp = quietly(publicIpResolver);
         if (publicIp != null && Sockets.isValidIp(publicIp)) {
             ns.instanceAttr(appName, Nameserver.PUBLIC_IP_KEY, publicIp);

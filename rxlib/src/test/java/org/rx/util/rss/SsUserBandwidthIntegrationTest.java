@@ -424,7 +424,6 @@ class SsUserBandwidthIntegrationTest {
         conf.socksBindPort = false;
         conf.shadowDnsPort = ports[0];
         conf.nameserver.setRegisterPort(ports[1]);
-        conf.nameserver.setSyncPort(ports[2]);
         conf.tcpCipherPorts = new int[0];
         conf.udpCipherPorts = new int[0];
         conf.rpcAutoWhiteListSeconds = 0;
