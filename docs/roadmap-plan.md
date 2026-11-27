@@ -1,43 +1,34 @@
 # rxlib 未来规划与待实现计划（Roadmap）
 
-> 本文档仅记录**尚未实现、待验证或未来规划**的演进事项与设计思路。已完成项已移除，历史对照数据见 [测试与基准记录](test-benchmarks.md)。
+> 本文档仅记录**尚未实现、待验证或未来规划**的演进事项与设计思路。2026-11-28 已完成的 P1/P2 项（SS 用户共享带宽限速与热更新、`weak` 大流 FEC/直通 TCP 优化、Geo 条件增量更新与代际一致性、Nameserver 迁移至已鉴权 Transport Core RPC 并删除旧版 `UdpClient`/`UdpHolePunch*`、Transport Core 双向 HMAC 握手与 RPC 非幂等保护、DNS 非地址 RR 缓存/EDNS/连接池、动态 PMTU/`CHUNK`、`AddressDiscovery` 与轻量 H2 `NodeRegistry`）已移出待办，实测数据见 [测试与基准记录](test-benchmarks.md)。
 
 ---
 
-## P1 · 近期优先（调优、真机验收与运维切换）
+## P1 · 近期优先（真机验收与运维切换）
 
-### 1. `weak` 模式高丢包单流大下载 FEC 调优
-- **现象**：2026-11-27 在 `182.255.85.247`（10%–15% 丢包 / 182 ms RTT）实测中，`weak` 交互 P95 显著优于 `plain`/`daily`，但热 512 KiB 单流下载在突发窗口回落前 `AdaptiveUdpFec` 产生 `fecParityBytes = 0`，导致 TCP 补传、总流量多出 `+20%–29%`。
-- **思路**：排查 `weak` 大流下 FEC 触发阈值与突发回落窗口的协同，确保在持续丢包流上产出合理冗余或更早回落 TCP，避免“UDP 发满却零校验 + TCP 重传”双重开销；改动后在同一高丢包基线复测。
-
-### 2. 真实外部载体、多上游切换与 Linux Native `epoll` 验收
-- **外部载体实机抓包**：覆盖 `RssFixedUdpEntry`（`udpclient` + 外部 `udp2raw`）、`RssSocksCarrier`（嵌套 SOCKS5 如 Hysteria2 `CONNECT` + `UDP ASSOCIATE`）、`RssEgressCodec`（`zlib-stored` vs `none` 双端实测开销），以及多上游混配下的故障切换、热切排空与回滚。
-- **Linux `epoll` / `SO_REUSEPORT` 与应用层实测**：
-  - 对比 Netty `4.2.21.Final` 在 Linux 原生 `epoll` + `SO_REUSEPORT` 下的长期压测表现。
-  - 补充 `game` 对比 `plain`/`daily`/`weak`/`kcptun` 的多随机种子 Linux 基准，以及真实 QUIC/HTTP3、外部 UDP 应用与 WoW 3.3.5a 公网联机验证。
+### 1. 真实外部载体、多上游切换与长期 Linux Native `epoll` 验收
+- **外部载体实机抓包**：覆盖 `RssFixedUdpEntry`（外部 `udpclient` + 外部 `udp2raw`）、`RssSocksCarrier`（嵌套 SOCKS5 如 Hysteria2 `CONNECT` + `UDP ASSOCIATE`）、`RssEgressCodec`（`zlib-stored` vs `none` 双端实测开销），以及多上游混配下的故障切换、热切排空与回滚。
+- **Linux `epoll` / `SO_REUSEPORT` 长期压测与应用层实测**：
+  - 2026-11-28 已在 `182.255.85.247` 完成短期 4-profile + `SO_REUSEPORT=2` + SS 用户限速热更新验证；后续补充长时间稳态压测、对比 `kcptun` 的多随机种子 Linux 基准，以及真实 QUIC/HTTP3、外部 UDP 应用与 WoW 3.3.5a 公网联机验证。
 - **`RssDatagramFragmenter` 边界与物理内存实测**：
   - 验证 Linux Pooled Direct Allocator 在高丢包乱序与 OOM 预算下的 backing-capacity 压缩表现。
   - 验证多分片写出时前置分片失败的 Write Promise 聚合行为，并补齐 `MTU=256`、64 分片上限及魔数转义边界测试。
 
-### 3. 生产运维切换（6896 下线 `kcptun` / WoW TLS 验收）
+### 2. 生产运维切换（6896 下线 `kcptun` / WoW TLS 验收）
 - **6896 (`rGrey`) 切换**：在确认 `udp2raw` 与 `Adaptive UDP` 链路稳定后，将生产 `6896` 切至 `ssCipher: chacha20-ietf-poly1305` + `udpHop: false` + `main-tun`（直连 `udp2raw` `127.0.0.1:4080` / `9910`），下线 `client_linux_amd64` / `server_linux_amd64`（`kcptun`）及其保活 cron（保留 `udp2raw` 保活），对比 `6896` 与 `6898`（跳端口 `daily`）双端抓包。
 - **WoW 直连端点**：完成生产 TLS 证书与公网游戏登录全链路验证；后续按需评估 IPv6 支持。
 
 ---
 
-## P2 · 中期演进（协议能力与性能扩展）
+## P2 · 中期演进（ADR 预研与待定治理项）
 
-### 4. 动态路径 MTU（PMTU）探测与动态 `CHUNK`
-- **背景**：当前自适应 UDP 帧上限按 IPv4 `1330 B` 静态配置，跨 IPv6（最小路径 MTU `1280 B`）或叠加隧道头时易触发分片或丢包。
-- **设计思路**：复用 `Udp2rawMtuState` 思路，实现**已认证、可校验尺寸的低频 PMTU 探针**，按方向/路径缓存有效 MTU 并做指数退避；同时支持 `AdaptiveTcpStream` 动态收缩 `CHUNK` 尺寸以避开路径分片。
+### 3. 双 NAT UDP 打洞 + 公网 TCP 中继（ADR 架构预研，当前仅规划不实现）
+- **目标**：当通信双方均处于 NAT 后时，由独立公网节点提供 **UDP Rendezvous（打洞协调）+ 已认证 TCP Relay**，支持 NAT 后节点 B 反向建立控制通道（可评估复用 `RrpClient` / `RrpServer` 与已落地的 `AddressDiscovery` + `NodeRegistry`）。
+- **前置安全硬约束**（未满足前禁止暴露公网）：逐会话强鉴权、目标端点绑定、ACL 白名单、端到端加密与防重放、背压限流及房间/连接配额（详细安全模型见 [rxlib-review-20261128.md](rxlib-review-20261128.md) §6.2）。
 
-### 5. DNS 非地址记录缓存、连接复用与 EDNS
-- 当前已完成 `DnsRecordExchange` 多上游故障切换与 `3500 ms` 总截止时间；后续为非 A/AAAA 记录（`HTTPS`、`TXT`、`MX`、`SRV`）补充按 TTL 缓存、上游 socket/连接复用以及完整 EDNS 兼容。
-
-### 6. 双 NAT UDP 打洞 + 公网 TCP 中继（ADR 架构预研）
-- **目标**：当通信双方均处于 NAT 后时，由独立公网节点提供 **UDP Rendezvous（打洞协调）+ 已认证 TCP Relay**，支持 NAT 后节点 B 反向建立控制通道（可评估复用 `RrpClient` / `RrpServer`）。
-- **前置安全硬约束**（未满足前禁止暴露公网）：逐会话强鉴权、目标端点绑定、ACL 白名单、端到端加密与防重放、背压限流及房间/连接配额。
-- **关联清理**：当前旧版 `org.rx.net.transport.UdpClient` 仅因 `UdpHolePunchServer` / `UdpHolePunchClient` / `UdpHolePunchSession` 依赖而保留；待打洞体系迁移至 Transport Core 或退役后彻底删除 `UdpClient`。
+### 4. 现有全局流量整形（`NetworkFlowControl` `GlobalChannelTrafficShapingHandler`）治理（暂缓）
+- **现状**：为避免影响现有线上默认行为，本次未修改全局 `GlobalChannelTrafficShapingHandler`（用户级带宽限速已通过独立 `BandwidthLimiter` / `TcpBandwidthPacer` 实现）。
+- **已识别风险**：`refresh()` 全量遍历更新、高并发连接下共享写缓冲延迟、以及与 `TcpBackpressureHandler` 的叠加行为；后续仅在开启全局限速且出现真实瓶颈时再做专项重构。
 
 ---
 

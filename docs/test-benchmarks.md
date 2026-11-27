@@ -125,3 +125,39 @@
   - `weak` 将持续交互 P95 压低 **~60%–65%**（vs `plain`）和 **~50%**（vs `daily`），全交互 P95 降 **~44%**；`rss.tcp.weak.probeAckedBeforeTcp` 命中 `5/5`（R1）与 `5/6`（R2），普通 UDP P95 最低（`192–246 ms`，FEC 恢复 5–6 包）。
   - 暴露出待调优项：`weak` 热 512 KiB 下载在突发窗口回落前 `AdaptiveUdpFec` 产出 `fecParityBytes = 0`，触发 TCP 补传，导致单流大下载总流量高 `+20%–29%` 且吞吐略低于 `daily`/`plain`（已记入 [计划文档](roadmap-plan.md)）。
   - 整机资源稳定：Netty 堆外峰值 `<= 2.4 MiB`，`VmRSS <= 470 MiB`，修复 `AdaptiveTcpHandler.close` 半关闭排空后 `0 EOFException`。
+
+---
+
+## 5. 2026-11-28 · Review P1/P2 全量落地、双 JDK 回归与 `182.255.85.247` 四档/限速实测
+
+### 5.1 双 JDK `PARANOID` 回归与新增验证（提交 `8054ec22`..`d0b7bf3b`）
+- **基线环境**：Windows 11；JDK `21.0.12.1` + Temurin JDK `1.8.0_504`；Netty `4.2.21.Final`；统一参数 `-DskipTests=false "-DargLine=-Dio.netty.leakDetection.level=PARANOID"`。
+- **全量核心回归（26 个测试类，覆盖带宽限速、Geo 增量与代际一致、Nameserver 鉴权 RPC、Transport Core 双向 HMAC、RPC 非幂等断线保护、DNS 非地址 RR 缓存/EDNS/连接池、动态 PMTU/`CHUNK`、`AddressDiscovery`、`NodeRegistry` H2 冷存、`AdaptiveTcpStream`、`RssDatagramHandler`、RRP 等）**：
+  - **JDK 21**（`bd4e5119`）：`359` 用例运行、`0` 失败、`0` 错误、`5` 既有跳过（Windows / Linux-only），`PARANOID LEAK: 0`（注：`DnsOptimizationTest.concurrentInterceptorQueries_shareSingleResolveTask` 批次偶发 1 次 200ms 调度抖动，单跑 `24/24` 通过）。
+  - **JDK 8**（`bd4e5119`）：`359` 用例运行、`0` 失败、`0` 错误、`6` 跳过。
+  - **补丁复测（`d0b7bf3b`，修复 `TcpBandwidthPacer` 在 `pauseChannel` EOF 关闭后停止排空及跨 EventLoop 回调问题 + 补齐 `RrpIntegrationTest` `EmbeddedChannel` 回收）**：`BandwidthLimiterTest` + `SsUserBandwidthIntegrationTest`（含 `40 KiB/s` 160 KiB 下载/上传 + `useDedicatedCryptoGroup=true` 回归）+ `RrpIntegrationTest` = **`33/33` 通过，JDK 21 & JDK 8 均 `PARANOID LEAK: 0`**。
+
+### 5.2 高丢包公网 VPS 实测（`182.255.85.247`，提交 `d0b7bf3b`）
+- **环境与参数**：
+  - **Server**：`182.255.85.247`（Debian 12 `6.1.0-31-amd64`，1 vCPU / `960 MiB` RAM，OpenJDK `21.0.13.1`，`-Xms64m -Xmx256m -XX:MaxDirectMemorySize=256m -Dapp.net.reactorThreadAmount=2 -Dapp.net.reusePortBindCount=2`）；实测确认 Linux Native **Epoll**（`epollEventLoopGroup`）+ **`SO_REUSEPORT=2`**（双监听 fd `138`/`139`）生效。
+  - **Client**：Linux `6.8.0-124-generic`，OpenJDK `21.0.13.0.3`；隔离临时端口（不触碰线上 `6885`），实测前公网 ping 基线 **7.5% 丢包 / 172.5 ms 平均 RTT**（`168.1–185.1 ms`），测试后 **0% 丢包 / 171.3 ms 平均 RTT**（`167.3–186.1 ms`）。
+  - **负载**：两轮交错 4-profile 矩阵（R1：`plain -> daily -> weak -> game`，R2：`game -> weak -> daily -> plain`），每轮 `512 KiB` 冷下载 + `512 KiB` 热下载 + `256 KiB` 上传 + `58 × 256 B` 交互 Echo + `150 × 256 B` UDP Echo；双向 IP 层字节由 VPS `nftables` `inet rxbench_acct` 精确计数。
+
+| Profile | 轮次 | 冷/热下载 (KiB/s) | 上传 (KiB/s) | 持续交互 P50 / P95 / P99 (ms) | 交互错误 | 普通 UDP 送达 / P95 (ms) | 总流量 (TCP+UDP KiB) | Server CPU / VmRSS / 峰值直接内存 |
+| --- | :---: | --- | ---: | --- | :---: | --- | --- | --- |
+| `plain` | R1 | 187.2 / 559.9 | 97.9 | 179.3 / 198.6 / 905.5 | 0 | 80.0% / 2051.1 | 1470.2 (1395.6+74.6) | 23.9s / 311.7 MiB / 0.07% |
+| `plain` | R2 | 264.1 / 120.1 | 147.9 | 183.8 / 199.0 / 918.5 | 0 | 100.0% / 177.6 | 1485.4 (1391.4+93.9) | 8.1s / 418.5 MiB / 0.12% |
+| `daily` | R1 | 250.3 / 577.5 | 107.3 | 179.0 / 399.7 / 916.7 | 0 | 98.0% / 927.6 | 1613.0 (1371.8+241.2) | 17.5s / 318.6 MiB / 0.08% |
+| `daily` | R2 | 257.4 / 526.3 | 158.4 | 197.4 / 206.3 / 922.3 | 0 | 94.7% / 188.3 | 1616.6 (1367.9+248.7) | 6.8s / 401.9 MiB / 0.12% |
+| **`weak`** | R1 | 239.7 / **507.0** | **149.0** | **178.4 / 386.2 / 881.3** | **0** | 92.7% / **188.4** | **1614.6** (1360.4+254.2) | 13.9s / 352.1 MiB / 0.10% |
+| **`weak`** | R2 | 264.5 / **517.4** | **153.0** | **184.0 / 188.8 / 875.5** | **0** | **100.0% / 186.5** | **1687.3** (1362.6+324.8) | 7.1s / 401.3 MiB / 0.12% |
+| `game` | R1 | 245.7 / 428.1 | 75.7 | 185.1 / 190.4 / 923.3 | 0 | 98.0% / 189.9 | 2221.8 (1277.6+944.3) | 14.4s / 358.0 MiB / 0.11% |
+| `game` | R2 | 275.7 / 398.4 | 103.2 | 180.6 / 366.7 / 1462.6 | 0 | 95.3% / 189.3 | 1833.3 (1259.8+573.4) | 8.9s / 398.7 MiB / 0.11% |
+
+- **SS 用户共享双向带宽限速 + 热更新不重启监听实测（`ssPort=16900`，`160 KiB` 下载/上传 + 交互 + `40` UDP）**：
+  - 监听 Socket inode 变更校验：`ino:300485317` / `ino:300485318`（`SO_REUSEPORT=2`）在 `conf.yml` 热更新前后完全一致（**`listener_unchanged = true`**）。
+  - 限速 `40 KiB/s`（上/下行）：冷下载 `35.20 KiB/s`、热下载 `44.42 KiB/s`（含 `16 KiB` 初始突发）、上传 `42.37 KiB/s`、交互错误 `0`、UDP 送达 `100.0%`。
+  - 热更新改为 `0/0`（不限速）后立即生效：冷下载 `103.85 KiB/s`、热下载 `307.55 KiB/s`、上传 `107.68 KiB/s`、交互错误 `0`、UDP 送达 `97.5%`。
+- **核心结论**：
+  - **`weak` 大流调优生效**：两轮平均总流量 `1651.0 KiB`（仅比 `plain` 均 `1477.8 KiB` 高 **`+11.7%`**，较 2026-11-27 调优前 `+24.8%` 减半，且远低于 `game` `+37.2%`）；Server 侧稳定触发 `fallbacks[reason=bulk] = 2`（`directTcpBytes ~918 KiB`），`deliveryStallMillis` 压低至 `0–31.6 ms`，同时保持四档最低的持续交互 P99/Max（`875.5–881.3 ms`）与最高平均上传吞吐（`151.0 KiB/s`）。
+  - **资源与泄漏基线达标**：单核 960 MiB VPS 全程 `VmHWM = 418.5 MiB`（远低于 `768 MiB` 整机红线）、线程数 `53–55`、cgroup `nr_throttled = 0`、服务端/客户端日志 **`LEAK = 0`**。
