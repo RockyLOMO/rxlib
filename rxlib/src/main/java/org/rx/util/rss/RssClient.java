@@ -510,7 +510,7 @@ public final class RssClient {
                 return false;
             }
         }
-        if (shouldScheduleDdns(conf)) {
+        if (shouldScheduleDdns(conf) && !CollectionUtils.isEmpty(conf.ddnsDomains)) {
             if (Strings.isEmpty(conf.ddnsApiKey)) {
                 return false;
             }
@@ -796,7 +796,7 @@ public final class RssClient {
         eventRpcConf.setRequestTimeoutMillis(resolveRpcRequestTimeoutMillis(conf));
         configureRpcCarrier(eventRpcConf, outer);
         eventRpcConf.getTcpConfig().setTransportFlags(TransportFlags.GFW.flags(TransportFlags.CIPHER_BOTH).flags());
-        WowEndpointPublisher wowPublisher = WowEndpointPublisher.configure(conf, eventRpcConf);
+        WowEndpointPublisher wowPublisher = outer == null ? WowEndpointPublisher.configure(conf, eventRpcConf) : null;
         SocksRpcContract eventDelegate = Remoting.createFacade(SocksRpcContract.class, eventRpcConf);
         facade = new ForwardingSocksRpcContract(delegate, eventDelegate);
         ((ForwardingSocksRpcContract) facade).wowPublisher = wowPublisher;

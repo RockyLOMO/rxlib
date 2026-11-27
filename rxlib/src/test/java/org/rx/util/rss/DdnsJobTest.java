@@ -99,4 +99,51 @@ class DdnsJobTest {
         assertTrue(TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - started) < 7);
         assertEquals("58.209.44.49", new String(Files.readAllBytes(output), StandardCharsets.UTF_8));
     }
+
+    @Test void configValidationAllowsLocalOnlyDdnsWithoutApiKeyOrDomains() {
+        RssClientConf conf = minimalValidRssConf();
+        conf.ddnsJobSeconds = 15;
+        conf.ddnsLocalCommand = new String[]{"fixture-program", "fixture-argument"};
+        conf.ddnsDomains = null;
+        conf.ddnsApiKey = null;
+        assertTrue(RssClient.shouldScheduleDdns(conf));
+        assertTrue(RssClient.normalizeAndValidateRssConfig(conf));
+
+        conf.ddnsApiKey = "fixture-key";
+        conf.ddnsDomains = null;
+        assertTrue(RssClient.normalizeAndValidateRssConfig(conf));
+
+        conf.ddnsApiKey = "";
+        conf.ddnsDomains = Collections.emptyList();
+        assertTrue(RssClient.normalizeAndValidateRssConfig(conf));
+
+        conf.ddnsDomains = Collections.singletonList("cloud.f-li.cn");
+        conf.ddnsApiKey = null;
+        assertFalse(RssClient.normalizeAndValidateRssConfig(conf));
+
+        conf.ddnsApiKey = "fixture-key";
+        conf.ddnsDomains = Collections.singletonList("invalid-domain");
+        assertFalse(RssClient.normalizeAndValidateRssConfig(conf));
+
+        conf.ddnsDomains = Collections.singletonList("cloud.f-li.cn");
+        assertTrue(RssClient.normalizeAndValidateRssConfig(conf));
+    }
+
+    private static RssClientConf minimalValidRssConf() {
+        RssClientConf conf = new RssClientConf();
+        conf.socksPwd = "test-pwd";
+        RssClientConf.SocksServer server = new RssClientConf.SocksServer();
+        server.id = "main";
+        server.type = RssClientConf.UpstreamType.SOCKS5;
+        server.weight = 1;
+        server.endpoint = new org.rx.net.AuthenticEndpoint(new java.net.InetSocketAddress("127.0.0.1", 1080), "u", "p");
+        conf.socksServers = Collections.singletonList(server);
+        ShadowUser user = new ShadowUser();
+        user.setUsername("u1");
+        user.setSocksUser("s1");
+        user.setSsPort(18388);
+        user.setSsPwd("pwd");
+        conf.shadowUsers = Collections.singletonList(user);
+        return conf;
+    }
 }

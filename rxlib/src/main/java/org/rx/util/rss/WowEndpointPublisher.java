@@ -30,6 +30,7 @@ final class WowEndpointPublisher implements AutoCloseable {
     }
 
     static WowEndpointPublisher configure(RssClientConf conf, RpcClientConfig<SocksRpcContract> rpc) {
+        if (rpc == null || rpc.getTcpConfig() == null || rpc.getTcpConfig().getSocksCarrierProxy() != null) return null;
         if (conf.wowEndpointClientId == null || conf.wowEndpointClientId.isEmpty()
                 || conf.wowEndpointWriterKey == null || conf.wowEndpointWriterKey.length() < 32) return null;
         if (conf.wowEndpointRpcEndpoint != null && !conf.wowEndpointRpcEndpoint.isEmpty()) {

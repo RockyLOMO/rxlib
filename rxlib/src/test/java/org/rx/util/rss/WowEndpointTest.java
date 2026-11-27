@@ -127,6 +127,36 @@ class WowEndpointTest {
         assertFalse(registry.observe(ID, WRITER, null, null, false));
     }
 
+    @Test void proxiedCarrierSkipsPublisherAndSameHostPeerIsRejected() throws Exception {
+        RssClientConf conf = new RssClientConf();
+        conf.wowEndpointClientId = ID;
+        conf.wowEndpointWriterKey = WRITER;
+        conf.wowEndpointRpcEndpoint = "202.91.34.9:9901";
+
+        RpcClientConfig<SocksRpcContract> direct = RpcClientConfig.statefulMode(
+                new InetSocketAddress("202.91.34.9", 9901), SocksRpcContract.RPC_EVENT_VERSION);
+        WowEndpointPublisher directPublisher = WowEndpointPublisher.configure(conf, direct);
+        assertNotNull(directPublisher);
+        directPublisher.close();
+
+        RpcClientConfig<SocksRpcContract> proxied = RpcClientConfig.statefulMode(
+                new InetSocketAddress("202.91.34.9", 9901), SocksRpcContract.RPC_EVENT_VERSION);
+        proxied.getTcpConfig().setSocksCarrierProxy(new org.rx.net.AuthenticEndpoint(new InetSocketAddress("127.0.0.1", 1080)));
+        assertNull(WowEndpointPublisher.configure(conf, proxied));
+
+        WowEndpointRegistry registry = new WowEndpointRegistry(ID, WRITER, QUERY, 45000);
+        TransportSession directSession = peer("58.209.44.49");
+        when(directSession.localEndpoint()).thenReturn(new InetSocketAddress(InetAddress.getByName("202.91.34.9"), 9901));
+        assertTrue(registry.observe(ID, WRITER, directSession, "58.209.44.49", true));
+
+        TransportSession sameHostProxySession = peer("202.91.34.9");
+        when(sameHostProxySession.localEndpoint()).thenReturn(new InetSocketAddress(InetAddress.getByName("202.91.34.9"), 9901));
+        assertFalse(registry.observe(ID, WRITER, sameHostProxySession, null, false));
+        assertNull(registry.observePeer(ID, WRITER, sameHostProxySession));
+        assertEquals("58.209.44.49", query(registry, QUERY, 200).getString("ip"));
+        assertTrue(registry.observe(ID, WRITER, directSession, "58.209.44.49", true));
+    }
+
     @Test void fixedHttpRouteUsesRegistryAndIgnoresForwardedAndQueryIp() throws Exception {
         WowEndpointRegistry registry = new WowEndpointRegistry(ID, WRITER, QUERY, 45000);
         registry.observe(ID, WRITER, peer("58.209.44.49"), null, false);

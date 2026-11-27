@@ -92,7 +92,9 @@ public final class WowEndpointRegistry implements HttpServer.Handler {
                 || session == null || !session.isConnected()) return false;
         InetSocketAddress peer = session.remoteEndpoint();
         InetAddress address = peer == null ? null : peer.getAddress();
-        if (!publicIpv4(address)) return false;
+        InetSocketAddress local = session.localEndpoint();
+        InetAddress localAddress = local == null ? null : local.getAddress();
+        if (!publicIpv4(address) || (localAddress != null && address.equals(localAddress))) return false;
         long now = clock.getAsLong();
         Iterator<TransportSession> stale = generations.keySet().iterator();
         while (stale.hasNext()) if (!stale.next().isConnected()) stale.remove();
