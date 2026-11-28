@@ -161,3 +161,42 @@
 - **核心结论**：
   - **`weak` 大流调优生效**：两轮平均总流量 `1651.0 KiB`（仅比 `plain` 均 `1477.8 KiB` 高 **`+11.7%`**，较 2026-11-27 调优前 `+24.8%` 减半，且远低于 `game` `+37.2%`）；Server 侧稳定触发 `fallbacks[reason=bulk] = 2`（`directTcpBytes ~918 KiB`），`deliveryStallMillis` 压低至 `0–31.6 ms`，同时保持四档最低的持续交互 P99/Max（`875.5–881.3 ms`）与最高平均上传吞吐（`151.0 KiB/s`）。
   - **资源与泄漏基线达标**：单核 960 MiB VPS 全程 `VmHWM = 418.5 MiB`（远低于 `768 MiB` 整机红线）、线程数 `53–55`、cgroup `nr_throttled = 0`、服务端/客户端日志 **`LEAK = 0`**。
+
+---
+
+## 6. 2026-11-28 · `NodeRegistry` + 统一 `EgressCodec` + `Transport Core v2` + 双 NAT / RRP RAW 中继实测
+
+### 6.1 双 JDK `PARANOID` 全量回归（提交 `4dd85305`..`d4890e01`）
+- **基线环境**：Windows 11；Temurin JDK `21.0.12.1` + Temurin JDK `1.8.0_504`；Netty `4.2.21.Final`；统一参数 `-DskipTests=false "-DargLine=-Dio.netty.leakDetection.level=PARANOID"`。
+- **18 个核心测试类（`DnsRecordExchangeTest`、`UserRuleMatcherTest`、`V2RayGeoManagerTest`、`AddressDiscoveryTest`、`NodeRegistryTest`、`NameserverImplTest`、`EgressCodecTest`、`TransportCoreTest`、`RssTcpCodecSelectorTest`、`RssHopAesTest`、`RrpIntegrationTest`、`RrpRawRelayTest`、`RendezvousAndPathSelectorTest`、`AdaptiveTcpStreamTest`、`AdaptiveUdpPortTest`、`RemotingTest`、`RemotingTransportConfigTest`、`RssRuntimeNodeServiceIntegrationTest`）**：
+  - **JDK 21**：`158/158` 通过，`0` 失败，`0` 错误，`PARANOID LEAK: 0`。
+  - **JDK 8**：`158/158` 通过，`0` 失败，`0` 错误，`PARANOID LEAK: 0`。
+  - 覆盖要点：DNS RR TTL 衰减/字节预算、Geo 缺失 `BLOCK` fail-closed 与非 EventLoop 编译、`NodeRegistry` 分片锁/单调代际/租户限额/子系统共享会话/立即吊销、`EgressCodec`（`NONE`/纯 RFC 1950 `ZLIB_STORED`/方案 A `HTTP` + Server `AUTO` 零拷贝与粘包分片边界）、`Transport Core v2` 每会话 AEAD+`zlib3`+nonce 防重放+`LocalChannel`、`RrpServer` RAW 中继 4 级预算与轮询防队头阻塞、`RendezvousService`+`UdpEndpointObserver`+`PeerUdpPuncher`（含 RFC 8445 触发检查与 2s 被动滞留）+直连优先 `PathSelector`、以及 `RssRuntime` 默认关闭零副作用与事务式热重载。
+
+### 6.2 高丢包公网 VPS 实测：统一 `EgressCodec` 固定模式 vs Server `AUTO`（`182.255.85.247`）
+- **环境**：公网 VPS `182.255.85.247`（Debian 12、1 vCPU / `960 MiB` RAM、OpenJDK `21.0.13.1`、`-Xmx256m -Dio.netty.leakDetection.level=PARANOID`，隔离测试端口 `18910`–`18913`，不触碰生产服务）；客户端本机 `Youfan-PC`（`-Xmx256m -Dio.netty.leakDetection.level=PARANOID`）；VPS `nftables` `inet rx_live_verify` 精确统计双向 IP 层字节。
+- **负载**：每组 `6` 次独立建连+首包 RTT 探测 + `512 KiB` 双向加密（`Transport Core v2` AES-128-GCM）不可压缩随机字节流回显（`1,048,576 B` 双向有效业务字节），逐字节校验 `SHA-256`。
+
+| 模式 | VPS 端口 | 建连+首包 P50 / P95 (ms) | 双向有效吞吐 (Mbps) | 耗时 (ms) | VPS `nft` 线字节 (In / Out / Total) | 线字节 / 有效字节 | SHA-256 | 客户端 / VPS `LEAK` |
+| --- | :---: | ---: | ---: | ---: | ---: | ---: | :---: | :---: |
+| `fixed-NONE` | `18910` | 589.48 / 1519.52 | 0.32 | 26,140 | 546,955 / 593,105 / 1,140,060 | 1.0872× | 一致 | `0 / 0` |
+| `fixed-ZLIB_STORED` | `18911` | 691.91 / 1637.43 | 0.39 | 21,276 | 544,712 / 615,914 / 1,160,626 | 1.1069× | 一致 | `0 / 0` |
+| `fixed-HTTP`（方案 A） | `18912` | 589.76 / 889.59 | 0.35 | 24,059 | 551,413 / 609,769 / 1,161,182 | 1.1074× | 一致 | `0 / 0` |
+| `auto-NONE` | `18913` | 604.73 / 1278.86 | 0.43 | 19,517 | 545,487 / 590,390 / 1,135,877 | 1.0833× | 一致 | `0 / 0` |
+| `auto-ZLIB_STORED` | `18913` | 665.59 / 2561.93 | 0.32 | 26,397 | 542,535 / 608,244 / 1,150,779 | 1.0975× | 一致 | `0 / 0` |
+| `auto-HTTP`（方案 A） | `18913` | 591.81 / 1239.40 | 0.49 | 17,061 | 553,073 / 600,838 / 1,153,911 | 1.1005× | 一致 | `0 / 0` |
+
+- **结论**：Server `AUTO` 单端口（`18913`）在高丢包公网链路上对 `NONE`、纯 RFC 1950 `ZLIB_STORED`（无 `RSZ` 头）与方案 A `HTTP` 三种编解码 **100% 准确识别、0 误判、0 泄漏**；`ZLIB_STORED` 与方案 A `HTTP` 相对 `NONE` 的公网 IP 层额外线开销仅 **`+1.31%`～`+1.85%`**；VPS `egress-server` 结束时堆内 `19.3 MiB`、堆外直接内存 `8.33 MiB`、活跃线程 `7`、整机已用内存 `336 / 960 MiB`。
+
+### 6.3 真实多网卡与跨运营商双 NAT 实测（`182.255.85.247` + `AnZhi-PC` + `Xsy-PC` + `Youfan-PC`）
+- **部署**：公网 VPS `182.255.85.247` 单进程托管共享 `NodeRegistry` + `RendezvousService`（`18920` TCP `AUTO` + `18921` UDP Observer）+ `RrpServer` RAW Relay（`18922` TCP `AUTO`）；测试节点为同办公网多网卡主机 `AnZhi-PC`（`172.23.36.239` / 公网出口 `61.169.146.210`）、`Xsy-PC`（`192.168.137.1`, `192.168.1.10`, `172.23.37.51` / 公网出口 `61.169.146.210`）与独立家庭宽带 NAT 主机 `Youfan-PC`（公网出口 `180.108.234.255`）。每组传输 `512 KiB` 双向加密随机字节流（`1,048,576 B` 有效载荷）。
+
+| 拓扑与模式 | 选中 TCP 路径 | 选中 UDP 路径 / 升轨 | 双向吞吐 / 耗时 | VPS RAW 中继流 / 载荷字节 | VPS `nft` 线字节（控制 / 观测 / 中继） | 关键验证结果 |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| **Topo 1a · 多网卡直连优先**<br>(`AnZhi-PC → Xsy-PC`) | `DIRECT`<br>(`172.23.37.51:61175`, `168 ms`) | `DIRECT_OR_PUNCH`<br>(`172.23.37.51:52185`, RTT `6.63 ms`, 升轨=`true`) | **17.43 Mbps**<br>(`481 ms`) | **`0` 流**<br>**`0 / 0 B`** | `5,696 B` / `173 B` / `1,673 B`（仅鉴权控制） | 跳过不可达网卡选通直连；UDP 升轨 + **中继断洞无损修复=`true`**；E2E AEAD + `SHA-256` 一致；**中继数据流省流 `100%`（公网总流量降 `99.68%`）** |
+| **Topo 1b · 强制中继基线**<br>(`AnZhi-PC → VPS → Xsy-PC`) | `RELAY`<br>(`rrp-relay:xsy-pc/svc-xsy`, `1,499 ms`) | `NONE` | 0.31 Mbps<br>(`26,791 ms`) | `2` 流（含 RPC）<br>`1,051,982 / 1,051,982 B` | — / — / `2,339,113 B` | E2E AEAD + `SHA-256` 一致 + **中继上层 E2E AEAD RPC=`true`**；直连优先较强制中继吞吐提升 **`56.2×`** |
+| **Topo 2a · 跨运营商双 NAT 直连优先**<br>(`Youfan-PC → VPS ↔ AnZhi-PC`) | `RELAY`（按需兜底）<br>(`rrp-relay:anzhi-pc/svc-anzhi`, `2,407 ms`) | `NONE`（企业 NAT 对称映射，受控探包 `2,448 B` 后平稳退出） | 0.31 Mbps<br>(`26,892 ms`) | `1` 流<br>`1,051,545 / 1,051,545 B` | `6,822 B` / `173 B` / `2,307,875 B` | 双端均真实观测到跨 ISP 公网映射（`180.108.234.255:62794` vs `61.169.146.210:28814`）；直连受阻后自动按需启用 E2E AEAD RAW Relay，`SHA-256` 一致 |
+| **Topo 2b · 跨运营商双 NAT 禁 UDP**<br>(`Youfan-PC → VPS ↔ AnZhi-PC`) | `RELAY`（纯 TCP）<br>(`2,615 ms`) | `NONE`（0 探包） | 0.25 Mbps<br>(`33,710 ms`) | 复用中继链路 | — | 纯 TCP 按需中继 + **中继上层 E2E AEAD `Remoting` RPC=`true`** + `SHA-256` 一致 |
+
+- **公网安全矩阵（`182.255.85.247` 实测）**：错误节点密钥认证拒绝=`true`；跨租户（`tenant-2` `outsider-c` → `tenant-1` `anzhi-pc`）Rendezvous `discoverPeer` 拒绝=`true`；跨租户 RRP RAW `openRawStream` 拒绝=`true`；伪造 UDP 观测包被静默丢弃（`forgedObsDropped=true`、`vpsObsRejectedDelta=1`、`0` 回包，无放大风险）。
+- **VPS 资源与泄漏核验**：VPS `node-server` 运行结束时 `activeRawStreams=0`、`globalRelayPendingBytes=0`、堆内 `31.5 MiB`、堆外直接内存 `8.62 MiB`、线程 `24`、整机已用内存 `392 / 960 MiB`（可用 `567 MiB`）；全部 4 台机器在 `PARANOID` 模式下 **`LEAK = 0`**，测试完成后临时进程/目录/`nft` 表全部清空。
