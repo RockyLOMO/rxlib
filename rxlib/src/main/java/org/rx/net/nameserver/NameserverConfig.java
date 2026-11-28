@@ -10,7 +10,7 @@ import java.util.Set;
 
 @Getter
 @Setter
-@ToString(exclude = {"replicaAuthToken"})
+@ToString(exclude = {"replicaAuthToken", "transportAuthToken"})
 public class NameserverConfig implements Serializable {
     private static final long serialVersionUID = -333728009047376209L;
     private int dnsPort = 53;
@@ -20,6 +20,8 @@ public class NameserverConfig implements Serializable {
     private String nodeId;
     private long replicaFullSyncPeriodMillis = 60_000L;
     private List<String> replicaEndpoints;
+    /** Shared secret for Transport Core v2 AEAD authentication on Nameserver RPC; falls back to replicaAuthToken / rtoken when configured. */
+    private String transportAuthToken;
     /** Shared secret for HMAC authentication between Nameserver peers; falls back to RxConfig.INSTANCE.getRtoken(). */
     private String replicaAuthToken;
     /** Optional allowlist of authorized peer sourceIds or IP addresses; empty allows any peer presenting valid auth token. */

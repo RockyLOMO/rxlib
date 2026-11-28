@@ -64,6 +64,20 @@ public final class NameserverClient extends Disposable {
     final RandomList<NsInfo> holder = new RandomList<>();
     final Set<InetSocketAddress> svrEps = ConcurrentHashMap.newKeySet();
     volatile Func<String> publicIpResolver = Sockets::getPublicIp;
+    volatile String transportAuthToken;
+    volatile String nodeId;
+    volatile String nodeSecret;
+
+    public NameserverClient setTransportAuthToken(String transportAuthToken) {
+        this.transportAuthToken = transportAuthToken;
+        return this;
+    }
+
+    public NameserverClient setNodeCredentials(String nodeId, String nodeSecret) {
+        this.nodeId = nodeId;
+        this.nodeSecret = nodeSecret;
+        return this;
+    }
 
     public Set<InetSocketAddress> registerEndpoints() {
         return Linq.from(holder).select(p -> p.registerEndpoint).toSet();
@@ -133,6 +147,9 @@ public final class NameserverClient extends Disposable {
                 holder.add(tuple);
                 Action handshake = () -> {
                     try {
+                        if (!Strings.isEmpty(nodeId) && !Strings.isEmpty(nodeSecret)) {
+                            tuple.ns.authenticateNode(nodeId, nodeSecret);
+                        }
                         Integer lastDp = tuple.dnsPort;
                         if (eq(tuple.dnsPort = tuple.ns.register(appName, RandomList.DEFAULT_WEIGHT, instanceId, svrEps), lastDp)) {
                             log.debug("nsc: login ns ok {} -> {}", regEp, tuple.dnsPort);
@@ -158,6 +175,9 @@ public final class NameserverClient extends Disposable {
                         }
                         Tasks.setTimeout(() -> {
                             try {
+                                if (!Strings.isEmpty(nodeId) && !Strings.isEmpty(nodeSecret)) {
+                                    tuple.ns.authenticateNode(nodeId, nodeSecret);
+                                }
                                 tuple.dnsPort = tuple.ns.register(appName, RandomList.DEFAULT_WEIGHT, instanceId, svrEps);
                                 tuple.failCount = 0;
                                 registerInstanceAttrs(tuple.ns);
@@ -181,6 +201,13 @@ public final class NameserverClient extends Disposable {
                     }
                 };
                 RpcClientConfig<Nameserver> config = RpcClientConfig.statefulMode(regEp, 0);
+                config.setSensitiveMethods(java.util.Collections.singleton("authenticateNode"));
+                String authSecret = !Strings.isEmpty(transportAuthToken) ? transportAuthToken
+                        : (!Strings.isEmpty(nodeId) ? RxConfig.INSTANCE.getRtoken() : null);
+                if (!Strings.isEmpty(authSecret)) {
+                    config.getTransportConfig().setAuthSecret(authSecret);
+                    config.getTransportConfig().setEnableEncryption(true);
+                }
                 config.setInitHandler((ns, rc) -> {
                     rc.onConnected.add((s, e) -> {
                         holder.setWeight(tuple, RandomList.DEFAULT_WEIGHT);

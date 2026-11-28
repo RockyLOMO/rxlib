@@ -63,12 +63,14 @@ public final class RendezvousService extends Disposable implements RendezvousCon
         final long punchSessionId;
         final String initiatorNodeId;
         final String targetNodeId;
+        final String tenant;
         final long expiresAtMillis;
 
-        ActivePunchSession(long punchSessionId, String initiatorNodeId, String targetNodeId, long expiresAtMillis) {
+        ActivePunchSession(long punchSessionId, String initiatorNodeId, String targetNodeId, String tenant, long expiresAtMillis) {
             this.punchSessionId = punchSessionId;
             this.initiatorNodeId = initiatorNodeId;
             this.targetNodeId = targetNodeId;
+            this.tenant = tenant == null ? "" : tenant;
             this.expiresAtMillis = expiresAtMillis;
         }
 
@@ -86,7 +88,9 @@ public final class RendezvousService extends Disposable implements RendezvousCon
     private final ConcurrentHashMap<Long, NodeControlSession> sessionsByTransportId = new ConcurrentHashMap<Long, NodeControlSession>();
     private final ConcurrentHashMap<String, NodeControlSession> sessionsByNodeId = new ConcurrentHashMap<String, NodeControlSession>();
     private final ConcurrentHashMap<Long, ActivePunchSession> punchSessions = new ConcurrentHashMap<Long, ActivePunchSession>();
-    private final ConcurrentHashMap<String, AtomicInteger> nodePunchCounts = new ConcurrentHashMap<String, AtomicInteger>();
+    private final ConcurrentHashMap<String, AtomicInteger> initiatorPunchCounts = new ConcurrentHashMap<String, AtomicInteger>();
+    private final ConcurrentHashMap<String, AtomicInteger> targetPunchCounts = new ConcurrentHashMap<String, AtomicInteger>();
+    private final ConcurrentHashMap<String, AtomicInteger> tenantPunchCounts = new ConcurrentHashMap<String, AtomicInteger>();
     private final Object punchLock = new Object();
     private final AtomicLong nextPunchId = new AtomicLong(1L);
     private final AtomicLong punchSessionsCreated = new AtomicLong();
@@ -278,6 +282,11 @@ public final class RendezvousService extends Disposable implements RendezvousCon
 
     @Override
     public PunchSessionResult requestPunchSession(String targetNodeId, String targetService) {
+        return requestPunchSessionForAttempt(targetNodeId, targetService, null);
+    }
+
+    @Override
+    public PunchSessionResult requestPunchSessionForAttempt(String targetNodeId, String targetService, String attemptId) {
         checkNotClosed();
         NodeControlSession initiator = requireAuthenticatedCaller();
         if (Strings.isEmpty(targetNodeId) || Strings.isEmpty(targetService)) {
@@ -286,6 +295,7 @@ public final class RendezvousService extends Disposable implements RendezvousCon
         }
         String normTarget = targetNodeId.trim();
         String normSvc = targetService.trim();
+        String safeAttemptId = sanitizeAttemptId(attemptId);
         if (!nodeRegistry.isPeerAuthorized(initiator.nodeId, normTarget)) {
             punchSessionsRejected.incrementAndGet();
             throw new SecurityException("Punch coordination unauthorized for target: " + normTarget);
@@ -298,16 +308,29 @@ public final class RendezvousService extends Disposable implements RendezvousCon
             punchSessionsRejected.incrementAndGet();
             throw new IllegalStateException("Target peer is not connected to Rendezvous: " + normTarget);
         }
+        List<String> targetHosted = target.hostedServices;
+        if (targetHosted != null && !targetHosted.isEmpty() && !targetHosted.contains(normSvc)) {
+            punchSessionsRejected.incrementAndGet();
+            throw new SecurityException("Target peer does not authorize service: " + normSvc);
+        }
 
         long now = System.currentTimeMillis();
         long expiresAt = now + Math.max(2000L, config.getPunchSessionTtlMillis());
         long punchSessionId;
+        ActivePunchSession active;
         synchronized (punchLock) {
             sweepExpiredPunchSessionsLocked(now);
             int maxGlobal = Math.max(1, config.getMaxGlobalPunchSessions());
-            int maxPerNode = Math.max(1, config.getMaxPunchSessionsPerNode());
-            AtomicInteger initCount = nodePunchCounts.computeIfAbsent(initiator.nodeId, k -> new AtomicInteger());
-            if (punchSessions.size() >= maxGlobal || initCount.get() >= maxPerNode) {
+            int maxPerInit = Math.max(1, config.getMaxPunchSessionsPerNode());
+            int maxPerTarget = Math.max(1, config.getMaxPunchSessionsPerTarget());
+            int maxPerTenant = Math.max(1, config.getMaxPunchSessionsPerTenant());
+            int curInit = countOf(initiatorPunchCounts, initiator.nodeId);
+            int curTarget = countOf(targetPunchCounts, normTarget);
+            int curTenant = countOf(tenantPunchCounts, initiator.tenant);
+            if (punchSessions.size() >= maxGlobal
+                    || curInit >= maxPerInit
+                    || curTarget >= maxPerTarget
+                    || curTenant >= maxPerTenant) {
                 punchSessionsRejected.incrementAndGet();
                 throw new IllegalStateException("Rendezvous punch session budget exceeded");
             }
@@ -316,9 +339,11 @@ public final class RendezvousService extends Disposable implements RendezvousCon
             if (punchSessionId == 0L) {
                 punchSessionId = 1L;
             }
-            ActivePunchSession active = new ActivePunchSession(punchSessionId, initiator.nodeId, normTarget, expiresAt);
+            active = new ActivePunchSession(punchSessionId, initiator.nodeId, normTarget, initiator.tenant, expiresAt);
             punchSessions.put(punchSessionId, active);
-            initCount.incrementAndGet();
+            incrementCounter(initiatorPunchCounts, initiator.nodeId);
+            incrementCounter(targetPunchCounts, normTarget);
+            incrementCounter(tenantPunchCounts, initiator.tenant);
             punchSessionsCreated.incrementAndGet();
         }
 
@@ -332,6 +357,7 @@ public final class RendezvousService extends Disposable implements RendezvousCon
 
         PunchInviteEvent invite = new PunchInviteEvent();
         invite.setPunchSessionId(punchSessionId);
+        invite.setAttemptId(safeAttemptId);
         invite.setInitiatorNodeId(initiator.nodeId);
         invite.setTargetService(normSvc);
         invite.setPunchKey(punchKey.clone());
@@ -342,11 +368,15 @@ public final class RendezvousService extends Disposable implements RendezvousCon
         // Push coordinated punch invite directly to target B over its authenticated AEAD RPC session.
         boolean pushed = Remoting.publishEventToClient(target.handle, EVENT_PUNCH_INVITE, invite);
         if (!pushed) {
+            releasePunchSession(active);
+            punchSessionsRejected.incrementAndGet();
             log.debug("Rendezvous punch invite delivery failed target={} punchSessionId={}", normTarget, punchSessionId);
+            throw new IllegalStateException("Punch invite delivery failed for target: " + normTarget);
         }
 
         PunchSessionResult res = new PunchSessionResult();
         res.setPunchSessionId(punchSessionId);
+        res.setAttemptId(safeAttemptId);
         res.setInitiatorNodeId(initiator.nodeId);
         res.setTargetNodeId(normTarget);
         res.setTargetService(normSvc);
@@ -420,16 +450,25 @@ public final class RendezvousService extends Disposable implements RendezvousCon
         log.info("RendezvousService disconnected revoked nodeId={}", state.nodeId);
     }
 
+    private void releasePunchSession(ActivePunchSession s) {
+        synchronized (punchLock) {
+            if (punchSessions.remove(s.punchSessionId, s)) {
+                decrementCounterAndPrune(initiatorPunchCounts, s.initiatorNodeId);
+                decrementCounterAndPrune(targetPunchCounts, s.targetNodeId);
+                decrementCounterAndPrune(tenantPunchCounts, s.tenant);
+            }
+        }
+    }
+
     private void cleanupNodePunchSessions(String nodeId) {
         synchronized (punchLock) {
             for (Map.Entry<Long, ActivePunchSession> e : punchSessions.entrySet()) {
                 ActivePunchSession s = e.getValue();
                 if (nodeId.equals(s.initiatorNodeId) || nodeId.equals(s.targetNodeId)) {
                     if (punchSessions.remove(e.getKey(), s)) {
-                        AtomicInteger c = nodePunchCounts.get(s.initiatorNodeId);
-                        if (c != null) {
-                            c.decrementAndGet();
-                        }
+                        decrementCounterAndPrune(initiatorPunchCounts, s.initiatorNodeId);
+                        decrementCounterAndPrune(targetPunchCounts, s.targetNodeId);
+                        decrementCounterAndPrune(tenantPunchCounts, s.tenant);
                     }
                 }
             }
@@ -446,11 +485,49 @@ public final class RendezvousService extends Disposable implements RendezvousCon
         for (Map.Entry<Long, ActivePunchSession> e : punchSessions.entrySet()) {
             ActivePunchSession s = e.getValue();
             if (s.isExpired(now) && punchSessions.remove(e.getKey(), s)) {
-                AtomicInteger c = nodePunchCounts.get(s.initiatorNodeId);
-                if (c != null) {
-                    c.decrementAndGet();
-                }
+                decrementCounterAndPrune(initiatorPunchCounts, s.initiatorNodeId);
+                decrementCounterAndPrune(targetPunchCounts, s.targetNodeId);
+                decrementCounterAndPrune(tenantPunchCounts, s.tenant);
             }
+        }
+    }
+
+    private static int countOf(Map<String, AtomicInteger> map, String key) {
+        if (Strings.isEmpty(key)) {
+            return 0;
+        }
+        AtomicInteger c = map.get(key);
+        return c == null ? 0 : c.get();
+    }
+
+    private static void incrementCounter(Map<String, AtomicInteger> map, String key) {
+        if (Strings.isEmpty(key)) {
+            return;
+        }
+        map.computeIfAbsent(key, k -> new AtomicInteger()).incrementAndGet();
+    }
+
+    private static void decrementCounterAndPrune(Map<String, AtomicInteger> map, String key) {
+        if (Strings.isEmpty(key)) {
+            return;
+        }
+        AtomicInteger c = map.get(key);
+        if (c != null && c.decrementAndGet() <= 0) {
+            map.remove(key, c);
+        }
+    }
+
+    private static String sanitizeAttemptId(String attemptId) {
+        if (Strings.isEmpty(attemptId)) {
+            return null;
+        }
+        String trimmed = attemptId.trim();
+        return trimmed.length() > 32 ? trimmed.substring(0, 32) : trimmed;
+    }
+
+    int trackedCounterMapEntries() {
+        synchronized (punchLock) {
+            return initiatorPunchCounts.size() + targetPunchCounts.size() + tenantPunchCounts.size();
         }
     }
 
@@ -482,8 +559,12 @@ public final class RendezvousService extends Disposable implements RendezvousCon
         nodeRegistry.removeOnNodeRevokedListener(revokeListener);
         sessionsByNodeId.clear();
         sessionsByTransportId.clear();
-        punchSessions.clear();
-        nodePunchCounts.clear();
+        synchronized (punchLock) {
+            punchSessions.clear();
+            initiatorPunchCounts.clear();
+            targetPunchCounts.clear();
+            tenantPunchCounts.clear();
+        }
         tryClose(udpObserver);
         tryClose(rpcServer);
     }

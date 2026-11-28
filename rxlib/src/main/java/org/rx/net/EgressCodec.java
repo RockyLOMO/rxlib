@@ -3,6 +3,8 @@ package org.rx.net;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelDuplexHandler;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
@@ -16,13 +18,16 @@ import io.netty.handler.codec.compression.JdkZlibDecoder;
 import io.netty.handler.codec.compression.ZlibCodecFactory;
 import io.netty.handler.codec.compression.ZlibWrapper;
 import io.netty.util.AttributeKey;
+import org.apache.commons.lang3.time.FastDateFormat;
 import org.rx.diagnostic.DiagnosticMetrics;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.TimeZone;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.DataFormatException;
 import java.util.zip.Deflater;
@@ -89,7 +94,181 @@ public enum EgressCodec {
     public static final int DEFAULT_DETECT_TIMEOUT_MILLIS = 5000;
 
     private static final byte[] HTTP_POST_PREFIX = "POST ".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[] HTTP_GET_PREFIX = "GET ".getBytes(StandardCharsets.US_ASCII);
     private static final byte[] RXTC_MAGIC = new byte[]{'R', 'X', 'T', 'C'};
+
+    // Built-in HTTP pseudo-header parameter sets preserved from legacy HttpPseudoHeaderEncoder.
+    // Used strictly as private HTTP header text on already-authorized connections; never drives DNS/routing/TLS.
+    static final String[] HTTP_PREFIXES = {
+            "api", "v1", "v2", "rest", "web"
+    };
+    static final String[] HTTP_RESOURCES = {
+            "user", "login", "auth", "profile", "settings",
+            "data", "order", "product", "cart", "payment",
+            "post", "comment", "blog", "search", "info"
+    };
+    static final String[] HTTP_SUFFIXES = {
+            "profile", "settings", "list", "detail", "create",
+            "update", "delete", "info", "status", ""
+    };
+    static final String[] HTTP_TLDS = {
+            ".cn", ".com.cn", ".net.cn", ".org.cn", ".edu.cn",
+            ".gov.cn", ".com", ".net", ".org"
+    };
+    static final String[] HTTP_SUBDOMAINS = {
+            "api", "data", "web", "shop", "cloud", "app",
+            "baidu", "alibaba", "tencent", "jd", "sina",
+            "sohu", "163", "qq", "xiaomi", "huawei"
+    };
+    static final String[] HTTP_QUERY_KEYS = {
+            "id", "type", "page", "size", "query", "token",
+            "category", "sort", "filter", "lang"
+    };
+    static final String[] HTTP_QUERY_VALUES = {
+            "user", "admin", "json", "xml", "asc", "desc", "en", "zh"
+    };
+
+    private static final byte[][] HTTP_PREFIXES_BYTES = toAsciiArray(HTTP_PREFIXES);
+    private static final byte[][] HTTP_RESOURCES_BYTES = toAsciiArray(HTTP_RESOURCES);
+    private static final byte[][] HTTP_SUFFIXES_BYTES = toAsciiArray(HTTP_SUFFIXES);
+    private static final byte[][] HTTP_TLDS_BYTES = toAsciiArray(HTTP_TLDS);
+    private static final byte[][] HTTP_SUBDOMAINS_BYTES = toAsciiArray(HTTP_SUBDOMAINS);
+    private static final byte[][] HTTP_QUERY_KEYS_BYTES = toAsciiArray(HTTP_QUERY_KEYS);
+    private static final byte[][] HTTP_QUERY_VALUES_BYTES = toAsciiArray(HTTP_QUERY_VALUES);
+
+    private static final FastDateFormat HTTP_DATE_FORMAT =
+            FastDateFormat.getInstance("EEE, dd MMM yyyy HH:mm:ss 'GMT'", TimeZone.getTimeZone("GMT"), Locale.US);
+    private static volatile long cachedDateEpochSecond = Long.MIN_VALUE;
+    private static volatile byte[] cachedDateBytes =
+            HTTP_DATE_FORMAT.format(System.currentTimeMillis()).getBytes(StandardCharsets.US_ASCII);
+
+    private static byte[][] toAsciiArray(String[] src) {
+        byte[][] out = new byte[src.length][];
+        for (int i = 0; i < src.length; i++) {
+            out[i] = src[i].getBytes(StandardCharsets.US_ASCII);
+        }
+        return out;
+    }
+
+    /** Generates a random built-in HTTP URL path (optionally with 1..3 query parameters). */
+    public static String generateRandomPath() {
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        StringBuilder path = new StringBuilder(64).append('/');
+        if (random.nextBoolean()) {
+            path.append(HTTP_PREFIXES[random.nextInt(HTTP_PREFIXES.length)]).append('/');
+        }
+        path.append(HTTP_RESOURCES[random.nextInt(HTTP_RESOURCES.length)]);
+        if (random.nextBoolean()) {
+            String suffix = HTTP_SUFFIXES[random.nextInt(HTTP_SUFFIXES.length)];
+            if (!suffix.isEmpty()) {
+                path.append('/').append(suffix);
+            } else if (random.nextDouble() < 0.3D) {
+                path.append('/').append(random.nextInt(10000));
+            }
+        }
+        if (random.nextBoolean()) {
+            path.append('?');
+            int paramCount = random.nextInt(3) + 1;
+            for (int i = 0; i < paramCount; i++) {
+                if (i > 0) {
+                    path.append('&');
+                }
+                path.append(HTTP_QUERY_KEYS[random.nextInt(HTTP_QUERY_KEYS.length)]).append('=');
+                if (random.nextBoolean()) {
+                    path.append(random.nextInt(1000));
+                } else {
+                    path.append(HTTP_QUERY_VALUES[random.nextInt(HTTP_QUERY_VALUES.length)]);
+                }
+            }
+        }
+        return path.toString();
+    }
+
+    /** Generates a random built-in Host header string for private HTTP egress framing. */
+    public static String generateRandomHost() {
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        StringBuilder host = new StringBuilder(32);
+        if (random.nextDouble() < 0.3D) {
+            host.append(HTTP_SUBDOMAINS[random.nextInt(HTTP_SUBDOMAINS.length)]).append('.');
+        }
+        host.append(HTTP_SUBDOMAINS[random.nextInt(HTTP_SUBDOMAINS.length)]);
+        host.append(HTTP_TLDS[random.nextInt(HTTP_TLDS.length)]);
+        return host.toString();
+    }
+
+    static byte[] currentUtcDateBytes() {
+        long sec = System.currentTimeMillis() / 1000L;
+        if (sec != cachedDateEpochSecond) {
+            byte[] next = HTTP_DATE_FORMAT.format(sec * 1000L).getBytes(StandardCharsets.US_ASCII);
+            cachedDateBytes = next;
+            cachedDateEpochSecond = sec;
+            return next;
+        }
+        return cachedDateBytes;
+    }
+
+    private static void writeRandomPath(ByteBuf out, ThreadLocalRandom random) {
+        out.writeByte('/');
+        if (random.nextBoolean()) {
+            out.writeBytes(HTTP_PREFIXES_BYTES[random.nextInt(HTTP_PREFIXES_BYTES.length)]);
+            out.writeByte('/');
+        }
+        out.writeBytes(HTTP_RESOURCES_BYTES[random.nextInt(HTTP_RESOURCES_BYTES.length)]);
+        if (random.nextBoolean()) {
+            byte[] suffix = HTTP_SUFFIXES_BYTES[random.nextInt(HTTP_SUFFIXES_BYTES.length)];
+            if (suffix.length > 0) {
+                out.writeByte('/');
+                out.writeBytes(suffix);
+            } else if (random.nextDouble() < 0.3D) {
+                out.writeByte('/');
+                writeAsciiInt(out, random.nextInt(10000));
+            }
+        }
+        if (random.nextBoolean()) {
+            out.writeByte('?');
+            int paramCount = random.nextInt(3) + 1;
+            for (int i = 0; i < paramCount; i++) {
+                if (i > 0) {
+                    out.writeByte('&');
+                }
+                out.writeBytes(HTTP_QUERY_KEYS_BYTES[random.nextInt(HTTP_QUERY_KEYS_BYTES.length)]);
+                out.writeByte('=');
+                if (random.nextBoolean()) {
+                    writeAsciiInt(out, random.nextInt(1000));
+                } else {
+                    out.writeBytes(HTTP_QUERY_VALUES_BYTES[random.nextInt(HTTP_QUERY_VALUES_BYTES.length)]);
+                }
+            }
+        }
+    }
+
+    private static void writeRandomHost(ByteBuf out, ThreadLocalRandom random) {
+        if (random.nextDouble() < 0.3D) {
+            out.writeBytes(HTTP_SUBDOMAINS_BYTES[random.nextInt(HTTP_SUBDOMAINS_BYTES.length)]);
+            out.writeByte('.');
+        }
+        out.writeBytes(HTTP_SUBDOMAINS_BYTES[random.nextInt(HTTP_SUBDOMAINS_BYTES.length)]);
+        out.writeBytes(HTTP_TLDS_BYTES[random.nextInt(HTTP_TLDS_BYTES.length)]);
+    }
+
+    /** Zero-allocation non-negative ASCII integer writer. */
+    private static void writeAsciiInt(ByteBuf out, int value) {
+        if (value == 0) {
+            out.writeByte('0');
+            return;
+        }
+        int div = 1;
+        int tmp = value;
+        while (tmp >= 10) {
+            tmp /= 10;
+            div *= 10;
+        }
+        while (div > 0) {
+            out.writeByte('0' + (value / div));
+            value %= div;
+            div /= 10;
+        }
+    }
 
     private final String wireName;
     private final byte wireCode;
@@ -340,14 +519,12 @@ public enum EgressCodec {
             if (!in.isReadable()) {
                 return;
             }
-            if (in.readableBytes() > config.getMaxHeaderBytes()) {
-                reject(ctx, in);
-                return;
-            }
+            // Decide strictly from the first 1..5 disjoint protocol prefix bytes (never reject coalesced
+            // valid header + large body payloads here; EgressHttpDecoder enforces header & body caps separately).
             int pos = in.readerIndex();
             int b0 = in.getUnsignedByte(pos);
 
-            // 1. HTTP Scheme A ("POST ")
+            // 1. HTTP Scheme A ("POST " or optional "GET ")
             if (b0 == 'P') {
                 if (in.readableBytes() < HTTP_POST_PREFIX.length) {
                     return;
@@ -359,6 +536,23 @@ public enum EgressCodec {
                     }
                 }
                 if (!allowed.contains(HTTP)) {
+                    reject(ctx, in);
+                    return;
+                }
+                select(ctx, HTTP);
+                return;
+            }
+            if (b0 == 'G') {
+                if (in.readableBytes() < HTTP_GET_PREFIX.length) {
+                    return;
+                }
+                for (int i = 0; i < HTTP_GET_PREFIX.length; i++) {
+                    if (in.getByte(pos + i) != HTTP_GET_PREFIX[i]) {
+                        reject(ctx, in);
+                        return;
+                    }
+                }
+                if (!allowed.contains(HTTP) || !config.isHttpAllowGetMethod()) {
                     reject(ctx, in);
                     return;
                 }
@@ -380,40 +574,21 @@ public enum EgressCodec {
                     select(ctx, ZLIB_STORED);
                     return;
                 }
-                // If RSS_SOCKS AUTO explicitly excluded ZLIB_STORED and allowed NONE, pass through to RssTcpCodecSelector.
-                if (innerProtocol == InnerProtocol.RSS_SOCKS && allowed.contains(NONE)) {
-                    select(ctx, NONE);
-                    return;
-                }
                 reject(ctx, in);
                 return;
             }
 
-            // 3. Explicit NONE inner protocol boundaries
-            if (innerProtocol == InnerProtocol.TRANSPORT_CORE) {
-                if (b0 == RXTC_MAGIC[0]) {
-                    if (in.readableBytes() < RXTC_MAGIC.length) {
-                        return;
-                    }
-                    for (int i = 0; i < RXTC_MAGIC.length; i++) {
-                        if (in.getByte(pos + i) != RXTC_MAGIC[i]) {
-                            reject(ctx, in);
-                            return;
-                        }
-                    }
-                    if (!allowed.contains(NONE)) {
+            // 3. Explicit NONE inner protocol boundary ("RXTC" Transport Core v2 — unified for all private TCP links)
+            if (b0 == RXTC_MAGIC[0]) {
+                if (in.readableBytes() < RXTC_MAGIC.length) {
+                    return;
+                }
+                for (int i = 0; i < RXTC_MAGIC.length; i++) {
+                    if (in.getByte(pos + i) != RXTC_MAGIC[i]) {
                         reject(ctx, in);
                         return;
                     }
-                    select(ctx, NONE);
-                    return;
                 }
-                reject(ctx, in);
-                return;
-            }
-
-            // InnerProtocol.RSS_SOCKS: SOCKS5 (0x05) or RssHopAes (0xA5)
-            if (b0 == 0x05 || b0 == RssHopAes.MAGIC) {
                 if (!allowed.contains(NONE)) {
                     reject(ctx, in);
                     return;
@@ -461,30 +636,67 @@ public enum EgressCodec {
      * Full-duplex HTTP/1.1 binary-body encoder (Scheme A: fixed {@code Content-Type: application/json}
      * carrying raw binary payload with zero JSON/Base64 conversion and zero-copy body forwarding when
      * {@code httpBodyEncoding == NONE}).
+     * <p>
+     * Preserves legacy HTTP Pseudo header templates ({@code Connection: keep-alive}, {@code Host},
+     * {@code Accept: *&#47;*}, Chrome {@code User-Agent}, server UTC {@code Date} + {@code Server: Tengine})
+     * and built-in random Host/URL Path/Query &amp; 80% GET / 20% POST selection while writing headers
+     * directly into pooled {@link ByteBuf}s with zero per-frame String allocation.
      */
     static final class EgressHttpEncoder extends ChannelOutboundHandlerAdapter {
+        private static final byte[] REQ_MID_HTTP_VER_AND_HOST =
+                " HTTP/1.1\r\nConnection: keep-alive\r\nHost: ".getBytes(StandardCharsets.US_ASCII);
+        private static final byte[] REQ_TAIL_PLAIN =
+                ("\r\nAccept: */*\r\n"
+                        + "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36\r\n"
+                        + "Content-Type: application/json\r\n"
+                        + "Content-Length: ").getBytes(StandardCharsets.US_ASCII);
+        private static final byte[] REQ_TAIL_DEFLATE =
+                ("\r\nAccept: */*\r\n"
+                        + "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36\r\n"
+                        + "Content-Type: application/json\r\n"
+                        + "Content-Encoding: deflate\r\n"
+                        + "Content-Length: ").getBytes(StandardCharsets.US_ASCII);
+        private static final byte[] CRLF_CRLF = "\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
+        private static final byte[] RESP_PREFIX = "HTTP/1.1 200 OK\r\nDate: ".getBytes(StandardCharsets.US_ASCII);
+        private static final byte[] RESP_MID_PLAIN =
+                "\r\nServer: Tengine\r\nContent-Type: application/json\r\nContent-Length: ".getBytes(StandardCharsets.US_ASCII);
+        private static final byte[] RESP_MID_DEFLATE =
+                "\r\nServer: Tengine\r\nContent-Type: application/json\r\nContent-Encoding: deflate\r\nContent-Length: ".getBytes(StandardCharsets.US_ASCII);
+        private static final byte[] RESP_SUFFIX = "\r\nConnection: keep-alive\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
+
         private final EgressConfig config;
         private final boolean server;
-        private final byte[] staticPrefix;
-        private final byte[] staticSuffix;
+        private final boolean deflateBody;
+        private final boolean randomHeaders;
+        private final boolean allowGetMethod;
+        private final byte[] fixedRequestPrefix;
+        private final byte[] reqTail;
+        private final byte[] respMid;
 
         EgressHttpEncoder(EgressConfig config, boolean server) {
             this.config = config;
             this.server = server;
-            StringBuilder prefix = new StringBuilder(128);
-            if (server) {
-                prefix.append("HTTP/1.1 200 OK\r\n");
+            this.deflateBody = config.getHttpBodyEncoding() == HttpBodyEncoding.ZLIB_STORED;
+            this.randomHeaders = config.isHttpRandomHeaders();
+            this.allowGetMethod = config.isHttpAllowGetMethod();
+            this.reqTail = deflateBody ? REQ_TAIL_DEFLATE : REQ_TAIL_PLAIN;
+            this.respMid = deflateBody ? RESP_MID_DEFLATE : RESP_MID_PLAIN;
+            if (!server && !randomHeaders) {
+                StringBuilder sb = new StringBuilder(256);
+                sb.append("POST ").append(config.getHttpPath()).append(" HTTP/1.1\r\n");
+                sb.append("Connection: keep-alive\r\n");
+                sb.append("Host: ").append(config.getHttpHost()).append("\r\n");
+                sb.append("Accept: */*\r\n");
+                sb.append("User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36\r\n");
+                sb.append("Content-Type: application/json\r\n");
+                if (deflateBody) {
+                    sb.append("Content-Encoding: deflate\r\n");
+                }
+                sb.append("Content-Length: ");
+                this.fixedRequestPrefix = sb.toString().getBytes(StandardCharsets.US_ASCII);
             } else {
-                prefix.append("POST ").append(config.getHttpPath()).append(" HTTP/1.1\r\n");
-                prefix.append("Host: ").append(config.getHttpHost()).append("\r\n");
+                this.fixedRequestPrefix = null;
             }
-            prefix.append("Content-Type: application/json\r\n");
-            if (config.getHttpBodyEncoding() == HttpBodyEncoding.ZLIB_STORED) {
-                prefix.append("Content-Encoding: deflate\r\n");
-            }
-            prefix.append("Content-Length: ");
-            this.staticPrefix = prefix.toString().getBytes(StandardCharsets.US_ASCII);
-            this.staticSuffix = "\r\nConnection: keep-alive\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         }
 
         @Override
@@ -501,27 +713,32 @@ public enum EgressCodec {
                 return;
             }
             int maxBody = config.getMaxBodyBytes();
-            boolean deflateBody = config.getHttpBodyEncoding() == HttpBodyEncoding.ZLIB_STORED;
             if (!deflateBody && total <= maxBody) {
                 ByteBuf header = buildHeader(ctx, total);
-                ctx.write(header, ctx.voidPromise());
-                ctx.write(body, promise);
+                if (promise.isVoid()) {
+                    ctx.write(header, ctx.voidPromise());
+                    ctx.write(body, promise);
+                } else {
+                    WriteGroupAggregator agg = new WriteGroupAggregator(ctx, promise, 2);
+                    ctx.write(header, agg.nextChildPromise());
+                    ctx.write(body, agg.nextChildPromise());
+                }
                 return;
             }
+            int chunks = (total + maxBody - 1) / maxBody;
+            WriteGroupAggregator agg = promise.isVoid() ? null : new WriteGroupAggregator(ctx, promise, chunks * 2);
             try {
                 while (body.isReadable()) {
                     int chunkLen = Math.min(maxBody, body.readableBytes());
-                    boolean last = chunkLen == body.readableBytes();
-                    ChannelPromise chunkPromise = last ? promise : ctx.voidPromise();
                     if (!deflateBody) {
                         ByteBuf slice = body.readRetainedSlice(chunkLen);
-                        ctx.write(buildHeader(ctx, chunkLen), ctx.voidPromise());
-                        ctx.write(slice, chunkPromise);
+                        ctx.write(buildHeader(ctx, chunkLen), agg == null ? ctx.voidPromise() : agg.nextChildPromise());
+                        ctx.write(slice, agg == null ? ctx.voidPromise() : agg.nextChildPromise());
                     } else {
                         ByteBuf deflated = deflateStoredChunk(ctx, body, chunkLen);
                         try {
-                            ctx.write(buildHeader(ctx, deflated.readableBytes()), ctx.voidPromise());
-                            ctx.write(deflated, chunkPromise);
+                            ctx.write(buildHeader(ctx, deflated.readableBytes()), agg == null ? ctx.voidPromise() : agg.nextChildPromise());
+                            ctx.write(deflated, agg == null ? ctx.voidPromise() : agg.nextChildPromise());
                             deflated = null;
                         } finally {
                             if (deflated != null) {
@@ -539,13 +756,74 @@ public enum EgressCodec {
         }
 
         private ByteBuf buildHeader(ChannelHandlerContext ctx, int contentLength) {
-            byte[] lenBytes = Integer.toString(contentLength).getBytes(StandardCharsets.US_ASCII);
-            int size = staticPrefix.length + lenBytes.length + staticSuffix.length;
-            ByteBuf header = ctx.alloc().ioBuffer(size, size);
-            header.writeBytes(staticPrefix);
-            header.writeBytes(lenBytes);
-            header.writeBytes(staticSuffix);
+            if (server) {
+                byte[] dateBytes = currentUtcDateBytes();
+                int cap = RESP_PREFIX.length + dateBytes.length + respMid.length + 10 + RESP_SUFFIX.length;
+                ByteBuf header = ctx.alloc().ioBuffer(cap);
+                header.writeBytes(RESP_PREFIX);
+                header.writeBytes(dateBytes);
+                header.writeBytes(respMid);
+                writeAsciiInt(header, contentLength);
+                header.writeBytes(RESP_SUFFIX);
+                return header;
+            }
+            if (!randomHeaders) {
+                int cap = fixedRequestPrefix.length + 10 + CRLF_CRLF.length;
+                ByteBuf header = ctx.alloc().ioBuffer(cap);
+                header.writeBytes(fixedRequestPrefix);
+                writeAsciiInt(header, contentLength);
+                header.writeBytes(CRLF_CRLF);
+                return header;
+            }
+            ThreadLocalRandom random = ThreadLocalRandom.current();
+            int cap = 5 + 96 + REQ_MID_HTTP_VER_AND_HOST.length + 40 + reqTail.length + 10 + CRLF_CRLF.length;
+            ByteBuf header = ctx.alloc().ioBuffer(cap);
+            if (allowGetMethod && random.nextInt(100) >= 20) {
+                header.writeBytes(HTTP_GET_PREFIX);
+            } else {
+                header.writeBytes(HTTP_POST_PREFIX);
+            }
+            writeRandomPath(header, random);
+            header.writeBytes(REQ_MID_HTTP_VER_AND_HOST);
+            writeRandomHost(header, random);
+            header.writeBytes(reqTail);
+            writeAsciiInt(header, contentLength);
+            header.writeBytes(CRLF_CRLF);
             return header;
+        }
+
+        private static final class WriteGroupAggregator implements ChannelFutureListener {
+            private final ChannelHandlerContext ctx;
+            private final ChannelPromise parent;
+            private int remaining;
+            private boolean failed;
+
+            WriteGroupAggregator(ChannelHandlerContext ctx, ChannelPromise parent, int totalWrites) {
+                this.ctx = ctx;
+                this.parent = parent;
+                this.remaining = totalWrites;
+            }
+
+            ChannelPromise nextChildPromise() {
+                ChannelPromise p = ctx.newPromise();
+                p.addListener(this);
+                return p;
+            }
+
+            @Override
+            public void operationComplete(ChannelFuture future) {
+                if (!future.isSuccess()) {
+                    if (!failed) {
+                        failed = true;
+                        parent.tryFailure(future.cause());
+                        ctx.close();
+                    }
+                    return;
+                }
+                if (--remaining == 0 && !failed) {
+                    parent.trySuccess();
+                }
+            }
         }
 
         private static ByteBuf deflateStoredChunk(ChannelHandlerContext ctx, ByteBuf src, int len) {
@@ -585,10 +863,30 @@ public enum EgressCodec {
         private final boolean server;
         private int expectedBodyLen = -1;
         private boolean bodyDeflated;
+        private ScheduledFuture<?> headerTimeoutTask;
 
         EgressHttpDecoder(EgressConfig config, boolean server) {
             this.config = config;
             this.server = server;
+        }
+
+        private void armHeaderTimeout(ChannelHandlerContext ctx) {
+            if (headerTimeoutTask != null || !ctx.channel().isOpen()) {
+                return;
+            }
+            headerTimeoutTask = ctx.executor().schedule(() -> {
+                if (expectedBodyLen < 0 && ctx.channel().isOpen()) {
+                    ctx.close();
+                }
+            }, config.getDetectTimeoutMillis(), TimeUnit.MILLISECONDS);
+        }
+
+        private void cancelHeaderTimeout() {
+            ScheduledFuture<?> t = headerTimeoutTask;
+            if (t != null) {
+                headerTimeoutTask = null;
+                t.cancel(false);
+            }
         }
 
         @Override
@@ -596,14 +894,19 @@ public enum EgressCodec {
             try {
                 while (true) {
                     if (expectedBodyLen < 0) {
+                        if (!in.isReadable()) {
+                            return;
+                        }
                         int maxHeader = config.getMaxHeaderBytes();
                         int headerEnd = findHeaderEnd(in, maxHeader);
                         if (headerEnd < 0) {
                             if (in.readableBytes() > maxHeader) {
                                 throw new TooLongFrameException("HTTP egress header exceeds cap: " + maxHeader);
                             }
+                            armHeaderTimeout(ctx);
                             return;
                         }
+                        cancelHeaderTimeout();
                         int headerLen = headerEnd - in.readerIndex();
                         String headerText = in.readCharSequence(headerLen, StandardCharsets.US_ASCII).toString();
                         in.skipBytes(4); // \r\n\r\n
@@ -627,10 +930,38 @@ public enum EgressCodec {
                     }
                 }
             } catch (RuntimeException bad) {
+                cancelHeaderTimeout();
                 in.skipBytes(in.readableBytes());
                 ctx.close();
                 throw bad;
             }
+        }
+
+        @Override
+        protected void decodeLast(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
+            cancelHeaderTimeout();
+            if (in.isReadable()) {
+                decode(ctx, in, out);
+            }
+            if (expectedBodyLen > 0 || in.isReadable()) {
+                in.skipBytes(in.readableBytes());
+                expectedBodyLen = -1;
+                bodyDeflated = false;
+                if (ctx.channel().isOpen()) {
+                    ctx.close();
+                }
+            }
+        }
+
+        @Override
+        public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+            cancelHeaderTimeout();
+            super.channelInactive(ctx);
+        }
+
+        @Override
+        protected void handlerRemoved0(ChannelHandlerContext ctx) {
+            cancelHeaderTimeout();
         }
 
         private void parseHeaders(String headerText) {
@@ -688,10 +1019,21 @@ public enum EgressCodec {
 
         private void validateStartLine(String startLine) {
             if (server) {
-                if (!startLine.startsWith("POST ") || (!startLine.endsWith(" HTTP/1.1") && !startLine.endsWith(" HTTP/1.0"))) {
+                int pathStart;
+                if (startLine.startsWith("POST ")) {
+                    pathStart = 5;
+                } else if (config.isHttpAllowGetMethod() && startLine.startsWith("GET ")) {
+                    pathStart = 4;
+                } else {
                     throw new CorruptedFrameException("Invalid HTTP egress request line");
                 }
-                String path = startLine.substring(5, startLine.length() - 9);
+                if (!startLine.endsWith(" HTTP/1.1") && !startLine.endsWith(" HTTP/1.0")) {
+                    throw new CorruptedFrameException("Invalid HTTP egress request line");
+                }
+                if (startLine.length() <= pathStart + 9) {
+                    throw new CorruptedFrameException("Invalid HTTP egress request path");
+                }
+                String path = startLine.substring(pathStart, startLine.length() - 9);
                 if (path.isEmpty() || !path.startsWith("/") || path.indexOf(' ') >= 0) {
                     throw new CorruptedFrameException("Invalid HTTP egress request path");
                 }

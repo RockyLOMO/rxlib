@@ -132,6 +132,12 @@ public class RssAuthenticator implements Authenticator {
         return eq(current.socksPassword, password) ? resolve(current, username) : null;
     }
 
+    @Override
+    public String lookupSecret(String username) {
+        AuthSettings current = settings;
+        return resolve(current, username) != null ? current.socksPassword : null;
+    }
+
     public AuthResult resolve(String username) {
         return resolve(settings, username);
     }

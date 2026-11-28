@@ -12,7 +12,7 @@
 
 `org.rx.net` 的核心差异化能力在于将 **RPC、Nameserver 副本同步与 RSS 代理** 统一收敛到 `Transport Core` 之上，形成「**UDP 优先加速 → TCP 自动补传与回落**」的双轨传输体系，并明确区分不同路径的可靠性边界：
 
-1. **RPC / Nameserver / RRP / Rendezvous / RSS 统一接入**：`Remoting`、`SocksProxyServer`、`NameserverImpl`、`RrpServer`/`RrpClient`、`RendezvousService` 通过 `TransportClient` / `TransportServer`（`Transport Core v2`）共享会话抽象，支持二进制握手期双向 HMAC-SHA256 鉴权（`FLAG_AUTH`）、握手后每会话独立 AES-128-GCM 认证加密（`FLAG_ENCRYPT`）与非幂等 RPC 断线保护；并支持基于 `LocalAddress`/`LocalChannel` 的零 Socket 虚拟载体接入。
+1. **RPC / Nameserver / RRP / Rendezvous / RSS 统一接入**：`Remoting`、`SocksProxyServer`（RSS↔RSS 私有增强 TCP 链路经 `TransportCoreCarrier` 统一接入）、`NameserverImpl`（强制认证 v2 AEAD）、`RrpServer`/`RrpClient`、`RendezvousService` 全部共享 `Transport Core v2` 会话抽象，支持二进制握手期双向 HMAC-SHA256 鉴权（`FLAG_AUTH` + `NonceReplayCache` 防重放）、握手后每会话独立 AES-128-GCM 认证加密（`FLAG_ENCRYPT`）、业务压缩（`FLAG_COMPRESS`，位于加密内层）与非幂等 RPC 断线保护；并支持基于 `LocalAddress`/`LocalChannel` 的零 Socket 虚拟载体接入。标准 Shadowsocks、标准 SOCKS5、第三方标准上游、标准 DNS 与原生 UDP 数据报保持原线协议不变。
 2. **Adaptive UDP 优先直传**：通过 `AdaptiveUdpPort` + `RssDatagramHandler`（按收益 LZ4 + 认证分片 + 异或 FEC / 弱网尾包探测 + 动态 PMTU / `CHUNK` 收缩）走 UDP 快轨，降低高丢包网络下的队头阻塞与尾延迟。
 3. **有条件可靠交付（TCP 兜底补传与按需公网中继）**：在存在可用 TCP 路径（直连 TCP 或按需开启的 RRP RAW Relay 逻辑流）的前提下，当 UDP 被限速、阻断或触发突发大流回落时，`AdaptiveTcpStream` 无缝回落 TCP 补传与直通，保障有序可靠送达；当两端完全断网或所有候选路径与中继均不可达时显式失败报错，普通 UDP 仍为 best-effort（非 100% 必达）。
 4. **公网地址发现、节点注册表、双 NAT 打洞与直连优先选路**：通过 `AddressDiscovery`（多源投票公网 IP + 本机非回环多网卡候选）与加固后的 H2 冷存 `NodeRegistry`（分片锁、单调代际 `authGeneration`、O(1) 租户配额、子系统级会话挂载、认证并发/速率限流、多监听器即时吊销）统一承载 `NameserverImpl`、`RendezvousService`（受控协调 + 防放大 `UdpEndpointObserver` + RFC 8445 触发检查 `PeerUdpPuncher`）与 `RrpServer` RAW 中继；`PathSelector` 严格执行**直连优先、最小化公网中继流量**策略（优先尝试局域网/公网直连 TCP 与直连/打洞 UDP，直连成功时零 Relay 流开启，仅在直连 TCP 失败/超时时按需打开 RRP RAW Relay 逻辑流；旧版 `UdpClient` / `UdpHolePunch*` 已彻底退役删除，详见 [punch.md](reference/net/punch.md)）。
@@ -37,8 +37,8 @@
 ### Layer 2 · 统一传输核心与自适应双轨引擎（Unified Transport Core & Adaptive Engine）
 
 1. **统一传输核心（`org.rx.net.transport.core`）**
-   - `TransportClient` / `TransportServer` / `TransportSession` / `DefaultTransportSession`：统一 RPC、Nameserver 副本同步、RRP、Rendezvous 与 RSS 控制面的建连、重连、容量控制、心跳保活与会话生命周期；支持 `LocalAddress`/`LocalChannel` 虚拟载体承载端到端加密业务会话。
-   - `TransportProtocol`（v2）：精简二进制 `Hello` / `HelloAck` 握手，协商 `sessionId`、`serverNonce`、`FLAG_ADAPTIVE_UDP`、`FLAG_AUTH`、`FLAG_ENCRYPT`、`FLAG_COMPRESS`、`udpMtu`，配置 `authSecret` 时在会话创建与反序列化前强制完成双向 HMAC-SHA256 鉴权与 `clientNonce` 防重放校验，握手后开启每会话/每方向独立 AES-128-GCM 认证加密与可选业务 `zlib 3` 压缩（先压缩后加密），并通过 `FRAME_READY` 屏障避免半包/重配置竞争。
+   - `TransportClient` / `TransportServer` / `TransportSession` / `DefaultTransportSession` / **`TransportCoreCarrier`**：统一 RPC、Nameserver 副本同步、RRP、Rendezvous 与 **RSS↔RSS 私有增强 TCP 链路** 的建连、重连、容量控制、心跳保活与会话生命周期；支持 `LocalAddress`/`LocalChannel` 虚拟载体承载端到端加密业务会话，以及 `TransportCoreCarrier` 原生透明承载 SOCKS5 原始字节流（零 RPC 序列化与额外线程）。
+   - `TransportProtocol`（v2）：精简二进制 `Hello` / `HelloAck` 握手（首字节 fail-fast 校验 `"RXTC"` 魔数），协商 `sessionId`、`serverNonce`、`FLAG_ADAPTIVE_UDP`、`FLAG_AUTH`、`FLAG_ENCRYPT`、`FLAG_COMPRESS`、`FLAG_RAW_STREAM`、`FLAG_UDP_HOP`、2-bit profile、`udpMtu` 与 `serverUdpAliasPort`；强制双向 HMAC-SHA256 鉴权与 `NonceReplayCache` 防重放，握手后开启每会话/每方向独立单一层 AES-128-GCM（`TransportAeadCodec`）与可选业务 `zlib` 压缩（先压缩后加密），并通过 `FRAME_READY` 屏障消除 `AUTO` 出口识别与内层业务 `zlib` 的歧义。
    - `DatagramTransport`：零分配原生 UDP 收发封装。
    - 详见 [transport.md](reference/net/transport.md)。
 
@@ -57,9 +57,8 @@
 ### Layer 3 · 链路编解码、抗丢包与流控背压层（Wire Pipeline, Resilience & Flow Control）
 
 - **协议标志与加密/出口包装管道（`org.rx.net`）**：
-  - `TransportFlags` 与 `RssTcpCodecSelector` 控制端口级加密/绕过与 Pipeline 装配。
-  - 统一公共 TCP 出口包装 `EgressCodec` / `EgressConfig` / `EgressPipeline`（取代旧版 `RssEgressCodec` 与 `HttpPseudoHeader*`）：支持 `NONE`（零额外开销）、纯 RFC 1950 `ZLIB_STORED`（无 `RSZ` 自定义头）与方案 A 零拷贝全双工 `HTTP`（真实 `POST`/`200 OK` + `Content-Type: application/json` 流式封装），Server 端支持单端口 1-shot `EgressAutoDetector` 按显式白名单 `allowedCodecs` 自动识别，严格位于加密层最外侧。
-  - `RssHopAes` 提供基于 32B PSK 派生每连接/每方向独立密钥的 AES-128-GCM 流加密。
+  - `TransportFlags` 与 `TransportCoreCarrier`（已取代旧版 `RssHopAes`、`RssTcpCodecSelector`、`SocksAdaptiveHandshake`）统一控制 RSS 私有增强 TCP 链路的端口级保护、单层 AEAD（基于 `RSS_TCP_AES_KEY` PSK 或认证密码派生）、业务 `zlib 1..9` 压缩与自适应 UDP 装配。
+  - 统一公共 TCP 出口包装 `EgressCodec` / `EgressConfig` / `EgressPipeline`（取代旧版 `RssEgressCodec` 与 `HttpPseudoHeader*`）：支持 `NONE`（零额外开销）、纯 RFC 1950 `ZLIB_STORED`（无 `RSZ` 自定义头）与方案 A 零拷贝全双工 `HTTP`（同时支持旧版随机 Host/URL Path/Query、80% `GET` / 20% `POST`、Chrome 137 / `Accept` / `Connection` / UTC `Date` / `Server: Tengine` 模板与显式固定 Host/Path 模式，以及可选 `deflate` body）；Server 端支持单端口 1-shot `EgressAutoDetector`（区分首部与载荷预算、防合并读误拒与慢首部超时）按白名单 `allowedCodecs` 自动识别，严格位于加密层最外侧。
 - **UDP 抗丢包与压缩（`org.rx.net.udp`）**：
   - `UdpResilience*` / `FecEncodeGroup` / `FecDecodeGroup`、`UdpCompress*`（LZ4 自适应旁路）、`UdpPortHoppingConfig`。详见 [udp.md](reference/net/udp.md) · [punch.md](reference/net/punch.md)。
 - **流控、用户级带宽限速、背压与诊断（`org.rx.net`）**：

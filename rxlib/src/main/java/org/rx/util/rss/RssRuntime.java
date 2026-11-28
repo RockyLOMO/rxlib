@@ -167,6 +167,7 @@ final class RssRuntime implements AutoCloseable {
 
         boolean authCommitted = false;
         boolean nameserverPublished = false;
+        boolean nameserverSamePortDetached = false;
         boolean nodeServicePublished = false;
         boolean dnsPublished = false;
         boolean dnsDelegateSwitched = false;
@@ -196,6 +197,13 @@ final class RssRuntime implements AutoCloseable {
             }
             DnsServer targetDnsServer = restartDns ? nextDnsServer : dnsSvr;
             if (restartNameserver) {
+                boolean sameNsPort = prevNameserver != null && currentConf != null
+                        && currentConf.nameserver != null && newConf.nameserver != null
+                        && currentConf.nameserver.getRegisterPort() == newConf.nameserver.getRegisterPort();
+                if (sameNsPort) {
+                    closeNameserverQuietly(prevNameserver);
+                    nameserverSamePortDetached = true;
+                }
                 nextNameserver = new NameserverImpl(resolveNameserverConfig(newConf), targetDnsServer, nodeServicePlan.targetRegistry);
             }
 
@@ -284,7 +292,7 @@ final class RssRuntime implements AutoCloseable {
             tryClose(obsoleteRrpServer);
             closeUpstreamsLater(prevUpstream);
             trackClosingUpstream(prevUpstream);
-            if (restartNameserver) {
+            if (restartNameserver && !nameserverSamePortDetached) {
                 closeNameserverQuietly(prevNameserver);
             }
             if (restartDns) {
@@ -306,8 +314,27 @@ final class RssRuntime implements AutoCloseable {
                 authenticator.applySettings(prevAuthSettings);
             }
             if (nameserverPublished) {
+                closeNameserverQuietly(nextNameserver);
+                nextNameserver = null;
+                if (nameserverSamePortDetached && currentConf != null) {
+                    try {
+                        prevNameserver = new NameserverImpl(resolveNameserverConfig(currentConf), prevDnsServer, prevNodeRegistry);
+                    } catch (Throwable restoreErr) {
+                        log.warn("rssConf reload rollback failed to restore nameserver", restoreErr);
+                    }
+                }
                 nameserverRef = prevNameserver;
                 nameserver = prevNameserver;
+            } else if (nameserverSamePortDetached && currentConf != null) {
+                closeNameserverQuietly(nextNameserver);
+                nextNameserver = null;
+                try {
+                    prevNameserver = new NameserverImpl(resolveNameserverConfig(currentConf), prevDnsServer, prevNodeRegistry);
+                    nameserverRef = prevNameserver;
+                    nameserver = prevNameserver;
+                } catch (Throwable restoreErr) {
+                    log.warn("rssConf reload rollback failed to restore nameserver", restoreErr);
+                }
             }
             if (nodeServicePublished) {
                 nodeRegistryRef = prevNodeRegistry;

@@ -30,6 +30,8 @@ public interface RendezvousContract extends EventPublisher<RendezvousContract>, 
 
     PunchSessionResult requestPunchSession(String targetNodeId, String targetService);
 
+    PunchSessionResult requestPunchSessionForAttempt(String targetNodeId, String targetService, String attemptId);
+
     boolean heartbeat();
 
     @Override
@@ -70,6 +72,7 @@ public interface RendezvousContract extends EventPublisher<RendezvousContract>, 
     final class PunchSessionResult implements Serializable {
         private static final long serialVersionUID = 1L;
         private long punchSessionId;
+        private String attemptId;
         private String initiatorNodeId;
         private String targetNodeId;
         private String targetService;
@@ -86,6 +89,7 @@ public interface RendezvousContract extends EventPublisher<RendezvousContract>, 
     final class PunchInviteEvent extends EventArgs {
         private static final long serialVersionUID = 1L;
         private long punchSessionId;
+        private String attemptId;
         private String initiatorNodeId;
         private String targetService;
         @JSONField(serialize = false)

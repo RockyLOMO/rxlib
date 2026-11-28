@@ -73,6 +73,7 @@ import static org.rx.core.Extends.tryClose;
 @Slf4j
 public class NameserverImpl implements Nameserver {
     static final String NAME = "nameserver";
+    public static final String SUBSYSTEM_NAMESERVER = "nameserver";
     static final Set<String> REPLICA_SENSITIVE_METHODS = Collections.unmodifiableSet(
             new HashSet<String>(Arrays.asList("replicaApplyDelta", "replicaApplySnapshotPage")));
     static final Set<String> SERVER_SENSITIVE_METHODS = Collections.unmodifiableSet(
@@ -228,6 +229,11 @@ public class NameserverImpl implements Nameserver {
                 }
                 TransportConfig transport = TransportConfig.dailyClient(endpoint);
                 transport.setPeerId(replicaSourceId);
+                String transportToken = effectiveTransportAuthToken();
+                if (!Strings.isEmpty(transportToken)) {
+                    transport.setAuthSecret(transportToken);
+                    transport.setEnableEncryption(true);
+                }
                 TcpClientConfig tcpConf = transport.getTcpClientConfig();
                 int timeoutMillis = Math.max(500, config.getReplicaSyncTimeoutMillis());
                 tcpConf.setConnectTimeoutMillis(timeoutMillis);
@@ -416,6 +422,18 @@ public class NameserverImpl implements Nameserver {
 
         TransportConfig serverTransport = TransportConfig.dailyServer(config.getRegisterPort());
         serverTransport.setPeerId(replicaSourceId);
+        String transportToken = effectiveTransportAuthToken();
+        if (this.nodeRegistry != null && Strings.isEmpty(transportToken)) {
+            if (ownDnsServer) {
+                quietly(this.dnsServer::close);
+            }
+            throw new IllegalArgumentException(
+                    "Nameserver with NodeRegistry requires non-empty transportAuthToken or replicaAuthToken for Transport Core v2 AEAD encryption");
+        }
+        if (!Strings.isEmpty(transportToken)) {
+            serverTransport.setAuthSecret(transportToken);
+            serverTransport.setEnableEncryption(true);
+        }
         RpcServerConfig rpcServerConfig = new RpcServerConfig(serverTransport);
         rpcServerConfig.setSensitiveMethods(SERVER_SENSITIVE_METHODS);
         this.rs = Remoting.register(this, rpcServerConfig);
@@ -436,7 +454,7 @@ public class NameserverImpl implements Nameserver {
                 }
             }
             if (this.nodeRegistry != null && nodeId != null) {
-                this.nodeRegistry.markOffline(nodeId, session);
+                this.nodeRegistry.detachSubsystemSession(nodeId, SUBSYSTEM_NAMESERVER, session);
             }
         });
 
@@ -500,7 +518,8 @@ public class NameserverImpl implements Nameserver {
             return;
         }
         String revokedNodeId = evicted.getNodeId();
-        Object revokedSessionRef = evicted.getSessionRef();
+        Object revokedSubRef = evicted.getSubsystemSession(SUBSYSTEM_NAMESERVER);
+        Object revokedSessionRef = revokedSubRef != null ? revokedSubRef : evicted.getSessionRef();
         for (TransportSession session : rs.sessions().values()) {
             String boundNode = session.attr(NODE_ID_KEY);
             if (!revokedNodeId.equals(boundNode)) {
@@ -658,7 +677,11 @@ public class NameserverImpl implements Nameserver {
         }
         RemotingContext ctx = RemotingContext.context();
         TransportSession session = ctx.getClient();
-        NodeRegistry.OnlineNode online = nodeRegistry.markOnline(nodeId, secret, session, null);
+        if (session == null || !session.isEncrypted()) {
+            throw new SecurityException("Nameserver authenticateNode requires AEAD-encrypted Transport Core v2 session");
+        }
+        NodeRegistry.OnlineNode online = nodeRegistry.authenticateAndAttachSession(
+                nodeId, secret, SUBSYSTEM_NAMESERVER, session, null);
         InetSocketAddress remote = session.remoteEndpoint();
         if (remote != null && remote.getAddress() != null) {
             EndpointCandidate tcpObs = new EndpointCandidate(
@@ -682,7 +705,8 @@ public class NameserverImpl implements Nameserver {
             return null;
         }
         String nodeId = session == null ? null : session.attr(NODE_ID_KEY);
-        if (Strings.isEmpty(nodeId) || !nodeRegistry.isSessionActive(nodeId, session)) {
+        if (Strings.isEmpty(nodeId) || !session.isEncrypted()
+                || !nodeRegistry.isSubsystemSessionActive(nodeId, SUBSYSTEM_NAMESERVER, session)) {
             throw new SecurityException("Unauthenticated or revoked Nameserver node session");
         }
         return nodeId;
@@ -1348,6 +1372,21 @@ public class NameserverImpl implements Nameserver {
         if (Strings.isEmpty(expectedToken)) {
             throw new SecurityException("Nameserver replica auth token is not configured");
         }
+        TransportSession rpcSession = currentRpcSessionOrNull();
+        if (rpcSession != null && !Strings.isEmpty(effectiveTransportAuthToken())) {
+            if (!rpcSession.isEncrypted()) {
+                throw new SecurityException("Nameserver replica RPC requires AEAD-encrypted Transport Core v2 session");
+            }
+            String remotePeerId = rpcSession.remotePeerId();
+            if (!Strings.isEmpty(remotePeerId) && !sourceId.equals(remotePeerId)) {
+                // Only reject mismatched peerId when peer explicitly declared a Nameserver source peerId
+                // (standard RPC clients generate random UUIDs unless configured as a replica peer).
+                if (remotePartitions.containsKey(remotePeerId)
+                        || (config.getAuthorizedReplicaPeers() != null && config.getAuthorizedReplicaPeers().contains(remotePeerId))) {
+                    throw new SecurityException("Replica sourceId mismatch with authenticated peerId: " + sourceId);
+                }
+            }
+        }
         if (!verifier.verify(expectedToken)) {
             throw new SecurityException("Nameserver replica authentication failed for source: " + sourceId);
         }
@@ -1369,6 +1408,20 @@ public class NameserverImpl implements Nameserver {
         } catch (IllegalArgumentException ignored) {
             return null;
         }
+    }
+
+    String effectiveTransportAuthToken() {
+        String explicit = config.getTransportAuthToken();
+        if (!Strings.isEmpty(explicit)) {
+            return explicit;
+        }
+        if (!Strings.isEmpty(config.getReplicaAuthToken())) {
+            return config.getReplicaAuthToken();
+        }
+        if (nodeRegistry != null) {
+            return RxConfig.INSTANCE.getRtoken();
+        }
+        return null;
     }
 
     String effectiveReplicaAuthToken() {

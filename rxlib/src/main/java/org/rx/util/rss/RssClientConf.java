@@ -61,9 +61,67 @@ public class RssClientConf {
     public int logFlags;
     public Egress egress = new Egress();
 
-    public static class Egress {
+    @lombok.EqualsAndHashCode
+    @ToString
+    public static class Egress implements Serializable {
+        private static final long serialVersionUID = 1L;
         public String tcpCodec = "none";
         public String udpCodec = "none";
+        public String httpBodyEncoding;
+        public Boolean httpRandomHeaders;
+        public Boolean httpAllowGetMethod;
+        public String httpHost;
+        public String httpPath;
+        public Integer maxHeaderBytes;
+        public Integer maxBodyBytes;
+        public Integer maxInflateBytes;
+        public Integer detectTimeoutMillis;
+        public List<String> allowedCodecs;
+
+        public EgressConfig toClientEgressConfig() {
+            return toClientEgressConfig(null);
+        }
+
+        public EgressConfig toClientEgressConfig(EgressConfig fallback) {
+            if (udpCodec != null && !"none".equalsIgnoreCase(udpCodec.trim())) {
+                throw new IllegalArgumentException("RSS UDP egress codec must be none");
+            }
+            EgressConfig cfg = fallback != null ? fallback.copy() : new EgressConfig();
+            if (tcpCodec != null) {
+                cfg.setTcpCodec(org.rx.net.EgressCodec.parse(tcpCodec));
+            } else if (fallback == null) {
+                cfg.setTcpCodec(org.rx.net.EgressCodec.NONE);
+            }
+            if (httpBodyEncoding != null) {
+                cfg.setHttpBodyEncoding(org.rx.net.EgressCodec.HttpBodyEncoding.parse(httpBodyEncoding));
+            }
+            if (httpRandomHeaders != null) {
+                cfg.setHttpRandomHeaders(httpRandomHeaders.booleanValue());
+            }
+            if (httpAllowGetMethod != null) {
+                cfg.setHttpAllowGetMethod(httpAllowGetMethod.booleanValue());
+            }
+            if (httpHost != null) {
+                cfg.setHttpHost(httpHost);
+            }
+            if (httpPath != null) {
+                cfg.setHttpPath(httpPath);
+            }
+            if (maxHeaderBytes != null) {
+                cfg.setMaxHeaderBytes(maxHeaderBytes.intValue());
+            }
+            if (maxBodyBytes != null) {
+                cfg.setMaxBodyBytes(maxBodyBytes.intValue());
+            }
+            if (maxInflateBytes != null) {
+                cfg.setMaxInflateBytes(maxInflateBytes.intValue());
+            }
+            if (detectTimeoutMillis != null) {
+                cfg.setDetectTimeoutMillis(detectTimeoutMillis.intValue());
+            }
+            cfg.validateClient();
+            return cfg;
+        }
     }
 
     @Getter
@@ -204,8 +262,22 @@ public class RssClientConf {
         }
         JSONObject obj = raw instanceof JSONObject ? (JSONObject) raw : new JSONObject((Map<String, Object>) raw);
         for (String field : obj.keySet()) {
-            if (!"tcpCodec".equals(field) && !"udpCodec".equals(field)) {
-                throw new IllegalArgumentException("Unknown RSS egress field: " + field);
+            switch (field) {
+                case "tcpCodec":
+                case "udpCodec":
+                case "httpBodyEncoding":
+                case "httpRandomHeaders":
+                case "httpAllowGetMethod":
+                case "httpHost":
+                case "httpPath":
+                case "maxHeaderBytes":
+                case "maxBodyBytes":
+                case "maxInflateBytes":
+                case "detectTimeoutMillis":
+                case "allowedCodecs":
+                    break;
+                default:
+                    throw new IllegalArgumentException("Unknown RSS egress field: " + field);
             }
         }
         Egress egress = new Egress();
@@ -216,6 +288,18 @@ public class RssClientConf {
         String udpCodec = obj.getString("udpCodec");
         if (udpCodec != null) {
             egress.udpCodec = udpCodec;
+        }
+        egress.httpBodyEncoding = obj.getString("httpBodyEncoding");
+        egress.httpRandomHeaders = obj.getBoolean("httpRandomHeaders");
+        egress.httpAllowGetMethod = obj.getBoolean("httpAllowGetMethod");
+        egress.httpHost = obj.getString("httpHost");
+        egress.httpPath = obj.getString("httpPath");
+        egress.maxHeaderBytes = obj.getInteger("maxHeaderBytes");
+        egress.maxBodyBytes = obj.getInteger("maxBodyBytes");
+        egress.maxInflateBytes = obj.getInteger("maxInflateBytes");
+        egress.detectTimeoutMillis = obj.getInteger("detectTimeoutMillis");
+        if (obj.containsKey("allowedCodecs")) {
+            egress.allowedCodecs = obj.getList("allowedCodecs", String.class);
         }
         return egress;
     }

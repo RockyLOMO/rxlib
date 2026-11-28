@@ -1859,7 +1859,7 @@ class SocksProxyServerIntegrationTest {
     @Test
     @Timeout(25)
     void pskAdaptiveHopSurvivesUdpOutage() throws Exception {
-        org.junit.jupiter.api.Assumptions.assumeTrue(org.rx.net.RssHopAes.configured());
+        org.junit.jupiter.api.Assumptions.assumeTrue(org.rx.net.transport.core.TransportCoreCarrier.isRssTcpPskConfigured());
         verifyAdaptiveHop(EgressCodec.NONE, true, 15795);
     }
 
@@ -1872,7 +1872,7 @@ class SocksProxyServerIntegrationTest {
     @Test
     @Timeout(25)
     void storedEgressPskAdaptiveHopSurvivesUdpOutage() throws Exception {
-        org.junit.jupiter.api.Assumptions.assumeTrue(org.rx.net.RssHopAes.configured());
+        org.junit.jupiter.api.Assumptions.assumeTrue(org.rx.net.transport.core.TransportCoreCarrier.isRssTcpPskConfigured());
         verifyAdaptiveHop(EgressCodec.ZLIB_STORED, true, 15798);
     }
 
@@ -1903,6 +1903,7 @@ class SocksProxyServerIntegrationTest {
             if (psk) {
                 checkProtectedWarmConnection(remotePort, uplink, true, "localhost", TCP_ECHO_PORT);
                 SocksConfig unprotected = new SocksConfig();
+                unprotected.setRssPrivateTransport(true);
                 unprotected.setEgressCodec(egress);
                 checkProtectedWarmConnection(remotePort, unprotected, false, "localhost", TCP_ECHO_PORT);
             }
@@ -1981,6 +1982,7 @@ class SocksProxyServerIntegrationTest {
         for (boolean modern : new boolean[]{true, false}) {
             // The adaptive listener needs the same available port for both TCP and UDP.
             SocksConfig cfg = new SocksConfig(modern ? 15798 : 15799);
+            cfg.setRssPrivateTransport(true);
             cfg.setAdaptiveTcp(modern);
             SocksUser user = new SocksUser("warm");
             user.setPassword("test-pass");
@@ -1988,10 +1990,17 @@ class SocksProxyServerIntegrationTest {
                 int port = ((InetSocketAddress) server.tcpChannels.get(0).localAddress()).getPort();
                 InetSocketAddress address = new InetSocketAddress("127.0.0.1", port);
                 for (int profile = 0; profile <= 2; profile++) {
+                    SocksConfig clientCfg = new SocksConfig();
+                    clientCfg.setRssPrivateTransport(true);
+                    clientCfg.setAdaptiveTcp(true);
+                    clientCfg.setAdaptiveProfile(profile);
                     Socks5WarmupHandler warm = new Socks5WarmupHandler(address, "warm", "test-pass", 4000);
                     warm.setAdaptiveTcp(true);
                     warm.setAdaptiveProfile(profile);
-                    Channel ch = Sockets.bootstrap(cfg, address, c -> c.pipeline().addLast(warm)).connect(address).sync().channel();
+                    Channel ch = Sockets.bootstrap(clientCfg, address, c -> {
+                        Sockets.addTcpClientHandler(c, clientCfg, address);
+                        c.pipeline().addLast(warm);
+                    }).connect(address).sync().channel();
                     try {
                         warm.readyFuture().get(4, java.util.concurrent.TimeUnit.SECONDS);
                         AdaptiveTcpHandler handler = ch.pipeline().get(AdaptiveTcpHandler.class);

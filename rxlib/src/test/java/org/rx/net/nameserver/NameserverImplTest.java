@@ -95,7 +95,8 @@ class NameserverImplTest {
         int dnsPort = freePort();
         int registerPort = freePort();
         NameserverImpl server = newServer("ns-pubip", dnsPort, registerPort, null, CLUSTER_TOKEN);
-        NameserverClient client = new NameserverClient("inventory");
+        NameserverClient client = new NameserverClient("inventory")
+                .setTransportAuthToken(CLUSTER_TOKEN);
         client.publicIpResolver = () -> "1.1.1.1";
         try {
             client.registerAsync(Collections.singleton(new InetSocketAddress("127.0.0.1", registerPort))).get(15, TimeUnit.SECONDS);
@@ -691,6 +692,81 @@ class NameserverImplTest {
         }
     }
 
+    @Test
+    @Timeout(25)
+    void nodeRegistryRequiresEncryptedTransportAndPreservesOtherSubsystemsOnDisconnect(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir) throws Exception {
+        int dnsPort = freePort();
+        int registerPort = freePort();
+        org.rx.net.registry.NodeRegistryConfig regCfg = new org.rx.net.registry.NodeRegistryConfig();
+        regCfg.setEnabled(true);
+        regCfg.setDbPath(tempDir.resolve("ns-aead-sub").toAbsolutePath().toString());
+        regCfg.setFlushPeriodMillis(0L);
+        regCfg.setTtlSweepPeriodMillis(0L);
+        regCfg.setPbkdf2Iterations(1000);
+
+        org.rx.net.registry.NodeRegistry registry = new org.rx.net.registry.NodeRegistry(regCfg);
+        String oldRtoken = RxConfig.INSTANCE.getRtoken();
+        NameserverImpl server = null;
+        Nameserver badClient = null;
+        Nameserver authClient = null;
+        Nameserver reconnectClient = null;
+        try {
+            // 1. Fail-closed: NodeRegistry attached without any transportAuthToken / replicaAuthToken / rtoken -> rejected
+            RxConfig.INSTANCE.setRtoken(null);
+            NameserverConfig noTok = baseConfig("ns-notok", dnsPort, registerPort, null, null);
+            assertThrows(IllegalArgumentException.class, () -> new NameserverImpl(noTok, null, registry));
+
+            registry.enrollNode("node-shared", "tenant-1", "secret-shared", Collections.singleton("member"), null);
+            Object otherSubRef = new Object();
+            registry.authenticateAndAttachSession("node-shared", "secret-shared", "rendezvous", otherSubRef, null);
+            assertTrue(registry.isSubsystemSessionActive("node-shared", "rendezvous", otherSubRef));
+
+            NameserverConfig okCfg = baseConfig("ns-aead", dnsPort, registerPort, null, CLUSTER_TOKEN);
+            server = new NameserverImpl(okCfg, null, registry);
+
+            // 2. Unencrypted / wrong-secret transport client cannot establish session
+            badClient = newClient(registerPort, null);
+            final Nameserver bc = badClient;
+            assertThrows(Throwable.class, () -> bc.authenticateNode("node-shared", "secret-shared"));
+
+            // 3. Authenticated AEAD client attaches SUBSYSTEM_NAMESERVER without evicting "rendezvous"
+            authClient = newClient(registerPort, CLUSTER_TOKEN);
+            assertTrue(authClient.authenticateNode("node-shared", "secret-shared"));
+            authClient.register("billing", RandomList.DEFAULT_WEIGHT, "b-1", Collections.<InetSocketAddress>emptySet());
+            assertTrue(registry.isSubsystemSessionActive("node-shared", "rendezvous", otherSubRef),
+                    "Nameserver auth must not evict co-located rendezvous subsystem");
+            assertEquals(1, registry.onlineNodeCount());
+
+            // 4. Disconnecting Nameserver detaches only SUBSYSTEM_NAMESERVER, leaving "rendezvous" online!
+            authClient.close();
+            authClient = null;
+            final NameserverImpl srv = server;
+            awaitTrue(() -> srv.discover("billing").isEmpty(), 5000, "disconnect must deregister billing");
+            assertTrue(registry.isSubsystemSessionActive("node-shared", "rendezvous", otherSubRef),
+                    "Nameserver disconnect must NOT evict other online subsystems");
+            assertEquals(1, registry.onlineNodeCount());
+
+            // 5. Reconnecting Nameserver re-attaches cleanly
+            reconnectClient = newClient(registerPort, CLUSTER_TOKEN);
+            assertTrue(reconnectClient.authenticateNode("node-shared", "secret-shared"));
+            reconnectClient.register("billing", RandomList.DEFAULT_WEIGHT, "b-2", Collections.<InetSocketAddress>emptySet());
+            assertContainsLoopback(server.discover("billing"));
+            assertTrue(registry.isSubsystemSessionActive("node-shared", "rendezvous", otherSubRef));
+
+            // 6. Disabling node in NodeRegistry immediately revokes ALL subsystems
+            registry.setDisabled("node-shared", true);
+            awaitTrue(() -> srv.discover("billing").isEmpty(), 5000, "disable must evict Nameserver session");
+            assertFalse(registry.isSubsystemSessionActive("node-shared", "rendezvous", otherSubRef));
+        } finally {
+            RxConfig.INSTANCE.setRtoken(oldRtoken);
+            if (badClient != null) badClient.close();
+            if (authClient != null) authClient.close();
+            if (reconnectClient != null) reconnectClient.close();
+            if (server != null) server.close();
+            registry.close();
+        }
+    }
+
     static NameserverConfig baseConfig(String nodeId, int dnsPort, int registerPort,
                                        List<String> replicaEndpoints, String token) {
         NameserverConfig config = new NameserverConfig();
@@ -712,9 +788,17 @@ class NameserverImplTest {
     }
 
     static Nameserver newClient(int registerPort) {
+        return newClient(registerPort, CLUSTER_TOKEN);
+    }
+
+    static Nameserver newClient(int registerPort, String authToken) {
         RpcClientConfig<Nameserver> config = RpcClientConfig.statefulMode(new InetSocketAddress("127.0.0.1", registerPort), 0);
         config.getTcpConfig().setConnectTimeoutMillis(1500);
         config.getTcpConfig().setWaitConnectMillis(500);
+        if (authToken != null && !authToken.isEmpty()) {
+            config.getTransportConfig().setAuthSecret(authToken);
+            config.getTransportConfig().setEnableEncryption(true);
+        }
         return Remoting.createFacade(Nameserver.class, config);
     }
 

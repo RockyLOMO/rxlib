@@ -1322,16 +1322,18 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void shadowUserCipherHotReload_IsolatesOtherUsersAndRollsBackOnBindFailure() throws Exception {
-        int upstreamPort = freePort();
-        int rpcPort = freePort();
-        int ssPortA = freePort();
-        int ssPortB = freePort();
-        int dnsPort = freePort();
-        int nsRegPort = freePort();
-        int nsSyncPort = freePort();
-        int inPort = freePort();
+        int[] ports = freeTcpUdpPorts(8);
+        int upstreamPort = ports[0];
+        int rpcPort = ports[1];
+        int ssPortA = ports[2];
+        int ssPortB = ports[3];
+        int dnsPort = ports[4];
+        int nsRegPort = ports[5];
+        int nsSyncPort = ports[6];
+        int inPort = ports[7];
 
         SocksConfig upCfg = new SocksConfig(upstreamPort);
+        upCfg.setRssPrivateTransport(true);
         SocksUser socksUsr = new SocksUser("u");
         socksUsr.setPassword("p");
         SocksProxyServer upstreamSvr = new SocksProxyServer(upCfg, new SocksAuthenticator(Collections.singletonList(socksUsr)));
@@ -1722,7 +1724,7 @@ public class RssTest extends AbstractTester {
 
         SocksUser socksUsr = new SocksUser("youfanX");
         socksUsr.setPassword("test-pass");
-        org.rx.net.socks.Authenticator auth = (u, p) -> "youfanX".equals(u) && "test-pass".equals(p) ? socksUsr : SocksUser.ANONYMOUS;
+        org.rx.net.socks.Authenticator auth = new org.rx.net.socks.SocksAuthenticator(Collections.singletonList(socksUsr));
 
         SocksConfig outConf = new SocksConfig(outPort);
         RssServer.configureOutboundConfig(outConf, false);
@@ -2647,6 +2649,78 @@ public class RssTest extends AbstractTester {
             RssClient.OutboundProfiles perUserProfiles = new RssClient.OutboundProfiles(perUser, new SocksConfig());
             assertEquals(org.rx.net.EgressCodec.ZLIB_STORED, perUserProfiles.tcp(perUser.shadowUsers.get(0), 443).getEgressCodec());
             assertEquals(org.rx.net.EgressCodec.NONE, perUserProfiles.tcp(perUser.shadowUsers.get(1), 443).getEgressCodec());
+
+            // Publicized full EgressConfig fields: JSON parsing, OutboundProfiles cache isolation, BoundRoute override, and RssServer CLI parsing
+            String fullEgressJson = "{\"egress\":{\"tcpCodec\":\"http\",\"httpBodyEncoding\":\"none\",\"httpRandomHeaders\":true,\"httpAllowGetMethod\":true,\"maxHeaderBytes\":2048,\"maxBodyBytes\":65536,\"detectTimeoutMillis\":3000},"
+                    + "\"socksServers\":["
+                    + "{\"id\":\"http-fixed\",\"weight\":1,\"endpoint\":\"u:p@127.0.0.1:1081\",\"egress\":{\"tcpCodec\":\"http\",\"httpRandomHeaders\":false,\"httpAllowGetMethod\":false,\"httpHost\":\"custom.local\",\"httpPath\":\"/api/x\",\"httpBodyEncoding\":\"zlib-stored\"}},"
+                    + "{\"id\":\"http-default\",\"weight\":1,\"endpoint\":\"u:p@127.0.0.1:1082\"}"
+                    + "],\"shadowUsers\":["
+                    + "{\"ssPort\":6897,\"username\":\"u1\",\"socksUser\":\"u1\",\"transport\":{\"profile\":\"plain\",\"egress\":{\"tcpCodec\":\"http\",\"httpRandomHeaders\":false,\"httpHost\":\"h1.local\",\"httpPath\":\"/p1\"}}},"
+                    + "{\"ssPort\":6896,\"username\":\"u2\",\"socksUser\":\"u2\",\"transport\":{\"profile\":\"plain\",\"egress\":{\"tcpCodec\":\"http\",\"httpRandomHeaders\":false,\"httpHost\":\"h2.local\",\"httpPath\":\"/p2\"}}}"
+                    + "]}";
+            RssClientConf fullConf = JSON.parseObject(fullEgressJson, RssClientConf.class);
+            fullConf.socksPwd = "pwd";
+            fullConf.shadowUsers.get(0).setSsPwd("p1");
+            fullConf.shadowUsers.get(1).setSsPwd("p2");
+            assertTrue(RssClient.normalizeAndValidateRssConfig(fullConf));
+
+            RssClient.OutboundProfiles fullProfiles = new RssClient.OutboundProfiles(fullConf, new SocksConfig());
+            SocksConfig u1Cfg = fullProfiles.tcp(fullConf.shadowUsers.get(0), 443);
+            SocksConfig u2Cfg = fullProfiles.tcp(fullConf.shadowUsers.get(1), 443);
+            org.junit.jupiter.api.Assertions.assertNotSame(u1Cfg, u2Cfg, "OutboundProfiles must separate distinct HTTP EgressConfig parameters");
+            assertEquals("h1.local", u1Cfg.effectiveClientEgressConfig().getHttpHost());
+            assertEquals("h2.local", u2Cfg.effectiveClientEgressConfig().getHttpHost());
+            assertFalse(u1Cfg.effectiveClientEgressConfig().isHttpRandomHeaders());
+
+            RssRuntime.UpstreamSnapshot fullSnap = RssClient.buildUpstreams(fullConf);
+            try {
+                UpstreamSupport fixedRoute = null, defaultRoute = null;
+                for (UpstreamSupport s : fullSnap.socksServers.readOnlySnapshot()) {
+                    if ("http-fixed".equals(s.getRouteId())) fixedRoute = s;
+                    if ("http-default".equals(s.getRouteId())) defaultRoute = s;
+                }
+                assertNotNull(fixedRoute);
+                assertNotNull(defaultRoute);
+                SocksConfig baseFull = RssClient.createOutboundConfig(fullConf, new SocksConfig());
+                SocksConfig stdFull = RssClient.standardSocksConfig(fullConf);
+                SocksConfig boundFixed = RssClient.outboundForRoute(baseFull, stdFull, fixedRoute, true);
+                SocksConfig boundDef = RssClient.outboundForRoute(baseFull, stdFull, defaultRoute, true);
+                assertFalse(boundFixed.effectiveClientEgressConfig().isHttpRandomHeaders());
+                assertEquals("custom.local", boundFixed.effectiveClientEgressConfig().getHttpHost());
+                assertEquals(org.rx.net.EgressCodec.HttpBodyEncoding.ZLIB_STORED,
+                        boundFixed.effectiveClientEgressConfig().getHttpBodyEncoding());
+                assertTrue(boundDef.effectiveClientEgressConfig().isHttpRandomHeaders());
+                assertEquals(2048, boundDef.effectiveClientEgressConfig().getMaxHeaderBytes());
+                assertNotEquals(
+                        org.rx.net.socks.TcpWarmPoolKey.from(fixedRoute.getEndpoint(), boundFixed, "u"),
+                        org.rx.net.socks.TcpWarmPoolKey.from(fixedRoute.getEndpoint(), boundDef, "u"));
+            } finally {
+                RssClient.closeUpstreamsQuietly(fullSnap);
+            }
+
+            // RssServer CLI EgressConfig parsing & validation
+            java.util.Map<String, String> cliOpts = new java.util.HashMap<>();
+            cliOpts.put("tcpEgressCodec", "auto");
+            cliOpts.put("tcpEgressAllowedCodecs", "none,http");
+            cliOpts.put("tcpEgressHttpBodyEncoding", "zlib-stored");
+            cliOpts.put("tcpEgressHttpRandomHeaders", "false");
+            cliOpts.put("tcpEgressHttpAllowGetMethod", "false");
+            cliOpts.put("tcpEgressMaxHeaderBytes", "2048");
+            cliOpts.put("tcpEgressMaxBodyBytes", "131072");
+            cliOpts.put("tcpEgressDetectTimeoutMillis", "1500");
+            org.rx.net.EgressConfig parsedSvr = RssServer.parseServerEgressConfig(cliOpts);
+            assertEquals(org.rx.net.EgressCodec.AUTO, parsedSvr.getTcpCodec());
+            assertEquals(2, parsedSvr.getAllowedCodecs().size());
+            assertTrue(parsedSvr.getAllowedCodecs().contains(org.rx.net.EgressCodec.NONE));
+            assertTrue(parsedSvr.getAllowedCodecs().contains(org.rx.net.EgressCodec.HTTP));
+            assertFalse(parsedSvr.getAllowedCodecs().contains(org.rx.net.EgressCodec.ZLIB_STORED));
+            assertEquals(org.rx.net.EgressCodec.HttpBodyEncoding.ZLIB_STORED, parsedSvr.getHttpBodyEncoding());
+            assertFalse(parsedSvr.isHttpRandomHeaders());
+            assertFalse(parsedSvr.isHttpAllowGetMethod());
+            assertEquals(2048, parsedSvr.getMaxHeaderBytes());
+            assertEquals(131072, parsedSvr.getMaxBodyBytes());
+            assertEquals(1500, parsedSvr.getDetectTimeoutMillis());
         } finally {
             RssClient.closeUpstreamsQuietly(snapshot);
         }
@@ -2661,7 +2735,7 @@ public class RssTest extends AbstractTester {
 
         SocksUser outUser = new SocksUser("rpcUsr");
         outUser.setPassword("rpcPwd");
-        org.rx.net.socks.Authenticator outAuth = (u, p) -> "rpcUsr".equals(u) && "rpcPwd".equals(p) ? outUser : SocksUser.ANONYMOUS;
+        org.rx.net.socks.Authenticator outAuth = new org.rx.net.socks.SocksAuthenticator(Collections.singletonList(outUser));
         SocksConfig outConf = new SocksConfig(outPort);
         RssServer.configureOutboundConfig(outConf, false);
         outConf.setWhiteListEnabled(false);
@@ -2826,7 +2900,7 @@ public class RssTest extends AbstractTester {
 
         SocksUser usr = new SocksUser("egressU");
         usr.setPassword("egressP");
-        org.rx.net.socks.Authenticator auth = (u, p) -> "egressU".equals(u) && "egressP".equals(p) ? usr : SocksUser.ANONYMOUS;
+        org.rx.net.socks.Authenticator auth = new org.rx.net.socks.SocksAuthenticator(Collections.singletonList(usr));
 
         SocksConfig storedCfg = new SocksConfig(outStoredPort);
         RssServer.configureOutboundConfig(storedCfg, false);
@@ -3011,8 +3085,10 @@ public class RssTest extends AbstractTester {
             assertSsTcpEcho(ssNonePort, CipherKind.AES_256_GCM.getCipherName(), "pwd-none", tcpEcho.getLocalPort(), true);
             assertSsUdpEcho(ssNonePort, CipherKind.AES_256_GCM.getCipherName(), "pwd-none", udpEcho.getLocalPort(), true);
 
-            assertTrue(observedPrefaces.contains(0x52535a01),
-                    "nested SOCKS5 route with egress=zlib-stored must emit RSZ\\x01 preface on outer TCP: " + observedPrefaces);
+            assertFalse(observedPrefaces.contains(0x52535a01),
+                    "nested SOCKS5 route with egress=zlib-stored must NOT emit retired RSZ\\x01 preface: " + observedPrefaces);
+            assertTrue(observedPrefaces.stream().anyMatch(w -> org.rx.net.EgressCodec.isValidRfc1950Header((w >>> 24) & 0xff, (w >>> 16) & 0xff)),
+                    "nested SOCKS5 route with egress=zlib-stored must emit pure RFC 1950 zlib header on outer TCP: " + observedPrefaces);
         } finally {
             running.set(false);
             if (runtime != null) runtime.close();
@@ -3039,7 +3115,7 @@ public class RssTest extends AbstractTester {
 
         SocksUser usr = new SocksUser("matrixU");
         usr.setPassword("matrixP");
-        org.rx.net.socks.Authenticator auth = (u, p) -> "matrixU".equals(u) && "matrixP".equals(p) ? usr : SocksUser.ANONYMOUS;
+        org.rx.net.socks.Authenticator auth = new org.rx.net.socks.SocksAuthenticator(Collections.singletonList(usr));
 
         SocksConfig outConf = new SocksConfig(outPort);
         RssServer.configureOutboundConfig(outConf, false);

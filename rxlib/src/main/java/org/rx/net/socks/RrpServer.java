@@ -439,10 +439,17 @@ public class RrpServer extends Disposable {
         this.revokeListener = this::onNodeRevoked;
 
         int bindPort = config.getBindPort() == null ? 0 : config.getBindPort();
+        boolean hasToken = !Strings.isEmpty(config.getToken());
+        if (config.isEnableRawRelay() && nodeRegistry != null && !hasToken) {
+            throw new IllegalArgumentException("RrpServer RAW Relay requires non-empty token for Transport Core v2 AEAD encryption");
+        }
+        if (!hasToken && !config.isAllowUnauthenticatedLocal()) {
+            throw new IllegalArgumentException(
+                    "RrpServer requires non-empty token for Transport Core v2 AEAD encryption (set allowUnauthenticatedLocal=true only for local loopback testing)");
+        }
         TransportConfig tc = TransportConfig.pureTcpServer(bindPort);
         tc.setEnableAdaptiveUdp(false);
         tc.setEnableCompression(false);
-        boolean hasToken = !Strings.isEmpty(config.getToken());
         tc.setAuthSecret(hasToken ? config.getToken() : null);
         tc.setEnableEncryption(hasToken);
         tc.setEgressConfig(config.getEgressConfig() != null
@@ -509,6 +516,14 @@ public class RrpServer extends Disposable {
         if (isClosed()) {
             session.close();
             return;
+        }
+        if (Strings.isEmpty(config.getToken())) {
+            java.net.InetSocketAddress remote = session.remoteEndpoint();
+            if (remote == null || remote.getAddress() == null || !remote.getAddress().isLoopbackAddress()) {
+                log.warn("RrpServer rejected non-loopback unauthenticated connection from {}", remote);
+                session.close();
+                return;
+            }
         }
         RpClient rpClient = new RpClient(this, session);
         clientsBySessionId.put(session.sessionId(), rpClient);
@@ -590,6 +605,11 @@ public class RrpServer extends Disposable {
     // region SOCKS5 Reverse Proxy Mode
 
     private void handleRegister(RpClient rpClient, ByteBuf buf) {
+        if (!Strings.isEmpty(config.getToken()) && !rpClient.session.isEncrypted()) {
+            log.warn("RrpServer rejected unencrypted REGISTER from {}", rpClient.session.remoteEndpoint());
+            rpClient.session.close();
+            return;
+        }
         if (buf.readableBytes() < 4) {
             rpClient.session.close();
             return;
@@ -744,6 +764,11 @@ public class RrpServer extends Disposable {
     private void handleRawAuth(RpClient rpClient, ByteBuf buf) {
         if (nodeRegistry == null || !config.isEnableRawRelay()) {
             sendRawAuthAck(rpClient, RAW_STATUS_DISABLED, "raw relay disabled");
+            return;
+        }
+        if (!rpClient.session.isEncrypted()) {
+            sendRawAuthAck(rpClient, RAW_STATUS_UNAUTHORIZED, "raw relay requires AEAD encrypted transport");
+            rpClient.session.close();
             return;
         }
         String nodeId = readShortUtf8(buf, MAX_ID_LEN);

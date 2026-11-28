@@ -33,6 +33,19 @@ public class UpstreamSupport {
     private String routeId;
     private boolean standardSocks5;
     private org.rx.net.EgressCodec egressCodec = org.rx.net.EgressCodec.NONE;
+    private org.rx.net.EgressConfig egressConfig = org.rx.net.EgressConfig.none();
+
+    public void setEgressCodec(org.rx.net.EgressCodec codec) {
+        org.rx.net.EgressCodec eff = codec == null ? org.rx.net.EgressCodec.NONE : codec;
+        this.egressCodec = eff;
+        this.egressConfig = eff == org.rx.net.EgressCodec.NONE
+                ? org.rx.net.EgressConfig.none() : org.rx.net.EgressConfig.client(eff);
+    }
+
+    public void setEgressConfig(org.rx.net.EgressConfig cfg) {
+        this.egressConfig = cfg == null ? org.rx.net.EgressConfig.none() : cfg.copy();
+        this.egressCodec = this.egressConfig.getTcpCodec();
+    }
     private AuthenticEndpoint endpoint;
     private SocksRpcContract facade;
     private AuthenticEndpoint tcpClient;
