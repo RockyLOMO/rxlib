@@ -155,20 +155,20 @@
 - [ ] **状态开销**：无额外握手时不创建相关 replay cache/deadline/queue；必须启用的模式保留安全边界并按需分配，复查定时器、状态表和指标开销。不新增每连接线程，不默认全业务 TCP 多路复用（HOL、故障域及游戏时延风险）；只有真实瓶颈才立项。
 - [ ] **统一验收与交付**：优先完成 §8/9/10，再按实测推进 §11；外部载体与长期资源验收继续归口 §1/3。以迁移前真实同配置四档混合负载（短连接、不可压缩数据、大流、交互、普通 UDP、QUIC/WoW、弱网多种子）与当前/优化后 A/B，分开固定与 AUTO、AEAD on/off、冷/热。实际 IP 层流量、CPU、RSS/堆外/cgroup/整机峰值、socket/线程、P99/失败率与保活成本一同记录；不以本轮 §7 六组32KiB回显的不同出口数据直接比较 profile 性能。JDK8/master 完整回归、merge master→rss-21 后 JDK21 回归、PARANOID、24h/768MiB 整机及真实生产前置条件，报告归入 test-benchmarks.md；仅实际实现后更新 .memory/配置文档。RRP UDP over TCP (§7)、全局整形及复杂 FEC 继续暂缓。
 
-### P1 · 12. 统一 SecurityMode：FAST 默认，NORMAL 显式可选
+### P1 · 12. 统一 SecurityMode：固定 FAST 算法套件
 
-2026-11-28 用户最新决定：**所有 rxlib 私有传输服务的默认安全模式为 FAST**。本节与 §9 轻量握手、§10 RPC 降 RTT 一起设计；安全模式选择不等于强制增加一次独立握手。优先复用已有安全组件，不因引入枚举重写整个传输栈。
+2026-11-28 用户最新决定：**所有 rxlib 私有安全传输默认 FAST，固定 AES-128-GCM + HMAC-SHA256，不再立项其他加密/MAC 算法或安全模式的对比验证**。本轮只实现与验收 FAST；原先 NORMAL/TLS 1.3 设想不列为本轮新增实现或测试任务，不影响已有标准 TLS 能力。本节与 §9 轻量握手、§10 RPC 降 RTT 一起设计；安全模式选择不等于强制增加一次独立握手。优先复用已有安全组件，不因引入枚举重写整个传输栈。
 
 #### 12.1 模式定义及默认行为（拟议，尚未实现）
 
 | SecurityMode | 加密与认证 | 默认/边界 |
 |---|---|---|
 | FAST | AES-128-GCM；基于高熵 PSK 的 HMAC-SHA256 握手认证与独立会话/方向密钥派生；业务记录由 GCM Tag 认证 | RSS、RPC、RRP、Nameserver 私有 RPC、Rendezvous、NodeRegistry 相关私有安全链路统一默认 |
-| NORMAL | 标准 TLS 1.3，使用成熟 TLS 实现的证书认证或受支持的 PSK 认证及密钥协商 | 显式可选；不再叠加等价 Core AEAD 或重复的传输层 HMAC，应用身份与授权仍保留 |
+| NORMAL | 原先的标准 TLS 1.3 设计设想 | 暂不新增实现或专项验证，不纳入本轮配置交付；既有 TLS 能力不删除 |
 | NONE | 无额外传输加密，不等于免用户认证或授权 | 仅明确允许的非保护链路、已有端到端加密业务的绕过策略等；不得成为 FAST/NORMAL 失败后的回退模式 |
 
 - [ ] **FAST 为默认算法套件，不改变 RSS 既有端口保护/绕过策略的优先级**：为兼顾此前用户明确的“相同或更少 RTT、原有功能无损”要求，默认 FAST 指需安全传输时的默认实现，不因设置默认值而让所有 bypass/plain 业务额外套一次 AEAD 或 Core Hello。按现有 protected/bypass/ordinary 策略及显式配置决定是否启用额外保护；必须保护的连接不得选 NONE。若部署需要全量私有业务加密，应明确配置并记录成本，不能悄然改动既有配置语义。标准外部 SOCKS5、Shadowsocks、DNS 和第三方上游协议不注入私有握手。NodeRegistry、Nameserver 私有 RPC、Rendezvous、公开 RRP/RAW 等既有强制认证加密要求保持 fail-closed；缺少有效密钥/认证配置时拒绝，不默认生成不安全共享密钥或降级。
-- [ ] **五个独立维度**：SecurityMode（NONE/FAST/NORMAL）、HandshakeMode（LIGHTWEIGHT/CORE，RSS 默认轻量，RPC/RRP 默认完整）、EgressCodec（NONE/ZLIB_STORED/HTTP；服务端 AUTO）、业务 Compression（NONE/ZLIB）、TransportProfile（PLAIN/DAILY/WEAK/GAME）。FAST 不隐含开启 zlib/FEC/HTTP，也不改变原生 UDP 数据报语义；不允许不安全或无法正确协商的组合。配置名如 security.mode=fast 仅为拟议，按现有配置体系定稿；服务端允许模式与客户端选择必须明确、受认证约束，不允许自动安全降级。
+- [ ] **五个独立维度**：SecurityMode（本轮 NONE/FAST；NORMAL 暂留设计设想，不新增实现）、HandshakeMode（LIGHTWEIGHT/CORE，RSS 默认轻量，RPC/RRP 默认完整）、EgressCodec（NONE/ZLIB_STORED/HTTP；服务端 AUTO）、业务 Compression（NONE/ZLIB）、TransportProfile（PLAIN/DAILY/WEAK/GAME）。FAST 不隐含开启 zlib/FEC/HTTP，也不改变原生 UDP 数据报语义；不允许不安全或无法正确协商的组合。配置名如 security.mode=fast 仅为拟议，按现有配置体系定稿；服务端允许模式与客户端选择必须明确、受认证约束，不允许自动安全降级。
 - [ ] **统一实现而非统一所有 wire**：沿用 §9 的轻量握手与授权绑定，避免为了 FAST 新增独立往返；无协商需求的 plain 不产生 Core 专属状态。RAW_STREAM 不加通用业务 frame，保留现有端口策略、HTTP 出口字段、压缩、FEC、MTU、固定/跳跃 UDP、外部载体和标准协议边界。
 
 #### 12.2 FAST 安全与性能
@@ -176,25 +176,14 @@
 源码基线：[TransportProtocol.java](https://github.com/RockyLOMO/rxlib/blob/7d1aefa67df199f27f80079b901958c87bf79e72/rxlib/src/main/java/org/rx/net/transport/core/TransportProtocol.java)、[TransportAeadCodec.java](https://github.com/RockyLOMO/rxlib/blob/7d1aefa67df199f27f80079b901958c87bf79e72/rxlib/src/main/java/org/rx/net/transport/core/TransportAeadCodec.java)、[TransportCoreCarrier.java](https://github.com/RockyLOMO/rxlib/blob/7d1aefa67df199f27f80079b901958c87bf79e72/rxlib/src/main/java/org/rx/net/transport/core/TransportCoreCarrier.java)。
 
 - [ ] 复用现有 AES-128-GCM、HMAC-SHA256、会话密钥派生及必要防重放组件。当前 HMAC 输出32B、握手线上标签16B（128 bit），正常 TCP AEAD 每条记录2B长度+16B GCM Tag（最大明文记录16KiB），不再叠加逐记录 HMAC。保留方向隔离、独立会话密钥、唯一 nonce、完整握手上下文及认证标签验证、计数耗尽处理和有界防重放。纯 PSK 派生不具备前向保密；HMAC 认证本身也不提供保密性。弱密码不能等同高熵 PSK，不将全局 PSK 持有者直接当作已授权业务用户。密钥配置/轮换及失败行为纳入回归。
-- [ ] **明确排除 XOR 认证**：XOR、CRC32、xxHash 等可用于非安全校验，XOR FEC 保留，但不得替代安全 MAC 或 AEAD。HMAC-SHA256 并不是在所有硬件上消耗最低的安全 MAC，但成熟、兼容性好，当前没有同硬件基准证明更换算法值得；默认不增加新的 MAC 算法或可选项。
+- [ ] **明确排除 XOR 认证**：XOR、CRC32、xxHash 等可用于非安全校验，XOR FEC 保留，但不得替代安全 MAC 或 AEAD。固定 HMAC-SHA256，不再安排替代 MAC、AEAD 算法的选型、微基准或实现；不增加算法配置项。
 - [ ] **优化顺序**：先消除重复握手 RTT、重复等价认证、无必要的包装及临时对象/ByteBuf 分配，再评估 Mac.getInstance / init 等初始化成本与安全的实例复用。Mac 非线程安全，禁止跨线程共享可变实例或错误复用旧密钥状态；任何缓存必须有界，密钥轮换时失效，不为优化增加线程/无界 ThreadLocal 或泄露密钥。保持恒定时间标签比较及必要的认证/授权，不以降低标签长度或取消校验换性能。
 
-#### 12.3 NORMAL：标准 TLS（显式选择）
+#### 12.3 FAST 回归验收（不再进行密码算法选型）
 
-- [ ] 使用标准 TLS 1.3（可协商 AES-128-GCM 等安全套件），正确校验证书链、预期对端身份及有效期；双向认证或 TLS-PSK 的具体支持按成熟 provider 能力决定，禁止 trust-all、忽略身份验证或自动回退明文。传输层身份与业务用户身份分离，TLS 不替代业务 ACL/token。需要前向保密时使用临时密钥交换；TLS-PSK 不是自动具备前向保密。使用会话恢复可评估减少 CPU/延迟，不默认启用可重放的 0-RTT 业务请求。
-- [ ] 核查 JDK8/JDK21 所选 TLS provider 的 TLS1.3/认证能力及 Netty 集成、外部载体、证书/密钥轮换、连接池和热更；不支持时明确拒绝配置。NORMAL 不得被实现为 TLS 外再套一层同等 Core AEAD。独立原生 UDP、Adaptive UDP 的认证/可靠性与必要控制数据仍按其自身安全语义处理，不能用 TCP TLS 的存在推定 UDP 已受保护；在真实拓扑证明可用之前，不宣称 NORMAL 已覆盖所有 Profile/载体/UDP 组合。不为 NORMAL 新增私有 TLS 仿制实现。
-
-#### 12.4 MAC 微基准及验收（P2，按实测瓶颈推进）
-
-| 候选 | 评估要求 |
-|---|---|
-| HMAC-SHA256 | 当前默认基线；测 Mac 实例创建、init、doFinal、复用以及标签截断的完整成本 |
-| AES-CMAC / AES-GMAC | 测实际 provider 与 AES 硬件加速；GMAC 必须正确管理每密钥唯一 nonce |
-| Poly1305 | 测成熟实现及每消息一次性密钥派生/管理的完整成本，不能只比较裸 MAC 运算 |
-| SipHash | 非本轮替代目标；需匹配安全目标与标签长度，不能因短标签更快而直接与128-bit安全标签基线等价比较 |
-
-- [ ] JMH 或等价可重复微基准：JDK8/JDK21、实际低配 VPS CPU 与开发机、64/128/256B 代表性握手消息；报告 ns/op、ops/s、B/op、GC、硬件加速/provider、warmup/fork/样本波动。完整计算实例初始化、密钥/nonce 管理等成本，不拿不同安全语义/标签长度的结果直接排序。没有明显端到端收益时继续 HMAC-SHA256，不改变默认算法。
-- [ ] FAST/NORMAL 与旧 RSS 及 §9 优化后相同功能/安全等级的冷建连、预热、实际握手往返、持续业务吞吐、短记录与混合负载 A/B；记录真实线字节、CPU、峰值 heap/direct/RSS/整机内存、连接数及失败率。分别说明 FAST/NORMAL 的安全属性差异，不能只用速度比较安全级别；强制认证、错误密钥、重放、篡改、降级、用户撤销、重复密钥/nonce、断线与轮换测试。双 JDK PARANOID 与 1vCPU/768MiB 整机目标继续沿用 §11。具体 TLS 落地与 MAC 算法更换不抢占 §8–§10 的正确性、轻量握手与 RPC 降 RTT 优先级；先统一 FAST 默认配置及复用当前实现，再按实测推进 NORMAL 与微优化。结果集中记录于 test-benchmarks.md。
+- [ ] 仅以固定 FAST 套件开展功能、安全及现有传输性能回归。在相同功能、安全等级、Profile、出口及网络条件下，对比旧 RSS、当前版本及 §9 优化后版本的冷/热建连 RTT、持续业务吞吐、短记录、混合负载、真实线字节、CPU、分配和峰值 heap/direct/RSS/整机内存；不新增独立算法微基准，不进行其他安全模式的对比验证。
+- [ ] 保留错误密钥、认证失败、重放、篡改、降级拒绝、用户撤销、nonce 唯一性、密钥轮换、断线回收和双 JDK PARANOID 回归；沿用 §11 的 1vCPU/768MiB 整机目标。既有 NONE 合法绕过路径与标准 SOCKS5/TLS 等现存协议的必要兼容回归仍按原计划执行，不因取消新算法选型而降低安全性、删除既有功能或放宽资源边界。
+- [ ] FAST 的优先优化项仍为消除重复 RTT、避免重复认证/加密、减少非必要记录与对象分配，不改变 AES-128-GCM + HMAC-SHA256、128-bit 标签等安全参数。先落实 §8–§10，结果归入 test-benchmarks.md。
 
 ## P2 · 中期演进（待定治理项）
 
