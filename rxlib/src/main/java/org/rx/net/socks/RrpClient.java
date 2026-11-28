@@ -443,6 +443,7 @@ public class RrpClient extends AbstractTcpReconnectClient {
                     log.debug("RrpClient step4 {}({}) serverChannel -> connect", serverChannel, channelId);
                     Channel localChannel = proxyCtx.localChannels.computeIfAbsent(channelId, k -> {
                         RrpConfig conf = Sys.deepClone(config);
+                        conf.setEgressConfig(null);
                         conf.setTransportFlags(TransportFlags.CIPHER_BOTH.flags());
                         ChannelFuture connF;
                         if (enableMemoryChannel) {
@@ -625,12 +626,12 @@ public class RrpClient extends AbstractTcpReconnectClient {
     }
 
     public synchronized Future<Void> connectAsync() {
-        config.setTransportFlags(TransportFlags.CIPHER_BOTH.flags(TransportFlags.HTTP_PSEUDO_BOTH));
-//        config.setTransportFlags(TransportFlags.CLIENT_HTTP_PSEUDO_BOTH.flags());
+        config.setTransportFlags(TransportFlags.CIPHER_BOTH.flags());
+        if (config.getEgressConfig() == null) {
+            config.setEgressConfig(org.rx.net.EgressConfig.client(org.rx.net.EgressCodec.HTTP));
+        }
         return beginConnect(Sockets.bootstrap(config, channel -> {
             Sockets.addTcpClientHandler(channel, config).pipeline()
-//                        .addLast(Sockets.intLengthFieldDecoder(), Sockets.INT_LENGTH_FIELD_ENCODER)
-//                    .addLast(new HttpPseudoHeaderDecoder(), HttpPseudoHeaderEncoder.DEFAULT)
                     .addLast(new ClientHandler());
             Sockets.dumpPipeline("RrpCli", channel);
         }));

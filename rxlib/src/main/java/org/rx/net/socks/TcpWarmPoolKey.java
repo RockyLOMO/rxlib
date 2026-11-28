@@ -32,7 +32,7 @@ public final class TcpWarmPoolKey implements Serializable {
                 config instanceof SocksConfig && ((SocksConfig) config).isAdaptiveTcp(),
                 config instanceof SocksConfig ? ((SocksConfig) config).getAdaptiveProfile() : 0, config.getTcpCompressionLevel(),
                 udpHop, adaptiveUdpText, config instanceof SocksConfig
-                        ? ((SocksConfig) config).getRssEgressCodec() : org.rx.net.RssEgressCodec.NONE,
+                        ? ((SocksConfig) config).getEgressCodec() : org.rx.net.EgressCodec.NONE,
                 config instanceof SocksConfig && ((SocksConfig) config).isAdaptiveTcp() ? ((SocksConfig) config).resolveDailyUdpMtu() : 0);
     }
 
@@ -51,7 +51,7 @@ public final class TcpWarmPoolKey implements Serializable {
     private final int tcpCompressionLevel;
     private final boolean udpHop;
     private final String adaptiveUdpClientText;
-    private final org.rx.net.RssEgressCodec rssEgressCodec;
+    private final org.rx.net.EgressCodec egressCodec;
     private final int adaptiveUdpMtu;
 
     public TcpWarmPoolKey(String trafficUser, String endpointText, String username, String password,
@@ -60,7 +60,7 @@ public final class TcpWarmPoolKey implements Serializable {
                           boolean udpHop, String adaptiveUdpClientText) {
         this(null, trafficUser, endpointText, username, password, reactorName, connectTimeoutMillis, transportFlagsBits,
                 cipher, cipherKeyHash, adaptiveTcp, adaptiveProfile, tcpCompressionLevel, udpHop, adaptiveUdpClientText,
-                org.rx.net.RssEgressCodec.NONE, 0);
+                org.rx.net.EgressCodec.NONE, 0);
     }
 
     public TcpWarmPoolKey(String trafficUser, String endpointText, String username, String password,

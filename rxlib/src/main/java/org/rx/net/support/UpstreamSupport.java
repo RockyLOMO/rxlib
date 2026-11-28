@@ -32,7 +32,7 @@ public class UpstreamSupport {
     public static final long DEFAULT_PASSIVE_COOLDOWN_MILLIS = 15_000L;
     private String routeId;
     private boolean standardSocks5;
-    private org.rx.net.RssEgressCodec rssEgressCodec = org.rx.net.RssEgressCodec.NONE;
+    private org.rx.net.EgressCodec egressCodec = org.rx.net.EgressCodec.NONE;
     private AuthenticEndpoint endpoint;
     private SocksRpcContract facade;
     private AuthenticEndpoint tcpClient;

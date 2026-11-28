@@ -430,17 +430,16 @@ public class RrpServer extends Disposable {
 
     public RrpServer(@NonNull RrpConfig config) {
         this.config = config;
-        config.setTransportFlags(TransportFlags.CIPHER_BOTH.flags(TransportFlags.HTTP_PSEUDO_BOTH));
-//        config.setTransportFlags(TransportFlags.SERVER_HTTP_PSEUDO_BOTH.flags());
+        config.setTransportFlags(TransportFlags.CIPHER_BOTH.flags());
+        if (config.getEgressConfig() == null) {
+            config.setEgressConfig(org.rx.net.EgressConfig.server(org.rx.net.EgressCodec.HTTP));
+        }
         bootstrap = Sockets.serverBootstrap(channel -> {
                     Sockets.addTcpServerHandler(channel, config).pipeline()
-//                        .addLast(Sockets.intLengthFieldDecoder(), Sockets.INT_LENGTH_FIELD_ENCODER)
-//                            .addLast(new HttpPseudoHeaderDecoder(), HttpPseudoHeaderEncoder.DEFAULT)
                             .addLast(ServerHandler.DEFAULT);
                     Sockets.dumpPipeline("RrpSvr", channel);
                 })
-                .attr(ATTR_SVR, this)
-                .attr(SocketConfig.ATTR_PSEUDO_SVR, true);
+                .attr(ATTR_SVR, this);
         serverChannels = Sockets.bindChannels(bootstrap, Sockets.newAnyEndpoint(config.getBindPort()), config);
         serverChannel = serverChannels.get(0);
     }

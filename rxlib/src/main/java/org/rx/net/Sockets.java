@@ -731,12 +731,29 @@ public final class Sockets {
     }
 
     public static ServerBootstrap serverBootstrap(SocketConfig config, BiAction<SocketChannel> initChannel) {
+        return serverBootstrap(config, null, initChannel == null ? null : ch -> initChannel.accept((SocketChannel) ch));
+    }
+
+    public static ServerBootstrap serverBootstrap(SocketConfig config, SocketAddress listenHint, BiAction<Channel> initChannel) {
         if (config == null) {
             config = SocketConfig.EMPTY;
         }
         String rn = config.getReactorName();
         if (rn == null || Strings.hashEquals(rn, ReactorNames.SHARED_UDP)) {
             rn = ReactorNames.SHARED_TCP;
+        }
+        if (listenHint instanceof LocalAddress) {
+            EventLoopGroup localGroup = localReactor(rn);
+            ServerBootstrap b = new ServerBootstrap()
+                    .group(localGroup, localGroup)
+                    .channel(io.netty.channel.local.LocalServerChannel.class)
+                    .childAttr(SocketConfig.ATTR_CONF, config);
+            b.handler(GlobalChannelHandler.DEFAULT);
+            if (initChannel != null) {
+                b.attr(SocketConfig.ATTR_INIT_FN, (BiAction) initChannel);
+                b.childHandler(SocketChannelInitializer.DEFAULT);
+            }
+            return b;
         }
 
         OptimalSettings op = ifNull(config.getOptimalSettings(), OptimalSettings.EMPTY);
@@ -956,7 +973,15 @@ public final class Sockets {
         // 支持LengthField?
         boolean g = flags.has(TransportFlags.GFW);
         boolean rss = config instanceof SocksConfig && ((SocksConfig) config).getRequiredTcpCipherPorts() != null;
-        if (rss) ((SocksConfig) config).getRssEgressCodec().installServer(pipeline);
+        if (channel.attr(EgressCodec.ATTR_SELECTED).get() == null && pipeline.get(EgressCodec.AUTO_DETECTOR_NAME) == null) {
+            if (rss) {
+                SocksConfig sc = (SocksConfig) config;
+                EgressConfig egress = sc.getEgressConfig() != null ? sc.getEgressConfig() : EgressConfig.server(sc.getEgressCodec());
+                EgressCodec.installServer(pipeline, egress, EgressCodec.InnerProtocol.RSS_SOCKS);
+            } else if (config.getEgressConfig() != null && config.getEgressConfig().getTcpCodec() != EgressCodec.NONE) {
+                EgressCodec.installServer(pipeline, config.getEgressConfig(), EgressCodec.InnerProtocol.TRANSPORT_CORE);
+            }
+        }
         if (!g && !rss) {
             if (flags.has(TransportFlags.COMPRESS_READ)) {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
@@ -979,13 +1004,6 @@ public final class Sockets {
         }
         if (hasCipherW) {
             pipeline.addLast(CipherEncoder.DEFAULT.channelHandlers());
-        }
-
-        if (flags.has(TransportFlags.HTTP_PSEUDO_READ)) {
-            pipeline.addLast(new HttpPseudoHeaderDecoder());
-        }
-        if (flags.has(TransportFlags.HTTP_PSEUDO_WRITE)) {
-            pipeline.addLast(HttpPseudoHeaderEncoder.DEFAULT);
         }
 
         if (rss) {
@@ -1017,7 +1035,15 @@ public final class Sockets {
 
         ZlibWrapper zlib = ZlibWrapper.ZLIB;
         ChannelPipeline pipeline = channel.pipeline();
-        if (config instanceof SocksConfig) ((SocksConfig) config).getRssEgressCodec().install(pipeline);
+        if (channel.attr(EgressCodec.ATTR_SELECTED).get() == null) {
+            if (config instanceof SocksConfig) {
+                SocksConfig sc = (SocksConfig) config;
+                EgressConfig egress = sc.getEgressConfig() != null ? sc.getEgressConfig() : EgressConfig.client(sc.getEgressCodec());
+                EgressCodec.installClient(pipeline, egress);
+            } else if (config.getEgressConfig() != null && config.getEgressConfig().getTcpCodec() != EgressCodec.NONE) {
+                EgressCodec.installClient(pipeline, config.getEgressConfig());
+            }
+        }
         if (flags.has(TransportFlags.RSS_PSK_AES)) {
             pipeline.addLast(RssHopAes.clientHandler());
         } else if (flags.has(TransportFlags.TLS)) {
@@ -1051,13 +1077,6 @@ public final class Sockets {
         }
         if (hasCipherW) {
             pipeline.addLast(CipherEncoder.DEFAULT.channelHandlers());
-        }
-
-        if (flags.has(TransportFlags.HTTP_PSEUDO_READ)) {
-            pipeline.addLast(new HttpPseudoHeaderDecoder());
-        }
-        if (flags.has(TransportFlags.HTTP_PSEUDO_WRITE)) {
-            pipeline.addLast(HttpPseudoHeaderEncoder.DEFAULT);
         }
 
         if (g) {

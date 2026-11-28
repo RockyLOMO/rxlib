@@ -325,6 +325,169 @@ class TransportCoreTest {
         }
     }
 
+    @Test
+    @Timeout(30)
+    void serverAutoAcceptsAllThreeEgressModesWithPostHandshakeAeadAndBusinessZlib3() throws Exception {
+        int port = freePort();
+        String secret = "transport-v2-auto-aead-secret";
+        TransportConfig serverConf = TransportConfig.dailyServer(port);
+        serverConf.setAuthSecret(secret);
+        serverConf.setEnableEncryption(true);
+        serverConf.setEnableCompression(true);
+        serverConf.setCompressionLevel(3);
+        serverConf.setEgressConfig(org.rx.net.EgressConfig.serverAutoAll());
+
+        try (TransportServer server = new TransportServer(serverConf)) {
+            server.setReceiveHandler((session, buf) -> {
+                byte[] copy = new byte[buf.readableBytes()];
+                buf.readBytes(copy);
+                session.send(Unpooled.wrappedBuffer(copy));
+            });
+            server.start();
+
+            // Test all 3 client egress modes (NONE, ZLIB_STORED, HTTP) against the SAME server AUTO listener,
+            // both with business compression OFF and ON (zlib3)!
+            for (org.rx.net.EgressCodec egress : new org.rx.net.EgressCodec[]{
+                    org.rx.net.EgressCodec.NONE,
+                    org.rx.net.EgressCodec.ZLIB_STORED,
+                    org.rx.net.EgressCodec.HTTP}) {
+                for (boolean compress : new boolean[]{false, true}) {
+                    TransportConfig cliConf = TransportConfig.dailyClient(new InetSocketAddress("127.0.0.1", port));
+                    cliConf.setAuthSecret(secret);
+                    cliConf.setEnableEncryption(true);
+                    cliConf.setEnableCompression(compress);
+                    cliConf.setCompressionLevel(3);
+                    cliConf.setEgressConfig(org.rx.net.EgressConfig.client(egress));
+
+                    BlockingQueue<byte[]> rx = new LinkedBlockingQueue<byte[]>();
+                    try (TransportClient client = new TransportClient(cliConf)) {
+                        client.setReceiveHandler((s, buf) -> {
+                            byte[] b = new byte[buf.readableBytes()];
+                            buf.readBytes(b);
+                            rx.offer(b);
+                        });
+                        client.connect(new InetSocketAddress("127.0.0.1", port));
+                        TransportSession s = client.session();
+                        assertNotNull(s);
+                        assertEquals(egress, s.egressCodec());
+                        assertTrue(s.isEncrypted(), "AEAD must be active");
+                        assertEquals(compress, s.isCompressed(), "Compression state must match");
+
+                        // Send compressible + random payloads including multi-record > 16 KiB
+                        byte[] compressible = new byte[24 * 1024];
+                        Arrays.fill(compressible, (byte) 'Z');
+                        byte[] rnd = randomBytes(19_321);
+                        for (byte[] payload : new byte[][]{compressible, rnd, new byte[0], new byte[]{42}}) {
+                            client.send(Unpooled.wrappedBuffer(payload));
+                            byte[] got = rx.poll(5, TimeUnit.SECONDS);
+                            assertArrayEquals(payload, got, "Mismatch for egress=" + egress + " compress=" + compress);
+                        }
+                    }
+                }
+            }
+
+            // Client attempting to downgrade encryption is rejected
+            TransportConfig noAead = TransportConfig.pureTcpClient(new InetSocketAddress("127.0.0.1", port));
+            noAead.setAuthSecret(secret);
+            noAead.setEnableEncryption(false);
+            noAead.setEgressConfig(org.rx.net.EgressConfig.client(org.rx.net.EgressCodec.HTTP));
+            noAead.getTcpClientConfig().setConnectTimeoutMillis(1500);
+            try (TransportClient badClient = new TransportClient(noAead)) {
+                assertThrows(Exception.class, () -> badClient.connect(new InetSocketAddress("127.0.0.1", port)));
+            }
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void serverRejectsDisallowedEgressModeAndReplayedHello() throws Exception {
+        int port = freePort();
+        String secret = "strict-replay-and-allowlist-secret";
+        TransportConfig serverConf = TransportConfig.pureTcpServer(port);
+        serverConf.setAuthSecret(secret);
+        serverConf.setEnableEncryption(true);
+        serverConf.setEgressConfig(org.rx.net.EgressConfig.serverAuto(org.rx.net.EgressCodec.HTTP));
+
+        try (TransportServer server = new TransportServer(serverConf)) {
+            server.start();
+
+            // NONE client rejected by HTTP-only AUTO server
+            TransportConfig noneCli = TransportConfig.pureTcpClient(new InetSocketAddress("127.0.0.1", port));
+            noneCli.setAuthSecret(secret);
+            noneCli.setEnableEncryption(true);
+            noneCli.setEgressConfig(org.rx.net.EgressConfig.client(org.rx.net.EgressCodec.NONE));
+            noneCli.getTcpClientConfig().setConnectTimeoutMillis(1500);
+            try (TransportClient client = new TransportClient(noneCli)) {
+                assertThrows(Exception.class, () -> client.connect(new InetSocketAddress("127.0.0.1", port)));
+            }
+
+            // Replayed exact Hello bytes rejected on second TCP connection
+            byte[] fixedNonce = randomBytes(TransportProtocol.CLIENT_NONCE_BYTES);
+            ByteBuf helloBuf = TransportProtocol.encodeHello(io.netty.buffer.UnpooledByteBufAllocator.DEFAULT,
+                    TransportProtocol.FLAG_AEAD, org.rx.net.EgressCodec.HTTP, 0, 1200, 7777L,
+                    fixedNonce, "replay-peer", secret);
+            byte[] helloBytes = new byte[helloBuf.readableBytes()];
+            helloBuf.readBytes(helloBytes);
+            helloBuf.release();
+            byte[] httpReq = ("POST /v1/stream HTTP/1.1\r\nHost: api.local\r\nContent-Type: application/json\r\nContent-Length: "
+                    + helloBytes.length + "\r\nConnection: keep-alive\r\n\r\n").getBytes(StandardCharsets.US_ASCII);
+
+            try (java.net.Socket s1 = new java.net.Socket("127.0.0.1", port)) {
+                s1.setSoTimeout(3000);
+                s1.getOutputStream().write(httpReq);
+                s1.getOutputStream().write(helloBytes);
+                s1.getOutputStream().flush();
+                byte[] resp1 = new byte[256];
+                int n1 = s1.getInputStream().read(resp1);
+                assertTrue(n1 > 0, "First Hello should receive HelloAck");
+            }
+            try (java.net.Socket s2 = new java.net.Socket("127.0.0.1", port)) {
+                s2.setSoTimeout(3000);
+                s2.getOutputStream().write(httpReq);
+                s2.getOutputStream().write(helloBytes);
+                s2.getOutputStream().flush();
+                int n2 = s2.getInputStream().read();
+                assertEquals(-1, n2, "Replayed Hello with identical nonce must be closed with EOF");
+            }
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void localAddressVirtualCarrierRunsEncryptedTransportCoreWithoutTcpBind() throws Exception {
+        io.netty.channel.local.LocalAddress addr = new io.netty.channel.local.LocalAddress("core-local-carrier-" + UUID.randomUUID());
+        TransportConfig serverConf = TransportConfig.pureTcpServer(0);
+        serverConf.setAuthSecret("e2e-relay-secret");
+        serverConf.setEnableEncryption(true);
+        serverConf.setEnableCompression(true);
+        TransportConfig clientConf = TransportConfig.pureTcpClient(null);
+        clientConf.setAuthSecret("e2e-relay-secret");
+        clientConf.setEnableEncryption(true);
+        clientConf.setEnableCompression(true);
+
+        BlockingQueue<byte[]> rx = new LinkedBlockingQueue<byte[]>();
+        try (TransportServer server = new TransportServer(serverConf);
+             TransportClient client = new TransportClient(clientConf)) {
+            server.setReceiveHandler((s, buf) -> {
+                byte[] d = new byte[buf.readableBytes()];
+                buf.readBytes(d);
+                s.send(Unpooled.wrappedBuffer(d));
+            });
+            client.setReceiveHandler((s, buf) -> {
+                byte[] d = new byte[buf.readableBytes()];
+                buf.readBytes(d);
+                rx.offer(d);
+            });
+            server.startLocal(addr);
+            client.connectLocal(addr);
+            assertTrue(client.session().isEncrypted());
+            assertTrue(client.session().isCompressed());
+            byte[] payload = randomBytes(32768);
+            client.send(Unpooled.wrappedBuffer(payload));
+            assertArrayEquals(payload, rx.poll(5, TimeUnit.SECONDS));
+        }
+    }
+
     private static byte[] randomBytes(int len) {
         byte[] out = new byte[len];
         ThreadLocalRandom.current().nextBytes(out);

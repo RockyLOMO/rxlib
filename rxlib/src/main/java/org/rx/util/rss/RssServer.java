@@ -91,7 +91,7 @@ public final class RssServer {
         }
         outConf.setRequiredTcpCipherPorts(parsePorts(options.get("tcpCipherPorts"), RssTransport.cipherPorts()));
         outConf.setRequiredUdpCipherPorts(parsePorts(options.get("udpCipherPorts"), RssTransport.udpCipherPorts()));
-        outConf.setRssEgressCodec(org.rx.net.RssEgressCodec.parseServer(options.get("tcpEgressCodec")));
+        outConf.setEgressCodec(org.rx.net.EgressCodec.parseServer(options.get("tcpEgressCodec")));
         if (outConf.getRequiredTcpCipherPorts().length != 0 && !org.rx.net.RssHopAes.configured()) {
             throw new IllegalArgumentException("RSS protected TCP ports require RSS_TCP_AES_KEY");
         }

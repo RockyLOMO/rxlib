@@ -9,6 +9,7 @@ import io.netty.util.AttributeKey;
 import io.netty.util.ReferenceCountUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.rx.core.NtpClock;
+import org.rx.net.EgressCodec;
 import org.rx.net.Sockets;
 import org.rx.net.rss.tcp.AdaptiveTcpHandler;
 import org.rx.net.transport.ClientDisconnectedException;
@@ -29,6 +30,10 @@ final class DefaultTransportSession implements TransportSession {
     private final int maxFrameBytes;
     private final boolean adaptiveNegotiated;
     private final AdaptiveTcpHandler adaptiveHandler;
+    private final byte[] adaptiveUdpKey;
+    private final boolean encrypted;
+    private final boolean compressed;
+    private final EgressCodec egressCodec;
     private final Map<Object, Object> attrs = new ConcurrentHashMap<Object, Object>();
 
     private volatile boolean connected = true;
@@ -37,7 +42,8 @@ final class DefaultTransportSession implements TransportSession {
     private volatile BiConsumer<TransportSession, ByteBuf> receiveHandler;
 
     DefaultTransportSession(long sessionId, String localPeerId, String remotePeerId, Channel channel,
-                            int maxFrameBytes, boolean adaptiveNegotiated, AdaptiveTcpHandler adaptiveHandler) {
+                            int maxFrameBytes, boolean adaptiveNegotiated, AdaptiveTcpHandler adaptiveHandler,
+                            byte[] adaptiveUdpKey, boolean encrypted, boolean compressed, EgressCodec egressCodec) {
         this.sessionId = sessionId;
         this.localPeerId = localPeerId;
         this.remotePeerId = remotePeerId;
@@ -47,6 +53,10 @@ final class DefaultTransportSession implements TransportSession {
         this.maxFrameBytes = maxFrameBytes;
         this.adaptiveNegotiated = adaptiveNegotiated;
         this.adaptiveHandler = adaptiveHandler;
+        this.adaptiveUdpKey = adaptiveUdpKey;
+        this.encrypted = encrypted;
+        this.compressed = compressed;
+        this.egressCodec = egressCodec == null ? EgressCodec.NONE : egressCodec;
     }
 
     @Override
@@ -82,6 +92,31 @@ final class DefaultTransportSession implements TransportSession {
     @Override
     public boolean isAdaptiveUdpNegotiated() {
         return adaptiveNegotiated;
+    }
+
+    @Override
+    public boolean isEncrypted() {
+        return encrypted;
+    }
+
+    @Override
+    public boolean isCompressed() {
+        return compressed;
+    }
+
+    @Override
+    public EgressCodec egressCodec() {
+        return egressCodec;
+    }
+
+    @Override
+    public AdaptiveTcpHandler adaptiveHandler() {
+        return adaptiveHandler;
+    }
+
+    @Override
+    public byte[] adaptiveUdpKey() {
+        return adaptiveUdpKey == null ? null : adaptiveUdpKey.clone();
     }
 
     @Override
