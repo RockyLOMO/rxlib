@@ -26,7 +26,7 @@
 
 源码基线：[7b858624](https://github.com/RockyLOMO/rxlib/commit/7b858624f4b37676ce3994e7c1390b91a370cd72)；对比重构前 [6af56245](https://github.com/RockyLOMO/rxlib/commit/6af562450dca67d67884f19119b66213de70fe9f)。上一轮详细设计 [noderegistry-nat-relay-plan.md](noderegistry-nat-relay-plan.md) 为历史设计基线；本节是后续待办的权威来源，覆盖其中不再保留 HTTP 随机字段的旧决定。已实现功能不重复立项。测试实测数据仍集中在 [test-benchmarks.md](test-benchmarks.md) §6。
 
-本轮用户决策：保留 HTTP Pseudo 原有随机 Host/URL Path 能力，公共 EgressCodec 继续作为唯一实现；RSS 私有增强链路统一 Transport Core；RRP UDP over TCP 记录后续实施，本阶段不开发。不恢复旧私有 wire、RSZ、UdpClient/UdpHolePunch* 或独立 HTTP Pseudo handler。全局限速旧问题继续暂缓。优先正确性/安全/稳定性，再减少实际公网流量和 CPU；资源有界，RSS Server 1vCPU/768MiB 整机约束不变。
+本轮用户决策：恢复 HTTP Pseudo 原有随机 Host/URL Path/Query、请求头与响应头生成行为，沿用旧内置参数而不要求用户配置自己的域名，公共 EgressCodec 继续作为唯一实现；RSS 私有增强链路统一 Transport Core；RRP UDP over TCP 记录后续实施，本阶段不开发。不恢复旧私有 wire、RSZ、UdpClient/UdpHolePunch* 或独立 HTTP Pseudo handler。全局限速旧问题继续暂缓。优先正确性/安全/稳定性，再减少实际公网流量和 CPU；资源有界，RSS Server 1vCPU/768MiB 整机约束不变。
 
 ### P1 · 3. 上一轮 Review 的正确性、安全和资源边界
 
@@ -47,10 +47,10 @@
 
 | 能力 | 当前状态 | 后续决定 |
 |---|---|---|
-| 随机 Host、URL Path、Query | 旧生成器删除，当前固定 httpHost/httpPath | 按用户要求恢复随机选择能力，公共 EgressCodec 唯一实现 |
-| GET/POST 混用 | 仅 POST | POST 保留；GET Body 不作为恢复要求，避免破坏正常 HTTP 语义 |
-| User-Agent/Accept | 旧有、当前省略 | 可选合法头配置，非必需 |
-| Date/Server | 旧有、当前省略 | 非必需，不为还原旧代码而增加 |
+| 随机 Host、URL Path、Query | 旧生成器删除，当前固定 httpHost/httpPath | 按用户要求恢复旧内置生成方式与参数集合；无需配置自有域名，公共 EgressCodec 唯一实现 |
+| GET/POST 混用 | 仅 POST | 核对旧方法选择行为；私有 HTTP 模式按旧参数恢复，标准 HTTP 互操作场景使用正确请求语义，不将 GET Body 当作通用 HTTP 能力 |
+| User-Agent/Accept | 旧有、当前省略 | 必须恢复旧请求头字段及原参数模板 |
+| Date/Server | 旧有、当前省略 | 必须恢复旧响应头字段及原参数模板，Date 按实际 UTC 时间生成 |
 | HTTP 二进制 Body / Content-Type 声明 | 方案 A 已实现 | 保持用户选定的私有约定，记录与标准 JSON 语义不一致 |
 | Body zlib0 | 新增可选 | 保留，默认 none，不重复包装 |
 | 纯 zlib-stored / RSZ | 纯 RFC1950 已实现 | 保留纯流、不恢复 RSZ |
@@ -59,9 +59,10 @@
 | 旧 RssEgressCodecTest 的 Adaptive + 实际压缩边界专项 | 旧测试删除，新的 EgressCodecTest 主要覆盖各模式及 AES 内层压缩 | 核对其他测试是否已覆盖，缺失则补等价集成测试；不保留旧 preface 测试 |
 | RSS 配置公共化 | RssClientConf.Egress 仅 tcpCodec/udpCodec，readEgress 只接受这两项 | 接入公共 EgressConfig 能力；校验全局/上游/服务端配置、克隆、热更及连接池 key |
 
-- [ ] 随机能力限定于配置允许的自有/授权服务 Host、Path/Query 候选集合；固定模式仍可用。默认不生成第三方网站域名，不声称随机字段带来匿名、安全、通用 HTTP 互操作或网络可达性保证。随机策略属于配置行为，不应恢复旧 HTTP Pseudo 协议或重复编码栈；具体默认值由部署配置明确。
+- [ ] **按 2026-11-28 用户最新决定恢复旧 HTTP Pseudo 参数行为**：以重构前 HttpPseudoHeaderEncoder 源码为准，保留内置 Host、URL Path、Query 生成参数与原请求/响应模板中的 User-Agent、Accept、Date、Server、Connection 等字段；不要求用户维护自有域名或额外填写候选集合。Host 仅为受控私有连接中的 HTTP 字段，不参与 DNS 解析、实际拨号、TLS 身份验证、代理目标选择或重定向；真实连接仍以已授权配置端点为准，禁止由 Header 驱动访问第三方服务。旧参数中包含第三方品牌/域名样式，不代表其授权、真实访问或真实服务身份。私有格式不得用于声称与真实网站有关系，不宣称通用 HTTP 互操作、匿名性或网络可达性保证。固定 Host/Path 模式仍保留为显式选项。仅迁移参数生成与头字段能力，不恢复旧 handler、旧 wire、旧日志或重复编码栈。
+- [ ] 保持方案 A：Content-Type 的私有 application/json 声明和二进制 Body；Content-Length 按实际编码后的 Body 长度计算，可选 deflate 与实际内容编码一致。若恢复旧 GET 请求变体，必须同步验证新 AUTO/HTTP decoder 的方法识别与边界，且明确 GET 携带 Body 并非标准通用 HTTP 语义；不放宽长度、认证、资源上限或错误关闭。旧 GET 模板无 Content-Type，而新方案 A 有固定 JSON 声明，实施时以新方案 A 的内容编码约定为准，不为逐字节模仿旧 wire 而破坏新协议。
 - [ ] RSS/RPC/RRP 使用同一 EgressConfig 与实现；支持合法配置验证、HTTP BodyEncoding、头/体/解压预算、服务端 allowedCodecs、固定与随机选择行为。RSS 的全局配置及每上游覆盖、RssServer CLI、热更、warm pool 隔离须真正透传这些配置；标准 SOCKS5/SS 对外及第三方标准上游不安装私有 EgressCodec。敏感配置不进日志。旧私有 wire 无兼容要求，但现有业务功能不能丢。
-- [ ] 对比固定/随机选择模式的正确性、并发、对象分配、CPU、实际字节、短包延迟；保留 NONE 额外开销为零的目标。默认不增加无意义头字段、重复压缩或新永久线程/定时任务。
+- [ ] 对比固定/随机选择模式的正确性、并发、对象分配、CPU、实际字节、短包延迟；保留 NONE 额外开销为零的目标。用户指定恢复的头字段不再列为可省略项；除此之外不增加无意义头字段、重复压缩或新永久线程/定时任务。
 - [ ] 回归旧 RRP SOCKS 密码认证、连接失败、重连清理、异常关闭、远端监听绑定失败重试、背压/慢消费者与引用释放。检查新版已有测试与旧删除用例逐项对应，而非要求旧 wire 兼容。保留 Standard SOCKS5 TCP CONNECT。
 
 ### P1 · 5. RSS 私有增强链路统一 Transport Core
