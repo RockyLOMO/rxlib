@@ -13,6 +13,7 @@
 - UDP 打洞是通用路径建立能力；可靠 TCP Relay 是通用承载能力。优先复用 RrpClient/RrpServer 的反向连接、逻辑通道、背压、close/reconnect；扩展受授权的 RAW 承载，不新建另一套反向代理引擎。保留 SOCKS 反向代理业务能力，但无需兼容旧 RRP 私有 wire、旧 HTTP_PSEUDO handler 或旧传输配置；客户端和服务端配套升级。
 - RSS、RPC、RRP 共享 Transport Core、实际压缩、认证加密和公共 TCP EgressCodec；业务模块只保留各自职责。端到端可靠流使用 daily，RRP Relay 物理承载默认纯 TCP，不重复 FEC/重传。RPC 仍负责序列化、方法与事件。
 - EgressCodec 仅负责物理 TCP 最终出口，三种实际格式 NONE / ZLIB_STORED / HTTP，UDP 不增加出口包装。ZLIB_STORED 输出纯 zlib level 0 流；HTTP 默认采用用户指定的方案 A：二进制密文 Body，Content-Type 固定声明 application/json，不转 JSON、不做 Base64、不默认加 zlib 0。该 Content-Type 与实际内容不一致，是明确的私有协议选择，不宣称标准 JSON/HTTP 应用互操作或不可识别性。此前讨论的 HTTP Body zlib 0 保留为独立可选扩展，默认关闭，不与独立 ZLIB_STORED 层叠加。
+- 路径选择的首要成本目标：在保证认证、可靠性及可接受时延的前提下，尽可能避免公网服务承担业务转发流量。优先直接 UDP、协调 UDP 打洞及直接 TCP；RRP TCP Relay 仅在不存在可用可靠直连路径时按需建立。UDP/TCP 路径分别选定，不将 UDP 成功误认为可靠 TCP 已建立。多网卡候选组合、有限并发、缓存与路径恢复见 §4.3。
 - 公共 EgressCodec 必须支持服务端 AUTO（每连接一次、允许列表、统一认证握手）；客户端明确选定实际编码。删除 RSZ 后不能依赖 zlib 压缩等级区分业务层和出口层。详见 §5.4.5。
 - 私有传输 wire 不要求向后兼容，不保留旧协议双栈、旧 preface 或兼容性自动降级；标准 SOCKS5、Shadowsocks、DNS 的外部协议仍保持正确语义。
 - 现有全局限速缺陷仍仅记录、不处理。SS 用户粒度限速保持在 SS 入口，不自动给 Relay 或内部 RPC 叠加用户额度；Relay 的独立资源/授权配额不是重复 SS 业务限速。
@@ -59,8 +60,9 @@
                                 |
                  AddressDiscovery / Netty I/O
 
-内网节点 A  ── 主动认证可靠连接 ── 公网 RRP Relay ── B 的反向连接 ── 内网节点 B
-      └────────── 已验证直连 UDP 快路径（如可用） ────────────┘
+内网节点 A  ───────── 经过验证的直接 TCP（优先可靠承载） ───────── 内网节点 B
+      ├────────── 已验证直连 UDP 快路径（如可用） ────────────┤
+      └──── 无可用可靠直连时：公网 RRP Relay（按需） ──────────┘
 ```
 
 Nameserver 保留标准 DNS TCP/UDP、查询索引及复制协议所需 epoch/version/tombstone。NodeRegistry 是节点/实例/候选/授权权威；RPC 是控制面；RRP 负责可靠中继承载。独立组件可同进程部署，按需启用。不能让 Transport Core 依赖 RSS 或 Nameserver；不能让 Relay 业务数据经过 RPC 对象反序列化。
@@ -109,22 +111,92 @@ nodeService:
 
 Rendezvous 是经过认证的协调服务；外部 endpoint observation 是 STUN 类功能（当前非标准 STUN/ICE，除非明确采用标准并通过互操作验证）；Relay 是业务数据承载。节点 A/B 通过可靠 RPC 注册与交换获授权候选。公网观察者必须记录实际业务 UDP socket 对应的外部端点；HTTPS 公网地址、TCP 观察端口不可代替 UDP 映射。多网卡、IPv4/IPv6、局域网、同 NAT hairpin 等只选择合理且经授权的候选，不无条件收集所有虚拟网卡或公开私网信息。
 
-初始 reliable path 可用立即开始业务；直连 UDP 未验证前保持 TCP。直连/打洞成功只意味着 UDP 快路径可以启用，不关闭可靠兜底。所有候选均不可用则 TCP-only；可靠路径也不存在时返回明确失败。UDP 故障后使用已有 adaptive fallback/recovery，不能产生第二套整消息 ACK/重试。目标状态示意：
+先完成经过认证的节点发现与候选交换。UDP 直连/打洞是快路径候选检查，不要求预先分配公网业务 Relay。直接 TCP 检查可与 UDP 检查有限并发进行；有可靠直连即开始业务，UDP 验证成功后启用快路径。仅在直接 TCP 无可用路径、检查预算耗尽或已建立直连失效时按需选择 RRP TCP Relay。UDP 成功不能替代当前 Core 必需的可靠承载；即使 UDP 成功，若 TCP 直连不可用仍需要 Relay 承担必要可靠数据。可靠路径不存在则明确失败，不能承诺 UDP-only 可靠流。UDP 故障后使用已有 adaptive fallback/recovery，不另造重传协议。
+
+目标状态（UDP 与可靠路径分别维护，非严格串行等待）：
 
 ```text
-AUTHENTICATED → RELIABLE_READY
-                   ├─ DIRECT_UDP_CHECK → UDP_READY
-                   ├─ PUNCH_CHECK      → UDP_READY
-                   └─ TIMEOUT          → TCP_ONLY
-UDP_READY ── path failure ──→ TCP_ONLY ── bounded recheck ──→ UDP_READY
-RELIABLE_READY / UDP_READY ── reliable unavailable ──→ FAIL / authorized reconnect
+AUTHENTICATED → CANDIDATES_READY
+    UDP: DIRECT_CHECK → COORDINATED_PUNCH_CHECK → UDP_READY / UNAVAILABLE
+    TCP: DIRECT_CHECK → DIRECT_READY
+                      └─ no direct path within budget → RELAY_READY / FAIL
+SESSION_READY = DIRECT_READY or RELAY_READY（必须通过端到端认证）
+    UDP_READY + SESSION_READY → adaptive UDP + selected reliable carrier
+    UDP_UNAVAILABLE + SESSION_READY → TCP-only
+    UDP failure → selected reliable carrier + bounded recheck
+    reliable failure → prefer validated direct alternative, else authorized relay/reconnect
 ```
+
 
 ### 4.2 实施边界
 
 新增最小路径协商模块（建议 RendezvousService + peer path adapter，类名非强制），使用 AddressDiscovery、EndpointCandidate、NodeRegistry、RPC 与 DatagramTransport/AdaptiveUdpPort 底层。协调控制数据与业务数据分开；实际路径启用前验证身份、目标会话、端点、有效期和双向可达性；同一 UDP socket 生命周期贯穿观察、检查与业务。未经认证或超限输入不得触发昂贵分配、反射放大或发往任意第三方的流量。候选地址只由有权限的双方获取，观察值与自报值分开；不能信任客户端声明 verified/TTL。对探测、协商会话、来源及全局限制资源；过期立即回收。无业务时不新增高频永久保活；失败退避与既有连接生命周期协调。
 
 AdaptiveTcpHandler/AdaptiveUdpPort 当前由 TCP 对端和端口协商选路径。必须补一个最小可验证的已认证路径绑定接口，使可靠 TCP 通过公网 Relay 时 UDP 的真实对端可以是授权的另一个节点，而不是 Relay 的 TCP 地址。保留 endpoint 绑定、认证、重放检查、方向、MTU 与窗口语义；不得通过关闭现有源地址校验或接受任意 UDP sender 实现。现有普通公网直连/hop/fixed UDP/外部 carrier 不受影响。无须恢复旧 UdpHolePunch* 类型或其旧 wire。
+
+### 4.3 PathSelector：多候选直连优先、按需公网中继（新增 P1）
+
+#### 4.3.1 目标与职责
+
+本节明确覆盖原先“先建立公网可靠 Relay 再尝试 UDP”的默认运行顺序。开发时先实现可靠 Relay 原型不等于上线后优先选择 Relay。
+
+公网节点尽可能只承担节点注册、授权、候选观察及协调的控制面流量。可靠直连可用时不创建业务 Relay；没有可靠直连时才需要 RRP 兜底。不得为了减少中继流量牺牲端到端认证、可靠交付和明确失败语义。
+
+- AddressDiscovery：收集本机合理可用地址及按真实 socket 观察的公网映射。
+- NodeRegistry：唯一节点/服务/授权权威，保存有界有效候选；不维护全量 A×B 路径矩阵，不在中心节点执行每次业务链路检查。
+- RendezvousService：经过身份验证的候选交换及路径协调，仅服务获授权双方。
+- PathSelector（建议命名）：端侧候选组合、有限检查调度、路径状态、质量评估、选择及重选。与业务协议解耦，可复用成熟 ICE 候选检查思想，不另造完整传输栈。
+- Transport Core：接收已验证的 UDP 路径及可靠 carrier；维持现有有序可靠流、FEC/repair/PMTU 语义。
+- RRP Relay：按需创建可靠逻辑通道，仅处理已授权服务；直接路径恢复后按定义退出不必要的 Relay。
+
+#### 4.3.2 路径优先级与调度
+
+逻辑偏好：
+
+| 优先级 | 路径 | 公网业务中继 |
+|---|---|---|
+| 1 | 局域网 UDP 直连 | 不转发 UDP |
+| 2 | 可直接验证的公网 IPv4/IPv6 UDP | 不转发 UDP |
+| 3 | Rendezvous 协调 UDP 打洞 | 仅协调，不转发 UDP |
+| 4 | 直接 TCP（局域网、公网或可达服务端点） | 不需要可靠中继 |
+| 5 | RRP TCP Relay | 无可用可靠直连时按需启用 |
+
+上表是路径偏好，不是把 UDP 与 TCP 当成完全互斥的传输模式，也不是每级串行等待全量超时。UDP 和可靠 TCP 是独立路径维度。直接 TCP 能建立时无需等待全部 UDP 检查完成；直接 TCP 与 UDP 可使用不同地址族、网卡、端口和候选组合。UDP 可用后不必再等待所有候选完成才开始业务。若快速直连路径不可用，按整体建连预算及时回落 Relay，避免为了追求直连造成无限等待。
+
+#### 4.3.3 多网卡、多 IP 候选对
+
+当前 AddressDiscovery.discoverLocal 会枚举网卡并去重，NodeRegistry.sanitizeCandidates 会剔除过期及重复项并限制数量；两者都未实现多候选对连接检查。[AddressDiscovery.java L116-L176](https://github.com/RockyLOMO/rxlib/blob/3a3c68c250fbe90a89a963b08b98614d06ad5299/rxlib/src/main/java/org/rx/net/AddressDiscovery.java#L116-L176)、[NodeRegistry.java L1108-L1126](https://github.com/RockyLOMO/rxlib/blob/3a3c68c250fbe90a89a963b08b98614d06ad5299/rxlib/src/main/java/org/rx/net/registry/NodeRegistry.java#L1108-L1126)、[NodeRegistryConfig.java](https://github.com/RockyLOMO/rxlib/blob/3a3c68c250fbe90a89a963b08b98614d06ad5299/rxlib/src/main/java/org/rx/net/registry/NodeRegistryConfig.java)。
+
+A 有 A1/A2、B 有 B1/B2 时，候选空间应覆盖 A1-B1、A1-B2、A2-B1、A2-B2，不能只比较默认地址或相同网卡序号。路径是源 socket/接口/地址与目标端点组合，不仅是 IP 字符串。候选上限默认仍为每节点16个，理论最多256对；并非要求每次连接实际发出256对检查。
+
+候选需保留来源、协议、地址族、端口、socket/接口关联、有效期、验证状态；地址集合变化时使用 generation 或等价版本标记。只测试经过授权的双方有效候选，过滤重复、过期、地址族/协议不兼容及不可连接的观测类型；HTTPS 公网 IP 或 TCP 源端口不能直接充当 UDP 目标或 TCP 监听端口。公网映射不是本机可 bind 的地址；应验证实际本地出接口/socket 与选定候选一致，避免所有检查实质走默认路由。UDP 观察、路径检查及实际业务保持正确 socket 关联。
+
+按候选质量、近期成功及有效期限进行有界排序与按需检查，不为所有组合提前分配 socket、任务、持久化记录。默认16候选不是强制穷举全部系统 IP；若需要更多候选应有显式资源上限，并记录被截断/未检查的原因，不能误报全部线路已验证。
+
+#### 4.3.4 质量选择、缓存与重新验证
+
+- 只有通过会话绑定的双向可达性及认证验证的候选可进入可用路径集合。不能依赖对端自报 verified、一次单向收到包、相同公网 IP 或历史成功记录判定当前可达。
+- 优先可靠直连，UDP 路径在可用候选中综合 RTT、丢包、稳定性、近期成功、切换成本及公网 Relay 字节成本；不能只选最快一个响应。使用稳定性阈值/滞回避免频繁切换，权重和时间预算由测试确定。
+- 每会话有候选数、在途检查数、重试次数、整体建连时间、字节及任务预算；每节点、租户、进程总量也需有界。有限并发，成功后取消不需要的检查，失败退避。未认证/越权的请求不得引发探测、放大或任意目标连接；检查仅限已授权节点及服务。
+- 当前选定路径、质量、在途检查留在端侧内存；最近有效路径使用短 TTL 的有界缓存，下一连接仍须重新验证，不把缓存当永久授权。缓存键包含会话/对端身份及网络/候选 generation 等必要作用域，网络切换、socket 重建、候选过期、授权撤销时立即失效。
+- H2 默认不保存每次探测、历史 IP/映射或每个候选对；仅在确有用途时保存低频聚合统计，仍遵守 §3.2 冷数据预算及隐私边界。公网 NodeRegistry 不保存所有节点对的历史矩阵；禁止 O(N²) 常驻状态。
+- 活跃会话按现有可靠传输信号判断故障，必要时重新发现。空闲时不周期性全网格检查，不额外建立备用 Relay 承载。已有中继会话若出现直连候选，第一版支持新会话优先直连与安全重连；在能够保证序列、在途数据、半关闭及 RPC 非幂等语义前，不强制无缝迁移活跃可靠流。
+
+#### 4.3.5 公网流量专项验收
+
+| UDP 快路径 | 可靠 TCP 路径 | 最终状态 |
+|---|---|---|
+| 直接或打洞成功 | 直接 TCP 成功 | UDP + 直接 TCP，无业务 Relay |
+| 直接或打洞成功 | 直接 TCP 不可用 | UDP + TCP Relay，仅必要可靠承载 |
+| UDP 不可用 | 直接 TCP 成功 | 纯直接 TCP，无业务 Relay |
+| UDP 不可用 | 直接 TCP 不可用、Relay 可用 | 纯 TCP Relay |
+| 任意 | 所有可靠路径不可用 | 明确失败/经授权重连 |
+
+- [ ] 多候选 A1/A2 × B1/B2 测试，非默认候选唯一可用、候选过期、候选重复、IPv4/IPv6、多网卡与真实源接口核对；验证有界调度、未测试候选可追踪、成功后不做无意义全量检查。
+- [ ] 上表所有路径组合；存在可靠直连时 RRP 业务逻辑通道建立数为0、Relay 业务数据字节为0；公网注册/观察/控制开销单独统计，不宣称公网总流量为0。
+- [ ] TCP 可达先于 UDP、UDP 成功但 TCP 不可达、所有直连超时、Relay 不可达；检查首次连接时延和失败语义。不得因为 UDP 成功取消唯一可靠通道。
+- [ ] 双 NAT、同 LAN、不同网卡、网络变化、真实 NAT 映射变化、UDP 丢包及路径失效；缓存命中仍验证，未授权候选不得发起连接/检查。直连恢复时新连接优先直连，已建立中继安全排空或在明确重连边界释放。
+- [ ] 统计公网控制字节、观察/检查字节、Relay 两侧实际 ingress/egress、业务有效字节、直连/中继会话比例、Relay 逻辑通道数及 idle 保活成本；以相同有效交付量对比强制 Relay 基准，不能把逻辑 payload 计数当公网账单字节。记录连接 P50/P95/P99、UDP 质量、CPU、内存与失败率；不以节省流量为由放宽可靠性和安全验收。
 
 ## 5. RRP 复用为 TCP Relay 兜底（核心任务）
 
@@ -144,13 +216,14 @@ AdaptiveTcpHandler/AdaptiveUdpPort 当前由 TCP 对端和端口协商选路径�
 
 | 情况 | 可靠路径 | UDP 快路径 |
 |---|---|---|
-| 公网/局域网双方可直接 TCP | 直接 TCP | 可验证的直接 UDP |
-| 双 NAT、Relay 可达、打洞成功 | A↔Relay↔B（保留） | A↔B |
-| 双 NAT、打洞失败或 UDP 被禁 | A↔Relay↔B | 无 |
-| UDP 运行中失效 | 同一可靠 Relay 路径修复 | 暂停并按需恢复 |
+| 直接 TCP 可达，UDP 可验证 | 直接 TCP，不创建 Relay | A↔B |
+| 直接 TCP 可达，UDP 不可用 | 直接 TCP，不创建 Relay | 无 |
+| 直接 TCP 不可用、Relay 可达、打洞成功 | A↔Relay↔B（按需） | A↔B |
+| 直接 TCP 不可用、Relay 可达、UDP 不可用 | A↔Relay↔B（按需） | 无 |
+| UDP 运行中失效 | 既有直接 TCP 或可靠 Relay 路径修复 | 暂停并按需恢复 |
 | Relay 断开且无可靠直接路径 | 明确连接失败或受授权重连 | 不宣称 UDP 可独立保证可靠会话 |
 
-第一版不要求从已建立的 Relay 可靠连接无缝迁移到直接 TCP，也不保证 Relay 断开时原 RPC 请求 exactly-once。先保证可靠载体生命周期和应用错误语义。公网 Relay 不得把普通 UDP 数据报无条件包装为可靠 TCP；本轮兜底针对可靠字节流，独立数据报仍按 DatagramTransport 语义。
+第一版不要求从已建立的 Relay 可靠连接无缝迁移到直接 TCP，但新连接应优先重新验证直接路径，旧 Relay 在安全排空/关闭后释放；也不保证 Relay 断开时原 RPC 请求 exactly-once。先保证可靠载体生命周期和应用错误语义。公网 Relay 不得把普通 UDP 数据报无条件包装为可靠 TCP；本轮兜底针对可靠字节流，独立数据报仍按 DatagramTransport 语义。
 
 ### 5.3 公网安全与资源
 
@@ -293,10 +366,11 @@ egress:
 - [ ] RRP 增加受授权 RAW 逻辑通道，先验证 A/B 均无入站公网 TCP 时可双向通信；无 UDP 的真实 TCP 兜底必须先完成，不依赖打洞成功。应用 RPC 通过 daily Core；不新增旧 UdpClient。
 - [ ] 验证跨节点授权、端到端数据安全、限额、关闭、反向连接故障；完成 RRP SOCKS 业务功能回归与独立 resource budget（不测试旧私有 wire 兼容）。未经安全验收禁止公开部署。
 
-### P1：UDP 路径建立与集成
+### P1：直连优先 PathSelector、UDP 路径建立与集成
 
 - [ ] 完成 Rendezvous 受控协调和真实 UDP socket 端点观察，NodeRegistry 候选生命周期及授权。
-- [ ] 实现 Core 已验证 UDP path adapter，LAN/直接 UDP、打洞成功启用 daily UDP、失败保持 TCP Relay；与既有 FEC/PMTU/ACK/repair 集成，仅一个可靠状态机；恢复退避和路径变化。
+- [ ] 实现 §4.3 PathSelector，多网卡候选对有界检查、UDP/TCP 独立选路、近期路径缓存及重新验证，优先直接 TCP、按需 Relay；证明可靠直连时不创建 Relay 业务通道。
+- [ ] 实现 Core 已验证 UDP path adapter，LAN/直接 UDP、打洞成功启用 daily UDP、失败使用已选择的可靠直连或 TCP Relay；与既有 FEC/PMTU/ACK/repair 集成，仅一个可靠状态机；恢复退避和路径变化。
 - [ ] 不恢复旧 UdpHolePunch 协议；不引入新完整传输栈。继续支持普通公网 RSS/原生 DatagramTransport。
 
 ### P1：实测矩阵（必须实际执行后才标记完成）
@@ -304,6 +378,7 @@ egress:
 | 测试 | 必须验证 |
 |---|---|
 | 双 NAT 拓扑 | A/B 都无公网入站，公网节点可达；UDP 成功及 UDP 完全阻断时可靠传输 |
+| 多候选与中继流量 | A1/A2 × B1/B2、独立 UDP/TCP 路径、仅非默认候选可达；可靠直连时 Relay 业务通道和业务字节均为0；控制流量单列 |
 | 局域网/IPv4/IPv6 | 同 LAN、不同 NAT、可直接 TCP、实际 UDP 映射变化、网络切换；不保证所有 NAT 可打通 |
 | Relay 故障 | B 断线、A 断线、公网节点重启、半关闭、慢消费者、权限撤销、超额连接和积压 |
 | 认证安全 | 未授权/过期/重放/伪造身份、候选替换、越权目标、坏帧、公开模式无明文凭据/业务 |
@@ -318,6 +393,6 @@ egress:
 
 每阶段独立提交；新私有 wire 客户端和服务端配套升级，回滚采用整套旧版本和对应配置，不在新实现中保留旧协议分支；先 master Java8 完成验证，再按 AGENTS.md merge master 到 rss-21，JDK21 回归及部署包验证，不直接在 rss-21 开发。同步更新 roadmap-plan、net-architecture、reference/net/punch、nameserver、transport、flow-control（如相关）和 test-benchmarks；完成重大架构演进后按仓库规范记录 .memory。不得把单元测试通过当成真实双 NAT 或公网安全已验收。
 
-最终目标：RSS Client Launcher 可运行统一 NodeRegistry + Nameserver + Rendezvous + RRP Relay 服务；内网 A/B 在直接 UDP 可用时共享 daily 快路径，不可用时拥有真正可用的可靠 TCP 中继。RSS/RPC/RRP 共用一套 Core、实际压缩、认证加密及 TCP EgressCodec，新能力只使用公共 Core 与最小路径/承载适配，不复活旧 UdpClient/UdpHolePunch 栈，不为普通 RSS 增加未启用功能的成本。
+最终目标：RSS Client Launcher 可运行统一 NodeRegistry + Nameserver + Rendezvous + RRP Relay 服务；内网 A/B 优先使用直接 UDP 快路径与直接 TCP 可靠承载，缺少可靠直连才按需启用公网 RRP TCP Relay，尽量减少公网业务转发流量。RSS/RPC/RRP 共用一套 Core、实际压缩、认证加密及 TCP EgressCodec，新能力只使用公共 Core 与最小路径/承载适配，不复活旧 UdpClient/UdpHolePunch 栈，不为普通 RSS 增加未启用功能的成本。
 
 本次仅提交实施计划，未改源码、未部署、未运行测试。RRP RAW 适配的具体 API、认证密钥管理与资源阈值需在 P0 原型及测试中确定。
