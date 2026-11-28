@@ -8,8 +8,10 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 import org.rx.net.AuthenticEndpoint;
+import org.rx.net.EgressConfig;
 import org.rx.net.Sockets;
 import org.rx.net.nameserver.NameserverConfig;
+import org.rx.net.registry.NodeRegistryConfig;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
@@ -64,6 +66,24 @@ public class RssClientConf {
         public String udpCodec = "none";
     }
 
+    @Getter
+    @Setter
+    @ToString(exclude = {"authToken"})
+    public static class NodeServiceConf implements Serializable {
+        private static final long serialVersionUID = 1L;
+        public boolean enabled;
+        public boolean rendezvousEnabled;
+        public boolean relayEnabled;
+        public int rendezvousPort;
+        public int udpObservePort;
+        public int relayPort;
+        @JSONField(serialize = false)
+        public String authToken;
+        public EgressConfig egressConfig = EgressConfig.serverAutoAll();
+        /** Test-only toggle permitting port 0 ephemeral bindings; production requires explicit ports > 0. */
+        public boolean allowEphemeralPorts;
+    }
+
     // socks
     public List<ShadowUser> shadowUsers;
     public int[] tcpCipherPorts = RssTransport.cipherPorts();
@@ -112,6 +132,10 @@ public class RssClientConf {
     public int shadowDnsPort = 753;
     public int dnsTtlMinutes = 600;
     public NameserverConfig nameserver = new NameserverConfig();
+    /** Opt-in shared NodeRegistry control-plane directory (default disabled: zero H2/timers when off). */
+    public NodeRegistryConfig nodeRegistry = new NodeRegistryConfig();
+    /** Opt-in public node coordination & on-demand RRP RAW Relay service (default disabled). */
+    public NodeServiceConf nodeService = new NodeServiceConf();
     public int trafficRetentionDays = 60;
     public int memoryRetentionHours = RssAuthenticator.DEFAULT_MEMORY_RETENTION_HOURS;
 

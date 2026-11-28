@@ -418,6 +418,12 @@ public final class RssClient {
         if (conf.nameserver == null) {
             conf.nameserver = new NameserverConfig();
         }
+        if (conf.nodeRegistry == null) {
+            conf.nodeRegistry = new org.rx.net.registry.NodeRegistryConfig();
+        }
+        if (conf.nodeService == null) {
+            conf.nodeService = new RssClientConf.NodeServiceConf();
+        }
         conf.trafficRetentionDays = Math.max(1, conf.trafficRetentionDays);
         conf.memoryRetentionHours = conf.memoryRetentionHours <= 0
                 ? RssAuthenticator.DEFAULT_MEMORY_RETENTION_HOURS
@@ -478,6 +484,9 @@ public final class RssClient {
         if (isRrpServerEnabled() && conf.rrpPort != null && conf.rrpPort <= 0) {
             return false;
         }
+        if (!validateNodeRegistryAndService(conf)) {
+            return false;
+        }
         Set<String> usernames = new LinkedHashSet<>();
         Set<Integer> shadowPorts = new LinkedHashSet<>();
         for (ShadowUser user : conf.shadowUsers) {
@@ -486,6 +495,10 @@ public final class RssClient {
                 return false;
             }
             if (!usernames.add(user.getUsername()) || !shadowPorts.add(user.getSsPort())) {
+                return false;
+            }
+            if (conflictsWithNodeServicePort(conf, user.getSsPort())) {
+                log.warn("ShadowUser {} ssPort {} collides with NodeService port", user.getUsername(), user.getSsPort());
                 return false;
             }
             if (user.transport != null && !user.transport.valid()) {
@@ -526,6 +539,94 @@ public final class RssClient {
             }
         }
         return true;
+    }
+
+    static boolean validateNodeRegistryAndService(RssClientConf conf) {
+        org.rx.net.registry.NodeRegistryConfig reg = conf.nodeRegistry;
+        RssClientConf.NodeServiceConf svc = conf.nodeService;
+        if (reg != null && reg.isEnabled()) {
+            if (Strings.isEmpty(reg.getDbPath()) || reg.getMaxOnlineNodes() <= 0
+                    || reg.getMaxColdCacheBytes() <= 0 || reg.getMaxPendingPersistBytes() <= 0) {
+                log.warn("Invalid NodeRegistry configuration: dbPath and positive caps are required");
+                return false;
+            }
+        }
+        if (svc == null || !svc.enabled) {
+            return true;
+        }
+        if (reg == null || !reg.isEnabled()) {
+            log.warn("nodeService.enabled requires nodeRegistry.enabled=true");
+            return false;
+        }
+        if ((svc.rendezvousEnabled || svc.relayEnabled) && Strings.isEmpty(svc.authToken)) {
+            log.warn("Public nodeService requires non-empty authToken (unauthenticated mode forbidden)");
+            return false;
+        }
+        try {
+            org.rx.net.EgressConfig egress = svc.egressConfig != null
+                    ? svc.egressConfig : org.rx.net.EgressConfig.serverAutoAll();
+            egress.validateServer();
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid nodeService egressConfig: {}", e.getMessage());
+            return false;
+        }
+        Set<Integer> tcpPorts = new LinkedHashSet<>();
+        tcpPorts.add(conf.shadowDnsPort);
+        if (conf.nameserver != null && conf.nameserver.getRegisterPort() > 0) {
+            if (!tcpPorts.add(conf.nameserver.getRegisterPort())) {
+                log.warn("Port collision on nameserver.registerPort={}", conf.nameserver.getRegisterPort());
+                return false;
+            }
+        }
+        if (shouldEnableRrpServer(conf) && conf.rrpPort != null && conf.rrpPort > 0) {
+            if (!tcpPorts.add(conf.rrpPort)) {
+                log.warn("Port collision on rrpPort={}", conf.rrpPort);
+                return false;
+            }
+        }
+        if (svc.rendezvousEnabled) {
+            if (svc.rendezvousPort < 0 || svc.rendezvousPort > 65535
+                    || svc.udpObservePort < 0 || svc.udpObservePort > 65535) {
+                log.warn("Invalid rendezvous ports rpc={} udp={}", svc.rendezvousPort, svc.udpObservePort);
+                return false;
+            }
+            if (!svc.allowEphemeralPorts && (svc.rendezvousPort <= 0 || svc.udpObservePort <= 0)) {
+                log.warn("nodeService.rendezvousEnabled requires explicit rendezvousPort > 0 and udpObservePort > 0");
+                return false;
+            }
+            if (svc.rendezvousPort > 0 && !tcpPorts.add(svc.rendezvousPort)) {
+                log.warn("Port collision on nodeService.rendezvousPort={}", svc.rendezvousPort);
+                return false;
+            }
+            if (svc.udpObservePort > 0 && svc.udpObservePort == conf.shadowDnsPort) {
+                log.warn("UDP port collision between nodeService.udpObservePort and shadowDnsPort={}", svc.udpObservePort);
+                return false;
+            }
+        }
+        if (svc.relayEnabled) {
+            if (svc.relayPort < 0 || svc.relayPort > 65535) {
+                log.warn("Invalid nodeService.relayPort={}", svc.relayPort);
+                return false;
+            }
+            if (!svc.allowEphemeralPorts && svc.relayPort <= 0) {
+                log.warn("nodeService.relayEnabled requires explicit relayPort > 0");
+                return false;
+            }
+            if (svc.relayPort > 0 && !tcpPorts.add(svc.relayPort)) {
+                log.warn("Port collision on nodeService.relayPort={}", svc.relayPort);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean conflictsWithNodeServicePort(RssClientConf conf, int ssPort) {
+        if (conf == null || conf.nodeService == null || !conf.nodeService.enabled || ssPort <= 0) {
+            return false;
+        }
+        RssClientConf.NodeServiceConf svc = conf.nodeService;
+        return (svc.rendezvousEnabled && svc.rendezvousPort == ssPort)
+                || (svc.relayEnabled && svc.relayPort == ssPort);
     }
 
     private static boolean hasWeightedSocksServer(List<RssClientConf.SocksServer> socksServers) {
