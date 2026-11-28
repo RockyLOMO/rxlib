@@ -594,6 +594,103 @@ class NameserverImplTest {
         }
     }
 
+    @Test
+    @Timeout(25)
+    void nodeRegistryAuthorityEnforcesAuthMirrorsServicesAndEvictsOnDisable(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir) throws Exception {
+        int dnsPort = freePort();
+        int registerPort = freePort();
+        org.rx.net.registry.NodeRegistryConfig regCfg = new org.rx.net.registry.NodeRegistryConfig();
+        regCfg.setEnabled(true);
+        regCfg.setDbPath(tempDir.resolve("ns-reg").toAbsolutePath().toString());
+        regCfg.setFlushPeriodMillis(0L);
+        regCfg.setTtlSweepPeriodMillis(0L);
+
+        org.rx.net.registry.NodeRegistry registry = new org.rx.net.registry.NodeRegistry(regCfg);
+        NameserverImpl server = null;
+        Nameserver unauthClient = null;
+        Nameserver authClient = null;
+        try {
+            registry.enrollNode("node-a", "tenant-1", "secret-a", Collections.singleton("member"), null);
+            registry.enrollNode("node-b", "tenant-1", "secret-b", Collections.singleton("member"), null);
+            registry.markOnline("node-b", "secret-b", "obs-b", null);
+
+            NameserverConfig nsCfg = baseConfig("ns-reg-auth", dnsPort, registerPort, null, CLUSTER_TOKEN);
+            server = new NameserverImpl(nsCfg, null, registry);
+
+            // 1. Unauthenticated client is rejected when NodeRegistry authority is attached
+            unauthClient = newClient(registerPort);
+            final Nameserver uc = unauthClient;
+            assertThrows(RemotingException.class,
+                    () -> uc.register("orders", RandomList.DEFAULT_WEIGHT, "inst-1", Collections.<InetSocketAddress>emptySet()));
+            assertTrue(server.discover("orders").isEmpty());
+
+            // 2. Wrong secret rejected
+            assertThrows(RemotingException.class, () -> uc.authenticateNode("node-a", "wrong-secret"));
+
+            // 3. Valid auth binds session to verified nodeId and mirrors live services into NodeRegistry
+            authClient = newClient(registerPort);
+            assertTrue(authClient.authenticateNode("node-a", "secret-a"));
+            authClient.register("orders", RandomList.DEFAULT_WEIGHT, "inst-1", Collections.<InetSocketAddress>emptySet());
+
+            assertContainsLoopback(server.discover("orders"));
+            assertEquals(1, registry.discoverLiveServices("node-b", "orders").size());
+            assertEquals("node-a:inst-1", registry.discoverLiveServices("node-b", "orders").get(0).getInstanceId());
+            assertFalse(registry.discoverAuthorizedCandidates("node-b", "node-a").isEmpty(),
+                    "TCP_OBSERVED candidate should be recorded in NodeRegistry");
+
+            // 4. Disabling node-a immediately evicts live service from Nameserver & closes RPC session
+            registry.setDisabled("node-a", true);
+            final NameserverImpl srv = server;
+            awaitTrue(() -> srv.discover("orders").isEmpty(), 5000, "disabling node must evict Nameserver registrations");
+            assertTrue(registry.discoverLiveServices("node-b", "orders").isEmpty());
+        } finally {
+            if (unauthClient != null) unauthClient.close();
+            if (authClient != null) authClient.close();
+            if (server != null) server.close();
+            registry.close();
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void remoteReplicaSourceLeaseExpiryClearsOnlyExpiredRemotePartition() throws Exception {
+        java.util.concurrent.atomic.AtomicLong clock = new java.util.concurrent.atomic.AtomicLong(1_000_000L);
+        NameserverConfig cfg = baseConfig("ns-lease", freePort(), freePort(), null, CLUSTER_TOKEN);
+        cfg.setReplicaSourceLeaseMillis(5_000L);
+        cfg.setReplicaLeaseSweepPeriodMillis(0L);
+        NameserverImpl server = new NameserverImpl(cfg);
+        server.setClock(clock::get);
+        try {
+            // Static DNS & local partition entry must NEVER be evicted by remote lease expiry
+            server.getDnsServer().addHosts("static.lease", "10.99.0.1");
+            server.doLocalRegister("local-app", "l1", 1, InetAddress.getByName("127.0.0.1"));
+
+            InetAddress ipA = InetAddress.getByName("127.0.0.10");
+            InetAddress ipB = InetAddress.getByName("127.0.0.11");
+            ReplicaDeltaRequest dA = ReplicaDeltaRequest.upsert("peer-a", 10L, 1L, 0L, 1L,
+                    new ReplicaRecord("shared-app", "a1", ipA, 1, Collections.<String, Serializable>emptyMap()));
+            dA.setAuthTag(NameserverReplicaProtocol.signDelta(CLUSTER_TOKEN, dA));
+            assertTrue(server.replicaApplyDelta(dA).isAccepted());
+
+            clock.addAndGet(3_000L);
+            ReplicaDeltaRequest dB = ReplicaDeltaRequest.upsert("peer-b", 10L, 1L, 0L, 2L,
+                    new ReplicaRecord("shared-app", "b1", ipB, 1, Collections.<String, Serializable>emptyMap()));
+            dB.setAuthTag(NameserverReplicaProtocol.signDelta(CLUSTER_TOKEN, dB));
+            assertTrue(server.replicaApplyDelta(dB).isAccepted());
+
+            // Advance 3s more: peer-a age=6s (>= 5s lease -> expired), peer-b age=3s (alive)
+            clock.addAndGet(3_000L);
+            assertEquals(1, server.sweepExpiredRemotePartitions());
+            assertEquals(Collections.singleton("b1"), instanceIds(server, "shared-app"));
+            assertFalse(server.discover("shared-app").contains(ipA));
+            assertTrue(server.discover("shared-app").contains(ipB));
+            assertEquals(1, server.discover("local-app").size());
+            assertEquals(1, server.discover("static.lease").size());
+        } finally {
+            server.close();
+        }
+    }
+
     static NameserverConfig baseConfig(String nodeId, int dnsPort, int registerPort,
                                        List<String> replicaEndpoints, String token) {
         NameserverConfig config = new NameserverConfig();

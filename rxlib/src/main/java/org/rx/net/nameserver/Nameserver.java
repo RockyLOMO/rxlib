@@ -56,7 +56,16 @@ public interface Nameserver extends EventPublisher<Nameserver>, AutoCloseable {
     String EVENT_APP_ATTRS_CHANGED = "APP_ATTRS_CHANGED";
     String APP_NAME_KEY = "app.name";
     String INSTANCE_ID_KEY = "instance.id";
+    String NODE_ID_KEY = "node.id";
     String PUBLIC_IP_KEY = "publicIp";
+
+    /**
+     * Authenticates the current RPC session against the attached {@link org.rx.net.registry.NodeRegistry}.
+     * Required before register/deregister/instanceAttr when NodeRegistry authority is enabled.
+     */
+    default boolean authenticateNode(String nodeId, String secret) {
+        throw new UnsupportedOperationException("Node authentication is not enabled");
+    }
 
     default int register(String appName, Set<InetSocketAddress> serverEndpoints) {
         return register(appName, RandomList.DEFAULT_WEIGHT, serverEndpoints);

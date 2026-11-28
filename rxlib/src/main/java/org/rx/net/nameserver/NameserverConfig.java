@@ -31,6 +31,11 @@ public class NameserverConfig implements Serializable {
     private int replicaMaxPendingDeltasPerPeer = 256;
     private int replicaMaxTombstonesPerSource = 4096;
     private long replicaTombstoneTtlMillis = 300_000L;
+    /** Remote replica source partition lease expiry; 0 disables expiry. */
+    private long replicaSourceLeaseMillis = 180_000L;
+    private long replicaLeaseSweepPeriodMillis = 30_000L;
+    private int replicaMaxInstancesPerSource = 4096;
+    private int replicaMaxRemoteSources = 64;
     private long replicaRetryBaseMillis = 500L;
     private long replicaRetryMaxMillis = 15_000L;
 }
