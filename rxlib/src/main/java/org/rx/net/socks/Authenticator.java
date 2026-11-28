@@ -9,4 +9,9 @@ public interface Authenticator {
         SocksUser user = login(username, password);
         return user == null ? null : new AuthResult(user, null);
     }
+
+    /** Optional secret lookup for Transport Core v2 HMAC authentication (null if user unknown or unsupported). */
+    default String lookupSecret(String username) {
+        return null;
+    }
 }

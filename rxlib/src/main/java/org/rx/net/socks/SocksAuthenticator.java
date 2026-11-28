@@ -29,4 +29,10 @@ public class SocksAuthenticator implements Authenticator {
         }
         return user;
     }
+
+    @Override
+    public String lookupSecret(String username) {
+        SocksUser user = username == null ? null : store.get(username);
+        return user == null ? null : user.getPassword();
+    }
 }

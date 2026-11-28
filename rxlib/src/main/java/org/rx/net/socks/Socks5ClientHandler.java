@@ -46,16 +46,15 @@ public final class Socks5ClientHandler extends ProxyHandler {
 
     private final String username;
     private final String password;
+    @Getter
     private final Socks5CommandType commandType;
-    @Setter private boolean adaptiveTcp;
-    @Setter private int adaptiveProfile;
-    @Setter private boolean udpHop = true;
-    @Setter private InetSocketAddress adaptiveUdpAddress;
-    @Setter private int adaptiveUdpMtu;
-    @Setter private UpstreamSupport upstreamSupport;
+    @Getter @Setter private boolean adaptiveTcp;
+    @Getter @Setter private int adaptiveProfile;
+    @Getter @Setter private boolean udpHop = true;
+    @Getter @Setter private InetSocketAddress adaptiveUdpAddress;
+    @Getter @Setter private int adaptiveUdpMtu;
+    @Getter @Setter private UpstreamSupport upstreamSupport;
     private volatile boolean destinationCommandError;
-    private int offeredProfile = -1;
-    private boolean negotiated;
     private String decoderName;
     private String encoderName;
     @Setter
@@ -134,10 +133,6 @@ public final class Socks5ClientHandler extends ProxyHandler {
 
     @Override
     protected Object newInitialMessage(ChannelHandlerContext ctx) throws Exception {
-        if (adaptiveTcp && commandType == Socks5CommandType.CONNECT && password != null && ctx.channel().remoteAddress() instanceof InetSocketAddress) {
-            offeredProfile = adaptiveProfile;
-            return SocksAdaptiveHandshake.offer(offeredProfile, udpHop);
-        }
         return socksAuthMethod() == Socks5AuthMethod.PASSWORD ? INIT_REQUEST_PASSWORD : INIT_REQUEST_NO_AUTH;
     }
 
@@ -148,10 +143,6 @@ public final class Socks5ClientHandler extends ProxyHandler {
             Socks5InitialResponse res = (Socks5InitialResponse) response;
             Socks5AuthMethod authMethod = socksAuthMethod();
             Socks5AuthMethod resAuthMethod = res.authMethod();
-            if (offeredProfile >= 0 && SocksAdaptiveHandshake.selected(offeredProfile, resAuthMethod)) {
-                negotiated = true;
-                resAuthMethod = Socks5AuthMethod.PASSWORD;
-            }
             if (resAuthMethod != Socks5AuthMethod.NO_AUTH && resAuthMethod != authMethod) {
                 // Server did not allow unauthenticated access nor accept the requested authentication scheme.
                 throw new ProxyConnectException(exceptionMessage("unexpected authMethod: " + res.authMethod()));
@@ -162,10 +153,6 @@ public final class Socks5ClientHandler extends ProxyHandler {
             } else if (resAuthMethod == Socks5AuthMethod.PASSWORD) {
                 // In case of password authentication, send an authentication request.
                 ctx.pipeline().replace(decoderName, decoderName, new Socks5PasswordAuthResponseDecoder());
-                if (negotiated) {
-                SocksAdaptiveHandshake.awaitNonce(ctx.pipeline(), decoderName);
-                SocksAdaptiveHandshake.sendMtu(ctx, adaptiveUdpMtu);
-            }
                 sendToProxyServer(new DefaultSocks5PasswordAuthRequest(
                         username != null ? username : Strings.EMPTY, password != null ? password : Strings.EMPTY));
             } else {
@@ -183,19 +170,6 @@ public final class Socks5ClientHandler extends ProxyHandler {
                 throw new ProxyConnectException(exceptionMessage("authStatus: " + res.status()));
             }
 
-            if (negotiated) {
-                UpstreamSupport support = upstreamSupport;
-                SocksAdaptiveHandshake.install(ctx.channel(), ctx.channel().attr(SocksAdaptiveHandshake.NONCE).getAndSet(null),
-                        password, null, offeredProfile, udpHop, adaptiveUdpAddress, adaptiveUdpMtu,
-                        support == null ? null : healthy -> {
-                            if (healthy) {
-                                support.recordSuccess(UpstreamSupport.Capability.ADAPTIVE_UDP);
-                            } else {
-                                support.recordFailure(UpstreamSupport.Capability.ADAPTIVE_UDP);
-                            }
-                        });
-                negotiated = false;
-            }
             sendCommand(ctx);
             return false;
         }

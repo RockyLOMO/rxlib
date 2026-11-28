@@ -29,28 +29,13 @@ public class Socks5PasswordAuthRequestHandler extends SimpleChannelInboundHandle
             return;
         }
         AuthResult result = server.getAuthenticator().loginResult(msg.username(), msg.password());
-        Integer profile = ctx.channel().attr(SocksAdaptiveHandshake.NEGOTIATED).getAndSet(null);
-        Boolean clientNoHop = ctx.channel().attr(SocksAdaptiveHandshake.NO_HOP).getAndSet(null);
-        boolean udpHop = !Boolean.TRUE.equals(clientNoHop) && server.getConfig().isUdpHop();
-        byte[] nonce = profile != null
-                ? SocksAdaptiveHandshake.sendNonce(ctx, server.adaptivePort, udpHop, server.getConfig().resolveDailyUdpMtu()) : null;
-        if (result == null || nonce != null && (result.getUser() == null || result.getUser().isAnonymous()
-                || msg.password().isEmpty())) {
+        if (result == null) {
             ctx.writeAndFlush(new DefaultSocks5PasswordAuthResponse(Socks5PasswordAuthStatus.FAILURE)).addListener(ChannelFutureListener.CLOSE);
             return;
         }
         user = result.getUser();
         trafficUser = result.getTrafficUser();
-        ChannelFuture success = ctx.writeAndFlush(SUCCESS);
-        if (nonce != null) {
-            success.addListener(f -> {
-                if (f.isSuccess()) {
-                    SocksAdaptiveHandshake.install(ctx.channel(), nonce, msg.password(), server.adaptivePort, profile, udpHop);
-                } else {
-                    ctx.close();
-                }
-            });
-        }
+        ctx.writeAndFlush(SUCCESS);
         ProxyManageHandler.get(ctx).setUser(user, trafficUser, ctx);
     }
 }

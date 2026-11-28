@@ -956,33 +956,43 @@ public final class Sockets {
 
     @SneakyThrows
     public static Channel addTcpServerHandler(Channel channel, SocketConfig config) {
+        boolean rssPrivate = config instanceof SocksConfig && ((SocksConfig) config).isRssPrivateTransport();
+        boolean adaptiveHybrid = config instanceof SocksConfig && !rssPrivate && ((SocksConfig) config).isAdaptiveTcp();
+        boolean useCoreCarrier = rssPrivate || adaptiveHybrid;
         FlagsEnum<TransportFlags> flags = config.getTransportFlags();
         if (flags == null) {
-            return channel;
+            if (!useCoreCarrier) {
+                return channel;
+            }
+            flags = TransportFlags.NONE.flags();
         }
 
         ZlibWrapper zlib = ZlibWrapper.ZLIB;
         // 入站事件（如数据读取、连接建立等）由 ChannelInboundHandler 处理，传播方向是从 pipeline 的 head 到 tail。
         // 出站事件（如数据写入、连接关闭等）由 ChannelOutboundHandler 处理，传播方向是从 pipeline 的 tail 到 head。
         ChannelPipeline pipeline = channel.pipeline();
-        if (flags.has(TransportFlags.TLS)) {
+        if (!useCoreCarrier && flags.has(TransportFlags.TLS)) {
             pipeline.addLast(getSelfSignedTls().newHandler(channel.alloc()));
         }
 
         // 先压缩再加密
         // 支持LengthField?
         boolean g = flags.has(TransportFlags.GFW);
-        boolean rss = config instanceof SocksConfig && ((SocksConfig) config).getRequiredTcpCipherPorts() != null;
         if (channel.attr(EgressCodec.ATTR_SELECTED).get() == null && pipeline.get(EgressCodec.AUTO_DETECTOR_NAME) == null) {
-            if (rss) {
+            if (rssPrivate) {
                 SocksConfig sc = (SocksConfig) config;
-                EgressConfig egress = sc.getEgressConfig() != null ? sc.getEgressConfig() : EgressConfig.server(sc.getEgressCodec());
-                EgressCodec.installServer(pipeline, egress, EgressCodec.InnerProtocol.RSS_SOCKS);
+                EgressCodec.installServer(pipeline, sc.effectiveServerEgressConfig(), EgressCodec.InnerProtocol.TRANSPORT_CORE);
+            } else if (adaptiveHybrid) {
+                SocksConfig sc = (SocksConfig) config;
+                EgressConfig egress = sc.effectiveServerEgressConfig();
+                if (egress.getTcpCodec() != EgressCodec.NONE) {
+                    EgressCodec.installServer(pipeline, egress, EgressCodec.InnerProtocol.TRANSPORT_CORE);
+                }
             } else if (config.getEgressConfig() != null && config.getEgressConfig().getTcpCodec() != EgressCodec.NONE) {
                 EgressCodec.installServer(pipeline, config.getEgressConfig(), EgressCodec.InnerProtocol.TRANSPORT_CORE);
             }
         }
-        if (!g && !rss) {
+        if (!g && !useCoreCarrier) {
             if (flags.has(TransportFlags.COMPRESS_READ)) {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
             }
@@ -1006,8 +1016,9 @@ public final class Sockets {
             pipeline.addLast(CipherEncoder.DEFAULT.channelHandlers());
         }
 
-        if (rss) {
-            pipeline.addLast(new RssTcpCodecSelector((SocksConfig) config));
+        if (useCoreCarrier) {
+            pipeline.addLast(org.rx.net.transport.core.TransportCoreCarrier.HANDLER_NAME,
+                    org.rx.net.transport.core.TransportCoreCarrier.serverHandler((SocksConfig) config, rssPrivate));
         } else if (g) {
             if (flags.has(TransportFlags.COMPRESS_READ)) {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
@@ -1029,23 +1040,32 @@ public final class Sockets {
     @SneakyThrows
     public static Channel addTcpClientHandler(Channel channel, SocketConfig config, InetSocketAddress SNISpoofing) {
         FlagsEnum<TransportFlags> flags = config.getTransportFlags();
+        boolean useCoreCarrier = config instanceof SocksConfig
+                && (((SocksConfig) config).isRssPrivateTransport()
+                || ((SocksConfig) config).isAdaptiveTcp()
+                || (flags != null && flags.has(TransportFlags.RSS_PSK_AES))
+                || ((SocksConfig) config).effectiveClientEgressConfig().getTcpCodec() != EgressCodec.NONE);
         if (flags == null) {
-            return channel;
+            if (!useCoreCarrier) {
+                return channel;
+            }
+            flags = TransportFlags.NONE.flags();
         }
 
         ZlibWrapper zlib = ZlibWrapper.ZLIB;
         ChannelPipeline pipeline = channel.pipeline();
         if (channel.attr(EgressCodec.ATTR_SELECTED).get() == null) {
-            if (config instanceof SocksConfig) {
+            if (useCoreCarrier) {
                 SocksConfig sc = (SocksConfig) config;
-                EgressConfig egress = sc.getEgressConfig() != null ? sc.getEgressConfig() : EgressConfig.client(sc.getEgressCodec());
-                EgressCodec.installClient(pipeline, egress);
-            } else if (config.getEgressConfig() != null && config.getEgressConfig().getTcpCodec() != EgressCodec.NONE) {
+                EgressCodec.installClient(pipeline, sc.effectiveClientEgressConfig());
+            } else if (!(config instanceof SocksConfig) && config.getEgressConfig() != null
+                    && config.getEgressConfig().getTcpCodec() != EgressCodec.NONE) {
                 EgressCodec.installClient(pipeline, config.getEgressConfig());
             }
         }
-        if (flags.has(TransportFlags.RSS_PSK_AES)) {
-            pipeline.addLast(RssHopAes.clientHandler());
+        if (useCoreCarrier) {
+            pipeline.addLast(org.rx.net.transport.core.TransportCoreCarrier.HANDLER_NAME,
+                    org.rx.net.transport.core.TransportCoreCarrier.clientHandler((SocksConfig) config));
         } else if (flags.has(TransportFlags.TLS)) {
             SslContext tls = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
             if (SNISpoofing == null) {
@@ -1055,7 +1075,7 @@ public final class Sockets {
         }
 
         boolean g = flags.has(TransportFlags.GFW);
-        if (!g) {
+        if (!g && !useCoreCarrier) {
             if (flags.has(TransportFlags.COMPRESS_READ)) {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
             }
@@ -1079,7 +1099,7 @@ public final class Sockets {
             pipeline.addLast(CipherEncoder.DEFAULT.channelHandlers());
         }
 
-        if (g) {
+        if (g && !useCoreCarrier) {
             if (flags.has(TransportFlags.COMPRESS_READ)) {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
             }

@@ -403,7 +403,7 @@ public final class RssClient {
                 && (s.type != RssClientConf.UpstreamType.SOCKS5 || s.rssEndpoint != null));
         boolean tcpProtection = conf.tcpCipherPorts.length != 0 || conf.shadowUsers.stream()
                 .anyMatch(user -> user.transport != null && (user.transport.tcp() & 2) != 0);
-        if (rssPeer && (tcpProtection && !org.rx.net.RssHopAes.configured()
+        if (rssPeer && (tcpProtection && !org.rx.net.transport.core.TransportCoreCarrier.isRssTcpPskConfigured()
                 || conf.udpCipherPorts.length != 0 && !org.rx.net.rss.udp.RssDatagramHandler.hasCipherKey())) {
             log.warn("RSS protected port lists require the corresponding RSS_TCP_AES_KEY / RSS_UDP_AES_KEY");
             return false;
@@ -1022,6 +1022,7 @@ public final class RssClient {
 
     static SocksConfig createOutboundConfig(RssClientConf conf, SocksConfig inConf) {
         SocksConfig outConf = Sys.deepClone(inConf);
+        outConf.setRssPrivateTransport(true);
         outConf.setTransportFlags(TransportFlags.NONE.flags());
         outConf.setTcpCompressionLevel(RssSupport.TCP_COMPRESSION_LEVEL);
         outConf.setEgressConfig(conf.egress == null ? org.rx.net.EgressConfig.none() : conf.egress.toClientEgressConfig());
@@ -1921,6 +1922,7 @@ public final class RssClient {
         SocksConfig config = new SocksConfig();
         config.setOptimalSettings(RssSupport.OUT_OPS);
         configureOutboundConfig(conf, config);
+        config.setRssPrivateTransport(false);
         config.setTransportFlags(TransportFlags.NONE.flags());
         config.setEgressConfig(org.rx.net.EgressConfig.none());
         config.setUdpHop(false);

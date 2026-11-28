@@ -574,40 +574,21 @@ public enum EgressCodec {
                     select(ctx, ZLIB_STORED);
                     return;
                 }
-                // If RSS_SOCKS AUTO explicitly excluded ZLIB_STORED and allowed NONE, pass through to RssTcpCodecSelector.
-                if (innerProtocol == InnerProtocol.RSS_SOCKS && allowed.contains(NONE)) {
-                    select(ctx, NONE);
-                    return;
-                }
                 reject(ctx, in);
                 return;
             }
 
-            // 3. Explicit NONE inner protocol boundaries
-            if (innerProtocol == InnerProtocol.TRANSPORT_CORE) {
-                if (b0 == RXTC_MAGIC[0]) {
-                    if (in.readableBytes() < RXTC_MAGIC.length) {
-                        return;
-                    }
-                    for (int i = 0; i < RXTC_MAGIC.length; i++) {
-                        if (in.getByte(pos + i) != RXTC_MAGIC[i]) {
-                            reject(ctx, in);
-                            return;
-                        }
-                    }
-                    if (!allowed.contains(NONE)) {
+            // 3. Explicit NONE inner protocol boundary ("RXTC" Transport Core v2 — unified for all private TCP links)
+            if (b0 == RXTC_MAGIC[0]) {
+                if (in.readableBytes() < RXTC_MAGIC.length) {
+                    return;
+                }
+                for (int i = 0; i < RXTC_MAGIC.length; i++) {
+                    if (in.getByte(pos + i) != RXTC_MAGIC[i]) {
                         reject(ctx, in);
                         return;
                     }
-                    select(ctx, NONE);
-                    return;
                 }
-                reject(ctx, in);
-                return;
-            }
-
-            // InnerProtocol.RSS_SOCKS: SOCKS5 (0x05) or RssHopAes (0xA5)
-            if (b0 == 0x05 || b0 == RssHopAes.MAGIC) {
                 if (!allowed.contains(NONE)) {
                     reject(ctx, in);
                     return;

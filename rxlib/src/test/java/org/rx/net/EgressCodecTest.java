@@ -390,33 +390,42 @@ class EgressCodecTest {
 
     @Test
     void rssSocksAutoPreservesAesAndInnerCompressionForAllEgressModes() {
-        SecretKeySpec key = new SecretKeySpec(new byte[32], "HmacSHA256");
-        SocksConfig config = new SocksConfig();
-        config.setTcpCompressionLevel(3);
-        for (EgressCodec mode : new EgressCodec[]{EgressCodec.NONE, EgressCodec.ZLIB_STORED, EgressCodec.HTTP}) {
-            EmbeddedChannel client = new EmbeddedChannel(), server = new EmbeddedChannel();
-            try {
-                EgressCodec.installClient(client.pipeline(), mode);
-                EgressCodec.installServer(server.pipeline(), EgressConfig.serverAutoAll(), InnerProtocol.RSS_SOCKS);
-                client.pipeline().addLast(new RssHopAes(true, key));
-                client.pipeline().addLast(Sockets.newTcpCompressionEncoder(config,
-                        io.netty.handler.codec.compression.ZlibWrapper.ZLIB));
-                server.pipeline().addLast(new RssTcpCodecSelector(config, key));
+        byte[] psk = new byte[32];
+        byte[] userSecret = "rss-plain-secret".getBytes(StandardCharsets.UTF_8);
+        org.rx.net.transport.core.TransportCoreCarrier.NonceReplayCache replayCache =
+                new org.rx.net.transport.core.TransportCoreCarrier.NonceReplayCache();
+        for (boolean aead : new boolean[]{true, false}) {
+            for (EgressCodec mode : new EgressCodec[]{EgressCodec.NONE, EgressCodec.ZLIB_STORED, EgressCodec.HTTP}) {
+                EmbeddedChannel client = new EmbeddedChannel(), server = new EmbeddedChannel();
+                try {
+                    EgressCodec.installClient(client.pipeline(), mode);
+                    EgressCodec.installServer(server.pipeline(), EgressConfig.serverAutoAll(), InnerProtocol.TRANSPORT_CORE);
+                    org.rx.net.transport.core.TransportCoreCarrier.ClientOptions cOpts =
+                            new org.rx.net.transport.core.TransportCoreCarrier.ClientOptions(
+                                    "rss-u", aead ? psk : userSecret, aead, true, 3,
+                                    false, 0, false, null, 0, null, 5000, 1 << 22);
+                    org.rx.net.transport.core.TransportCoreCarrier.ServerOptions sOpts =
+                            new org.rx.net.transport.core.TransportCoreCarrier.ServerOptions(
+                                    psk, peer -> "rss-u".equals(peer) ? userSecret : null, null, false, 1300, 3,
+                                    replayCache, true, 5000, 1 << 22, false, false);
+                    client.pipeline().addLast(org.rx.net.transport.core.TransportCoreCarrier.clientHandler(cOpts));
+                    server.pipeline().addLast(org.rx.net.transport.core.TransportCoreCarrier.serverHandler(sOpts));
 
-                byte[] data = new byte[8192];
-                Arrays.fill(data, (byte) 5);
-                client.writeOutbound(Unpooled.wrappedBuffer(data));
-                transfer(client, server, 13);
-                assertFalse(RssHopAes.authenticated(server.pipeline()));
-                transfer(server, client, 17);
-                int c2sBytes = transfer(client, server, 29);
-                assertTrue(c2sBytes > 0 && c2sBytes < data.length / 4);
-                assertTrue(RssHopAes.authenticated(server.pipeline()));
-                assertEquals(mode, server.attr(EgressCodec.ATTR_SELECTED).get());
-                assertArrayEquals(data, takeInbound(server, data.length));
-            } finally {
-                client.finishAndReleaseAll();
-                server.finishAndReleaseAll();
+                    byte[] data = new byte[8192];
+                    Arrays.fill(data, (byte) 5);
+                    client.writeOutbound(Unpooled.wrappedBuffer(data));
+                    transfer(client, server, 13);
+                    assertEquals(aead, org.rx.net.transport.core.TransportCoreCarrier.isAeadAuthenticated(server.pipeline()));
+                    transfer(server, client, 17);
+                    int c2sBytes = transfer(client, server, 29);
+                    assertTrue(c2sBytes > 0 && c2sBytes < data.length / 4);
+                    assertEquals(aead, org.rx.net.transport.core.TransportCoreCarrier.isAeadAuthenticated(server.pipeline()));
+                    assertEquals(mode, server.attr(EgressCodec.ATTR_SELECTED).get());
+                    assertArrayEquals(data, takeInbound(server, data.length));
+                } finally {
+                    client.finishAndReleaseAll();
+                    server.finishAndReleaseAll();
+                }
             }
         }
     }
@@ -594,9 +603,7 @@ class EgressCodecTest {
     @Test
     void compressionRunsOnceAboveAdaptiveStreamAndEgressWrapsOnlyPhysicalTcp() throws Exception {
         for (EgressCodec outerMode : new EgressCodec[]{EgressCodec.ZLIB_STORED, EgressCodec.HTTP}) {
-            SecretKeySpec key = new SecretKeySpec(new byte[32], "HmacSHA256");
-            SocksConfig config = new SocksConfig();
-            config.setTcpCompressionLevel(3);
+            byte[] key = new byte[32];
             java.util.concurrent.atomic.AtomicInteger compressCalls = new java.util.concurrent.atomic.AtomicInteger();
             java.util.concurrent.atomic.AtomicLong clock = new java.util.concurrent.atomic.AtomicLong(1_000_000L);
             java.io.ByteArrayOutputStream deliveredToServerInner = new java.io.ByteArrayOutputStream();
@@ -612,9 +619,15 @@ class EgressCodecTest {
             try {
                 EgressCodec.installClient(clientTcp.pipeline(), outerMode);
                 EgressCodec.installServer(serverTcp.pipeline(), EgressConfig.serverAutoAll(), InnerProtocol.TRANSPORT_CORE);
-                clientInner.pipeline().addLast(new RssHopAes(true, key));
-                clientInner.pipeline().addLast(Sockets.newTcpCompressionEncoder(config,
-                        io.netty.handler.codec.compression.ZlibWrapper.ZLIB));
+                org.rx.net.transport.core.TransportCoreCarrier.ClientOptions cOpts =
+                        new org.rx.net.transport.core.TransportCoreCarrier.ClientOptions(
+                                "u", key, true, true, 3, false, 0, false, null, 0, null, 5000, 1 << 22);
+                org.rx.net.transport.core.TransportCoreCarrier.ServerOptions sOpts =
+                        new org.rx.net.transport.core.TransportCoreCarrier.ServerOptions(
+                                key, p -> null, null, false, 1300, 3,
+                                new org.rx.net.transport.core.TransportCoreCarrier.NonceReplayCache(),
+                                true, 5000, 1 << 22, false, false);
+                clientInner.pipeline().addLast(org.rx.net.transport.core.TransportCoreCarrier.clientHandler(cOpts));
                 clientInner.pipeline().addLast(new io.netty.channel.ChannelOutboundHandlerAdapter() {
                     @Override
                     public void write(io.netty.channel.ChannelHandlerContext ctx, Object msg, io.netty.channel.ChannelPromise promise) throws Exception {
@@ -624,7 +637,7 @@ class EgressCodecTest {
                         super.write(ctx, msg, promise);
                     }
                 });
-                serverInner.pipeline().addLast(new RssTcpCodecSelector(config, key));
+                serverInner.pipeline().addLast(org.rx.net.transport.core.TransportCoreCarrier.serverHandler(sOpts));
 
                 clientStream = new org.rx.net.rss.tcp.AdaptiveTcpStream(
                         io.netty.buffer.UnpooledByteBufAllocator.DEFAULT,
@@ -680,7 +693,7 @@ class EgressCodecTest {
                 assertTrue(clientStream.usingUdp());
                 assertTrue(serverStream.usingUdp());
 
-                // Trigger RssHopAes handshake + 3 compressible business chunks (24 KiB)
+                // Trigger TransportCoreCarrier handshake + 3 compressible business chunks (24 KiB)
                 byte[] expected = new byte[24 * 1024];
                 for (int i = 0; i < expected.length; i++) {
                     expected[i] = (byte) ('A' + (i % 4));
@@ -718,7 +731,7 @@ class EgressCodecTest {
                 assertTrue(tcpInnerBytes[0] > 0 && tcpWireBytes[0] > tcpInnerBytes[0],
                         "Physical TCP repair must pass through outer " + outerMode + " egress");
                 assertEquals(outerMode, serverTcp.attr(EgressCodec.ATTR_SELECTED).get());
-                assertTrue(RssHopAes.authenticated(serverInner.pipeline()));
+                assertTrue(org.rx.net.transport.core.TransportCoreCarrier.isAeadAuthenticated(serverInner.pipeline()));
                 assertTrue(deliveredToServerInner.size() < expected.length / 4, "Inner business stream must stay compressed");
                 assertArrayEquals(expected, takeInbound(serverInner, expected.length));
             } finally {

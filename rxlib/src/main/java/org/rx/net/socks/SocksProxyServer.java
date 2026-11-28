@@ -44,11 +44,15 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     final SocksConfig config;
     final ServerBootstrap bootstrap;
     final List<Channel> tcpChannels;
-    @Getter(AccessLevel.PROTECTED)
+    @Getter
     final Authenticator authenticator;
     final ConcurrentMap<Integer, Channel> udpRelayRegistry = new ConcurrentHashMap<>();
     private final UdpRelayGroupManager udpRelayGroupManager;
     private final Udp2rawServerEntryManager udp2rawEntryManager;
+    @Getter
+    final org.rx.net.transport.core.TransportCoreCarrier.NonceReplayCache coreReplayCache =
+            new org.rx.net.transport.core.TransportCoreCarrier.NonceReplayCache();
+    @Getter
     volatile org.rx.net.rss.tcp.AdaptiveUdpPort adaptivePort;
     final AtomicInteger activeChannels = new AtomicInteger();
     // 只有压缩时一定要用
@@ -60,6 +64,10 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     @Getter
     @Setter
     private Function<String, InetSocketAddress> fakeEndpointResolver;
+
+    public static SocksProxyServer ofChannel(Channel channel) {
+        return channel == null ? null : channel.attr(SocksContext.SOCKS_SVR).get();
+    }
 
     public boolean isBind() {
         for (Channel channel : tcpChannels) {
@@ -196,6 +204,7 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         if (channel.attr(SocksContext.SOCKS_SVR).get() != null) {
             return;
         }
+        channel.attr(SocksContext.SOCKS_SVR).set(this);
         ChannelPipeline pipeline = channel.pipeline();
         if (isTrafficBindingEnabled()) {
             // Traffic statistics
@@ -216,7 +225,6 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
         }
         pipeline.addLast(Socks5CommandRequestDecoder.class.getSimpleName(), new Socks5CommandRequestDecoder())
                 .addLast(Socks5CommandRequestHandler.class.getSimpleName(), Socks5CommandRequestHandler.DEFAULT);
-        channel.attr(SocksContext.SOCKS_SVR).set(this);
         activeChannels.incrementAndGet();
         channel.closeFuture().addListener(f -> activeChannels.updateAndGet(v -> v > 0 ? v - 1 : 0));
     }

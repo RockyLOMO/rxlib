@@ -89,6 +89,12 @@ public class SocksConfig extends SocketConfig {
     @Setter(AccessLevel.NONE)
     private org.rx.net.EgressCodec egressCodec = org.rx.net.EgressCodec.NONE;
     private boolean adaptiveTcp;
+    /** Enables Transport Core v2 (RXTC) raw-stream framing on private RSS↔RSS TCP links (disabled on standard SOCKS5). */
+    private boolean rssPrivateTransport;
+    @ToString.Exclude
+    private byte[] rssTcpPsk;
+    @ToString.Exclude
+    private String rssCoreAuthSecret;
 
     public void setEgressCodec(org.rx.net.EgressCodec codec) {
         org.rx.net.EgressCodec effective = codec == null ? org.rx.net.EgressCodec.NONE : codec;
@@ -162,6 +168,7 @@ public class SocksConfig extends SocketConfig {
 
     public void setRequiredTcpCipherPorts(int[] ports) {
         requiredTcpCipherPorts = sortedPorts(ports);
+        this.rssPrivateTransport = true;
     }
 
     private static int[] sortedPorts(int[] ports) {

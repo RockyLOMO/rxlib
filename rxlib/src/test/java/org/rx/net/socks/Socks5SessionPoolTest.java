@@ -57,73 +57,26 @@ class Socks5SessionPoolTest {
         assertNotEquals(compressed, fixed);
         config.setDailyUdpMtu(512);
         assertNotEquals(fixed, TcpWarmPoolKey.from(left, config, "reactor-a"));
+        SocksConfig rssPlain = new SocksConfig(1080);
+        rssPlain.setRssPrivateTransport(true);
+        SocksConfig stdPlain = new SocksConfig(1080);
+        assertNotEquals(TcpWarmPoolKey.from(left, rssPlain, "reactor-a"),
+                TcpWarmPoolKey.from(left, stdPlain, "reactor-a"));
     }
 
     @Test
-    void rejectsMismatchedSinglePortAndMtuBeforeOpeningUdp() {
-        EmbeddedChannel channel = new EmbeddedChannel();
-        try {
-            byte[] nonce = new byte[32];
-            java.nio.ByteBuffer wire = java.nio.ByteBuffer.wrap(nonce);
-            wire.putShort(26, (short) 512).putShort(28, (short) 18000).putShort(30, (short) 18001);
-            assertThrows(IllegalArgumentException.class, () ->
-                    SocksAdaptiveHandshake.install(channel, nonce, "test", null, 0, false, null, 512));
-            wire.putShort(30, (short) 18000).putShort(26, (short) 513);
-            assertThrows(IllegalArgumentException.class, () ->
-                    SocksAdaptiveHandshake.install(channel, nonce, "test", null, 0, false, null, 512));
-            assertNull(channel.pipeline().get(AdaptiveTcpHandler.class));
-        } finally {
-            channel.finishAndReleaseAll();
-        }
-    }
-
-    @Test
-    void serverSelectsOnlyAnOfferedProfile() {
-        EmbeddedChannel ch = new EmbeddedChannel(new ChannelInboundHandlerAdapter());
-        try {
-            assertFalse(SocksAdaptiveHandshake.select(ch.pipeline().firstContext(),
-                    java.util.Collections.singletonList(new Socks5AuthMethod(0x86))));
-            assertFalse(SocksAdaptiveHandshake.select(ch.pipeline().firstContext(),
-                    java.util.Collections.singletonList(new Socks5AuthMethod(0x87))));
-            assertThrows(IllegalStateException.class, () -> SocksAdaptiveHandshake.selected(0, Socks5AuthMethod.NO_AUTH));
-            assertFalse(SocksAdaptiveHandshake.selected(0, Socks5AuthMethod.PASSWORD));
-            assertNull(ch.readOutbound());
-            for (int profile = 0; profile <= 2; profile++) {
-                assertTrue(SocksAdaptiveHandshake.select(ch.pipeline().firstContext(), SocksAdaptiveHandshake.offer(profile).authMethods()));
-                DefaultSocks5InitialResponse response = ch.readOutbound();
-                assertTrue(SocksAdaptiveHandshake.selected(profile, response.authMethod()));
-                assertFalse(SocksAdaptiveHandshake.selected((profile + 1) % 3, response.authMethod()));
-                assertEquals(Integer.valueOf(profile), ch.attr(SocksAdaptiveHandshake.NEGOTIATED).get());
-                assertEquals(Boolean.FALSE, ch.attr(SocksAdaptiveHandshake.NO_HOP).get());
-
-                assertTrue(SocksAdaptiveHandshake.select(ch.pipeline().firstContext(), SocksAdaptiveHandshake.offer(profile, false).authMethods()));
-                DefaultSocks5InitialResponse noHopResponse = ch.readOutbound();
-                assertTrue(SocksAdaptiveHandshake.selected(profile, noHopResponse.authMethod()));
-                assertEquals(Integer.valueOf(profile), ch.attr(SocksAdaptiveHandshake.NEGOTIATED).get());
-                assertEquals(Boolean.TRUE, ch.attr(SocksAdaptiveHandshake.NO_HOP).get());
-            }
-        } finally {
-            ch.finishAndReleaseAll();
-        }
-    }
-
-    @Test
-    void warmChannelRejectsAnUnadvertisedAdaptiveMethod() {
+    void warmChannelRejectsUnexpectedAuthMethodCleanly() {
         InetSocketAddress address = new InetSocketAddress("127.0.0.1", 1080);
         Socks5WarmupHandler warm = new Socks5WarmupHandler(address, "u", "p", 0);
-        warm.setAdaptiveTcp(true);
-        warm.setAdaptiveProfile(1);
         EmbeddedChannel ch = new EmbeddedChannel(warm) {
             @Override protected java.net.SocketAddress remoteAddress0() { return address; }
         };
         try {
             ByteBuf greeting = ch.readOutbound();
-            try {
-                assertEquals(0x8a, greeting.getUnsignedByte(greeting.writerIndex() - 1));
-            } finally {
+            if (greeting != null) {
                 greeting.release();
             }
-            ch.writeInbound(new DefaultSocks5InitialResponse(new Socks5AuthMethod(0x8b)));
+            ch.writeInbound(new DefaultSocks5InitialResponse(Socks5AuthMethod.UNACCEPTED));
             java.util.concurrent.CompletionException error = assertThrows(java.util.concurrent.CompletionException.class,
                     () -> warm.readyFuture().join());
             assertTrue(error.getCause() instanceof ProxyConnectException);

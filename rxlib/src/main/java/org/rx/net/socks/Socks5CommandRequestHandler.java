@@ -1,6 +1,6 @@
 package org.rx.net.socks;
 
-import org.rx.net.RssHopAes;
+import org.rx.net.transport.core.TransportCoreCarrier;
 import io.netty.channel.*;
 import io.netty.channel.local.LocalAddress;
 import io.netty.channel.local.LocalChannel;
@@ -49,7 +49,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         Socks5AddressType dstAddrType = msg.dstAddrType();
         InetSocketAddress dstEp = org.rx.net.Sockets.newUnresolvedEndpoint(msg.dstAddr(), msg.dstPort());
         String dstEpHost = dstEp.getHostString();
-        if (dstEpHost.endsWith(SocksRpcContract.FAKE_HOST_SUFFIX) && !RssHopAes.authenticated(pipeline)) {
+        if (dstEpHost.endsWith(SocksRpcContract.FAKE_HOST_SUFFIX) && !TransportCoreCarrier.isAeadAuthenticated(pipeline)) {
             boolean validFakeHost = SocksRpcContract.isFakeHost(dstEpHost);
             InetSocketAddress realEp = validFakeHost ? SocksRpcContract.fakeDict().get(dstEpHost) : null;
             if (realEp == null) {
@@ -93,7 +93,7 @@ public class Socks5CommandRequestHandler extends SimpleChannelInboundHandler<Def
         TrafficUser user = manageHandler != null ? manageHandler.getTrafficUser() : TrafficUser.ANONYMOUS;
         TrafficLoginInfo loginInfo = manageHandler != null ? manageHandler.getInfo() : null;
         if (commandType == Socks5CommandType.CONNECT) {
-            if (config.requiresTcpCipher(dstEp.getPort()) && !RssHopAes.authenticated(pipeline)) {
+            if (config.requiresTcpCipher(dstEp.getPort()) && !TransportCoreCarrier.isAeadAuthenticated(pipeline)) {
                 inbound.writeAndFlush(new DefaultSocks5CommandResponse(Socks5CommandStatus.FORBIDDEN, dstAddrType))
                         .addListener(ChannelFutureListener.CLOSE);
                 return;

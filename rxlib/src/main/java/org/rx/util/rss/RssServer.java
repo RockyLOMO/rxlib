@@ -92,13 +92,23 @@ public final class RssServer {
         outConf.setRequiredTcpCipherPorts(parsePorts(options.get("tcpCipherPorts"), RssTransport.cipherPorts()));
         outConf.setRequiredUdpCipherPorts(parsePorts(options.get("udpCipherPorts"), RssTransport.udpCipherPorts()));
         outConf.setEgressConfig(parseServerEgressConfig(options));
-        if (outConf.getRequiredTcpCipherPorts().length != 0 && !org.rx.net.RssHopAes.configured()) {
+        if (outConf.getRequiredTcpCipherPorts().length != 0 && !org.rx.net.transport.core.TransportCoreCarrier.isRssTcpPskConfigured()) {
             throw new IllegalArgumentException("RSS protected TCP ports require RSS_TCP_AES_KEY");
         }
         if (outConf.getRequiredUdpCipherPorts().length != 0 && !org.rx.net.rss.udp.RssDatagramHandler.hasCipherKey()) {
             throw new IllegalArgumentException("RSS protected UDP ports require RSS_UDP_AES_KEY");
         }
-        Authenticator defAuth = (u, p) -> eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS;
+        Authenticator defAuth = new Authenticator() {
+            @Override
+            public SocksUser login(String u, String p) {
+                return eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS;
+            }
+
+            @Override
+            public String lookupSecret(String u) {
+                return eq(u, ssUser.getUsername()) ? ssUser.getPassword() : null;
+            }
+        };
         configureHopRedirect(outConf);
         SocksProxyServer outSvr = new SocksProxyServer(outConf, defAuth);
         enforceServerDnsPolicy(outSvr);
@@ -213,6 +223,7 @@ public final class RssServer {
 
     static void configureOutboundConfig(SocksConfig config, boolean debugFlag) {
         config.setDebug(debugFlag);
+        config.setRssPrivateTransport(true);
         config.setReadTimeoutSeconds(0);
         config.setWriteTimeoutSeconds(0);
         config.setTcpIdleTimeoutSeconds(SocksConfig.DEF_READ_TIMEOUT_SECONDS);

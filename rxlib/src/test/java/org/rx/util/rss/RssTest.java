@@ -1722,7 +1722,7 @@ public class RssTest extends AbstractTester {
 
         SocksUser socksUsr = new SocksUser("youfanX");
         socksUsr.setPassword("test-pass");
-        org.rx.net.socks.Authenticator auth = (u, p) -> "youfanX".equals(u) && "test-pass".equals(p) ? socksUsr : SocksUser.ANONYMOUS;
+        org.rx.net.socks.Authenticator auth = new org.rx.net.socks.SocksAuthenticator(Collections.singletonList(socksUsr));
 
         SocksConfig outConf = new SocksConfig(outPort);
         RssServer.configureOutboundConfig(outConf, false);
@@ -2733,7 +2733,7 @@ public class RssTest extends AbstractTester {
 
         SocksUser outUser = new SocksUser("rpcUsr");
         outUser.setPassword("rpcPwd");
-        org.rx.net.socks.Authenticator outAuth = (u, p) -> "rpcUsr".equals(u) && "rpcPwd".equals(p) ? outUser : SocksUser.ANONYMOUS;
+        org.rx.net.socks.Authenticator outAuth = new org.rx.net.socks.SocksAuthenticator(Collections.singletonList(outUser));
         SocksConfig outConf = new SocksConfig(outPort);
         RssServer.configureOutboundConfig(outConf, false);
         outConf.setWhiteListEnabled(false);
@@ -2898,7 +2898,7 @@ public class RssTest extends AbstractTester {
 
         SocksUser usr = new SocksUser("egressU");
         usr.setPassword("egressP");
-        org.rx.net.socks.Authenticator auth = (u, p) -> "egressU".equals(u) && "egressP".equals(p) ? usr : SocksUser.ANONYMOUS;
+        org.rx.net.socks.Authenticator auth = new org.rx.net.socks.SocksAuthenticator(Collections.singletonList(usr));
 
         SocksConfig storedCfg = new SocksConfig(outStoredPort);
         RssServer.configureOutboundConfig(storedCfg, false);
@@ -3113,7 +3113,7 @@ public class RssTest extends AbstractTester {
 
         SocksUser usr = new SocksUser("matrixU");
         usr.setPassword("matrixP");
-        org.rx.net.socks.Authenticator auth = (u, p) -> "matrixU".equals(u) && "matrixP".equals(p) ? usr : SocksUser.ANONYMOUS;
+        org.rx.net.socks.Authenticator auth = new org.rx.net.socks.SocksAuthenticator(Collections.singletonList(usr));
 
         SocksConfig outConf = new SocksConfig(outPort);
         RssServer.configureOutboundConfig(outConf, false);
