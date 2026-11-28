@@ -328,6 +328,11 @@ public final class TransportClient extends AbstractTcpReconnectClient implements
     }
 
     @Override
+    protected SocketAddress resolveLocalEndpoint() {
+        return localCarrierTarget != null ? null : config.getTcpClientConfig().getLocalAddress();
+    }
+
+    @Override
     protected void onConnectSuccess(SocketAddress endpoint, boolean reconnect, Channel channel) {
         if (endpoint instanceof InetSocketAddress) {
             InetSocketAddress ep = (InetSocketAddress) endpoint;

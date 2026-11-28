@@ -71,6 +71,7 @@ public class RrpServer extends Disposable {
     static final AttributeKey<RemoteRelayBuffer> ATTR_REMOTE_RELAY_BUF = AttributeKey.valueOf("rRemoteRelayBuf");
     static final AttributeKey<String> ATTR_REMOTE_CHANNEL_ID = AttributeKey.valueOf("rRemoteChannelId");
     private static final String WRITABILITY_HANDLER_NAME = "rrpWritability";
+    static final String SUBSYSTEM_RRP_RELAY = "rrp-relay";
 
     static class RemoteRelayBuffer {
         final Queue<ByteBuf> pendingWrites = new ConcurrentLinkedQueue<ByteBuf>();
@@ -775,20 +776,20 @@ public class RrpServer extends Disposable {
         Tasks.run(() -> {
             NodeRegistry.OnlineNode onlineNode;
             try {
-                onlineNode = nodeRegistry.markOnline(trimmedNodeId, secret, rpClient, null);
+                onlineNode = nodeRegistry.authenticateAndAttachSession(trimmedNodeId, secret, SUBSYSTEM_RRP_RELAY, rpClient, null);
             } catch (Throwable ex) {
                 log.warn("RrpServer RAW auth rejected nodeId={} reason={}", trimmedNodeId, ex.getMessage());
                 sendRawAuthAck(rpClient, RAW_STATUS_UNAUTHORIZED, "authentication failed");
                 return;
             }
             if (isClosed() || rpClient.isClosed() || !rpClient.isSessionConnected()) {
-                nodeRegistry.markOffline(trimmedNodeId, rpClient);
+                nodeRegistry.detachSubsystemSession(trimmedNodeId, SUBSYSTEM_RRP_RELAY, rpClient);
                 return;
             }
             String prevNodeId = rpClient.authenticatedNodeId;
             if (prevNodeId != null && !prevNodeId.equals(onlineNode.getNodeId())) {
                 rawClientsByNodeId.remove(prevNodeId, rpClient);
-                nodeRegistry.markOffline(prevNodeId, rpClient);
+                nodeRegistry.detachSubsystemSession(prevNodeId, SUBSYSTEM_RRP_RELAY, rpClient);
             }
             rpClient.authenticatedNodeId = onlineNode.getNodeId();
             rpClient.authenticatedTenant = onlineNode.getTenant();
@@ -820,7 +821,7 @@ public class RrpServer extends Disposable {
             return;
         }
         String initiatorNodeId = initiator.authenticatedNodeId;
-        if (initiatorNodeId == null || !nodeRegistry.isSessionActive(initiatorNodeId, initiator)) {
+        if (initiatorNodeId == null || !nodeRegistry.isSubsystemSessionActive(initiatorNodeId, SUBSYSTEM_RRP_RELAY, initiator)) {
             sendRawOpenAckToInitiator(initiator, reqId, 0L, RAW_STATUS_UNAUTHORIZED, "initiator unauthenticated");
             return;
         }
@@ -832,7 +833,7 @@ public class RrpServer extends Disposable {
         }
         RpClient target = rawClientsByNodeId.get(normTarget);
         if (target == null || target.isClosed() || !target.isSessionConnected()
-                || !nodeRegistry.isSessionActive(normTarget, target)) {
+                || !nodeRegistry.isSubsystemSessionActive(normTarget, SUBSYSTEM_RRP_RELAY, target)) {
             sendRawOpenAckToInitiator(initiator, reqId, 0L, RAW_STATUS_TARGET_OFFLINE, "target offline");
             return;
         }
@@ -1217,7 +1218,7 @@ public class RrpServer extends Disposable {
         if (nodeId != null) {
             rawClientsByNodeId.remove(nodeId, rpClient);
             if (nodeRegistry != null) {
-                nodeRegistry.markOffline(nodeId, rpClient);
+                nodeRegistry.detachSubsystemSession(nodeId, SUBSYSTEM_RRP_RELAY, rpClient);
             }
         }
         for (RawRelayStream stream : rpClient.rawStreams.values()) {
@@ -1237,7 +1238,11 @@ public class RrpServer extends Disposable {
         if (client == null) {
             return;
         }
-        if (evicted.getSessionRef() != null && evicted.getSessionRef() != client) {
+        Object subRef = evicted.getSubsystemSession(SUBSYSTEM_RRP_RELAY);
+        if (subRef != null && subRef != client) {
+            return;
+        }
+        if (subRef == null && evicted.getSessionRef() != null && evicted.getSessionRef() != client) {
             return;
         }
         log.info("RrpServer tearing down revoked nodeId={}", evicted.getNodeId());

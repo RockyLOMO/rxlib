@@ -94,6 +94,7 @@ public final class NodeRegistry implements AutoCloseable {
         private final Set<String> aclRoles;
         private final long authGeneration;
         private volatile Object sessionRef;
+        private final ConcurrentHashMap<String, Object> subsystemSessions = new ConcurrentHashMap<String, Object>();
         private volatile List<EndpointCandidate> candidates;
         private final ConcurrentHashMap<String, LiveService> liveServices = new ConcurrentHashMap<String, LiveService>();
         private volatile long onlineSinceMillis;
@@ -113,6 +114,10 @@ public final class NodeRegistry implements AutoCloseable {
             this.onlineSinceMillis = nowMillis;
             this.lastSeenMillis = nowMillis;
             this.expiresAtMillis = nowMillis + ttlMillis;
+        }
+
+        public Object getSubsystemSession(String subsystem) {
+            return subsystem == null ? null : subsystemSessions.get(subsystem);
         }
 
         public boolean isExpired(long nowMillis) {
@@ -488,6 +493,7 @@ public final class NodeRegistry implements AutoCloseable {
                 refreshed.expiresAtMillis = existing.expiresAtMillis;
                 refreshed.liveServices.putAll(existing.liveServices);
                 refreshed.liveServiceMetadataBytes = existing.liveServiceMetadataBytes;
+                refreshed.subsystemSessions.putAll(existing.subsystemSessions);
                 onlineNodes.replace(normId, existing, refreshed);
             }
         }
@@ -648,6 +654,165 @@ public final class NodeRegistry implements AutoCloseable {
         return created;
     }
 
+    /**
+     * Authenticates a node off-EventLoop and attaches a subsystem-scoped session (e.g. {@code "rendezvous"},
+     * {@code "rrp-relay"}) to the node's single shared {@link OnlineNode} entry so multiple co-located services
+     * sharing one {@link NodeRegistry} do not evict each other, while disable/credential revocation tears down all.
+     */
+    public OnlineNode authenticateAndAttachSession(@NonNull String nodeId, @NonNull String rawSecret,
+                                                   @NonNull String subsystem, @NonNull Object sessionRef,
+                                                   List<EndpointCandidate> candidates) {
+        ensureNotClosed();
+        assertNotOnEventLoop("authenticateAndAttachSession");
+        String normId = requireValidId(nodeId, "nodeId");
+        String normSub = requireValidId(subsystem, "subsystem");
+        if (Strings.isEmpty(rawSecret) || rawSecret.length() > MAX_SECRET_LENGTH) {
+            throw new SecurityException("Node authentication failed: " + normId);
+        }
+        if (!tryAcquireAuthPermit()) {
+            authRejectedCount.incrementAndGet();
+            throw new SecurityException("NodeRegistry authentication rate/concurrency limit exceeded");
+        }
+        OnlineNode result;
+        long now;
+        try {
+            long genBefore = currentGeneration(normId);
+            NodeEntity entity;
+            try {
+                entity = loadNodeColdFailClosed(normId);
+            } catch (Throwable dbErr) {
+                throw new SecurityException("Authorization unavailable (fail-closed): " + dbErr.getMessage(), dbErr);
+            }
+            if (entity == null || entity.isDisabled() || !verifySecret(rawSecret, entity.getCredentialVerifier())) {
+                throw new SecurityException("Node authentication failed or node disabled: " + normId);
+            }
+
+            synchronized (onlineAdmissionLock) {
+                synchronized (lockFor(normId)) {
+                    ensureNotClosed();
+                    if (currentGeneration(normId) != genBefore) {
+                        throw new SecurityException("Node authorization state changed during login: " + normId);
+                    }
+                    now = clock.getAsLong();
+                    OnlineNode existing = onlineNodes.get(normId);
+                    if (existing != null && existing.isExpired(now)) {
+                        evictOnlineUnderNodeLock(normId);
+                        existing = null;
+                    }
+                    if (existing == null) {
+                        int maxOnline = Math.max(1, config.getMaxOnlineNodes());
+                        if (onlineNodes.size() >= maxOnline) {
+                            sweepExpiredOnlineNodesInternal(now);
+                            if (onlineNodes.size() >= maxOnline) {
+                                throw new IllegalStateException("NodeRegistry online node limit reached: " + maxOnline);
+                            }
+                        }
+                        int maxPerTenant = config.getMaxOnlineNodesPerTenant();
+                        if (maxPerTenant > 0 && tenantOnlineCount(entity.getTenant()) >= maxPerTenant) {
+                            sweepExpiredOnlineNodesInternal(now);
+                            if (tenantOnlineCount(entity.getTenant()) >= maxPerTenant) {
+                                throw new IllegalStateException("NodeRegistry tenant online limit reached for tenant="
+                                        + entity.getTenant() + " limit=" + maxPerTenant);
+                            }
+                        }
+                        List<EndpointCandidate> bounded = sanitizeCandidates(candidates, now, true);
+                        result = new OnlineNode(normId, entity.getTenant(), decodeRoles(entity.getAclRoles()),
+                                null, bounded, now, Math.max(1000L, config.getOnlineTtlMillis()), genBefore);
+                        result.subsystemSessions.put(normSub, sessionRef);
+                        onlineNodes.put(normId, result);
+                        incrementTenantOnlineCount(result.tenant);
+                    } else {
+                        existing.subsystemSessions.put(normSub, sessionRef);
+                        existing.lastSeenMillis = now;
+                        existing.expiresAtMillis = now + Math.max(1000L, config.getOnlineTtlMillis());
+                        if (candidates != null && !candidates.isEmpty()) {
+                            existing.candidates = mergeClientUpdatedCandidates(existing.candidates, candidates, now);
+                        }
+                        result = existing;
+                    }
+                }
+            }
+        } finally {
+            authConcurrencySem.release();
+        }
+        queueLowPriorityWrite(new PendingWrite(PendingKind.LAST_SEEN, "ls:" + normId, normId,
+                null, null, null, now, 64 + normId.length()));
+        return result;
+    }
+
+    public boolean isSubsystemSessionActive(@NonNull String nodeId, @NonNull String subsystem, Object expectedSessionRef) {
+        OnlineNode node = getOnlineNode(nodeId);
+        if (node == null || node.revoked) {
+            return false;
+        }
+        Object current = node.subsystemSessions.get(subsystem.trim());
+        if (current == null) {
+            return false;
+        }
+        return expectedSessionRef == null || matchesSessionRef(current, expectedSessionRef);
+    }
+
+    public boolean heartbeatSubsystem(@NonNull String nodeId, @NonNull String subsystem, Object expectedSessionRef,
+                                      List<EndpointCandidate> updatedCandidates) {
+        if (closed.get()) {
+            return false;
+        }
+        String normId = nodeId.trim();
+        String normSub = subsystem.trim();
+        long now;
+        synchronized (lockFor(normId)) {
+            OnlineNode node = onlineNodes.get(normId);
+            if (node == null || node.revoked) {
+                return false;
+            }
+            Object current = node.subsystemSessions.get(normSub);
+            if (current == null || (expectedSessionRef != null && !matchesSessionRef(current, expectedSessionRef))) {
+                return false;
+            }
+            now = clock.getAsLong();
+            if (node.isExpired(now)) {
+                evictOnlineUnderNodeLock(normId);
+                return false;
+            }
+            node.lastSeenMillis = now;
+            node.expiresAtMillis = now + Math.max(1000L, config.getOnlineTtlMillis());
+            if (updatedCandidates != null) {
+                node.candidates = mergeClientUpdatedCandidates(node.candidates, updatedCandidates, now);
+            }
+        }
+        queueLowPriorityWrite(new PendingWrite(PendingKind.LAST_SEEN, "ls:" + normId, normId,
+                null, null, null, now, 64 + normId.length()));
+        return true;
+    }
+
+    public boolean detachSubsystemSession(@NonNull String nodeId, @NonNull String subsystem, Object expectedSessionRef) {
+        String normId = nodeId.trim();
+        String normSub = subsystem.trim();
+        boolean removed = false;
+        long now = 0L;
+        synchronized (lockFor(normId)) {
+            OnlineNode current = onlineNodes.get(normId);
+            if (current == null) {
+                return false;
+            }
+            Object attached = current.subsystemSessions.get(normSub);
+            if (attached == null || (expectedSessionRef != null && !matchesSessionRef(attached, expectedSessionRef))) {
+                return false;
+            }
+            current.subsystemSessions.remove(normSub, attached);
+            removed = true;
+            if (current.sessionRef == null && current.subsystemSessions.isEmpty()) {
+                evictOnlineUnderNodeLock(normId);
+            }
+            now = clock.getAsLong();
+        }
+        if (removed) {
+            queueLowPriorityWrite(new PendingWrite(PendingKind.LAST_SEEN, "ls:" + normId, normId,
+                    null, null, null, now, 64 + normId.length()));
+        }
+        return removed;
+    }
+
     /** Hot-path O(1) heartbeat refresh; zero synchronous DB writes. */
     public boolean heartbeat(@NonNull String nodeId, List<EndpointCandidate> updatedCandidates) {
         return heartbeat(nodeId, null, updatedCandidates);
@@ -665,7 +830,7 @@ public final class NodeRegistry implements AutoCloseable {
             if (node == null || node.revoked) {
                 return false;
             }
-            if (expectedSessionRef != null && !matchesSessionRef(node.sessionRef, expectedSessionRef)) {
+            if (expectedSessionRef != null && !matchesAnySessionRef(node, expectedSessionRef)) {
                 return false;
             }
             now = clock.getAsLong();
@@ -699,7 +864,7 @@ public final class NodeRegistry implements AutoCloseable {
             if (node == null || node.revoked) {
                 return false;
             }
-            if (expectedSessionRef != null && !matchesSessionRef(node.sessionRef, expectedSessionRef)) {
+            if (expectedSessionRef != null && !matchesAnySessionRef(node, expectedSessionRef)) {
                 return false;
             }
             long now = clock.getAsLong();
@@ -732,6 +897,18 @@ public final class NodeRegistry implements AutoCloseable {
             node.candidates = Collections.unmodifiableList(new ArrayList<EndpointCandidate>(merged.values()));
             return true;
         }
+    }
+
+    private static boolean matchesAnySessionRef(OnlineNode node, Object expectedSessionRef) {
+        if (matchesSessionRef(node.sessionRef, expectedSessionRef)) {
+            return true;
+        }
+        for (Object subRef : node.subsystemSessions.values()) {
+            if (matchesSessionRef(subRef, expectedSessionRef)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Sanitizes untrusted client-reported candidates by forcing {@code verified = false} and capping TTL. */
