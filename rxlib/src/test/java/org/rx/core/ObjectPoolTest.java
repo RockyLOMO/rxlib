@@ -322,27 +322,34 @@ public class ObjectPoolTest {
     @Test
     public void testDuplicateCreatedObjectIsClosedOrRejectedCleanly() {
         AtomicInteger attempts = new AtomicInteger();
+        AtomicInteger activated = new AtomicInteger();
         PooledResource shared = new PooledResource(1);
         ObjectPool<PooledResource> pool = new ObjectPool<>(0, 2,
                 () -> {
                     attempts.incrementAndGet();
                     return shared;
                 },
-                x -> !x.closed.get());
+                x -> !x.closed.get(),
+                x -> activated.incrementAndGet(),
+                null);
         pool.setBorrowTimeout(500);
 
         PooledResource first = pool.borrow();
         assertSame(shared, first);
+        assertEquals(1, activated.get());
 
         assertThrows(TimeoutException.class, pool::borrow,
                 "createHandler 返回重复对象时应拒绝借出");
-        assertTrue(shared.closed.get(), "重复创建出的对象应被关闭");
-        assertTrue(shared.closeCount.get() > 0, "重复对象分支应调用 close");
+        assertFalse(shared.closed.get(), "重复创建分支不得关闭池中仍在使用的原实例");
+        assertEquals(0, shared.closeCount.get(), "重复对象分支不得调用原实例 close");
+        assertEquals(1, activated.get(), "重复对象不得再次执行 activate");
+        assertEquals(1, pool.size(), "重复创建失败不应泄漏预留容量");
         assertTrue(attempts.get() <= 20,
                 "重复对象失败应走退避，避免 tight loop，actual: " + attempts.get());
 
         pool.recycle(first);
-        assertEquals(0, pool.size(), "被关闭的已借出重复对象归还后应 retire");
+        assertEquals(1, pool.size(), "健康原对象归还后应保持在池中可复用");
+        assertEquals(1, pool.idleSize());
         pool.close();
     }
 
@@ -350,20 +357,26 @@ public class ObjectPoolTest {
     @Test
     public void testDuplicateIdleCreatedObjectIsClosedAndRetiredByValidation() {
         AtomicInteger attempts = new AtomicInteger();
+        AtomicInteger passivated = new AtomicInteger();
         PooledResource shared = new PooledResource(1);
         ObjectPool<PooledResource> pool = new ObjectPool<>(1, 2,
                 () -> {
                     attempts.incrementAndGet();
                     return shared;
                 },
-                x -> !x.closed.get());
+                x -> !x.closed.get(),
+                null,
+                x -> passivated.incrementAndGet());
 
         assertEquals(1, pool.size());
+        assertEquals(1, passivated.get());
         pool.insureTargetSize(2);
 
-        assertTrue(shared.closed.get(), "doCreateIdle 重复对象分支应关闭重复对象");
+        assertFalse(shared.closed.get(), "doCreateIdle 重复对象分支不得关闭已在池中的 idle 对象");
+        assertEquals(0, shared.closeCount.get());
+        assertEquals(1, passivated.get(), "重复对象不得再次 passivate");
         pool.validNow();
-        assertEquals(0, pool.size(), "已被 duplicate 分支关闭的 idle 对象应在 validate 时 retire");
+        assertEquals(1, pool.size(), "原有健康 idle 对象应继续可用且不泄漏容量");
         assertTrue(attempts.get() <= 4, "idle duplicate 不应反复创建，actual: " + attempts.get());
         pool.close();
     }
@@ -616,34 +629,41 @@ public class ObjectPoolTest {
     // ========== Adaptive Refill ==========
 
     /**
-     * 基线：demandFactor=0 时无论 borrow 频率多高，targetSize 始终等于 minIdleSize。
+     * 基线：demandFactor=0 时无论并发需求多高，targetSize 始终等于 minIdleSize。
      */
     @Test
     public void testAdaptiveRefillBaseline() {
         ObjectPool<Object> pool = new ObjectPool<>(2, 10, Object::new, x -> true);
-        pool.setDemandFactor(0);
+        try {
+            pool.setDemandFactor(0);
 
-        // 直接填入极高采样值
-        Arrays.fill(pool.borrowSamples, 100L);
-        pool.validNow();
+            Arrays.fill(pool.peakDemandSamples, 10);
+            pool.validNow();
 
-        assertEquals(2, pool.size(), "demandFactor=0 时 pool size 应等于 minIdleSize");
+            assertEquals(2, pool.size(), "demandFactor=0 时 pool size 应等于 minIdleSize");
+        } finally {
+            pool.close();
+        }
     }
 
     /**
-     * 高负载：采样平均值高时，pool 应预热到 targetSize。
-     * SAMPLE_COUNT=12，每格 10 次 → avgPerPeriod=10 → target=ceil(10*2.0)=20，上限 maxPoolSize=20。
+     * 高并发负载：并发需求峰值高时，pool 应预热到 targetSize。
+     * SAMPLE_COUNT=12，每格峰值 8 → avgPeak=8 → target=ceil(8*2.0)=16，上限 maxPoolSize=20。
      */
     @Test
     public void testAdaptiveRefillHighLoad() {
         ObjectPool<Object> pool = new ObjectPool<>(2, 20, Object::new, x -> true);
-        pool.setDemandFactor(2.0);
+        try {
+            pool.setDemandFactor(2.0);
 
-        Arrays.fill(pool.borrowSamples, 10L);
-        pool.validNow();
+            Arrays.fill(pool.peakDemandSamples, 8);
+            pool.validNow();
 
-        assertTrue(pool.size() >= 10,
-                "高负载时 pool 应被预热到 targetSize，actual: " + pool.size());
+            assertTrue(pool.size() >= 10,
+                    "高并发负载时 pool 应被预热到 targetSize，actual: " + pool.size());
+        } finally {
+            pool.close();
+        }
     }
 
     /**
@@ -653,17 +673,20 @@ public class ObjectPoolTest {
     public void testAdaptiveRefillMaxPoolSizeBound() {
         int maxPoolSize = 5;
         ObjectPool<Object> pool = new ObjectPool<>(2, maxPoolSize, Object::new, x -> true);
-        pool.setDemandFactor(10.0);
+        try {
+            pool.setDemandFactor(10.0);
 
-        // 极高采样 → target 计算结果远超 maxPoolSize
-        Arrays.fill(pool.borrowSamples, 100L);
-        pool.validNow();
+            Arrays.fill(pool.peakDemandSamples, 10);
+            pool.validNow();
 
-        assertEquals(maxPoolSize, pool.size(), "pool size 不应超过 maxPoolSize");
+            assertEquals(maxPoolSize, pool.size(), "pool size 不应超过 maxPoolSize");
+        } finally {
+            pool.close();
+        }
     }
 
     /**
-     * 负载回落：样本清零后 targetSize 回落到 minIdleSize，idleTimeout 淘汰多余对象。
+     * 负载回落：并发需求样本清零后 targetSize 回落到 minIdleSize，idleTimeout 淘汰多余对象。
      * 直接写入 package-private 字段 idleTimeout 绕过 setter 的最小值限制。
      */
     @SneakyThrows
@@ -672,51 +695,60 @@ public class ObjectPoolTest {
         int minIdleSize = 2;
         int maxPoolSize = 20;
         ObjectPool<Object> pool = new ObjectPool<>(minIdleSize, maxPoolSize, Object::new, x -> true);
-        pool.setDemandFactor(2.0);
-        pool.idleTimeout = 100; // 直接设置，绕过 setter 的 max(10000,...) 限制
+        try {
+            pool.setDemandFactor(2.0);
+            pool.idleTimeout = 100; // 直接设置，绕过 setter 的 max(10000,...) 限制
 
-        // Phase 1：注入高负载采样 → 预热到高水位
-        // avgPerPeriod=20 → target=ceil(40)=40 → clamp to maxPoolSize=20
-        Arrays.fill(pool.borrowSamples, 20L);
-        pool.validNow();
-        int highSize = pool.size();
-        assertTrue(highSize > minIdleSize, "预热后 size 应大于 minIdleSize，actual: " + highSize);
-
-        // Phase 2：等待 idleTimeout 到期，再清空采样
-        Thread.sleep(200);
-        Arrays.fill(pool.borrowSamples, 0L);
-
-        // 多次 validNow()：每次淘汰 min(size,8) 个闲置超时对象，并以 targetSize=minIdleSize 不再补充
-        for (int i = 0; i < 6; i++) {
+            // Phase 1：注入高并发需求采样 → 预热到高水位
+            Arrays.fill(pool.peakDemandSamples, 10);
             pool.validNow();
-        }
+            int highSize = pool.size();
+            assertTrue(highSize > minIdleSize, "预热后 size 应大于 minIdleSize，actual: " + highSize);
 
-        assertTrue(pool.size() <= minIdleSize + 1,
-                "负载回落后 pool size 应趋近 minIdleSize，actual: " + pool.size());
+            // Phase 2：等待 idleTimeout 到期，再清空采样
+            Thread.sleep(200);
+            Arrays.fill(pool.peakDemandSamples, 0);
+
+            for (int i = 0; i < 6; i++) {
+                pool.validNow();
+            }
+
+            assertTrue(pool.size() <= minIdleSize,
+                    "负载回落后 pool size 应回落至 minIdleSize，actual: " + pool.size());
+        } finally {
+            pool.close();
+        }
     }
 
     /**
-     * 实际 borrow 路径统计验证：高频 borrow/recycle 后，borrowAccumulator 被正确计入采样。
+     * 实际 borrow 路径统计验证：高频串行 borrow/recycle 后，borrowAccumulator 被正确计入采样，
+     * 且并发峰值仅 1 不会盲目预热到 maxPoolSize。
      */
     @SneakyThrows
     @Test
     public void testAdaptiveRefillBorrowCounting() {
         ObjectPool<Object> pool = new ObjectPool<>(1, 10, Object::new, x -> true);
-        pool.setDemandFactor(1.0);
+        try {
+            pool.setDemandFactor(1.0);
 
-        // 高频 borrow/recycle 50 次
-        int borrowCount = 50;
-        for (int i = 0; i < borrowCount; i++) {
-            Object obj = pool.borrow();
-            pool.recycle(obj);
+            int borrowCount = 50;
+            for (int i = 0; i < borrowCount; i++) {
+                Object obj = pool.borrow();
+                pool.recycle(obj);
+            }
+
+            pool.validNow();
+
+            int idx = (pool.sampleIndex - 1 + ObjectPool.SAMPLE_COUNT) % ObjectPool.SAMPLE_COUNT;
+            long sampledInThisPeriod = pool.borrowSamples[idx];
+            assertEquals(borrowCount, sampledInThisPeriod,
+                    "本周期采样值应等于 borrow 次数，actual: " + sampledInThisPeriod);
+            assertEquals(1, pool.peakDemandSamples[idx], "单线程串行借还并发峰值应为 1");
+            assertTrue(pool.size() <= 2,
+                    "串行高频借还不应盲目预热到 maxPoolSize，actual: " + pool.size());
+        } finally {
+            pool.close();
         }
-
-        // validNow() 消费 borrowAccumulator 写入 borrowSamples[sampleIndex]
-        pool.validNow();
-
-        long sampledInThisPeriod = pool.borrowSamples[(pool.sampleIndex - 1 + ObjectPool.SAMPLE_COUNT) % ObjectPool.SAMPLE_COUNT];
-        assertEquals(borrowCount, sampledInThisPeriod,
-                "本周期采样值应等于 borrow 次数，actual: " + sampledInThisPeriod);
     }
 
     @SneakyThrows

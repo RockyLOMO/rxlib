@@ -379,3 +379,35 @@ mvn -pl rxlib -Dtest=Socks5SessionPoolTest test
 </details>
 
 ---
+
+<details>
+<summary><b>[2026-11-28] ObjectPool 状态机、租约、自适应并发采样与生命周期全面加固（OP-01 ~ OP-12）</b></summary>
+
+> **原始审查文档**: `docs/threadpool-objectpool-review-20261128.md`
+> **落盘日期**: 2026-11-28
+
+### 核心架构演进
+
+1. **重复实例零破坏保护与 `CREATING` 阶段（OP-01 / OP-08）**：
+   - 新增 `ObjectConf.CREATING = 4`，`doCreate` / `doCreateIdle` 先校验非 null 并经 `conf.putIfAbsent` 原子注册再执行生命周期回调；
+   - 发现重复实例时严禁对原在用/空闲对象执行 `activate`/`validate`/`passivate`/`close`，仅释放预留槽、告警与冷却；
+   - `doRetire(ObjectConf<T>, int)` 以精确 `conf.remove(c.wrapper, c)` 作为全局唯一退休/扣减容量/关闭回调所有权凭证，配合 `disposing` Dekker 双边检查彻底消除关闭竞态，并用常量替代 magic int（OP-11）；删除无读使用方的 `liveHead`/`scanCursor`/`liveLock` 双向循环链表。
+2. **代次化原子状态机与可选 `Lease<T>` 句柄（OP-02 / OP-06）**：
+   - `ObjectConf` 使用单 `AtomicLong stateAndGen` 打包 `(generation << 3) | state`，每次进入 `BORROWED` 递增 `generation`；
+   - 新增 `borrowLease()` 与 `ObjectPool.Lease<T> implements AutoCloseable`（幂等 `close()`/`recycle()`/`discard()`，精确代次保护防 ABA，支持跨线程归还），保留旧 `borrow()`/`recycle(T)` 零额外分配接口；
+   - `closeObjectOnLeak=true` 扫描双读 `stateAndGen` + `borrowTime`，使用带代次 CAS 原子推进到 `RETIRED`，防止误杀已归还并重新借出的新代次对象。
+3. **时间戳语义分离与独占校验顺序（OP-03）**：
+   - 拆分 `createTime`、`idleSinceTime`、`borrowTime`、`stateTime`；`validNow()` 健康检查放回空闲时 `refreshIdleSince = false` 不刷新 `idleSinceTime`；
+   - `validNow()` 先 CAS 切入 `VALIDATING` 并 `removeSharedIdle` 取得独占权，再按 `maxLifetime`（优先于 `minIdleSize`）-> `idleTimeout` -> `overCapacity` -> `validateHandler` 顺序精确判定。
+4. **基于并发需求峰值的自适应预热（OP-04）**：
+   - 新增与 `BORROWED` 状态迁移严格配对的 `borrowedCount` 与 `periodPeakDemand` / `peakDemandSamples[12]`，以 `borrowed + waiting` 峰值驱动“快扩慢缩”（有并发用 `ceil`，无并发回落用 `floor`），消除高频串行借还导致的池容量膨胀；保留 `borrowSamples` 用于借用次数监控。
+5. **去实例级 ThreadLocal 泄漏、非阻塞维护、纳秒预算与动态缩容（OP-05 / OP-07 / OP-09 / OP-10 / OP-12）**：
+   - 移除 `threadLocalCache`，共享 LIFO 栈提供热点局部性；`lookupKey` 改为全 JVM 共享的 `static final FastThreadLocal<IdentityWrapper<Object>>`；
+   - `triggerMinIdleMaintain()` 改用 `Tasks.tryExecute()` 非阻塞提交，拒绝/异常立即复位 `minIdleMaintaining` 并记 `rx.object_pool.maintain.rejected.count`，绝不影响已成功的 `borrow()`；
+   - `borrowTimeout` 全程使用单调 `deadlineNanos` 纳秒预算；
+   - `setMaxPoolSize` 扩容即时唤醒等待者，缩容主动 `trimExcessIdle()` 并在 `recycle()` 时自然退休超容归还对象。
+
+</details>
+
+---
+

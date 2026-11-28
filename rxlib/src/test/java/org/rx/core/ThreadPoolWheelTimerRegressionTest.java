@@ -36,7 +36,6 @@ public class ThreadPoolWheelTimerRegressionTest {
             pool.shutdownNow();
         }
         ThreadPool.taskSerialMap.clear();
-        ThreadPool.taskSerialCountMap.clear();
         ThreadPool.CTX_TRACE_ID.get().clear();
     }
 
@@ -56,7 +55,6 @@ public class ThreadPoolWheelTimerRegressionTest {
             Thread.sleep(20);
         }
         assertFalse(ThreadPool.taskSerialMap.containsKey(taskId));
-        assertFalse(ThreadPool.taskSerialCountMap.containsKey(taskId));
     }
 
     @Test
@@ -73,13 +71,13 @@ public class ThreadPoolWheelTimerRegressionTest {
                 blocking.await(5, TimeUnit.SECONDS);
                 return null;
             }, taskId);
-            waitUntil(() -> ThreadPool.taskSerialCountMap.containsKey(taskId), 3000);
+            waitUntil(() -> ThreadPool.taskSerialMap.containsKey(taskId), 3000);
 
             assertThrows(RejectedExecutionException.class, () -> pool.runSerialAsync(() -> null, taskId));
 
             blocking.countDown();
             first.get(5, TimeUnit.SECONDS);
-            waitUntil(() -> !ThreadPool.taskSerialCountMap.containsKey(taskId), 3000);
+            waitUntil(() -> !ThreadPool.taskSerialMap.containsKey(taskId), 3000);
             assertFalse(ThreadPool.taskSerialMap.containsKey(taskId));
         } finally {
             blocking.countDown();

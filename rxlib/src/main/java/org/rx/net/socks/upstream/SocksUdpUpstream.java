@@ -40,6 +40,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -266,7 +267,10 @@ public class SocksUdpUpstream extends Upstream {
             return existing.thenApply(v -> null);
         }
 
-        Tasks.runAsync(() -> initializeSessionOffLoop(channel, created));
+        if (!Tasks.tryExecute(() -> initializeSessionOffLoop(channel, created))) {
+            inits.remove(groupKey, created);
+            created.completeExceptionally(new RejectedExecutionException("UDP upstream init rejected by worker pool"));
+        }
         return created.thenApply(v -> null);
     }
 
@@ -902,7 +906,9 @@ public class SocksUdpUpstream extends Upstream {
         if (group.holderCount() >= maxHopCount || !group.tryBeginScaleUp(System.currentTimeMillis())) {
             return;
         }
-        Tasks.runAsync(() -> expandGroupOffLoop(channel, group, maxHopCount));
+        if (!Tasks.tryExecute(() -> expandGroupOffLoop(channel, group, maxHopCount))) {
+            group.abortScaleUp();
+        }
     }
 
     private void maybeReplenishGroup(Channel channel, SessionGroup group) {
@@ -913,7 +919,9 @@ public class SocksUdpUpstream extends Upstream {
         if (!group.tryBeginReplenish(System.currentTimeMillis(), socksConfig.getUdpPortHoppingReplenishDelayMillis())) {
             return;
         }
-        Tasks.runAsync(() -> replenishGroupOffLoop(channel, group));
+        if (!Tasks.tryExecute(() -> replenishGroupOffLoop(channel, group))) {
+            group.abortReplenish();
+        }
     }
 
     private void maybeHeartbeatGroup(Channel channel, SessionGroup group) {
@@ -926,7 +934,7 @@ public class SocksUdpUpstream extends Upstream {
         if (intervalMillis <= 0L || !group.tryBeginHeartbeat(System.currentTimeMillis(), intervalMillis)) {
             return;
         }
-        Tasks.runAsync(() -> {
+        boolean submitted = Tasks.tryExecute(() -> {
             boolean ok = group.rpcControl.heartbeat();
             channel.eventLoop().execute(() -> {
                 if (group.finishHeartbeat(ok, failureThreshold)) {
@@ -934,6 +942,9 @@ public class SocksUdpUpstream extends Upstream {
                 }
             });
         });
+        if (!submitted) {
+            group.abortHeartbeat();
+        }
     }
 
     private void replenishGroupOffLoop(Channel channel, SessionGroup group) {
@@ -1464,6 +1475,10 @@ public class SocksUdpUpstream extends Upstream {
             replenishing.set(false);
         }
 
+        void abortReplenish() {
+            replenishing.set(false);
+        }
+
         boolean tryBeginHeartbeat(long nowMillis, long intervalMillis) {
             if (nowMillis - lastHeartbeatAtMillis < intervalMillis) {
                 return false;
@@ -1473,6 +1488,10 @@ public class SocksUdpUpstream extends Upstream {
             }
             lastHeartbeatAtMillis = nowMillis;
             return true;
+        }
+
+        void abortHeartbeat() {
+            heartbeating.set(false);
         }
 
         boolean finishHeartbeat(boolean success, int failureThreshold) {
@@ -1523,6 +1542,10 @@ public class SocksUdpUpstream extends Upstream {
             }
             lastScaleUpAttemptAtMillis = nowMillis;
             return true;
+        }
+
+        void abortScaleUp() {
+            expanding.set(false);
         }
 
         void finishScaleUp(boolean success, long nowMillis) {

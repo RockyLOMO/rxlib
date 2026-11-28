@@ -15,10 +15,12 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.sql.Time;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.rx.core.Extends.circuitContinue;
 import static org.rx.core.RxConfig.ConfigNames.THREAD_POOL_REPLICAS;
@@ -26,8 +28,21 @@ import static org.rx.core.RxConfig.ConfigNames.THREAD_POOL_REPLICAS;
 //Java 11 ForkJoinPool.commonPool() has class loading issue
 @Slf4j
 public final class Tasks {
-    //Random load balance, if methodA wait methodA, methodA is executing wait and methodB is in ThreadPoolQueue, then there will be a false death.
-    static final List<ThreadPool> nodes = new CopyOnWriteArrayList<>();
+    static final class RetiringPool {
+        final ThreadPool pool;
+        final long retiredAtNanos;
+
+        RetiringPool(ThreadPool pool, long retiredAtNanos) {
+            this.pool = pool;
+            this.retiredAtNanos = retiredAtNanos;
+        }
+    }
+
+    static volatile ThreadPool[] activePools = new ThreadPool[0];
+    static final List<RetiringPool> retiringPools = new CopyOnWriteArrayList<>();
+    static final AtomicInteger poolSequence = new AtomicInteger();
+    static volatile long retiringGraceNanos = TimeUnit.SECONDS.toNanos(1L);
+    static volatile long retiringSweepPeriodMillis = 10000L;
     static final ExecutorService executor;
     static final ExecutorService completableFutureExecutor;
     static final WheelTimer timer;
@@ -36,7 +51,7 @@ public final class Tasks {
     static final Method unsafeStaticFieldBase;
     static final Method unsafeStaticFieldOffset;
     static final Method unsafePutObject;
-    static int poolCount;
+    static volatile int poolCount;
 
     static {
         Object u = null;
@@ -196,35 +211,100 @@ public final class Tasks {
 
     @Subscribe(topicClass = RxConfig.class)
     static synchronized void createPool(ObjectChangedEvent event) {
-        int newCount = RxConfig.INSTANCE.threadPool.replicas;
-        if (newCount == poolCount) {
+        int newCount = Math.max(1, RxConfig.INSTANCE.threadPool.replicas);
+        ThreadPool[] current = activePools;
+        int oldCount = current.length;
+        if (newCount == oldCount) {
             return;
         }
 
-        log.info("RxMeta {} changed {} -> {}", THREAD_POOL_REPLICAS, poolCount, newCount);
-        for (int i = 0; i < newCount; i++) {
-            nodes.add(0, new ThreadPool(String.format("N%s", i)));
+        log.info("RxMeta {} changed {} -> {}", THREAD_POOL_REPLICAS, oldCount, newCount);
+        if (newCount > oldCount) {
+            ThreadPool[] next = Arrays.copyOf(current, newCount);
+            for (int i = oldCount; i < newCount; i++) {
+                next[i] = new ThreadPool("N" + poolSequence.getAndIncrement());
+            }
+            activePools = next;
+            poolCount = newCount;
+            return;
         }
+
+        ThreadPool[] next = Arrays.copyOf(current, newCount);
+        activePools = next;
         poolCount = newCount;
 
-        if (nodes.size() > poolCount) {
-            timer.setTimeout(() -> {
-                if (nodes.size() == poolCount) {
-                    circuitContinue(false);
-                    return;
+        long nowNanos = System.nanoTime();
+        for (int i = newCount; i < oldCount; i++) {
+            retiringPools.add(new RetiringPool(current[i], nowNanos));
+        }
+        scheduleRetiringSweep();
+    }
+
+    private static void scheduleRetiringSweep() {
+        if (retiringPools.isEmpty()) {
+            return;
+        }
+        long period = Math.max(100L, retiringSweepPeriodMillis);
+        timer.setTimeout(() -> {
+            drainRetiringPoolsNow();
+            if (retiringPools.isEmpty()) {
+                circuitContinue(false);
+            }
+        }, period, retiringPools, TimeoutFlag.PERIOD.flags(TimeoutFlag.SINGLE));
+    }
+
+    static void drainRetiringPoolsNow() {
+        long nowNanos = System.nanoTime();
+        long graceNanos = Math.max(0L, retiringGraceNanos);
+        for (RetiringPool entry : retiringPools) {
+            ThreadPool pool = entry.pool;
+            if (pool.isTerminated()) {
+                CpuWatchman.INSTANCE.unregister(pool);
+                retiringPools.remove(entry);
+                continue;
+            }
+            if (nowNanos - entry.retiredAtNanos < graceNanos) {
+                continue;
+            }
+            if (!pool.isShutdown()) {
+                if (pool.getActiveCount() == 0 && pool.getQueue().isEmpty()) {
+                    pool.shutdown();
                 }
-                for (int i = poolCount; i < nodes.size(); i++) {
-                    if (nodes.get(i).getActiveCount() == 0) {
-                        ThreadPool removed = nodes.remove(i);
-                        CpuWatchman.INSTANCE.unregister(removed);
-                    }
-                }
-            }, 60000, nodes, TimeoutFlag.PERIOD.flags(TimeoutFlag.REPLACE));
+            }
+            if (pool.isTerminated()) {
+                retiringPools.remove(entry);
+            }
         }
     }
 
     public static ThreadPool nextPool() {
-        return nodes.get(ThreadLocalRandom.current().nextInt(0, poolCount));
+        return pickPool(activePools);
+    }
+
+    private static ThreadPool pickPool(ThreadPool[] pools) {
+        int len = pools.length;
+        if (len == 1) {
+            return pools[0];
+        }
+        ThreadLocalRandom rnd = ThreadLocalRandom.current();
+        if (len == 2) {
+            return pickLessLoaded(pools[0], pools[1], rnd);
+        }
+        int i = rnd.nextInt(len);
+        int j = rnd.nextInt(len - 1);
+        if (j >= i) {
+            j++;
+        }
+        return pickLessLoaded(pools[i], pools[j], rnd);
+    }
+
+    private static ThreadPool pickLessLoaded(ThreadPool a, ThreadPool b, ThreadLocalRandom rnd) {
+        int loadA = ((ThreadPool.ThreadQueue) a.getQueue()).size();
+        int loadB = ((ThreadPool.ThreadQueue) b.getQueue()).size();
+        if (loadA == loadB) {
+            return rnd.nextBoolean() ? a : b;
+        }
+        return loadA < loadB ? a : b;
     }
 
     static ThreadPool nextPool(Object task, Object taskId, FlagsEnum<RunFlag> flags) {
@@ -237,10 +317,43 @@ public final class Tasks {
                 flags = adapted.flags;
             }
         }
+        ThreadPool[] pools = activePools;
         if (taskId != null && flags != null && flags.has(RunFlag.SINGLE)) {
-            return nodes.get(Math.floorMod(taskId.hashCode(), poolCount));
+            return pools[Math.floorMod(taskId.hashCode(), pools.length)];
         }
-        return nextPool();
+        return pickPool(pools);
+    }
+
+    static <T> Future<T> submitNonBlocking(Callable<T> task) {
+        ThreadPool[] pools = activePools;
+        ThreadPool first = nextPool(task, null, null);
+        try {
+            return first.trySubmit(task);
+        } catch (RejectedExecutionException firstError) {
+            if (pools.length > 1) {
+                ThreadPool fallback = findFallbackPool(pools, first);
+                if (fallback != null) {
+                    return fallback.trySubmit(task);
+                }
+            }
+            throw firstError;
+        }
+    }
+
+    private static ThreadPool findFallbackPool(ThreadPool[] pools, ThreadPool excluded) {
+        ThreadPool best = null;
+        int bestLoad = Integer.MAX_VALUE;
+        for (ThreadPool p : pools) {
+            if (p == excluded || p.isShutdown()) {
+                continue;
+            }
+            int load = ((ThreadPool.ThreadQueue) p.getQueue()).size();
+            if (load < bestLoad) {
+                bestLoad = load;
+                best = p;
+            }
+        }
+        return best;
     }
 
     public static ExecutorService executor() {
@@ -359,6 +472,53 @@ public final class Tasks {
 
     public static <T> CompletableFuture<T> runAsync(Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
         return nextPool(task, taskId, flags).runAsync(task, taskId, flags);
+    }
+
+    public static boolean tryExecute(@NonNull Runnable command) {
+        ThreadPool[] pools = activePools;
+        ThreadPool first = nextPool(command, null, null);
+        if (first.tryExecute(command)) {
+            return true;
+        }
+        if (pools.length > 1) {
+            ThreadPool fallback = findFallbackPool(pools, first);
+            if (fallback != null) {
+                return fallback.tryExecute(command);
+            }
+        }
+        return false;
+    }
+
+    public static Future<Void> tryRun(@NonNull Action task) {
+        try {
+            return submitNonBlocking(ThreadPool.Task.adapt(task, null, null));
+        } catch (RejectedExecutionException e) {
+            return null;
+        }
+    }
+
+    public static <T> Future<T> tryRun(@NonNull Func<T> task) {
+        try {
+            return submitNonBlocking(ThreadPool.Task.adapt(task, null, null));
+        } catch (RejectedExecutionException e) {
+            return null;
+        }
+    }
+
+    public static CompletableFuture<Void> tryRunAsync(@NonNull Action task) {
+        return tryRunAsync(task, null, null);
+    }
+
+    public static CompletableFuture<Void> tryRunAsync(@NonNull Action task, Object taskId, FlagsEnum<RunFlag> flags) {
+        return nextPool(task, taskId, flags).tryRunAsync(task, taskId, flags);
+    }
+
+    public static <T> CompletableFuture<T> tryRunAsync(@NonNull Func<T> task) {
+        return tryRunAsync(task, null, null);
+    }
+
+    public static <T> CompletableFuture<T> tryRunAsync(@NonNull Func<T> task, Object taskId, FlagsEnum<RunFlag> flags) {
+        return nextPool(task, taskId, flags).tryRunAsync(task, taskId, flags);
     }
 
     public static TimeoutFuture<?> setTimeout(Action task, long delay) {

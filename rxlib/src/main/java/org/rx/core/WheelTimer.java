@@ -4,12 +4,15 @@ import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
 import io.netty.util.Timer;
 import io.netty.util.TimerTask;
+import io.netty.util.concurrent.DefaultThreadFactory;
+import io.netty.util.concurrent.FastThreadLocalThread;
 import io.netty.util.internal.ThreadLocalRandom;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.rx.bean.DateTime;
 import org.rx.bean.FlagsEnum;
 import org.rx.diagnostic.DiagnosticMetrics;
@@ -32,6 +35,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -40,8 +44,23 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.LongUnaryOperator;
 
+@Slf4j
 @RequiredArgsConstructor(access = AccessLevel.PROTECTED)
 public class WheelTimer extends AbstractExecutorService implements ScheduledExecutorService {
+    static final class TimerWorkerThread extends FastThreadLocalThread {
+        TimerWorkerThread(ThreadGroup group, Runnable target, String name) {
+            super(group, target, name);
+        }
+    }
+
+    private static ThreadFactory newTimerThreadFactory() {
+        return new DefaultThreadFactory(ThreadPool.POOL_NAME_PREFIX + "TIMER", true, Thread.NORM_PRIORITY) {
+            @Override
+            protected Thread newThread(Runnable r, String name) {
+                return new TimerWorkerThread(threadGroup, r, name);
+            }
+        };
+    }
     class Task<T> implements TimerTask, TimeoutFuture<T> {
         final Func<T> fn;
         final FlagsEnum<TimeoutFlag> flags;
@@ -82,7 +101,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
             }
 
             try {
-                Future<T> submitted = executor.submit((Callable<T>) ThreadPool.Task.adaptWithTrace(() -> {
+                Future<T> submitted = submitToExecutor((Callable<T>) ThreadPool.Task.adaptWithTrace(() -> {
                     runningTaskCount.incrementAndGet();
                     executionStarted = true;
                     executedCount.increment();
@@ -117,9 +136,34 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                 if (cancelRequested.get() && submitted.cancel(cancelMayInterruptIfRunning)) {
                     completeTask();
                 }
+            } catch (RejectedExecutionException e) {
+                rejectedCount.increment();
+                if (flags.has(TimeoutFlag.PERIOD) && !executor.isShutdown()
+                        && !shutdown && !cancelRequested.get() && isCurrentHolder()) {
+                    if (log.isWarnEnabled()) {
+                        log.warn("WheelTimer periodic task {} rejected by saturated executor, rescheduling next tick", this);
+                    }
+                    recordDiagnosticMetrics(false);
+                    rescheduleAfterRejection(timeout.timer());
+                    return;
+                }
+                failBeforeSubmit(e);
             } catch (Throwable e) {
                 failBeforeSubmit(e);
             }
+        }
+
+        private void rescheduleAfterRejection(Timer timer) {
+            try {
+                if (newTimeout(this, Math.max(TICK_DURATION, delay), timer)) {
+                    return;
+                }
+            } catch (Throwable e) {
+                failBeforeSubmit(e);
+                return;
+            }
+            completeTask();
+            publish();
         }
 
         private void failBeforeSubmit(Throwable e) {
@@ -373,7 +417,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
             }
 
             try {
-                Future<?> submitted = executor.submit((Callable<Void>) ThreadPool.Task.<Void>adaptWithTrace(() -> {
+                Future<?> submitted = submitToExecutor((Callable<Void>) ThreadPool.Task.<Void>adaptWithTrace(() -> {
                     runningTaskCount.incrementAndGet();
                     executionStarted = true;
                     executionRunning = true;
@@ -404,6 +448,20 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
                 if (cancelled && submitted.cancel(cancelMayInterruptIfRunning)) {
                     signalComplete();
                 }
+            } catch (RejectedExecutionException e) {
+                rejectedCount.increment();
+                if (!executor.isShutdown() && !shutdown && !cancelled) {
+                    if (log.isWarnEnabled()) {
+                        log.warn("WheelTimer scheduled periodic task rejected by saturated executor, rescheduling next tick");
+                    }
+                    recordDiagnosticMetrics(false);
+                    scheduleNext();
+                    return;
+                }
+                errorCount.increment();
+                terminalError = e;
+                signalComplete();
+                recordDiagnosticMetrics(false);
             } catch (Throwable e) {
                 errorCount.increment();
                 terminalError = e;
@@ -579,7 +637,7 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     }
 
     final ExecutorService executor;
-    final HashedWheelTimer timer = new HashedWheelTimer(ThreadPool.newThreadFactory("TIMER", Thread.NORM_PRIORITY), TICK_DURATION, TimeUnit.MILLISECONDS);
+    final HashedWheelTimer timer = new HashedWheelTimer(newTimerThreadFactory(), TICK_DURATION, TimeUnit.MILLISECONDS);
     final EmptyTimeout nonTask = new EmptyTimeout();
     final Map<Object, TimeoutFuture<?>> holder = new ConcurrentHashMap<>();
     final Set<Task<?>> activeTasks = ConcurrentHashMap.newKeySet();
@@ -596,6 +654,16 @@ public class WheelTimer extends AbstractExecutorService implements ScheduledExec
     @Getter
     volatile boolean shutdown;
     volatile boolean shutdownNow;
+
+    private <T> Future<T> submitToExecutor(Callable<T> callable) {
+        if (executor instanceof ThreadPool) {
+            return ((ThreadPool) executor).trySubmit(callable);
+        }
+        if (executor == Tasks.executor) {
+            return Tasks.submitNonBlocking(callable);
+        }
+        return executor.submit(callable);
+    }
 
     public TimeoutFuture<?> getFutureById(Object taskId) {
         return holder.get(taskId);

@@ -180,13 +180,20 @@ public final class Socks5UpstreamPoolManager extends Disposable {
             if (isClosed() || !refilling.compareAndSet(false, true)) {
                 return;
             }
-            Tasks.runAsync(() -> {
-                try {
-                    refill();
-                } finally {
+            boolean submitted = false;
+            try {
+                submitted = Tasks.tryExecute(() -> {
+                    try {
+                        refill();
+                    } finally {
+                        refilling.set(false);
+                    }
+                });
+            } finally {
+                if (!submitted) {
                     refilling.set(false);
                 }
-            });
+            }
         }
 
         void refill() {

@@ -44,6 +44,7 @@ import java.nio.channels.ClosedChannelException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -104,7 +105,10 @@ public class Udp2rawUpstream extends Upstream {
             return existing.thenApply(v -> null);
         }
 
-        Tasks.runAsync(() -> initializeTunnelOffLoop(channel, created));
+        if (!Tasks.tryExecute(() -> initializeTunnelOffLoop(channel, created))) {
+            initMap.remove(tunnelKey, created);
+            created.completeExceptionally(new RejectedExecutionException("udp2raw tunnel init rejected by worker pool"));
+        }
         return created.thenApply(v -> null);
     }
 

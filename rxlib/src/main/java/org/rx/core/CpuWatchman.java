@@ -36,6 +36,15 @@ public class CpuWatchman implements TimerTask {
 
     static int incrSize(ThreadPoolExecutor pool) {
         long[] state = INSTANCE.stateOf(pool);
+        if (state != null) {
+            synchronized (state) {
+                return incrSizeLocked(pool, state);
+            }
+        }
+        return incrSizeLocked(pool, null);
+    }
+
+    private static int incrSizeLocked(ThreadPoolExecutor pool, long[] state) {
         int current = pool.getCorePoolSize();
         if (INSTANCE.isInCooldown(state, current, "priorityIncrement")) {
             return current;
@@ -53,6 +62,15 @@ public class CpuWatchman implements TimerTask {
 
     static int decrSize(ThreadPoolExecutor pool) {
         long[] state = INSTANCE.stateOf(pool);
+        if (state != null) {
+            synchronized (state) {
+                return decrSizeLocked(pool, state);
+            }
+        }
+        return decrSizeLocked(pool, null);
+    }
+
+    private static int decrSizeLocked(ThreadPoolExecutor pool, long[] state) {
         int current = pool.getCorePoolSize();
         if (INSTANCE.isInCooldown(state, current, "priorityDecrement")) {
             return current;
@@ -133,92 +151,97 @@ public class CpuWatchman implements TimerTask {
         }
         IntWaterMark waterMark = tuple.left;
         long[] state = tuple.right;
-        int decrementCounter = (int) state[DECREMENT_COUNTER];
-        int incrementCounter = (int) state[INCREMENT_COUNTER];
+        synchronized (state) {
+            int decrementCounter = (int) state[DECREMENT_COUNTER];
+            int incrementCounter = (int) state[INCREMENT_COUNTER];
 
-        String prefix = pool.toString();
-        if (log.isDebugEnabled()) {
-            log.debug("{} PoolSize={}/{}+[{}] Threshold={}[{}-{}]% de/incrementCounter={}/{}", prefix,
-                    pool.getPoolSize(), pool.getCorePoolSize(), pool.getQueue().size(),
-                    cpuLoad, waterMark.getLow(), waterMark.getHigh(), decrementCounter, incrementCounter);
-        }
+            String prefix = pool.toString();
+            if (log.isDebugEnabled()) {
+                log.debug("{} PoolSize={}/{}+[{}] Threshold={}[{}-{}]% de/incrementCounter={}/{}", prefix,
+                        pool.getPoolSize(), pool.getCorePoolSize(), pool.getQueue().size(),
+                        cpuLoad, waterMark.getLow(), waterMark.getHigh(), decrementCounter, incrementCounter);
+            }
 
-        int minIdleSize = threadPool != null ? threadPool.minIdleSize() : RxConfig.INSTANCE.threadPool.minIdleSize;
-        if (pool.getCorePoolSize() > minIdleSize && cpuLoad.gt(waterMark.getHigh())) {
-            if (++decrementCounter >= RxConfig.INSTANCE.threadPool.samplingTimes) {
-                resize(pool, state, false, prefix, "cpuHigh", cpuLoad, waterMark);
+            int minIdleSize = threadPool != null ? threadPool.minIdleSize() : RxConfig.INSTANCE.threadPool.minIdleSize;
+            if (pool.getCorePoolSize() > minIdleSize && cpuLoad.gt(waterMark.getHigh())) {
+                if (++decrementCounter >= RxConfig.INSTANCE.threadPool.samplingTimes) {
+                    resizeLocked(pool, state, false, prefix, "cpuHigh", cpuLoad, waterMark);
+                    decrementCounter = 0;
+                }
+            } else {
                 decrementCounter = 0;
             }
-        } else {
-            decrementCounter = 0;
-        }
 
-        if (!pool.getQueue().isEmpty() && cpuLoad.lt(waterMark.getLow())) {
-            if (++incrementCounter >= RxConfig.INSTANCE.threadPool.samplingTimes) {
-                resize(pool, state, true, prefix, "queueBacklog", cpuLoad, waterMark);
+            if (!pool.getQueue().isEmpty() && cpuLoad.lt(waterMark.getLow())) {
+                if (++incrementCounter >= RxConfig.INSTANCE.threadPool.samplingTimes) {
+                    resizeLocked(pool, state, true, prefix, "queueBacklog", cpuLoad, waterMark);
+                    incrementCounter = 0;
+                }
+            } else {
                 incrementCounter = 0;
             }
-        } else {
-            incrementCounter = 0;
-        }
 
-        state[DECREMENT_COUNTER] = decrementCounter;
-        state[INCREMENT_COUNTER] = incrementCounter;
+            state[DECREMENT_COUNTER] = decrementCounter;
+            state[INCREMENT_COUNTER] = incrementCounter;
+        }
     }
 
     private void scheduledThread(Decimal cpuLoad, ThreadPoolExecutor pool, Tuple<IntWaterMark, long[]> tuple) {
         IntWaterMark waterMark = tuple.left;
         long[] state = tuple.right;
-        int decrementCounter = (int) state[DECREMENT_COUNTER];
-        int incrementCounter = (int) state[INCREMENT_COUNTER];
+        synchronized (state) {
+            int decrementCounter = (int) state[DECREMENT_COUNTER];
+            int incrementCounter = (int) state[INCREMENT_COUNTER];
 
-        String prefix = pool.toString();
-        int active = pool.getActiveCount();
-        int size = Math.max(1, pool.getCorePoolSize());
-        float idle = (float) active / size * 100;
-        if (log.isDebugEnabled()) {
-            log.debug("{} PoolSize={} QueueSize={} Threshold={}[{}-{}]% idle={} de/incrementCounter={}/{}", prefix,
-                    pool.getCorePoolSize(), pool.getQueue().size(),
-                    cpuLoad, waterMark.getLow(), waterMark.getHigh(), 100 - idle, decrementCounter, incrementCounter);
-        }
+            String prefix = pool.toString();
+            int active = pool.getActiveCount();
+            int size = Math.max(1, pool.getCorePoolSize());
+            float idle = (float) active / size * 100;
+            if (log.isDebugEnabled()) {
+                log.debug("{} PoolSize={} QueueSize={} Threshold={}[{}-{}]% idle={} de/incrementCounter={}/{}", prefix,
+                        pool.getCorePoolSize(), pool.getQueue().size(),
+                        cpuLoad, waterMark.getLow(), waterMark.getHigh(), 100 - idle, decrementCounter, incrementCounter);
+            }
 
-        ThreadPool threadPool = asThreadPool(pool);
-        RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.threadPool;
-        int minIdleSize = threadPool != null ? threadPool.minIdleSize() : RxConfig.INSTANCE.threadPool.minIdleSize;
-        if (size > minIdleSize && (idle <= waterMark.getHigh() || cpuLoad.gt(waterMark.getHigh()))) {
-            if (++decrementCounter >= conf.samplingTimes) {
-                resize(pool, state, false, prefix, "scheduledIdle", cpuLoad, waterMark);
+            ThreadPool threadPool = asThreadPool(pool);
+            RxConfig.ThreadPoolConfig conf = RxConfig.INSTANCE.threadPool;
+            int minIdleSize = threadPool != null ? threadPool.minIdleSize() : RxConfig.INSTANCE.threadPool.minIdleSize;
+            if (size > minIdleSize && (idle <= waterMark.getHigh() || cpuLoad.gt(waterMark.getHigh()))) {
+                if (++decrementCounter >= conf.samplingTimes) {
+                    resizeLocked(pool, state, false, prefix, "scheduledIdle", cpuLoad, waterMark);
+                    decrementCounter = 0;
+                }
+            } else {
                 decrementCounter = 0;
             }
-        } else {
-            decrementCounter = 0;
-        }
 
-        if (active >= size && cpuLoad.lt(waterMark.getLow())) {
-            if (++incrementCounter >= conf.samplingTimes) {
-                resize(pool, state, true, prefix, "scheduledBusy", cpuLoad, waterMark);
+            if (active >= size && cpuLoad.lt(waterMark.getLow())) {
+                if (++incrementCounter >= conf.samplingTimes) {
+                    resizeLocked(pool, state, true, prefix, "scheduledBusy", cpuLoad, waterMark);
+                    incrementCounter = 0;
+                }
+            } else {
                 incrementCounter = 0;
             }
-        } else {
-            incrementCounter = 0;
-        }
 
-        state[DECREMENT_COUNTER] = decrementCounter;
-        state[INCREMENT_COUNTER] = incrementCounter;
+            state[DECREMENT_COUNTER] = decrementCounter;
+            state[INCREMENT_COUNTER] = incrementCounter;
+        }
     }
 
-    private void resize(ThreadPoolExecutor pool, long[] state, boolean increment, String prefix, String reason, Decimal cpuLoad, IntWaterMark waterMark) {
-        if (isInCooldown(state, pool.getCorePoolSize(), reason)) {
+    private void resizeLocked(ThreadPoolExecutor pool, long[] state, boolean increment, String prefix, String reason, Decimal cpuLoad, IntWaterMark waterMark) {
+        int before = pool.getCorePoolSize();
+        if (isInCooldown(state, before, reason)) {
             return;
         }
 
-        int before = pool.getCorePoolSize();
         try {
-            int after = increment ? incrSize(pool) : decrSize(pool);
-            markResize(state);
-            recordResizeMetric(increment ? "increment" : "decrement", reason, before, after);
-            log.info("{} Threshold={}[{}-{}]% {} to {}", prefix,
-                    cpuLoad, waterMark.getLow(), waterMark.getHigh(), increment ? "increment" : "decrement", after);
+            int after = increment ? incrSizeLocked(pool, state) : decrSizeLocked(pool, state);
+            if (after != before) {
+                recordResizeMetric(increment ? "increment" : "decrement", reason, before, after);
+                log.info("{} Threshold={}[{}-{}]% {} to {}", prefix,
+                        cpuLoad, waterMark.getLow(), waterMark.getHigh(), increment ? "increment" : "decrement", after);
+            }
         } catch (Throwable e) {
             recordResizeMetric("error", reason, before, before);
             log.warn("{} resize {} error", prefix, reason, e);

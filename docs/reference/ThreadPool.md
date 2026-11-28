@@ -25,11 +25,11 @@ RXlib 的 `ThreadPool` 采用**基于负载的自适应动态调整策略**：
 
 | 运行标志 | 功能描述 | 适用场景 |
 | :--- | :--- | :--- |
-| **`SINGLE`** | **唯一执行**：基于 `taskId` 检查。若已有相同 ID 的任务在运行，则当前任务直接跳过。 | 重复触发的刷新操作、互斥逻辑。 |
-| **`SERIAL`** | **串行分发**：基于 `taskId` 进行串行队列化。采用无锁 `CompletableFuture` 生成任务链，不会阻塞物理线程。 | 需要严格顺序处理的会话消息、日志记录。 |
-| **`TRANSFER`** | **移交执行**：阻塞提交线程，直到任务被工作线程接手或成功存入队列。 | 关键任务流控，防止生产速度失控。 |
-| **`PRIORITY`** | **优先执行**：若当前无空闲线程且队列已满，强制新建一个临时线程处理。 | 紧急状态上报、高优监控。 |
-| **`INHERIT_FAST_THREAD_LOCALS`** | **环境继承**：任务执行时复制父线程 `FastThreadLocal` 环境，结束后恢复旧 map。 | 链路参数透传、用户权限上下文传递。 |
+| **`SINGLE`** | **唯一执行**：基于 `taskId` 检查（提交时校验 `taskId != null`）。若已有相同 ID 的任务在运行，则当前任务直接跳过。 | 重复触发的刷新操作、互斥逻辑。 |
+| **`SERIAL`** | **串行分发**：基于 `taskId` 独立串行队列与状态屏障按序执行，不阻塞物理线程；支持前项取消/外部提前完成隔离、完整 `RunFlag` 生命周期与同池饱和 trampoline 接力。 | 需要严格顺序处理的会话消息、日志记录。 |
+| **`TRANSFER`** | **移交执行**：阻塞提交线程直到任务被工作线程接手（每 500ms 轮询 `isShutdown()`；EventLoop/Timer/同池 worker 自动回退非阻塞入队防死锁）。 | 关键任务流控，防止生产速度失控。 |
+| **`PRIORITY`** | **优先执行**：若队列非空则触发 `CpuWatchman` 扩容一次。 | 紧急状态上报、高优监控。 |
+| **`INHERIT_FAST_THREAD_LOCALS`** | **环境继承**：提交时刻立即拍下父线程 `FastThreadLocal` 快照并在执行结束后恢复旧 map，避免提交后父线程修改污染子任务。 | 链路参数透传、用户权限上下文传递。 |
 | **`THREAD_TRACE`** | **链路追踪**：开启异步 Trace，关联后续的所有异步调用流。 | 复杂异步系统全链路排障。 |
 
 ---
@@ -77,13 +77,13 @@ app:
 | `TIMEOUT_REJECT` | 队列满后等待 `queueOfferTimeoutMillis`，超时抛 `RejectedExecutionException`。 | Netty EventLoop、低延迟入口、不可无限阻塞的链路。 |
 | `CALLER_RUNS` | 队列满且等待超时后由提交线程执行溢出任务。 | 希望快速消化突发但能接受提交线程承担执行成本的场景。 |
 
-高性能网络链路中，避免在 Netty `EventLoop` 上使用可能无限阻塞的提交路径；如果必须从 I/O 线程提交任务，优先配置 `TIMEOUT_REJECT` 并在上层做限流、降级或丢弃策略。
+高性能网络链路中，Netty `EventLoop` 与 `WheelTimer` 线程在满队列时会自动绕过 `BLOCK` / `CALLER_RUNS`（直接走非核心扩容或快速拒绝），避免 I/O 线程与时间轮线程被业务池阻塞或内联；同时提供显式非阻塞入口 `ThreadPool.tryExecute / trySubmit / tryRunAsync` 与 `Tasks.tryExecute / tryRun / tryRunAsync`。同池 worker 重入提交遇到满队列时亦会绕过阻塞以防 `fixed` 池自死锁。
 
-`CALLER_RUNS` 会把执行成本转移到提交线程；当前实现会走与 worker 线程一致的 `beforeExecute/afterExecute` 生命周期，覆盖 `SINGLE`、`THREAD_TRACE`、`INHERIT_FAST_THREAD_LOCALS` 和 `taskMap` 清理。`INHERIT_FAST_THREAD_LOCALS` 使用复制后的 `InternalThreadLocalMap.indexedVariables` 执行，任务内修改 `FastThreadLocal` 不会污染提交线程后续上下文。
+`CALLER_RUNS` 仅在等待 slot 真正超时且池未关闭时由提交线程执行溢出任务（中断或关闭不再误执行）；执行时走与 worker 线程一致的 `beforeExecute/afterExecute` 生命周期，覆盖 `SINGLE`、`THREAD_TRACE`、`INHERIT_FAST_THREAD_LOCALS` 和 `taskMap` 清理。`INHERIT_FAST_THREAD_LOCALS` 在提交时刻即复制 `InternalThreadLocalMap.indexedVariables` 快照，任务内或父线程后续修改互不污染。
 
-### 3.3 SERIAL 容量
+### 3.3 SERIAL 容量与隔离
 
-`SERIAL` 按 `taskId` 使用 `CompletableFuture` 链串行，不占用工作线程等待。每个 `taskId` 的链长度受以下配置限制：
+`SERIAL` 按 `taskId` 使用单一 `taskSerialMap`（`SerialChain`）进行原子容量检查、排队、取消清理与串行派发，不依赖外部 `CompletableFuture` 驱动后继：
 
 ```yaml
 app:
@@ -92,19 +92,19 @@ app:
     serialQueueHardLimit: 100000
 ```
 
-超过容量会快速抛 `RejectedExecutionException`，避免单个热 key 积压大量 `CompletableFuture` 对象。`serialQueueHardLimit` 是最终保护上限，`serialQueueCapacity` 不会超过该值。
+- 超过容量会快速抛 `RejectedExecutionException`，避免单个热 key 积压大量待执行节点。`serialQueueHardLimit` 是最终保护上限。
+- 取消排队中的中间项或外部提前 `complete` 运行中项的 `Future`，绝不会导致后继任务在前序真正结束前并发启动。
+- 链上全部任务均完整执行 `beforeExecute/afterExecute`（`SINGLE`/`PRIORITY`/`THREAD_TRACE`/`INHERIT_FAST_THREAD_LOCALS` 全生效），异常只影响自身 `Future` 不阻断后续；链空后原子清理 `taskSerialMap`。
 
-单个 `SERIAL` 任务异常只影响自己的 `Future`，不会阻断后续同 `taskId` 任务；链尾完成后会清理 `taskSerialMap / taskSerialCountMap`。
+### 3.4 生命周期与副本热调整语义
 
-### 3.4 生命周期语义
+`Tasks.executor()` 是全局共享入口，`Tasks.shutdown()` / `Tasks.shutdownNow()` 以及 `Tasks.executor().shutdown()` / `shutdownNow()` 均为 no-op 包装语义，不承担释放底层共享线程池、timer 或 watchman 的职责。副本热调整采用不可变 `activePools` 快照增量扩容，缩容时先切快照再待宽限期与队列/活跃任务排空后才异步 `shutdown()` 旧池；多副本分发使用零锁 O(1) P2C（Power of Two Choices）比较队列深度。
 
-`Tasks.executor()` 是全局共享入口，`Tasks.shutdown()` / `Tasks.shutdownNow()` 以及 `Tasks.executor().shutdown()` / `shutdownNow()` 均为 no-op 包装语义，不承担释放底层共享线程池、timer 或 watchman 的职责。
+独立创建的 `new ThreadPool(...)` / `ThreadPool.fixed(...)` 自己管理生命周期：`shutdown()` 和 `shutdownNow()` 会先从 `CpuWatchman` 注销，再进入 JDK 线程池关闭流程；关闭后再次提交会抛 `RejectedExecutionException`。
 
-独立创建的 `new ThreadPool(...)` / `ThreadPool.fixed(...)` 自己管理生命周期：`shutdown()` 和 `shutdownNow()` 会先从 `CpuWatchman` 注销，再进入 JDK 线程池关闭流程；关闭后再次 `execute()` / `submit()` / `run()` / `runAsync()` 会抛 `RejectedExecutionException`，调用方不能依赖 warn + ignore 语义。
+`ThreadQueue` 的 `add()` / `put()` / `offer(r, timeout, unit)` / `iterator().remove()`（含 `purge()`） / `drainTo()` / `clear()` / `shutdownNow()` 均保持 `counter` 与 `availableSlots` 严格一致，`transfer` / `tryTransfer` 显式抛 `UnsupportedOperationException`。
 
-全局入口和独立实例的生命周期必须区分：`Tasks.executor()` 只是共享线程池包装器，关闭方法不会释放共享资源；standalone `ThreadPool` 是资源拥有者，关闭后即进入拒绝新任务状态。
-
-`ThreadQueue` 的 `drainTo()` / `clear()` / `shutdownNow()` 路径会按实际移除数量释放 slot，并清理未执行任务的 `taskMap` 映射，避免 `counter` 与 `availableSlots` 不一致。
+`beforeExecute` 内部失败时会自动回滚已获取的 `SINGLE` 锁、`FastThreadLocal`、trace，并将未启动的 `FutureTaskAdapter` / `AsyncTaskRunnable` / `SerialRunnable` 置为异常完成并推进串行后继。
 
 ### 3.5 批量任务处理 (WaitAll / WaitAny)
 ```java
@@ -124,7 +124,7 @@ mf.getFuture().join(); // 阻塞至全链路结束
 
 RXlib 线程池不仅支持上下文传递，还深度集成了异步 Trace 功能，支持跨越 `Executor`、`WheelTimer` 的链路追踪。
 
-无 executor 参数的 `CompletableFuture.xxAsync()` 默认会由 RXlib 尝试 patch 到 `Tasks.executor()`，以继承并清理 traceId。该能力会修改 JDK 全局静态字段，如需禁用可配置 `app.threadPool.patchCompletableFutureAsyncPool=false`；新代码仍建议显式传入 `Tasks.executor()` 或使用 `ThreadPool.runAsync()`。
+无 executor 参数的 `CompletableFuture.xxAsync()` 默认不修改 JDK 全局静态字段（`app.threadPool.patchCompletableFutureAsyncPool=false`）；如需兼容旧行为启用全局 patch，可显式配置为 `true`。新代码建议显式传入 `Tasks.executor()` 或使用 `ThreadPool.runAsync()`。
 
 Spring 管理的 `ThreadPoolTaskExecutor` 会自动套用 trace 任务装饰器；确需使用非 RXlib、非 Spring 管理的原生线程池时，可用 `ThreadPool.Task` 做一次轻量包装：
 
@@ -188,8 +188,10 @@ Tasks.schedulePeriod(() -> log.info("Heartbeat..."), 1000);
 | `rx.thread_pool.queue.offer.block.count` | 提交线程遇到满队列并等待的次数。 |
 | `rx.thread_pool.queue.offer.block.millis` | 提交线程累计等待耗时。 |
 | `rx.thread_pool.queue.offer.block.max.millis` | 单次最大等待耗时。 |
-| `rx.thread_pool.queue.offer.rejected.count` | 队列 offer 超时拒绝次数。 |
+| `rx.thread_pool.queue.offer.rejected.count` | 队列 offer 超时/中断/关闭拒绝次数。 |
 | `rx.thread_pool.queue.offer.caller_runs.count` | caller-runs 溢出执行次数。 |
+| `rx.thread_pool.queue.offer.reentrant_bypass.count` | 同池 worker 满队列重入绕过阻塞次数。 |
+| `rx.thread_pool.queue.offer.non_blocking_bypass.count` | EventLoop/WheelTimer/非阻塞提交满队列快速拒绝次数。 |
 | `rx.thread_pool.serial.chain.count` | 当前串行 taskId 链数量。 |
 | `rx.thread_pool.serial.rejected.count` | SERIAL 容量拒绝次数。 |
 | `rx.thread_pool.single.skip.count` | SINGLE 重复任务跳过次数。 |
@@ -200,6 +202,7 @@ Tasks.schedulePeriod(() -> log.info("Heartbeat..."), 1000);
 | `rx.wheel_timer.holder.count` | 当前带 taskId 的 holder 数量。 |
 | `rx.wheel_timer.periodic.count` | 当前 periodic task 数量。 |
 | `rx.wheel_timer.pending.count` | Netty 时间轮 pending timeout 数量。 |
+| `rx.wheel_timer.rejected.count` | WheelTimer 提交目标线程池被饱和拒绝次数。 |
 
 网络项目还必须同时关注 JVM 堆外内存和 Netty allocator 指标，尤其是 direct memory 使用量、连接数、吞吐、P99/P999 延迟、写队列水位与拒绝/降级次数。
 

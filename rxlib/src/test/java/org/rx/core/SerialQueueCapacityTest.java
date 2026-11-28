@@ -24,7 +24,6 @@ public class SerialQueueCapacityTest {
             pool.shutdownNow();
         }
         ThreadPool.taskSerialMap.clear();
-        ThreadPool.taskSerialCountMap.clear();
     }
 
     @Test
@@ -61,8 +60,7 @@ public class SerialQueueCapacityTest {
         waitUntil(new Condition() {
             @Override
             public boolean ok() {
-                return !ThreadPool.taskSerialMap.containsKey(taskId)
-                        && !ThreadPool.taskSerialCountMap.containsKey(taskId);
+                return !ThreadPool.taskSerialMap.containsKey(taskId);
             }
         }, 3000);
         assertFalse(ThreadPool.taskSerialMap.containsKey(taskId));

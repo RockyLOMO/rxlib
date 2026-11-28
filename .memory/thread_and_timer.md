@@ -1201,3 +1201,37 @@ ThreadPoolTest,ThreadPoolQueueOfferModeTest,ThreadPoolQueueShutdownTest,SerialQu
 </details>
 
 ---
+
+<details>
+<summary><b>[2026-11-28] ThreadPool / WheelTimer / Tasks 并发与可靠性全面加固（TP-01 ~ TP-13）</b></summary>
+
+> **原始审查文档**: `docs/threadpool-objectpool-review-20261128.md`
+> **落盘日期**: 2026-11-28
+
+### 核心架构演进
+
+1. **防同池重入死锁（TP-01）**：引入 `PoolWorkerThread extends FastThreadLocalThread` 与 `PoolThreadFactory` 持有 `ownerPool`，`ThreadQueue.acquireSlot` 零分配检测同池 worker 重入；满队列时绝不阻塞，返回 `SLOT_TRY_NON_CORE` 优先触发 JDK 非核心扩容，达上限时明确拒绝（`CALLER_RUNS` 模式下内联执行）。
+2. **SERIAL 串行队列彻底重构（TP-02 / TP-04 / TP-09）**：
+   - 将 `taskSerialMap` 与 `taskSerialCountMap` 合并为单一 `Map<Object, SerialChain> taskSerialMap`，在单个 `ConcurrentHashMap.compute` 内原子完成容量检查、已取消节点惰性清理、入队/出队与归零删除，所有提交在锁外执行；
+   - 分离用户态 `SerialFuture` 与内部串行屏障 `SerialChain`，取消排队中间项或外部提前 `complete` 运行中项均不得提前启动后继，保持前项异常不阻断后续与 `completionReturnedValue()` 语义；
+   - 串行链全量项经 `SerialRunnable` 直接派发并完整走 `beforeExecute/afterExecute`（`SINGLE`/`PRIORITY`/`THREAD_TRACE`/`INHERIT_FAST_THREAD_LOCALS` 全部生效），并在 `afterExecute` 清理锁与上下文后通过迭代 trampoline 推进后继，杜绝同池饱和死锁和栈溢出；
+   - 非 `SERIAL` `runAsync` 改用 `AsyncTaskRunnable` 直连 `Task` 与 `CompletableFuture`，消除 `AsynchronousCompletionTask.fn` 热点反射。
+3. **WheelTimer / Netty EventLoop 非阻塞提交（TP-03）**：
+   - `ThreadPool` 新增 `tryExecute/trySubmit/tryRunAsync` 及 `NON_BLOCKING_SUBMIT` 标记；`ThreadQueue.acquireSlot` 自动识别 `NON_BLOCKING_SUBMIT`、`WheelTimer.TimerWorkerThread`、`ThreadExecutorMap.currentExecutor() instanceof EventLoop`，满队列时绕过 `BLOCK` 与 `CALLER_RUNS`；
+   - `WheelTimer` 改用非阻塞提交，周期任务遇目标池瞬时饱和拒绝时不静默死亡，递增 `rx.wheel_timer.rejected.count` 并重调度下一次；
+   - `Tasks` 新增 `tryExecute/tryRun/tryRunAsync` 并加固网络侧 `Socks5UpstreamPoolManager`、`SocksUdpUpstream`、`Udp2rawUpstream` 在 EventLoop 上的异步提交与拒绝补偿。
+4. **Tasks 副本热调整与 P2C 分发（TP-05 / TP-11）**：
+   - 改为 `volatile ThreadPool[] activePools` 不可变快照与 `retiringPools` 宽限排空异步 `shutdown()`；
+   - 多副本路由改为零锁 O(1) P2C 比较队列深度。
+5. **队列一致性、生命周期与诊断加固（TP-06 / TP-07 / TP-08 / TP-10 / TP-12 / TP-13）**：
+   - `ThreadQueue` 覆写 `add/put/offer(timeout)/iterator.remove()`，修复 `purge()` slot 泄漏，`transfer/tryTransfer` 显式抛 `UnsupportedOperationException`，`RunFlag.TRANSFER` 500ms 轮询 `isShutdown()`；
+   - `RunFlag.SINGLE` 缺少 `taskId` 在提交阶段即抛 `InvalidException`，`beforeExecute` 失败统一回滚锁/FTL/trace 并将未启动任务置为异常完成；
+   - `CALLER_RUNS` 精确区分超时/中断/关闭，仅超时且未关闭时内联；
+   - `CpuWatchman` 对单池 `state` 加 `synchronized (state)` 仅在有效变更时记录 cooldown/指标；
+   - `INHERIT_FAST_THREAD_LOCALS` 在提交时刻即刻拍下独立快照并在执行后清空引用；
+   - `rx.yml` 中 `patchCompletableFutureAsyncPool` 默认调整为 `false`。
+
+</details>
+
+---
+
