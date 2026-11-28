@@ -1,6 +1,6 @@
 # rxlib 未来规划与待实现计划（Roadmap）
 
-> 本文档仅记录**尚未实现、待验证或未来规划**的演进事项与设计思路。2026-11-28 第一轮与第二轮 Review（P1 §3–§5）的工程落地项——含 Nameserver 强制认证 v2 AEAD 与共享 `NodeRegistry` 子系统会话隔离、具体会话 UDP 路径绑定、统一 `PathAttempt` 原子取消、`RendezvousService`/`PeerUdpPuncher` 资源预算、公开 `RrpServer`/`RrpClient` 空 token fail-closed、`EgressCodec` 恢复旧 HTTP 随机 Host/Path/Query 与请求/响应头及 `AUTO` 合并读修复、RSS 全局/每上游/CLI 全量 `EgressConfig` 公共化、以及 **RSS↔RSS 私有增强 TCP 链路统一迁至 `Transport Core v2`（`TransportCoreCarrier`，删除 `RssHopAes`/`RssTcpCodecSelector`/`SocksAdaptiveHandshake` 并彻底消除 `AUTO` 业务 `zlib` 歧义）**——均已完成编码与双 JDK 28 类 373 项 `PARANOID LEAK=0` 回归及公网真机验证，实测数据见 [测试与基准记录](test-benchmarks.md) §6–§7。
+> 本文档仅记录**尚未实现、待验证或未来规划**的演进事项与设计思路。2026-11-28 第一轮与第二轮 Review（P1 §3–§5）的工程落地项——含 Nameserver 强制认证 v2 AEAD 与共享 `NodeRegistry` 子系统会话隔离、具体会话 UDP 路径绑定、统一 `PathAttempt` 原子取消、`RendezvousService`/`PeerUdpPuncher` 资源预算、公开 `RrpServer`/`RrpClient` 空 token fail-closed、`EgressCodec` 恢复旧 HTTP 随机 Host/Path/Query 与请求/响应头及 `AUTO` 合并读修复、RSS 全局/每上游/CLI 全量 `EgressConfig` 公共化、以及 **RSS↔RSS 私有增强 TCP 链路统一迁至 `Transport Core v2`（`TransportCoreCarrier`，删除 `RssHopAes`/`RssTcpCodecSelector`/`SocksAdaptiveHandshake` 并彻底消除 `AUTO` 业务 `zlib` 歧义）**——均已完成编码与双 JDK 28 类 373 项 `PARANOID LEAK=0` 回归及公网真机验证，实测数据见 [测试与基准记录](test-benchmarks.md) §6–§7。第三轮用户决定与新增待办见 §8–§11：保持标准 SOCKS5、RSS 轻量握手、RPC 降 RTT；该节优先于旧握手设计，不否认已实现功能。
 
 ---
 
@@ -71,6 +71,90 @@
 - [x] **双 JDK 回归、公网真机验证与 `rss-21` 合入**（`ecc594b2`..`0c47859f` + §7.4）：JDK 21 与 JDK 8 全量 28 类 373 项 `PARANOID LEAK=0` 通过；`182.255.85.247:18915` 实测 6 组场景（无 AEAD `plain + zlib 3` 三出口过 `AUTO` + `daily`/`weak`/`game` 全部升轨 `usingUdp=true`）零误判、零泄漏；低配 RSS Server 未启用 `NodeRegistry`/Rendezvous/RRP 时零新增常驻资源与线程。
 - [ ] **外部载体真机联调（合并归口至 §1）**：外接 `udpclient`/`udp2raw` 与嵌套 Hysteria2 SOCKS5 实机抓包对照改造前后数据，归口至 §1 统一验收。
 
+## 2026-11-28 第三轮 Review · RSS 无损迁移、轻量握手与 RPC 降 RTT（待实施）
+
+源码基线：[7d1aefa6](https://github.com/RockyLOMO/rxlib/commit/7d1aefa67df199f27f80079b901958c87bf79e72)；迁移前功能及性能参照 [7b858624](https://github.com/RockyLOMO/rxlib/commit/7b858624f4b37676ce3994e7c1390b91a370cd72)，原 HTTP 功能参照 [6af56245](https://github.com/RockyLOMO/rxlib/commit/6af562450dca67d67884f19119b66213de70fe9f)。本节为第三轮新增需求及静态审查待办，覆盖 §5 中“RSS 必须执行完整 RXTC 握手”的旧决定；§3–§5 的已实施记录保留，不表示本轮已经完成。
+
+**用户明确目标**：RSS 保持标准 SOCKS5 业务协议及既有功能，统一公共传输组件不等于强制统一 wire/握手；相同功能、安全等级和网络条件下尽可能保持或减少 RTT、公网流量、CPU、内存，不因重构增加额外消耗。优先复用已有 SOCKS5 协商与共享 RPC 控制面，不默认启用额外加密、压缩、连接、线程或可靠流多路复用。RPC/RRP、Nameserver、Rendezvous 的既有认证传输与安全要求不放宽。RSS Server 1vCPU/768MiB 整机红线，公网业务 Relay 仍仅按需。
+
+### P1 · 8. 功能无损与迁移缺陷修复
+
+#### 8.1 功能保留矩阵（源码核对，不等同全部真机验收）
+
+| 能力 | 当前核对 | 后续要求 |
+|---|---|---|
+| 公共 HTTP 出口原有随机参数与请求/响应字段、固定模式、Body 可选 deflate、AUTO | §4 已恢复，§7.3 已测试 | 不因轻量化再丢失；保持现有字段、行为与安全边界；不恢复旧 handler 或 RSZ |
+| plain/daily/weak/game、实际 zlib 1..9、按目的端口保护/绕过、单层 AEAD | 策略仍在，§7.4 六组短流真机测试通过 | 按相同 profile/出口/端口/密钥完整 A/B；不强制所有业务开启 AEAD 或压缩 |
+| Adaptive UDP/FEC、TCP repair、UDP hop/no-hop、MTU/PMTU、原生 UDP LZ4/FEC/AES、分片 | 主要实现仍在，公网增强模式升轨通过 | 回归失败修复、双端口/单端口、MTU、普通 UDP 与自适应 UDP 两条路径 |
+| UDP Lease Pool/Relay Group、TCP Warm Pool、上游权重及健康、热更/排空/回滚 | 实现保留，存在下面待核实边界 | 先修正配置与认证，补齐实际调用链和生命周期测试 |
+| 外部 udpclient/udp2raw、嵌套 Hysteria2 SOCKS5 | 参数和适配仍在 | §1 真机验收前不宣称无损完成，不以 TCP 成功代替 UDP 升轨成功 |
+| 标准 SOCKS5/SS/第三方上游、DNS/Geo、SS 用户级限速 | 保留独立业务路径 | 外部标准客户端不得要求 RXTC 或私有 RPC；用户隔离/限速及 DNS 拦截原语义不变 |
+
+#### 8.2 本轮 Review 缺陷及风险
+
+- [ ] **Egress 局部继承（明确源码逻辑缺陷）**：[RssClientConf.java L68-L123](https://github.com/RockyLOMO/rxlib/blob/7d1aefa67df199f27f80079b901958c87bf79e72/rxlib/src/main/java/org/rx/util/rss/RssClientConf.java#L68-L123) 与 [RssClientConf.java L283-L304](https://github.com/RockyLOMO/rxlib/blob/7d1aefa67df199f27f80079b901958c87bf79e72/rxlib/src/main/java/org/rx/util/rss/RssClientConf.java#L283-L304) 的 Egress.tcpCodec 默认 none，使仅配置 maxBodyBytes/httpBodyEncoding 等局部字段也覆盖全局 HTTP。区分 absent/null 与显式 none，明确全局→用户→上游覆盖优先级（延续既有明确覆盖语义）；按实际合并后配置校验，而非用局部默认值；测试全局、用户、上游组合、序列化、热更与 warm pool 隔离。同步核对 allowedCodecs 客户端字段是否应拒绝或明确仅服务端支持，以及 CLI 参数实际名称与文档一致性。
+- [ ] **认证兼容性**：[TransportCoreCarrier.java L172-L210](https://github.com/RockyLOMO/rxlib/blob/7d1aefa67df199f27f80079b901958c87bf79e72/rxlib/src/main/java/org/rx/net/transport/core/TransportCoreCarrier.java#L172-L210) 非 AEAD 私有连接强制非空密码 HMAC，原先无密码/plain 或自定义 Authenticator 仅 login() 的使用方式可能失效。记录行为差异，启动/配置校验应明确必要凭据，标准 SOCKS5 不受影响；轻量策略按 §9 设计，禁止未经明确配置的静默降级。
+- [ ] **业务认证与授权**：[RssServer.java L101-L111](https://github.com/RockyLOMO/rxlib/blob/7d1aefa67df199f27f80079b901958c87bf79e72/rxlib/src/main/java/org/rx/util/rss/RssServer.java#L101-L111) 错误账号/密码返回 ANONYMOUS；[Authenticator.java L8-L15](https://github.com/RockyLOMO/rxlib/blob/7d1aefa67df199f27f80079b901958c87bf79e72/rxlib/src/main/java/org/rx/net/socks/Authenticator.java#L8-L15) 默认 loginResult 仅拒绝 null；[Socks5PasswordAuthRequestHandler.java L31-L39](https://github.com/RockyLOMO/rxlib/blob/7d1aefa67df199f27f80079b901958c87bf79e72/rxlib/src/main/java/org/rx/net/socks/Socks5PasswordAuthRequestHandler.java#L31-L39) 仅判断结果是否 null。共享 PSK 验证不能替代用户授权。核实完整入口的拒绝行为并修复，错误账号/密码、禁用用户、共享 PSK 持有者、身份不一致、NO_AUTH 协商及热更撤销专项验证；标准显式匿名模式与失败必须严格区分。非 AEAD 的 HMAC 不是加密，不能宣称凭据或业务具有保密性。
+- [ ] **外部载体验收**：固定外部 UDP 映射与嵌套 SOCKS5 的 TCP/RPC/普通 UDP/Adaptive UDP 均需实际使用和抓包，确认真实目标、MTU、无跳跃、握手次序、UDP 升轨与回退、故障切换、连接池/热更。归口 §1，作为 §2 生产切换前置条件。
+- [ ] **业务压缩和出口解码预算独立（P2）**：[TransportCoreCarrier.java L188-L217](https://github.com/RockyLOMO/rxlib/blob/7d1aefa67df199f27f80079b901958c87bf79e72/rxlib/src/main/java/org/rx/net/transport/core/TransportCoreCarrier.java#L188-L217) 将业务 zlib 解压上限取自 EgressConfig.maxInflateBytes。拆分独立预算语义，仍有界且默认安全；不因为调整 HTTP body 解压限制影响业务压缩，验证高压缩率、分片、异常输入、内存峰值，不放宽任一层限制。
+- [ ] **TCP warm pool UDP 健康反馈（P2）**：[TransportCoreCarrier.java L137-L187](https://github.com/RockyLOMO/rxlib/blob/7d1aefa67df199f27f80079b901958c87bf79e72/rxlib/src/main/java/org/rx/net/transport/core/TransportCoreCarrier.java#L137-L187) 普通 Socks5ClientHandler 传入 UpstreamSupport，Socks5WarmupHandler 分支没有同等反馈。核实预热完成、正式借用后故障/恢复对当前 route generation 的能力统计，避免旧池事件污染新上游。不要为了统计额外发探包。
+
+### P1 · 9. RSS 轻量握手：保持 SOCKS5、无新增独立 RTT
+
+#### 9.1 开销基线
+
+现有 [Sockets.java L1040-L1068](https://github.com/RockyLOMO/rxlib/blob/7d1aefa67df199f27f80079b901958c87bf79e72/rxlib/src/main/java/org/rx/net/Sockets.java#L1040-L1068) 只要 RSS private、adaptive、RSS_PSK_AES 或非 NONE 出口满足其一就可能安装 CoreCarrier；[TransportCoreCarrier.java L465-L507](https://github.com/RockyLOMO/rxlib/blob/7d1aefa67df199f27f80079b901958c87bf79e72/rxlib/src/main/java/org/rx/net/transport/core/TransportCoreCarrier.java#L465-L507) 先发独立 Hello，等 Ack 后才发送待排队 SOCKS 数据。没有可用的 RSS handshake 关闭配置，单独置 rssPrivateTransport=false 不能覆盖所有情况。
+
+按协议流程推算（不是实测），带密码的普通冷连接、RPC 已无关、无丢包/预热且不计目标服务器建立时间：
+
+| 场景 | 迁移前 | 当前 | 目标 |
+|---|---|---|---|
+| plain 无 AEAD，固定且无需额外协商 | TCP + SOCKS5 方法/认证/CONNECT，4 RTT | 加独立 Core，5 RTT | 4 RTT 或更少；无额外私有握手 |
+| daily/weak/game 无 AEAD | 原 adaptive 协商随 SOCKS5 往返完成 | 独立 Core 增约1 RTT | 不再多一个独立往返 |
+| 开启 AES 的 plain/增强模式 | 原 AES 已独立认证握手，adaptive 随 SOCKS5 | Core 替代旧 AES 握手 | 不超过原独立往返次数，保留安全性 |
+| TCP warm 命中 | 已建立连接、已认证，CONNECT 约1 RTT | 同样约1 RTT（总开销提前发生） | 维持命中时延，减少预热总资源 |
+
+按 [TransportProtocol.java L235-L261](https://github.com/RockyLOMO/rxlib/blob/7d1aefa67df199f27f80079b901958c87bf79e72/rxlib/src/main/java/org/rx/net/transport/core/TransportProtocol.java#L235-L261)、[TransportProtocol.java L330-L363](https://github.com/RockyLOMO/rxlib/blob/7d1aefa67df199f27f80079b901958c87bf79e72/rxlib/src/main/java/org/rx/net/transport/core/TransportProtocol.java#L330-L363)：当前 RSS Hello 为56B+peerId 字节（最多64B），HelloAck 为56B（当前空 server peerId）；合计112B+peerId，不含外层包装、IP/TCP 和重传。旧 [RssHopAes.java](https://github.com/RockyLOMO/rxlib/blob/7b858624/rxlib/src/main/java/org/rx/net/RssHopAes.java) AES 初始交换65B；旧 [SocksAdaptiveHandshake.java](https://github.com/RockyLOMO/rxlib/blob/7b858624/rxlib/src/main/java/org/rx/net/socks/SocksAdaptiveHandshake.java) 已有随 SOCKS5 传输的 nonce/MTU，因此不能把全部新握手字节算作所有模式的净增量。旧/新 AES 数据记录均为2B长度+16B tag，最大记录16KiB；RAW_STREAM 不引入每业务包 RPC 序列化或 Core 通用 frame。
+
+当前额外状态包括 HMAC、每连接独立 deadline、按需 PendingWriteQueue（32项/64KiB）、每 SocksProxyServer 创建的 NonceReplayCache（上限16384条/120s）。无 AEAD 的 HTTPS 等短流尤其需要冷建连对照；不能仅凭低 RTT 预热结果说明系统总成本下降。
+
+#### 9.2 实施策略
+
+- [ ] **统一底层、可选择握手策略**：公共 TransportCoreCarrier/AEAD、Adaptive TCP、EgressCodec、真实压缩、MTU 继续复用。RSS 默认轻量策略（拟议名称 handshake=lightweight；配置层级、字段名待原型），完整 core 策略作为显式选择；RPC/RRP 等保持现行完整认证握手。不是仅去掉 HMAC flag 或认证检查；不维护旧私有 wire 双栈，不恢复独立旧 AES/HTTP/FEC 实现。
+- [ ] **标准 SOCKS5 边界**：外部标准入口/第三方上游的 method、auth、CONNECT、UDP ASSOCIATE 与数据语义保持标准，不要求 RXTC 或 RPC。RSS 两端之间的可选增强承载是私有协议，必须明确双方配置，不冒称增强后的物理 wire 等同标准 SOCKS5。没有 AEAD、Adaptive UDP、压缩及其他需要协商的固定 NONE 场景，直接使用标准 SOCKS5 握手，不安装 Core 握手、不创建额外认证缓存/定时器。对于固定出口/实际压缩组合，验证是否可无附加往返；未能保证边界及安全则使用显式配置或完整 Core。保留原认证/端口保护策略，不因轻量化让已受保护的数据或凭据转为明文。
+- [ ] **增强链路最少必要协商**：按原 SOCKS5 业务握手的 RTT 预算评估可复用协商阶段，必要认证、会话密钥、nonce、能力、MTU、端口等必须正确绑定；有 AES 的链路不能省掉必要安全交换。只有经过验证的相同用户身份及授权才能复用认证结果，全局 PSK 不是用户身份，不得取消业务授权。无握手的路径不创建 Core 专属缓存和 deadline，需防重放的路径继续有界；昂贵 UDP 状态按授权和实际需要分配。禁止重放旧会话密钥、无条件提前执行非幂等操作或因 RPC 不可达而绕过鉴权。
+- [ ] **AUTO 不退化**：保留公共三出口及已恢复 HTTP 功能；不能将内层业务 zlib 与外层纯 ZLIB_STORED 混淆。轻量路径若无法证明 AUTO 所有首部边界/认证安全，要求明确固定配置或完整 Core，不依据压缩等级猜测，不恢复 RSZ，不自动尝试多种协议，不强制每条连接为 AUTO 付出独立握手。明确矩阵中不可支持的组合并在配置时拒绝，而不是静默降低安全或业务功能。
+- [ ] **预算及验证**：记录每阶段首次/冷/预热命中/未命中 RTT、真实握手字节、加密/压缩次数、业务数据记录数、socket/handler/task/queue 数量、CPU/分配/峰值内存。无独立协商需求的 plain 无 AES 不新增 RTT；增强模式不增加重复往返；不增加业务帧层数和常驻线程。相同 profile/端口/安全等级/出口下与迁移前 A/B，不达标的组合先保留明确可用策略并列出阻塞，不声称已达标。
+
+### P1 · 10. 复用 RPC 控制面减少 UDP 首包 RTT 与 TCP 控制连接
+
+现有 SocksRpcContract 已支持 capabilities、open/add/remove/heartbeat/closeUdpRelayGroup、claim/resetUdpRelay、DNS 与 fake endpoint。[SocksUdpUpstream.java L309-L429](https://github.com/RockyLOMO/rxlib/blob/7d1aefa67df199f27f80079b901958c87bf79e72/rxlib/src/main/java/org/rx/net/socks/upstream/SocksUdpUpstream.java#L309-L429) 每新 group 先 capabilities 再 open；[RssClient.java L361-L362](https://github.com/RockyLOMO/rxlib/blob/7d1aefa67df199f27f80079b901958c87bf79e72/rxlib/src/main/java/org/rx/util/rss/RssClient.java#L361-L362) ForwardingSocksRpcContract 直接转发 capabilities，并无该层缓存。现有 [Socks5UpstreamPoolManager.java L231-L255](https://github.com/RockyLOMO/rxlib/blob/7d1aefa67df199f27f80079b901958c87bf79e72/rxlib/src/main/java/org/rx/net/socks/Socks5UpstreamPoolManager.java#L231-L255) UDP Lease Pool 预建 SOCKS5 TCP 控制连接，借用时 claim RPC；RPC Relay Group 则无需为每个 group 建独立 TCP 控制连接。
+
+| UDP 创建方式（带密码、无额外 AES，RPC 已连接） | 理论关键路径 |
+|---|---|
+| 标准 SOCKS5 UDP ASSOCIATE 冷连接 | 4 RTT |
+| 当前 Core + SOCKS5 UDP ASSOCIATE | 5 RTT |
+| 传统 UDP lease 命中 + claim | 1 RTT（预建成本另计） |
+| RPC group capabilities + open | 2 RTT |
+| 能力有效缓存 + RPC open | 1 RTT |
+| 同一仍有效授权 association 内复用已有 group | 0 额外控制 RTT |
+
+以上不含 RPC 冷连接、外部 SOCKS5 载体握手、DNS、UDP 首包路径、服务器处理和失败重试；不保证实测恰好达到理论数值。
+
+- [ ] **能力缓存**：在实际共享 RPC facade/上游控制状态中做有界按需缓存，绑定经认证对端、路由/配置 generation、授权范围与有效期；并发首次查询 single-flight，不对每个 UDP group 重新 capabilities。断线重连、服务重启、热更、能力不匹配时失效重查；支持显式不兼容结果，不能永久缓存失败或错误身份的能力。可评估把能力返回合并到已有认证控制响应而非独立增加 RPC；不为了缓存新增常驻线程或周期轮询。
+- [ ] **plain UDP 私有 RSS 优先 RPC Group**：现 AUTO 在非 daily 且无 hopping 时直接返回 null；对于明确支持并已授权的 RSS 对端，让 plain 同样优先 RPC group。保留标准第三方 SOCKS5 UDP ASSOCIATE 及必要兼容路径，不把普通 UDP 转成可靠 TCP 数据流；增强模式既有不允许静默降级的约束不变。RPC 不可用、能力不支持时仅按明确且等价安全策略回退，不创建重复组，不以破坏目标授权或源地址关联换 RTT。
+- [ ] **传统 lease 按需保留**：RPC group 可用时避免创建每 lease 独立 TCP 控制连接；普通 SOCKS5 控制连接生命周期仍遵守标准，不能因新 RPC group 设计提前关闭标准 UDP ASSOCIATE 的 TCP。评估实际 group 打开、claim、reset、close、失败回收与池命中成本；不立即删除现存兼容实现。非幂等 open/claim 等不能无条件重试，必要时使用受控幂等标识或明确失败/回收，防止超时遗留资源。
+- [ ] **安全和资源前置**：RPC 的创建/续租/关闭与具体授权用户、节点、association、route generation 绑定；凭据与敏感控制返回必须有适当认证保护，日志脱敏不等于加密；校验过期/撤销/并发预算及源地址/目标约束。[UdpRelayGroupManager.java L89-L151](https://github.com/RockyLOMO/rxlib/blob/7d1aefa67df199f27f80079b901958c87bf79e72/rxlib/src/main/java/org/rx/net/socks/UdpRelayGroupManager.java#L89-L151) 的 group 容量检查和插入之间存在并发窗口，核查原子预留、节点/用户/进程总 socket 和 pending 限额、失败回滚/空闲回收；减少 TCP 控制连接不能换来 UDP group 无界增长。只在合法关联内复用，不跨用户/安全上下文混用。
+- [ ] **验收**：普通/增强 UDP、hop/no-hop、固定外部入口、嵌套载体、标准第三方、RPC 冷/热/断线、并发首次、能力变化、拒绝与取消、超时/过期/回收。统计 RPC 每组调用次数、首包 P50/P95/P99、实际控制连接和 UDP socket 数、公网控制/业务字节、CPU/内存；目标有效缓存时 open 仅1次 RPC，正常私有 group 无专用 SOCKS5 TCP 控制连接，已有合法 group 复用不新增控制往返。
+
+### P2 · 11. UDP/TCP/RPC 生命周期与资源优化
+
+- [ ] **UDP group 合法复用**：现 SessionGroup 已有活跃复用，先核查是否因每个 destination 重复创建；仅相同用户、上游、profile、密钥/授权、UDP association 与网络 generation 内复用；保留数据报边界/源目标关联、限速、租约过期和撤销。按实际需求扩缩容，避免无业务的保活及探测；服务端 group/socket/任务总预算不变。
+- [ ] **TCP Warm Pool 按需动态容量**：[Socks5UpstreamPoolManager.java L30-L112](https://github.com/RockyLOMO/rxlib/blob/7d1aefa67df199f27f80079b901958c87bf79e72/rxlib/src/main/java/org/rx/net/socks/Socks5UpstreamPoolManager.java#L30-L112) 现每 pool 有补充任务、按固定 minSize 补充。按连接频率/命中率/空闲期评估按需预热与收缩，限制 pool key 数、进程预热连接/在途连接总数，合并调度，闲置上游不持续建连。预热是转移等待而非消除总成本；报告 hit/miss/unused/过期/失败、字节、socket、CPU、内存，不通过无限预热伪造低时延。保留 per-user/route/profile/完整 EgressConfig/MTU/认证隔离及热更排空。
+- [ ] **RPC 池按需收缩**：[RssClient.java L876-L911](https://github.com/RockyLOMO/rxlib/blob/7d1aefa67df199f27f80079b901958c87bf79e72/rxlib/src/main/java/org/rx/util/rss/RssClient.java#L876-L911) 已按 RPC endpoint/嵌套路由共享 facade，同时有 pool 和 stateful event 连接；测实际调用负载和事件订阅需求，再减少不必要的 idle pool、重复心跳或连接，不影响事件推送、WoW、DNS、控制请求和重连。避免把稳定能力缓存变成每连接 RPC 查询；不得缓存或复用必须独立的会话密钥及防重放状态。
+- [ ] **状态开销**：无额外握手时不创建相关 replay cache/deadline/queue；必须启用的模式保留安全边界并按需分配，复查定时器、状态表和指标开销。不新增每连接线程，不默认全业务 TCP 多路复用（HOL、故障域及游戏时延风险）；只有真实瓶颈才立项。
+- [ ] **统一验收与交付**：优先完成 §8/9/10，再按实测推进 §11；外部载体与长期资源验收继续归口 §1/3。以迁移前真实同配置四档混合负载（短连接、不可压缩数据、大流、交互、普通 UDP、QUIC/WoW、弱网多种子）与当前/优化后 A/B，分开固定与 AUTO、AEAD on/off、冷/热。实际 IP 层流量、CPU、RSS/堆外/cgroup/整机峰值、socket/线程、P99/失败率与保活成本一同记录；不以本轮 §7 六组32KiB回显的不同出口数据直接比较 profile 性能。JDK8/master 完整回归、merge master→rss-21 后 JDK21 回归、PARANOID、24h/768MiB 整机及真实生产前置条件，报告归入 test-benchmarks.md；仅实际实现后更新 .memory/配置文档。RRP UDP over TCP (§7)、全局整形及复杂 FEC 继续暂缓。
+
 ## P2 · 中期演进（待定治理项）
 
 ### 6. 现有全局流量整形（`NetworkFlowControl` `GlobalChannelTrafficShapingHandler`）治理（暂缓）
@@ -99,4 +183,4 @@ UDP over TCP 会改变传输时延和丢包行为，TCP 丢包可造成队头阻
 - **Shadowsocks 服务端先发 FIN 半关闭**：当前完整支持客户端先发 FIN 的单向半关闭；若需支持后端先 `shutdownOutput` 且客户端持续读取的双向半关闭，需单独设计。
 - **高频路径微优化与结构整理**（当前无瓶颈证据，暂缓）：大包聚合/零拷贝批量写、`SaltHistory` 多域 O(1) 淘汰、以及 P3 级包名重构（`net.handler`/`net.flow`/`net.rss.security`/`net.socks.udp2raw` 等）。
 
-> 注：2026-11-28 第二轮 Review 的 P1 §3–§5 代码实现、双 JDK `PARANOID` 28 类超集回归及公网真机验证已落地（提交 `29bd0e65`..`0c47859f`）；本文件仅保留尚未执行的长期压测、外部载体/生产运维切换以及 P2/P3 演进项。
+> 注：2026-11-28 第二轮 Review 的 P1 §3–§5 代码实现、双 JDK `PARANOID` 28 类超集回归及公网真机验证已落地（提交 `29bd0e65`..`0c47859f`）；第三轮 §8–§11 为新增待办，第二轮已实施记录不是轻量握手与无损迁移的最终验收。本文件继续保留长期压测、外部载体/生产切换及 P2/P3 演进项。本轮为静态审查与理论 RTT 推算，未执行新测试、未改业务源码；潜在风险及预期收益须专项复现。
