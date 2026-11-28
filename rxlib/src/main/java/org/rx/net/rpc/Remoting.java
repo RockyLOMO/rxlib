@@ -490,7 +490,7 @@ public final class Remoting {
         return clientPools.computeIfAbsent(config, k -> {
             log.info("RpcTransportClientPool {}", toJsonString(k));
             if (!config.isUsePool()) {
-                return new NonTransportClientPool(config.getTransportConfig());
+                return new NonTransportClientPool(config.getTransportConfig(), config.getLocalAddress());
             }
             return new RpcTransportClientPoolImpl(config);
         });
@@ -976,7 +976,11 @@ public final class Remoting {
                 });
             }
         });
-        bean.server.start();
+        if (config.getLocalAddress() != null) {
+            bean.server.startLocal(config.getLocalAddress());
+        } else {
+            bean.server.start();
+        }
         return bean;
     }
 

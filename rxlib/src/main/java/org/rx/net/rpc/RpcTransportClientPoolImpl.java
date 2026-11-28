@@ -24,7 +24,11 @@ class RpcTransportClientPoolImpl extends Disposable implements RpcTransportClien
             TransportConfig config = Sys.deepClone(template.getTransportConfig());
             TransportClient client = new TransportClient(config);
             try {
-                client.connect(config.getTcpClientConfig().getServerEndpoint());
+                if (template.getLocalAddress() != null) {
+                    client.connectLocal(template.getLocalAddress());
+                } else {
+                    client.connect(config.getTcpClientConfig().getServerEndpoint());
+                }
             } catch (Throwable e) {
                 client.close();
                 throw e;

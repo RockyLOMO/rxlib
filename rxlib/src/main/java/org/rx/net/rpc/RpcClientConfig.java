@@ -1,5 +1,6 @@
 package org.rx.net.rpc;
 
+import io.netty.channel.local.LocalAddress;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
@@ -34,6 +35,17 @@ public class RpcClientConfig<T> {
         return config;
     }
 
+    public static <T> RpcClientConfig<T> localCarrier(LocalAddress localAddress, TransportConfig transportConfig) {
+        TransportConfig tc = transportConfig == null ? TransportConfig.pureTcpClient(null) : transportConfig;
+        if (tc.getTcpClientConfig() == null) {
+            tc.setTcpClientConfig(new TcpClientConfig());
+        }
+        tc.getTcpClientConfig().setEnableReconnect(false);
+        RpcClientConfig<T> config = new RpcClientConfig<T>(tc);
+        config.setLocalAddress(localAddress);
+        return config;
+    }
+
     public static <T> RpcClientConfig<T> poolMode(String serverEndpoint, int maxPoolSize) {
         return poolMode(Sockets.parseEndpoint(serverEndpoint), 2, maxPoolSize);
     }
@@ -49,6 +61,8 @@ public class RpcClientConfig<T> {
     }
 
     private final TransportConfig transportConfig;
+    /** Optional in-process LocalAddress virtual carrier (e.g. RRP RAW Relay stream bridge). */
+    private LocalAddress localAddress;
     private short eventVersion = DEFAULT_VERSION;
     private short minPoolSize;
     private short maxPoolSize = NON_POOL_SIZE;

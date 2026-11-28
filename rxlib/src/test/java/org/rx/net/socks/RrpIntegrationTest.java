@@ -3,9 +3,14 @@ package org.rx.net.socks;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.*;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.channel.local.LocalAddress;
+import io.netty.util.AttributeKey;
+import io.netty.util.ReferenceCountUtil;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.AfterAll;
@@ -14,21 +19,26 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.rx.io.FurySerializer;
 import org.rx.io.JdkAndJsonSerializer;
-import org.rx.io.Serializer;
+import org.rx.net.EgressCodec;
+import org.rx.net.EgressConfig;
 import org.rx.net.Sockets;
 import org.rx.net.support.EndpointTracer;
+import org.rx.net.transport.core.TransportSession;
 
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.*;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
 import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.rx.net.socks.RrpConfig.ATTR_SVR;
 
 @Slf4j
 class RrpIntegrationTest {
@@ -45,91 +55,142 @@ class RrpIntegrationTest {
             }
         }));
         tcpEchoChannel = tcpEchoBootstrap.bind(Sockets.newAnyEndpoint(TCP_ECHO_PORT)).sync().channel();
-        Thread.sleep(300);
+        Thread.sleep(200);
     }
 
     @AfterAll
     static void teardown() {
-        if (tcpEchoChannel != null) tcpEchoChannel.close();
-        if (tcpEchoBootstrap != null) Sockets.closeBootstrap(tcpEchoBootstrap);
+        if (tcpEchoChannel != null) {
+            tcpEchoChannel.close();
+        }
+        if (tcpEchoBootstrap != null) {
+            Sockets.closeBootstrap(tcpEchoBootstrap);
+        }
+    }
+
+    static final class EmbeddedTransportSession implements TransportSession {
+        final long id;
+        final EmbeddedChannel channel;
+        volatile boolean connected = true;
+
+        EmbeddedTransportSession(long id, EmbeddedChannel channel) {
+            this.id = id;
+            this.channel = channel;
+        }
+
+        @Override public long sessionId() { return id; }
+        @Override public String localPeerId() { return "local"; }
+        @Override public String remotePeerId() { return "remote"; }
+        @Override public boolean isConnected() { return connected && channel.isOpen(); }
+        @Override public boolean isWritable() { return isConnected() && channel.isWritable(); }
+        @Override public boolean isUsingUdp() { return false; }
+        @Override public boolean isAdaptiveUdpNegotiated() { return false; }
+        @Override public InetSocketAddress remoteEndpoint() { return Sockets.newLoopbackEndpoint(12345); }
+        @Override public InetSocketAddress localEndpoint() { return Sockets.newLoopbackEndpoint(54321); }
+        @Override public long lastHeartbeatMillis() { return 0; }
+        @Override public long heartbeatRttMillis() { return 0; }
+        @Override public Channel channel() { return channel; }
+        @Override public void send(ByteBuf payload) { channel.writeAndFlush(payload); }
+        @Override public ChannelFuture sendAsync(ByteBuf payload) { return channel.writeAndFlush(payload); }
+        @Override public ChannelFuture shutdownOutput() { return channel.close(); }
+        @Override public void setReceiveHandler(BiConsumer<TransportSession, ByteBuf> handler) {}
+        @Override public <T> boolean hasAttr(AttributeKey<T> key) { return channel.hasAttr(key); }
+        @Override public <T> T attr(AttributeKey<T> key) { return channel.attr(key).get(); }
+        @Override public <T> void attr(AttributeKey<T> key, T val) { channel.attr(key).set(val); }
+        @Override public void close() { connected = false; channel.close(); }
     }
 
     @Test
     @SneakyThrows
     @Timeout(value = 25)
-    void rrpRemotePort_socks5PasswordAuth_connectToLocalEcho_e2e() {
-        int bindPort, remotePort;
-        try (ServerSocket control = new ServerSocket(0); ServerSocket relay = new ServerSocket(0)) {
-            bindPort = control.getLocalPort();
-            remotePort = relay.getLocalPort();
-        }
-
-        RrpConfig sConf = new RrpConfig();
-        sConf.setToken("tok1");
-        sConf.setBindPort(bindPort);
-        RrpServer server = new RrpServer(sConf);
-
-        RrpConfig cConf = new RrpConfig();
-        cConf.setToken("tok1");
-        cConf.setServerEndpoint("127.0.0.1:" + bindPort);
-        RrpConfig.Proxy p = new RrpConfig.Proxy();
-        p.setName("it");
-        p.setRemotePort(remotePort);
-        p.setAuth("u1:p1");
-        cConf.setProxies(Collections.singletonList(p));
-        RrpClient client = new RrpClient(cConf);
-
-        try {
-            client.connectAsync().get(8, java.util.concurrent.TimeUnit.SECONDS);
-
-            // Wait for remotePort to be bound by server (REGISTER is async after connect).
-            waitForPortOpen("127.0.0.1", remotePort, 8000);
-
-            try (Socket s = new Socket("127.0.0.1", remotePort)) {
-                s.setSoTimeout(5000);
-                OutputStream out = s.getOutputStream();
-                InputStream in = s.getInputStream();
-
-                // 1) greeting: request username/password auth
-                out.write(new byte[]{0x05, 0x01, 0x02});
-                out.flush();
-                byte[] hs = readExact(in, 2, 3000);
-                assertArrayEquals(new byte[]{0x05, 0x02}, hs);
-
-                // 2) auth subnegotiation (u1/p1)
-                byte[] u = "u1".getBytes(StandardCharsets.US_ASCII);
-                byte[] pw = "p1".getBytes(StandardCharsets.US_ASCII);
-                out.write(new byte[]{
-                        0x01,
-                        (byte) u.length
-                });
-                out.write(u);
-                out.write(new byte[]{
-                        (byte) pw.length
-                });
-                out.write(pw);
-                out.flush();
-                byte[] authResp = readExact(in, 2, 3000);
-                assertArrayEquals(new byte[]{0x01, 0x00}, authResp);
-
-                // 3) CONNECT to local echo server (client side)
-                out.write(buildSocks5ConnectReqIpv4("127.0.0.1", TCP_ECHO_PORT));
-                out.flush();
-                byte[] conn = readAtLeast(in, 4, 10, 3000);
-                assertEquals(0x05, conn[0] & 0xFF);
-                assertEquals(0x00, conn[1] & 0xFF);
-
-                // 4) payload roundtrip
-                String message = "rrp-e2e";
-                out.write(message.getBytes(StandardCharsets.UTF_8));
-                out.flush();
-                byte[] back = readExact(in, message.getBytes(StandardCharsets.UTF_8).length, 3000);
-                assertEquals(message, new String(back, StandardCharsets.UTF_8));
+    void rrpRemotePort_socks5PasswordAuth_connectToLocalEcho_e2e_acrossAutoEgressModes() {
+        for (EgressCodec clientCodec : new EgressCodec[]{EgressCodec.HTTP, EgressCodec.ZLIB_STORED, EgressCodec.NONE}) {
+            int bindPort, remotePort;
+            try (ServerSocket control = new ServerSocket(0); ServerSocket relay = new ServerSocket(0)) {
+                bindPort = control.getLocalPort();
+                remotePort = relay.getLocalPort();
             }
-        } finally {
-            client.close();
-            server.close();
+
+            RrpConfig sConf = new RrpConfig();
+            sConf.setToken("tok1");
+            sConf.setBindPort(bindPort);
+            // Server defaults to EgressConfig.serverAutoAll() accepting NONE / ZLIB_STORED / HTTP
+            RrpServer server = new RrpServer(sConf);
+
+            RrpConfig cConf = new RrpConfig();
+            cConf.setToken("tok1");
+            cConf.setServerEndpoint("127.0.0.1:" + bindPort);
+            cConf.setEgressConfig(EgressConfig.client(clientCodec));
+            RrpConfig.Proxy p = new RrpConfig.Proxy();
+            p.setName("it-" + clientCodec.name());
+            p.setRemotePort(remotePort);
+            p.setAuth("u1:p1");
+            cConf.setProxies(Collections.singletonList(p));
+            RrpClient client = new RrpClient(cConf);
+
+            try {
+                client.connectAsync().get(8, TimeUnit.SECONDS);
+                assertTrue(client.session().isEncrypted(), "RRP v2 with token must negotiate AEAD encryption");
+                assertEquals(clientCodec, client.session().egressCodec());
+
+                waitForPortOpen("127.0.0.1", remotePort, 8000);
+
+                try (Socket s = new Socket("127.0.0.1", remotePort)) {
+                    s.setSoTimeout(5000);
+                    OutputStream out = s.getOutputStream();
+                    InputStream in = s.getInputStream();
+
+                    // 1) greeting: username/password auth
+                    out.write(new byte[]{0x05, 0x01, 0x02});
+                    out.flush();
+                    assertArrayEquals(new byte[]{0x05, 0x02}, readExact(in, 2, 3000));
+
+                    // 2) auth subnegotiation (u1/p1)
+                    byte[] u = "u1".getBytes(StandardCharsets.US_ASCII);
+                    byte[] pw = "p1".getBytes(StandardCharsets.US_ASCII);
+                    out.write(new byte[]{0x01, (byte) u.length});
+                    out.write(u);
+                    out.write(new byte[]{(byte) pw.length});
+                    out.write(pw);
+                    out.flush();
+                    assertArrayEquals(new byte[]{0x01, 0x00}, readExact(in, 2, 3000));
+
+                    // 3) CONNECT to local echo server
+                    out.write(buildSocks5ConnectReqIpv4("127.0.0.1", TCP_ECHO_PORT));
+                    out.flush();
+                    byte[] conn = readAtLeast(in, 4, 10, 3000);
+                    assertEquals(0x05, conn[0] & 0xFF);
+                    assertEquals(0x00, conn[1] & 0xFF);
+
+                    // 4) payload roundtrip
+                    String message = "rrp-e2e-" + clientCodec.name();
+                    out.write(message.getBytes(StandardCharsets.UTF_8));
+                    out.flush();
+                    byte[] back = readExact(in, message.getBytes(StandardCharsets.UTF_8).length, 3000);
+                    assertEquals(message, new String(back, StandardCharsets.UTF_8));
+                }
+            } finally {
+                client.close();
+                server.close();
+            }
         }
+    }
+
+    @Test
+    void configToStringExcludesSensitiveCredentials() {
+        RrpConfig conf = new RrpConfig();
+        conf.setToken("super-secret-token");
+        conf.setNodeSecret("super-secret-node-key");
+        RrpConfig.Proxy p = new RrpConfig.Proxy();
+        p.setName("p1");
+        p.setRemotePort(12345);
+        p.setAuth("alice:topsecretpass");
+        conf.setProxies(Collections.singletonList(p));
+
+        String s = conf.toString();
+        assertFalse(s.contains("super-secret-token"));
+        assertFalse(s.contains("super-secret-node-key"));
+        assertFalse(s.contains("topsecretpass"));
     }
 
     @Test
@@ -147,11 +208,471 @@ class RrpIntegrationTest {
         RrpClient client = new RrpClient(conf);
         try {
             Future<Void> future = client.connectAsync();
-            ExecutionException ex = assertThrows(ExecutionException.class, () -> future.get(3, java.util.concurrent.TimeUnit.SECONDS));
-            assertNotNull(ex.getCause(), "连接失败原因应透传给调用方");
-            assertTrue(future.isDone(), "连接失败后 future 必须结束");
+            ExecutionException ex = assertThrows(ExecutionException.class, () -> future.get(3, TimeUnit.SECONDS));
+            assertNotNull(ex.getCause());
+            assertTrue(future.isDone());
         } finally {
             client.close();
+        }
+    }
+
+    @Test
+    void serverRejectsOversizedTokenLen() {
+        RrpConfig conf = new RrpConfig();
+        conf.setToken("t");
+        conf.setBindPort(0);
+        RrpServer server = new RrpServer(conf);
+        EmbeddedChannel ch = new EmbeddedChannel();
+        try {
+            EmbeddedTransportSession session = new EmbeddedTransportSession(1L, ch);
+            RrpServer.RpClient rpClient = new RrpServer.RpClient(server, session);
+            server.clientsBySessionId.put(1L, rpClient);
+
+            ByteBuf buf = Unpooled.buffer();
+            buf.writeByte(RrpConfig.ACTION_REGISTER);
+            buf.writeInt(RrpServer.MAX_TOKEN_LEN + 1);
+            try {
+                server.handleInboundFrame(rpClient, buf);
+            } finally {
+                buf.release();
+            }
+            assertFalse(ch.isOpen(), "session should be closed on invalid tokenLen");
+        } finally {
+            ch.finishAndReleaseAll();
+            server.close();
+        }
+    }
+
+    @Test
+    void serverRejectsOversizedRegisterPayloadLen() {
+        RrpConfig conf = new RrpConfig();
+        conf.setToken("t");
+        conf.setBindPort(0);
+        RrpServer server = new RrpServer(conf);
+        EmbeddedChannel ch = new EmbeddedChannel();
+        try {
+            EmbeddedTransportSession session = new EmbeddedTransportSession(1L, ch);
+            RrpServer.RpClient rpClient = new RrpServer.RpClient(server, session);
+            server.clientsBySessionId.put(1L, rpClient);
+
+            byte[] token = "t".getBytes(StandardCharsets.US_ASCII);
+            ByteBuf buf = Unpooled.buffer();
+            buf.writeByte(RrpConfig.ACTION_REGISTER);
+            buf.writeInt(token.length);
+            buf.writeBytes(token);
+            buf.writeInt(RrpServer.MAX_REGISTER_BYTES + 1);
+            try {
+                server.handleInboundFrame(rpClient, buf);
+            } finally {
+                buf.release();
+            }
+            assertFalse(ch.isOpen(), "session should be closed on invalid register len");
+        } finally {
+            ch.finishAndReleaseAll();
+            server.close();
+        }
+    }
+
+    @Test
+    void serverRejectsLegacyJdkRegisterPayload() {
+        RrpConfig conf = new RrpConfig();
+        conf.setToken("t");
+        conf.setBindPort(0);
+        RrpServer server = new RrpServer(conf);
+        EmbeddedChannel ch = new EmbeddedChannel();
+        try {
+            EmbeddedTransportSession session = new EmbeddedTransportSession(1L, ch);
+            RrpServer.RpClient rpClient = new RrpServer.RpClient(server, session);
+            server.clientsBySessionId.put(1L, rpClient);
+
+            byte[] tokenBytes = "t".getBytes(StandardCharsets.US_ASCII);
+            byte[] data = JdkAndJsonSerializer.DEFAULT.serializeToBytes(
+                    Collections.singletonList(newProxy("jdk", 19009, "u1:p1")));
+            ByteBuf buf = Unpooled.buffer();
+            buf.writeByte(RrpConfig.ACTION_REGISTER);
+            buf.writeInt(tokenBytes.length);
+            buf.writeBytes(tokenBytes);
+            buf.writeInt(data.length);
+            buf.writeBytes(data);
+            try {
+                server.handleInboundFrame(rpClient, buf);
+            } finally {
+                buf.release();
+            }
+            assertFalse(ch.isOpen(), "legacy JDK register payload should close session");
+            assertTrue(server.proxiesByPort.isEmpty(), "legacy JDK register payload must not register proxy");
+        } finally {
+            ch.finishAndReleaseAll();
+            server.close();
+        }
+    }
+
+    @Test
+    void clientRejectsInvalidIdLen() {
+        RrpConfig conf = new RrpConfig();
+        conf.setEnableReconnect(false);
+        conf.setProxies(Collections.emptyList());
+        RrpClient client = new RrpClient(conf);
+        EmbeddedChannel ch = new EmbeddedChannel();
+        try {
+            EmbeddedTransportSession session = new EmbeddedTransportSession(2L, ch);
+            ByteBuf buf = Unpooled.buffer();
+            buf.writeByte(RrpConfig.ACTION_FORWARD);
+            buf.writeInt(2090);
+            buf.writeInt(RrpServer.MAX_CHANNEL_ID_LEN + 1);
+            try {
+                client.handleServerFrame(session, buf);
+            } finally {
+                buf.release();
+            }
+            assertFalse(ch.isOpen(), "session should be closed on invalid idLen");
+        } finally {
+            ch.finishAndReleaseAll();
+            client.close();
+        }
+    }
+
+    @Test
+    void clientIgnoresUnknownRemotePort() {
+        RrpConfig conf = new RrpConfig();
+        conf.setEnableReconnect(false);
+        conf.setProxies(Collections.emptyList());
+        RrpClient client = new RrpClient(conf);
+        EmbeddedChannel ch = new EmbeddedChannel();
+        try {
+            EmbeddedTransportSession session = new EmbeddedTransportSession(3L, ch);
+            ByteBuf buf = Unpooled.buffer();
+            buf.writeByte(RrpConfig.ACTION_FORWARD);
+            buf.writeInt(2090);
+            byte[] id = "abc".getBytes(StandardCharsets.US_ASCII);
+            buf.writeInt(id.length);
+            buf.writeBytes(id);
+            buf.writeBytes(new byte[]{1, 2, 3});
+            try {
+                client.handleServerFrame(session, buf);
+            } finally {
+                buf.release();
+            }
+            assertTrue(ch.isOpen(), "session should remain open for unknown remotePort");
+        } finally {
+            ch.finishAndReleaseAll();
+            client.close();
+        }
+    }
+
+    @Test
+    void clientIgnoresHeartbeat() {
+        RrpConfig conf = new RrpConfig();
+        conf.setEnableReconnect(false);
+        conf.setProxies(Collections.emptyList());
+        RrpClient client = new RrpClient(conf);
+        EmbeddedChannel ch = new EmbeddedChannel();
+        try {
+            EmbeddedTransportSession session = new EmbeddedTransportSession(4L, ch);
+            ByteBuf buf = Unpooled.buffer(1);
+            buf.writeByte(RrpConfig.ACTION_HEARTBEAT);
+            try {
+                client.handleServerFrame(session, buf);
+            } finally {
+                buf.release();
+            }
+            assertTrue(ch.isOpen());
+            Object out = ch.readOutbound();
+            if (out != null) {
+                ReferenceCountUtil.release(out);
+            }
+            assertNull(out);
+        } finally {
+            ch.finishAndReleaseAll();
+            client.close();
+        }
+    }
+
+    @Test
+    void serverRepliesHeartbeat() {
+        RrpConfig conf = new RrpConfig();
+        conf.setBindPort(0);
+        RrpServer server = new RrpServer(conf);
+        EmbeddedChannel ch = new EmbeddedChannel();
+        try {
+            EmbeddedTransportSession session = new EmbeddedTransportSession(5L, ch);
+            RrpServer.RpClient rpClient = new RrpServer.RpClient(server, session);
+            server.clientsBySessionId.put(5L, rpClient);
+
+            ByteBuf buf = Unpooled.buffer(1);
+            buf.writeByte(RrpConfig.ACTION_HEARTBEAT);
+            try {
+                server.handleInboundFrame(rpClient, buf);
+            } finally {
+                buf.release();
+            }
+
+            ByteBuf out = ch.readOutbound();
+            assertNotNull(out, "server should reply heartbeat");
+            try {
+                assertEquals(RrpConfig.ACTION_HEARTBEAT, out.readByte());
+            } finally {
+                out.release();
+            }
+        } finally {
+            ch.finishAndReleaseAll();
+            server.close();
+        }
+    }
+
+    @Test
+    void clientLocalAddressIsUniquePerProxy() {
+        EmbeddedChannel serverChannel = new EmbeddedChannel();
+        RrpClient.RpClientProxy p1 = null;
+        RrpClient.RpClientProxy p2 = null;
+        try {
+            p1 = new RrpClient.RpClientProxy(newProxy("p1", 19111, "u1:p1"), serverChannel);
+            p2 = new RrpClient.RpClientProxy(newProxy("p2", 19112, "u1:p1"), serverChannel);
+            assertNotEquals(p1.localEndpoint, p2.localEndpoint, "memory LocalAddress must be unique per proxy");
+        } finally {
+            if (p1 != null) p1.close();
+            if (p2 != null) p2.close();
+            serverChannel.close();
+        }
+    }
+
+    @Test
+    void localRelayBufferQueuesUntilLocalChannelWritable() {
+        RrpConfig conf = new RrpConfig();
+        conf.setEnableReconnect(false);
+        RrpClient client = new RrpClient(conf);
+        EmbeddedChannel serverChannel = new EmbeddedChannel();
+        EmbeddedChannel localChannel = new EmbeddedChannel();
+        RrpClient.LocalRelayBuffer relayBuffer = new RrpClient.LocalRelayBuffer(client, serverChannel);
+        localChannel.attr(RrpClient.ATTR_LOCAL_RELAY_BUF).set(relayBuffer);
+        localChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
+
+        ByteBuf payload = Unpooled.wrappedBuffer("local-relay".getBytes(StandardCharsets.US_ASCII));
+        assertTrue(relayBuffer.offer(localChannel, payload));
+        localChannel.runPendingTasks();
+
+        assertNull(localChannel.readOutbound());
+        assertEquals("local-relay".getBytes(StandardCharsets.US_ASCII).length, relayBuffer.pendingBytes.get());
+
+        localChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, true);
+        relayBuffer.scheduleDrain(localChannel);
+        localChannel.runPendingTasks();
+
+        ByteBuf flushed = localChannel.readOutbound();
+        assertNotNull(flushed);
+        try {
+            assertEquals("local-relay", flushed.toString(StandardCharsets.US_ASCII));
+        } finally {
+            flushed.release();
+            client.close();
+            serverChannel.close();
+            localChannel.close();
+        }
+        assertEquals(0, relayBuffer.pendingBytes.get());
+    }
+
+    @Test
+    void localRelayBufferClosesSlowLocalChannelWhenQueuedBytesOverflow() {
+        RrpConfig conf = new RrpConfig();
+        conf.setEnableReconnect(false);
+        RrpClient client = new RrpClient(conf);
+        EmbeddedChannel serverChannel = new EmbeddedChannel();
+        EmbeddedChannel localChannel = new EmbeddedChannel();
+        RrpClient.LocalRelayBuffer relayBuffer = new RrpClient.LocalRelayBuffer(client, serverChannel);
+        localChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
+
+        ByteBuf payload = Unpooled.buffer(RrpClient.MAX_PENDING_FORWARD_BYTES + 1);
+        payload.writeZero(RrpClient.MAX_PENDING_FORWARD_BYTES + 1);
+
+        assertFalse(relayBuffer.offer(localChannel, payload));
+        localChannel.runPendingTasks();
+
+        assertFalse(localChannel.isOpen());
+        assertEquals(0, relayBuffer.pendingBytes.get());
+        assertNull(localChannel.readOutbound());
+        client.close();
+        serverChannel.close();
+    }
+
+    @Test
+    void serverRelayBufferQueuesUntilServerChannelWritableAndTogglesLocalRead() {
+        EmbeddedChannel serverChannel = new EmbeddedChannel();
+        EmbeddedChannel localChannel = new EmbeddedChannel();
+        RrpClient.ServerRelayBuffer relayBuffer = new RrpClient.ServerRelayBuffer(localChannel);
+        serverChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
+
+        ByteBuf payload = Unpooled.wrappedBuffer("server-relay".getBytes(StandardCharsets.US_ASCII));
+        assertTrue(relayBuffer.offer(serverChannel, payload));
+        serverChannel.runPendingTasks();
+
+        assertFalse(localChannel.config().isAutoRead());
+        assertNull(serverChannel.readOutbound());
+
+        serverChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, true);
+        relayBuffer.scheduleDrain(serverChannel);
+        serverChannel.runPendingTasks();
+
+        ByteBuf flushed = serverChannel.readOutbound();
+        assertNotNull(flushed);
+        try {
+            assertEquals("server-relay", flushed.toString(StandardCharsets.US_ASCII));
+        } finally {
+            flushed.release();
+            serverChannel.close();
+            localChannel.close();
+        }
+        assertTrue(localChannel.config().isAutoRead());
+        assertEquals(0, relayBuffer.pendingBytes.get());
+    }
+
+    @Test
+    void serverRelayBufferClosesLocalChannelWhenQueuedBytesOverflow() {
+        EmbeddedChannel serverChannel = new EmbeddedChannel();
+        EmbeddedChannel localChannel = new EmbeddedChannel();
+        RrpClient.ServerRelayBuffer relayBuffer = new RrpClient.ServerRelayBuffer(localChannel);
+        serverChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
+
+        ByteBuf payload = Unpooled.buffer(RrpClient.MAX_PENDING_FORWARD_BYTES + 1);
+        payload.writeZero(RrpClient.MAX_PENDING_FORWARD_BYTES + 1);
+
+        assertFalse(relayBuffer.offer(serverChannel, payload));
+        localChannel.runPendingTasks();
+
+        assertFalse(localChannel.isOpen());
+        assertEquals(0, relayBuffer.pendingBytes.get());
+        assertNull(serverChannel.readOutbound());
+        serverChannel.close();
+    }
+
+    @Test
+    void remoteChannelIdRemoveDoesNotDropReplacementChannel() {
+        EmbeddedChannel clientChannel = new EmbeddedChannel();
+        EmbeddedChannel remoteChannel = new EmbeddedChannel();
+        EmbeddedChannel replacement = new EmbeddedChannel();
+        EmbeddedTransportSession session = new EmbeddedTransportSession(6L, clientChannel);
+        RrpServer.RpClient rpClient = new RrpServer.RpClient(null, session);
+        RrpServer.RpClientProxy proxy = new RrpServer.RpClientProxy(null, rpClient,
+                newProxy("generated-id", 19121, "u1:p1"), new ServerBootstrap());
+        try {
+            remoteChannel.attr(RrpConfig.ATTR_SVR_CLI).set(rpClient);
+            remoteChannel.attr(RrpConfig.ATTR_SVR_PROXY).set(proxy);
+            remoteChannel.pipeline().addLast(RrpServer.RemoteServerHandler.DEFAULT);
+
+            String channelId = remoteChannel.attr(RrpServer.ATTR_REMOTE_CHANNEL_ID).get();
+            if (channelId == null) {
+                remoteChannel.pipeline().fireChannelActive();
+                channelId = remoteChannel.attr(RrpServer.ATTR_REMOTE_CHANNEL_ID).get();
+            }
+
+            assertNotNull(channelId);
+            assertEquals(remoteChannel, proxy.remoteClients.get(channelId));
+
+            proxy.remoteClients.put(channelId, replacement);
+            remoteChannel.pipeline().fireChannelInactive();
+
+            assertEquals(replacement, proxy.remoteClients.get(channelId));
+        } finally {
+            releaseOutbound(clientChannel);
+            clientChannel.close();
+            remoteChannel.close();
+            replacement.close();
+        }
+    }
+
+    @Test
+    void serverRetryRegisterAfterBindFailureShouldSucceed() throws Exception {
+        RrpConfig conf = new RrpConfig();
+        conf.setToken("t");
+        conf.setBindPort(0);
+        RrpServer server = new RrpServer(conf);
+        EmbeddedChannel ch = new EmbeddedChannel();
+        try (ServerSocket blocker = new ServerSocket(0)) {
+            int remotePort = blocker.getLocalPort();
+            EmbeddedTransportSession session = new EmbeddedTransportSession(7L, ch);
+            RrpServer.RpClient rpClient = new RrpServer.RpClient(server, session);
+            server.clientsBySessionId.put(7L, rpClient);
+
+            writeRegister(server, rpClient, "t", newProxy("retry", remotePort, "u1:p1"));
+            waitFor(() -> !rpClient.proxyMap.containsKey(remotePort), 5000, "failed bind should be cleaned up");
+
+            blocker.close();
+
+            writeRegister(server, rpClient, "t", newProxy("retry", remotePort, "u1:p1"));
+            waitFor(() -> {
+                RrpServer.RpClientProxy proxy = rpClient.proxyMap.get(remotePort);
+                return proxy != null && proxy.remoteServerChannel != null && proxy.remoteServerChannel.isActive();
+            }, 5000, "retry register should bind after cleanup");
+        } finally {
+            ch.finishAndReleaseAll();
+            server.close();
+        }
+    }
+
+    @Test
+    void remoteRelayBufferQueuesUntilChannelWritable() {
+        EmbeddedChannel remoteChannel = new EmbeddedChannel();
+        RrpServer.RemoteRelayBuffer relayBuffer = new RrpServer.RemoteRelayBuffer();
+        remoteChannel.attr(RrpServer.ATTR_REMOTE_RELAY_BUF).set(relayBuffer);
+        remoteChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
+
+        ByteBuf payload = Unpooled.wrappedBuffer("relay-data".getBytes(StandardCharsets.US_ASCII));
+        assertTrue(relayBuffer.offer(remoteChannel, payload));
+        remoteChannel.runPendingTasks();
+
+        assertNull(remoteChannel.readOutbound());
+        assertEquals("relay-data".getBytes(StandardCharsets.US_ASCII).length, relayBuffer.pendingBytes.get());
+
+        remoteChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, true);
+        relayBuffer.scheduleDrain(remoteChannel);
+        remoteChannel.runPendingTasks();
+
+        ByteBuf flushed = remoteChannel.readOutbound();
+        assertNotNull(flushed);
+        assertEquals("relay-data", flushed.toString(StandardCharsets.US_ASCII));
+        flushed.release();
+        assertEquals(0, relayBuffer.pendingBytes.get());
+        remoteChannel.close();
+    }
+
+    @Test
+    void remoteRelayBufferClosesSlowChannelWhenQueuedBytesOverflow() {
+        EmbeddedChannel remoteChannel = new EmbeddedChannel();
+        RrpServer.RemoteRelayBuffer relayBuffer = new RrpServer.RemoteRelayBuffer();
+        remoteChannel.attr(RrpServer.ATTR_REMOTE_RELAY_BUF).set(relayBuffer);
+        remoteChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
+
+        ByteBuf payload = Unpooled.buffer(RrpServer.MAX_PENDING_FORWARD_BYTES + 1);
+        payload.writeZero(RrpServer.MAX_PENDING_FORWARD_BYTES + 1);
+
+        assertFalse(relayBuffer.offer(remoteChannel, payload));
+        remoteChannel.runPendingTasks();
+
+        assertFalse(remoteChannel.isOpen());
+        assertEquals(0, relayBuffer.pendingBytes.get());
+        assertNull(remoteChannel.readOutbound());
+    }
+
+    @Test
+    void endpointTracerIgnoresLocalAddressChannels() {
+        EmbeddedChannel localChannel = new EmbeddedChannel();
+        localChannel.connect(new LocalAddress("rrp-local"));
+        assertEquals(Sockets.newAnyEndpoint(0), EndpointTracer.TCP.head(localChannel));
+        localChannel.close();
+    }
+
+    static void writeRegister(RrpServer server, RrpServer.RpClient rpClient, String token, RrpConfig.Proxy proxy) {
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeByte(RrpConfig.ACTION_REGISTER);
+        byte[] tokenBytes = token.getBytes(StandardCharsets.US_ASCII);
+        buf.writeInt(tokenBytes.length);
+        buf.writeBytes(tokenBytes);
+        byte[] data = FurySerializer.DEFAULT.serializeToBytes(Collections.singletonList(proxy));
+        buf.writeInt(data.length);
+        buf.writeBytes(data);
+        try {
+            server.handleInboundFrame(rpClient, buf);
+        } finally {
+            buf.release();
         }
     }
 
@@ -171,9 +692,9 @@ class RrpIntegrationTest {
     static byte[] buildSocks5ConnectReqIpv4(String host, int port) {
         byte[] req = new byte[10];
         req[0] = 0x05;
-        req[1] = 0x01; // CONNECT
+        req[1] = 0x01;
         req[2] = 0x00;
-        req[3] = 0x01; // IPv4
+        req[3] = 0x01;
         req[4] = 127;
         req[5] = 0;
         req[6] = 0;
@@ -211,512 +732,6 @@ class RrpIntegrationTest {
         return out;
     }
 
-    // Validation tests from RrpValidationTest
-    @Test
-    void serverRejectsOversizedTokenLenAndReleases() {
-        RrpConfig conf = new RrpConfig();
-        conf.setToken("t");
-        conf.setBindPort(0);
-        RrpServer server = new RrpServer(conf);
-        try {
-            EmbeddedChannel ch = new EmbeddedChannel();
-            ch.attr(ATTR_SVR).set(server);
-            ch.pipeline().addLast(RrpServer.ServerHandler.DEFAULT);
-            ch.pipeline().fireChannelActive();
-
-            ByteBuf buf = Unpooled.buffer();
-            buf.writeByte(RrpConfig.ACTION_REGISTER);
-            buf.writeInt(RrpServer.MAX_TOKEN_LEN + 1);
-            // token bytes omitted on purpose
-
-            ch.writeInbound(buf);
-            assertEquals(0, buf.refCnt(), "msg should be released by handler");
-
-            ch.runPendingTasks();
-            assertFalse(ch.isOpen(), "channel should be closed on invalid tokenLen");
-        } finally {
-            server.close();
-        }
-    }
-
-    @Test
-    void serverRejectsOversizedRegisterPayloadLenAndReleases() {
-        RrpConfig conf = new RrpConfig();
-        conf.setToken("t");
-        conf.setBindPort(0);
-        RrpServer server = new RrpServer(conf);
-        try {
-            EmbeddedChannel ch = new EmbeddedChannel();
-            ch.attr(ATTR_SVR).set(server);
-            ch.pipeline().addLast(RrpServer.ServerHandler.DEFAULT);
-            ch.pipeline().fireChannelActive();
-
-            byte[] token = "t".getBytes(StandardCharsets.US_ASCII);
-            ByteBuf buf = Unpooled.buffer();
-            buf.writeByte(RrpConfig.ACTION_REGISTER);
-            buf.writeInt(token.length);
-            buf.writeBytes(token);
-            buf.writeInt(RrpServer.MAX_REGISTER_BYTES + 1);
-            // payload omitted on purpose
-
-            ch.writeInbound(buf);
-            assertEquals(0, buf.refCnt(), "msg should be released by handler");
-
-            ch.runPendingTasks();
-            assertFalse(ch.isOpen(), "channel should be closed on invalid register len");
-        } finally {
-            server.close();
-        }
-    }
-
-    @Test
-    void serverRejectsLegacyJdkRegisterPayloadAndReleases() {
-        RrpConfig conf = new RrpConfig();
-        conf.setToken("t");
-        conf.setBindPort(0);
-        RrpServer server = new RrpServer(conf);
-        try {
-            EmbeddedChannel ch = new EmbeddedChannel();
-            ch.attr(ATTR_SVR).set(server);
-            ch.pipeline().addLast(RrpServer.ServerHandler.DEFAULT);
-            ch.pipeline().fireChannelActive();
-
-            byte[] tokenBytes = "t".getBytes(StandardCharsets.US_ASCII);
-            byte[] data = JdkAndJsonSerializer.DEFAULT.serializeToBytes(
-                    Collections.singletonList(newProxy("jdk", 19009, "u1:p1")));
-            ByteBuf buf = Unpooled.buffer();
-            buf.writeByte(RrpConfig.ACTION_REGISTER);
-            buf.writeInt(tokenBytes.length);
-            buf.writeBytes(tokenBytes);
-            buf.writeInt(data.length);
-            buf.writeBytes(data);
-
-            ch.writeInbound(buf);
-            assertEquals(0, buf.refCnt(), "legacy msg should still be released by handler");
-            ch.runPendingTasks();
-            assertFalse(ch.isOpen(), "legacy JDK register payload should close main channel");
-            assertTrue(server.proxiesByPort.isEmpty(), "legacy JDK register payload must not register proxy");
-        } finally {
-            server.close();
-        }
-    }
-
-    @Test
-    void clientRejectsInvalidIdLenAndReleases() {
-        RrpConfig conf = new RrpConfig();
-        conf.setEnableReconnect(false);
-        conf.setProxies(Collections.emptyList());
-        RrpClient client = new RrpClient(conf);
-        RrpClient.ClientHandler h = client.new ClientHandler();
-
-        EmbeddedChannel ch = new EmbeddedChannel(h);
-        try {
-            releaseOutbound(ch);
-            ByteBuf buf = Unpooled.buffer();
-            buf.writeByte(RrpConfig.ACTION_FORWARD);
-            buf.writeInt(2090);
-            buf.writeInt(RrpServer.MAX_CHANNEL_ID_LEN + 1);
-            // id bytes omitted
-
-            ch.writeInbound(buf);
-            assertEquals(0, buf.refCnt(), "msg should be released by handler");
-
-            ch.runPendingTasks();
-            assertFalse(ch.isOpen(), "server channel should be closed on invalid idLen");
-        } finally {
-            ch.finishAndReleaseAll();
-            client.close();
-        }
-    }
-
-    @Test
-    void clientIgnoresUnknownRemotePortButStillReleases() {
-        RrpConfig conf = new RrpConfig();
-        conf.setEnableReconnect(false);
-        conf.setProxies(Collections.emptyList());
-        RrpClient client = new RrpClient(conf);
-        RrpClient.ClientHandler h = client.new ClientHandler();
-
-        EmbeddedChannel ch = new EmbeddedChannel(h);
-        try {
-            releaseOutbound(ch);
-            ByteBuf buf = Unpooled.buffer();
-            buf.writeByte(RrpConfig.ACTION_FORWARD);
-            buf.writeInt(2090);
-            byte[] id = "abc".getBytes(StandardCharsets.US_ASCII);
-            buf.writeInt(id.length);
-            buf.writeBytes(id);
-            buf.writeBytes(new byte[]{1, 2, 3}); // payload
-
-            ch.writeInbound(buf);
-            assertEquals(0, buf.refCnt(), "msg should be released by handler");
-            assertTrue(ch.isOpen(), "channel should remain open for unknown remotePort");
-        } finally {
-            ch.finishAndReleaseAll();
-            client.close();
-        }
-    }
-
-    @Test
-    void clientIgnoresHeartbeatAndReleases() {
-        RrpConfig conf = new RrpConfig();
-        conf.setEnableReconnect(false);
-        conf.setProxies(Collections.emptyList());
-        RrpClient client = new RrpClient(conf);
-        RrpClient.ClientHandler h = client.new ClientHandler();
-
-        EmbeddedChannel ch = new EmbeddedChannel(h);
-        try {
-            releaseOutbound(ch);
-            ByteBuf buf = Unpooled.buffer(1);
-            buf.writeByte(RrpConfig.ACTION_HEARTBEAT);
-
-            ch.writeInbound(buf);
-            assertEquals(0, buf.refCnt(), "heartbeat should be released by handler");
-            assertTrue(ch.isOpen(), "heartbeat must not close client channel");
-            Object out = ch.readOutbound();
-            if (out != null) {
-                io.netty.util.ReferenceCountUtil.release(out);
-            }
-            assertNull(out, "client should not reply to heartbeat");
-        } finally {
-            ch.finishAndReleaseAll();
-            client.close();
-        }
-    }
-
-    @Test
-    void serverRepliesHeartbeatAndReleases() {
-        RrpConfig conf = new RrpConfig();
-        conf.setBindPort(0);
-        RrpServer server = new RrpServer(conf);
-        try {
-            EmbeddedChannel ch = new EmbeddedChannel();
-            ch.attr(ATTR_SVR).set(server);
-            ch.pipeline().addLast(RrpServer.ServerHandler.DEFAULT);
-            ch.pipeline().fireChannelActive();
-
-            ByteBuf buf = Unpooled.buffer(1);
-            buf.writeByte(RrpConfig.ACTION_HEARTBEAT);
-
-            ch.writeInbound(buf);
-            assertEquals(0, buf.refCnt(), "heartbeat should be released by handler");
-
-            ByteBuf out = ch.readOutbound();
-            assertNotNull(out, "server should reply heartbeat");
-            try {
-                assertEquals(RrpConfig.ACTION_HEARTBEAT, out.readByte());
-            } finally {
-                out.release();
-            }
-        } finally {
-            server.close();
-        }
-    }
-
-    @Test
-    void clientInactiveClearsStaleProxyContexts() {
-        RrpConfig conf = new RrpConfig();
-        conf.setEnableReconnect(false);
-        conf.setProxies(Collections.singletonList(newProxy("stale", 19101, "u1:p1")));
-        RrpClient client = new RrpClient(conf);
-        EmbeddedChannel serverChannel = new EmbeddedChannel();
-        EmbeddedChannel localChannel = new EmbeddedChannel();
-        try {
-            RrpClient.RpClientProxy proxy = new RrpClient.RpClientProxy(conf.getProxies().get(0), serverChannel);
-            proxy.localChannels.put("old", localChannel);
-            client.proxyMap.put(proxy.p.getRemotePort(), proxy);
-
-            EmbeddedChannel ch = new EmbeddedChannel(client.new ClientHandler());
-            try {
-                releaseOutbound(ch);
-                ch.pipeline().fireChannelInactive();
-
-                assertTrue(client.proxyMap.isEmpty(), "main channel inactive should drop stale proxy contexts");
-                assertTrue(proxy.localChannels.isEmpty(), "stale local channel map should be cleared");
-            } finally {
-                ch.finishAndReleaseAll();
-            }
-        } finally {
-            client.close();
-            serverChannel.finishAndReleaseAll();
-            localChannel.finishAndReleaseAll();
-        }
-    }
-
-    @Test
-    void clientLocalAddressIsUniquePerProxy() {
-        EmbeddedChannel serverChannel = new EmbeddedChannel();
-        RrpClient.RpClientProxy p1 = null;
-        RrpClient.RpClientProxy p2 = null;
-        try {
-            p1 = new RrpClient.RpClientProxy(newProxy("p1", 19111, "u1:p1"), serverChannel);
-            p2 = new RrpClient.RpClientProxy(newProxy("p2", 19112, "u1:p1"), serverChannel);
-
-            assertNotEquals(p1.localEndpoint, p2.localEndpoint, "memory LocalAddress must be unique per proxy");
-        } finally {
-            if (p1 != null) p1.close();
-            if (p2 != null) p2.close();
-            serverChannel.close();
-        }
-    }
-
-    @Test
-    void clientExceptionCaughtClosesServerChannel() {
-        RrpConfig conf = new RrpConfig();
-        conf.setEnableReconnect(false);
-        conf.setProxies(Collections.emptyList());
-        RrpClient client = new RrpClient(conf);
-        EmbeddedChannel ch = new EmbeddedChannel(client.new ClientHandler());
-        try {
-            releaseOutbound(ch);
-
-            ch.pipeline().fireExceptionCaught(new RuntimeException("boom"));
-            ch.runPendingTasks();
-
-            assertFalse(ch.isOpen(), "client main channel should close on exception");
-        } finally {
-            client.close();
-            ch.finishAndReleaseAll();
-        }
-    }
-
-    @Test
-    void localRelayBufferQueuesUntilLocalChannelWritable() {
-        RrpConfig conf = new RrpConfig();
-        conf.setEnableReconnect(false);
-        RrpClient client = new RrpClient(conf);
-        EmbeddedChannel serverChannel = new EmbeddedChannel();
-        EmbeddedChannel localChannel = new EmbeddedChannel();
-        RrpClient.LocalRelayBuffer relayBuffer = new RrpClient.LocalRelayBuffer(client, serverChannel);
-        localChannel.attr(RrpClient.ATTR_LOCAL_RELAY_BUF).set(relayBuffer);
-        localChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
-
-        ByteBuf payload = Unpooled.wrappedBuffer("local-relay".getBytes(StandardCharsets.US_ASCII));
-        assertTrue(relayBuffer.offer(localChannel, payload));
-        localChannel.runPendingTasks();
-
-        assertNull(localChannel.readOutbound(), "payload should stay queued while local channel is not writable");
-        assertEquals("local-relay".getBytes(StandardCharsets.US_ASCII).length, relayBuffer.pendingBytes.get());
-
-        localChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, true);
-        relayBuffer.scheduleDrain(localChannel);
-        localChannel.runPendingTasks();
-
-        ByteBuf flushed = localChannel.readOutbound();
-        assertNotNull(flushed);
-        try {
-            assertEquals("local-relay", flushed.toString(StandardCharsets.US_ASCII));
-        } finally {
-            flushed.release();
-            client.close();
-            serverChannel.close();
-            localChannel.close();
-        }
-        assertEquals(0, relayBuffer.pendingBytes.get());
-    }
-
-    @Test
-    void localRelayBufferClosesSlowLocalChannelWhenQueuedBytesOverflow() {
-        RrpConfig conf = new RrpConfig();
-        conf.setEnableReconnect(false);
-        RrpClient client = new RrpClient(conf);
-        EmbeddedChannel serverChannel = new EmbeddedChannel();
-        EmbeddedChannel localChannel = new EmbeddedChannel();
-        RrpClient.LocalRelayBuffer relayBuffer = new RrpClient.LocalRelayBuffer(client, serverChannel);
-        localChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
-
-        ByteBuf payload = Unpooled.buffer(RrpClient.MAX_PENDING_FORWARD_BYTES + 1);
-        payload.writeZero(RrpClient.MAX_PENDING_FORWARD_BYTES + 1);
-
-        assertFalse(relayBuffer.offer(localChannel, payload));
-        localChannel.runPendingTasks();
-
-        assertFalse(localChannel.isOpen(), "slow local channel should be closed once queue cap is exceeded");
-        assertEquals(0, relayBuffer.pendingBytes.get());
-        assertNull(localChannel.readOutbound());
-        client.close();
-        serverChannel.close();
-    }
-
-    @Test
-    void serverRelayBufferQueuesUntilServerChannelWritableAndTogglesLocalRead() {
-        EmbeddedChannel serverChannel = new EmbeddedChannel();
-        EmbeddedChannel localChannel = new EmbeddedChannel();
-        RrpClient.ServerRelayBuffer relayBuffer = new RrpClient.ServerRelayBuffer(localChannel);
-        serverChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
-
-        ByteBuf payload = Unpooled.wrappedBuffer("server-relay".getBytes(StandardCharsets.US_ASCII));
-        assertTrue(relayBuffer.offer(serverChannel, payload));
-        serverChannel.runPendingTasks();
-
-        assertFalse(localChannel.config().isAutoRead(), "local reads should pause while server channel is not writable");
-        assertNull(serverChannel.readOutbound(), "payload should stay queued while server channel is not writable");
-
-        serverChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, true);
-        relayBuffer.scheduleDrain(serverChannel);
-        serverChannel.runPendingTasks();
-
-        ByteBuf flushed = serverChannel.readOutbound();
-        assertNotNull(flushed);
-        try {
-            assertEquals("server-relay", flushed.toString(StandardCharsets.US_ASCII));
-        } finally {
-            flushed.release();
-            serverChannel.close();
-            localChannel.close();
-        }
-        assertTrue(localChannel.config().isAutoRead(), "local reads should resume after queued writes drain");
-        assertEquals(0, relayBuffer.pendingBytes.get());
-    }
-
-    @Test
-    void serverRelayBufferClosesLocalChannelWhenQueuedBytesOverflow() {
-        EmbeddedChannel serverChannel = new EmbeddedChannel();
-        EmbeddedChannel localChannel = new EmbeddedChannel();
-        RrpClient.ServerRelayBuffer relayBuffer = new RrpClient.ServerRelayBuffer(localChannel);
-        serverChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
-
-        ByteBuf payload = Unpooled.buffer(RrpClient.MAX_PENDING_FORWARD_BYTES + 1);
-        payload.writeZero(RrpClient.MAX_PENDING_FORWARD_BYTES + 1);
-
-        assertFalse(relayBuffer.offer(serverChannel, payload));
-        localChannel.runPendingTasks();
-
-        assertFalse(localChannel.isOpen(), "slow server channel should close the local source once queue cap is exceeded");
-        assertEquals(0, relayBuffer.pendingBytes.get());
-        assertNull(serverChannel.readOutbound());
-        serverChannel.close();
-    }
-
-    @Test
-    void remoteChannelIdRemoveDoesNotDropReplacementChannel() {
-        EmbeddedChannel clientChannel = new EmbeddedChannel();
-        EmbeddedChannel remoteChannel = new EmbeddedChannel();
-        EmbeddedChannel replacement = new EmbeddedChannel();
-        RrpServer.RpClient rpClient = new RrpServer.RpClient(null, clientChannel);
-        RrpServer.RpClientProxy proxy = new RrpServer.RpClientProxy(null, rpClient,
-                newProxy("generated-id", 19121, "u1:p1"), new ServerBootstrap());
-        try {
-            remoteChannel.attr(RrpConfig.ATTR_SVR_CLI).set(rpClient);
-            remoteChannel.attr(RrpConfig.ATTR_SVR_PROXY).set(proxy);
-            remoteChannel.pipeline().addLast(RrpServer.RemoteServerHandler.DEFAULT);
-
-            String channelId = remoteChannel.attr(RrpServer.ATTR_REMOTE_CHANNEL_ID).get();
-            if (channelId == null) {
-                remoteChannel.pipeline().fireChannelActive();
-                channelId = remoteChannel.attr(RrpServer.ATTR_REMOTE_CHANNEL_ID).get();
-            }
-
-            assertNotNull(channelId);
-            assertEquals(remoteChannel, proxy.remoteClients.get(channelId));
-
-            proxy.remoteClients.put(channelId, replacement);
-            remoteChannel.pipeline().fireChannelInactive();
-
-            assertEquals(replacement, proxy.remoteClients.get(channelId), "inactive old channel must not remove replacement mapping");
-        } finally {
-            releaseOutbound(clientChannel);
-            clientChannel.close();
-            remoteChannel.close();
-            replacement.close();
-        }
-    }
-
-    @Test
-    void serverRetryRegisterAfterBindFailureShouldSucceed() throws Exception {
-        RrpConfig conf = new RrpConfig();
-        conf.setToken("t");
-        conf.setBindPort(0);
-        RrpServer server = new RrpServer(conf);
-        try (ServerSocket blocker = new ServerSocket(0)) {
-            int remotePort = blocker.getLocalPort();
-            EmbeddedChannel ch = new EmbeddedChannel();
-            ch.attr(ATTR_SVR).set(server);
-            ch.pipeline().addLast(RrpServer.ServerHandler.DEFAULT);
-            ch.pipeline().fireChannelActive();
-
-            writeRegister(ch, "t", newProxy("retry", remotePort, "u1:p1"));
-            RrpServer.RpClient rpClient = server.clients.get(ch);
-            waitFor(() -> rpClient != null && !rpClient.proxyMap.containsKey(remotePort), 5000, "failed bind should be cleaned up");
-
-            blocker.close();
-
-            writeRegister(ch, "t", newProxy("retry", remotePort, "u1:p1"));
-            waitFor(() -> {
-                RrpServer.RpClientProxy proxy = rpClient.proxyMap.get(remotePort);
-                return proxy != null && proxy.remoteServerChannel != null && proxy.remoteServerChannel.isActive();
-            }, 5000, "retry register should bind after cleanup");
-        } finally {
-            server.close();
-        }
-    }
-
-    @Test
-    void remoteRelayBufferQueuesUntilChannelWritable() {
-        EmbeddedChannel remoteChannel = new EmbeddedChannel();
-        RrpServer.RemoteRelayBuffer relayBuffer = new RrpServer.RemoteRelayBuffer();
-        remoteChannel.attr(RrpServer.ATTR_REMOTE_RELAY_BUF).set(relayBuffer);
-        remoteChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
-
-        ByteBuf payload = Unpooled.wrappedBuffer("relay-data".getBytes(StandardCharsets.US_ASCII));
-        assertTrue(relayBuffer.offer(remoteChannel, payload));
-        remoteChannel.runPendingTasks();
-
-        assertNull(remoteChannel.readOutbound(), "payload should stay queued while channel is not writable");
-        assertEquals("relay-data".getBytes(StandardCharsets.US_ASCII).length, relayBuffer.pendingBytes.get());
-
-        remoteChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, true);
-        relayBuffer.scheduleDrain(remoteChannel);
-        remoteChannel.runPendingTasks();
-
-        ByteBuf flushed = remoteChannel.readOutbound();
-        assertNotNull(flushed);
-        assertEquals("relay-data", flushed.toString(StandardCharsets.US_ASCII));
-        flushed.release();
-        assertEquals(0, relayBuffer.pendingBytes.get());
-    }
-
-    @Test
-    void remoteRelayBufferClosesSlowChannelWhenQueuedBytesOverflow() {
-        EmbeddedChannel remoteChannel = new EmbeddedChannel();
-        RrpServer.RemoteRelayBuffer relayBuffer = new RrpServer.RemoteRelayBuffer();
-        remoteChannel.attr(RrpServer.ATTR_REMOTE_RELAY_BUF).set(relayBuffer);
-        remoteChannel.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
-
-        ByteBuf payload = Unpooled.buffer(RrpServer.MAX_PENDING_FORWARD_BYTES + 1);
-        payload.writeZero(RrpServer.MAX_PENDING_FORWARD_BYTES + 1);
-
-        assertFalse(relayBuffer.offer(remoteChannel, payload));
-        remoteChannel.runPendingTasks();
-
-        assertFalse(remoteChannel.isOpen(), "slow remote channel should be closed once queue cap is exceeded");
-        assertEquals(0, relayBuffer.pendingBytes.get());
-        assertNull(remoteChannel.readOutbound());
-    }
-
-    @Test
-    void endpointTracerIgnoresLocalAddressChannels() {
-        EmbeddedChannel localChannel = new EmbeddedChannel();
-        localChannel.connect(new LocalAddress("rrp-local"));
-        assertEquals(Sockets.newAnyEndpoint(0), EndpointTracer.TCP.head(localChannel));
-        localChannel.close();
-    }
-
-    // Helper methods
-    static void writeRegister(EmbeddedChannel ch, String token, RrpConfig.Proxy proxy) {
-        ByteBuf buf = Unpooled.buffer();
-        buf.writeByte(RrpConfig.ACTION_REGISTER);
-        byte[] tokenBytes = token.getBytes(StandardCharsets.US_ASCII);
-        buf.writeInt(tokenBytes.length);
-        buf.writeBytes(tokenBytes);
-        byte[] data = FurySerializer.DEFAULT.serializeToBytes(Collections.singletonList(proxy));
-        buf.writeInt(data.length);
-        buf.writeBytes(data);
-        ch.writeInbound(buf);
-        assertEquals(0, buf.refCnt(), "msg should be released by handler");
-    }
-
     static RrpConfig.Proxy newProxy(String name, int remotePort, String auth) {
         RrpConfig.Proxy proxy = new RrpConfig.Proxy();
         proxy.setName(name);
@@ -739,7 +754,7 @@ class RrpIntegrationTest {
     static void releaseOutbound(EmbeddedChannel ch) {
         Object msg;
         while ((msg = ch.readOutbound()) != null) {
-            io.netty.util.ReferenceCountUtil.release(msg);
+            ReferenceCountUtil.release(msg);
         }
     }
 }

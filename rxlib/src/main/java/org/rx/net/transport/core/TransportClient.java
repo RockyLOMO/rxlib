@@ -406,6 +406,7 @@ public final class TransportClient extends AbstractTcpReconnectClient implements
         private final long proposedSessionId = TransportProtocol.randomSessionId();
         private final byte[] clientNonce = TransportProtocol.randomBytes(TransportProtocol.CLIENT_NONCE_BYTES);
         private final boolean requestAdaptive;
+        private final boolean requestDeferredAdaptive;
         private final boolean requestCompress;
         private final boolean requestAead;
         private ScheduledFuture<?> timeoutTask;
@@ -415,7 +416,9 @@ public final class TransportClient extends AbstractTcpReconnectClient implements
             this.tcpConf = tcpConf;
             this.egressCodec = egressCodec == null ? EgressCodec.NONE : egressCodec;
             this.localCarrier = localCarrier;
-            this.requestAdaptive = config.isEnableAdaptiveUdp() && !localCarrier && tcpConf.getSocksCarrierProxy() == null;
+            boolean wantAdaptive = config.isEnableAdaptiveUdp() && tcpConf.getSocksCarrierProxy() == null;
+            this.requestAdaptive = wantAdaptive && !localCarrier;
+            this.requestDeferredAdaptive = wantAdaptive && localCarrier;
             this.requestCompress = config.isEnableCompression();
             this.requestAead = config.isEnableEncryption();
         }
@@ -423,7 +426,7 @@ public final class TransportClient extends AbstractTcpReconnectClient implements
         @Override
         public void channelActive(ChannelHandlerContext ctx) throws Exception {
             int flags = 0;
-            if (requestAdaptive) {
+            if (requestAdaptive || requestDeferredAdaptive) {
                 flags |= TransportProtocol.FLAG_ADAPTIVE_UDP;
             }
             if (requestCompress) {
@@ -484,7 +487,7 @@ public final class TransportClient extends AbstractTcpReconnectClient implements
             boolean adaptive = requestAdaptive
                     && (ack.flags & TransportProtocol.FLAG_ADAPTIVE_UDP) != 0
                     && ack.serverUdpPort > 0;
-            boolean deferredAdaptive = !adaptive && localCarrier && config.isEnableAdaptiveUdp()
+            boolean deferredAdaptive = requestDeferredAdaptive
                     && (ack.flags & TransportProtocol.FLAG_ADAPTIVE_UDP) != 0;
             int negotiatedMtu = RssUdpMtuBudget.negotiate(config.getUdpMtu(), ack.udpMtu);
             Channel ch = ctx.channel();
