@@ -370,14 +370,18 @@ class SsUserBandwidthIntegrationTest {
             enc.setForUdp(false);
             ICrypto dec = ICrypto.get(CIPHER, pwd);
             dec.setForUdp(false);
+            try {
+                ByteBuf req = Unpooled.buffer();
+                UdpManager.encode(req, "127.0.0.1", tcpDownloadPort);
+                req.writeInt(totalBytes);
+                writeEncrypted(out, enc, req);
+                out.flush();
 
-            ByteBuf req = Unpooled.buffer();
-            UdpManager.encode(req, "127.0.0.1", tcpDownloadPort);
-            req.writeInt(totalBytes);
-            writeEncrypted(out, enc, req);
-            out.flush();
-
-            return readAllDecrypted(in, dec).toByteArray();
+                return readAllDecrypted(in, dec).toByteArray();
+            } finally {
+                if (enc instanceof AutoCloseable) ((AutoCloseable) enc).close();
+                if (dec instanceof AutoCloseable) ((AutoCloseable) dec).close();
+            }
         }
     }
 
@@ -397,15 +401,17 @@ class SsUserBandwidthIntegrationTest {
         int n;
         while ((n = in.read(buf)) != -1) {
             ByteBuf enc = Unpooled.wrappedBuffer(buf, 0, n);
-            ByteBuf dec = crypto.decrypt(enc);
+            ByteBuf dec = null;
             try {
+                dec = crypto.decrypt(enc);
                 if (dec.isReadable()) {
                     byte[] tmp = new byte[dec.readableBytes()];
                     dec.readBytes(tmp);
                     result.write(tmp);
                 }
             } finally {
-                dec.release();
+                if (dec != null) dec.release();
+                enc.release();
             }
         }
         return result;
