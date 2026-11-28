@@ -992,6 +992,7 @@ public final class RssClient {
         NameserverConfig newNs = newConf.nameserver;
         return oldNs.getRegisterPort() != newNs.getRegisterPort()
                 || !Strings.hashEquals(oldNs.getNodeId(), newNs.getNodeId())
+                || !Strings.hashEquals(oldNs.getTransportAuthToken(), newNs.getTransportAuthToken())
                 || !Strings.hashEquals(oldNs.getReplicaAuthToken(), newNs.getReplicaAuthToken())
                 || oldNs.getReplicaFullSyncPeriodMillis() != newNs.getReplicaFullSyncPeriodMillis()
                 || !Strings.hashEquals(toJsonString(oldNs.getReplicaEndpoints()), toJsonString(newNs.getReplicaEndpoints()))
@@ -2154,6 +2155,12 @@ public final class RssClient {
         }
         config.setDnsPort(conf.shadowDnsPort);
         config.setDnsTtl(60 * conf.dnsTtlMinutes);
+        if (conf.nodeRegistry != null && conf.nodeRegistry.isEnabled()
+                && Strings.isEmpty(config.getTransportAuthToken())
+                && Strings.isEmpty(config.getReplicaAuthToken())
+                && conf.nodeService != null && !Strings.isEmpty(conf.nodeService.authToken)) {
+            config.setTransportAuthToken(conf.nodeService.authToken);
+        }
         return config;
     }
 

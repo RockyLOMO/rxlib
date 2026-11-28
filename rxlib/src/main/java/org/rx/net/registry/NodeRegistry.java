@@ -1002,7 +1002,7 @@ public final class NodeRegistry implements AutoCloseable {
                 }
                 throw new IllegalStateException("Node is not online: " + normId);
             }
-            if (expectedSessionRef != null && !matchesSessionRef(node.sessionRef, expectedSessionRef)) {
+            if (expectedSessionRef != null && !matchesAnySessionRef(node, expectedSessionRef)) {
                 throw new SecurityException("Stale session cannot register live service for node: " + normId);
             }
             String key = normApp + "#" + normInst;
@@ -1043,7 +1043,7 @@ public final class NodeRegistry implements AutoCloseable {
             if (node == null || node.revoked) {
                 return;
             }
-            if (expectedSessionRef != null && !matchesSessionRef(node.sessionRef, expectedSessionRef)) {
+            if (expectedSessionRef != null && !matchesAnySessionRef(node, expectedSessionRef)) {
                 return;
             }
             LiveService removed = node.liveServices.remove(key);

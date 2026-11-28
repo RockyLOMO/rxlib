@@ -765,10 +765,20 @@ public class RrpClient extends Disposable {
             return existing.connectAsync(Sockets.parseEndpoint(config.getServerEndpoint()));
         }
         InetSocketAddress serverEp = Sockets.parseEndpoint(config.getServerEndpoint());
+        boolean hasToken = !Strings.isEmpty(config.getToken());
+        if (!hasToken && (!Strings.isEmpty(config.getNodeId()) || !Strings.isEmpty(config.getNodeSecret()))) {
+            throw new IllegalArgumentException("RrpClient RAW Relay credentials require non-empty token for Transport Core v2 AEAD encryption");
+        }
+        if (!hasToken && !config.isAllowUnauthenticatedLocal()) {
+            throw new IllegalArgumentException(
+                    "RrpClient requires non-empty token for Transport Core v2 AEAD encryption (set allowUnauthenticatedLocal=true only for local loopback testing)");
+        }
+        if (!hasToken && (serverEp.getAddress() == null || !serverEp.getAddress().isLoopbackAddress())) {
+            throw new SecurityException("Unauthenticated RrpClient is restricted to loopback endpoints: " + serverEp);
+        }
         TransportConfig tc = TransportConfig.pureTcpClient(serverEp);
         tc.setEnableAdaptiveUdp(false);
         tc.setEnableCompression(false);
-        boolean hasToken = !Strings.isEmpty(config.getToken());
         tc.setAuthSecret(hasToken ? config.getToken() : null);
         tc.setEnableEncryption(hasToken);
         tc.setEgressConfig(config.getEgressConfig() != null

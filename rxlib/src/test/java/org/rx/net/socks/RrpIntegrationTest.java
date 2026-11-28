@@ -85,6 +85,7 @@ class RrpIntegrationTest {
         @Override public boolean isWritable() { return isConnected() && channel.isWritable(); }
         @Override public boolean isUsingUdp() { return false; }
         @Override public boolean isAdaptiveUdpNegotiated() { return false; }
+        @Override public boolean isEncrypted() { return true; }
         @Override public InetSocketAddress remoteEndpoint() { return Sockets.newLoopbackEndpoint(12345); }
         @Override public InetSocketAddress localEndpoint() { return Sockets.newLoopbackEndpoint(54321); }
         @Override public long lastHeartbeatMillis() { return 0; }
@@ -202,6 +203,7 @@ class RrpIntegrationTest {
         }
 
         RrpConfig conf = new RrpConfig();
+        conf.setToken("tok-fail");
         conf.setServerEndpoint("127.0.0.1:" + port);
         conf.setEnableReconnect(false);
         conf.setProxies(Collections.emptyList());
@@ -391,6 +393,7 @@ class RrpIntegrationTest {
     @Test
     void serverRepliesHeartbeat() {
         RrpConfig conf = new RrpConfig();
+        conf.setToken("tok-hb");
         conf.setBindPort(0);
         RrpServer server = new RrpServer(conf);
         EmbeddedChannel ch = new EmbeddedChannel();
@@ -650,6 +653,98 @@ class RrpIntegrationTest {
         assertFalse(remoteChannel.isOpen());
         assertEquals(0, relayBuffer.pendingBytes.get());
         assertNull(remoteChannel.readOutbound());
+    }
+
+    @Test
+    void emptyTokenRejectedByDefaultAndAllowedOnlyForLocalLoopbackWithoutRawRelay() throws Exception {
+        // 1. Default RrpServer without token fails closed
+        RrpConfig serverNoToken = new RrpConfig();
+        serverNoToken.setBindPort(0);
+        assertThrows(IllegalArgumentException.class, () -> new RrpServer(serverNoToken));
+
+        // 2. Default RrpClient without token fails closed on connect
+        RrpConfig clientNoToken = new RrpConfig();
+        clientNoToken.setServerEndpoint("127.0.0.1:19999");
+        clientNoToken.setEnableReconnect(false);
+        RrpClient c1 = new RrpClient(clientNoToken);
+        try {
+            assertThrows(IllegalArgumentException.class, c1::connectAsync);
+        } finally {
+            c1.close();
+        }
+
+        // 3. Unauthenticated client with nodeSecret fails closed even with allowUnauthenticatedLocal=true
+        RrpConfig clientRawNoToken = new RrpConfig();
+        clientRawNoToken.setServerEndpoint("127.0.0.1:19999");
+        clientRawNoToken.setAllowUnauthenticatedLocal(true);
+        clientRawNoToken.setNodeId("node-x");
+        clientRawNoToken.setNodeSecret("secret-x");
+        RrpClient c2 = new RrpClient(clientRawNoToken);
+        try {
+            assertThrows(IllegalArgumentException.class, c2::connectAsync);
+        } finally {
+            c2.close();
+        }
+
+        // 4. allowUnauthenticatedLocal=true forbids non-loopback client endpoint
+        RrpConfig clientRemoteNoToken = new RrpConfig();
+        clientRemoteNoToken.setServerEndpoint("198.51.100.10:19999");
+        clientRemoteNoToken.setAllowUnauthenticatedLocal(true);
+        RrpClient c3 = new RrpClient(clientRemoteNoToken);
+        try {
+            assertThrows(SecurityException.class, c3::connectAsync);
+        } finally {
+            c3.close();
+        }
+
+        // 5. allowUnauthenticatedLocal=true works for local loopback non-RAW server
+        RrpConfig localServer = new RrpConfig();
+        localServer.setBindPort(0);
+        localServer.setEnableRawRelay(false);
+        localServer.setAllowUnauthenticatedLocal(true);
+        RrpServer svr = new RrpServer(localServer);
+        try {
+            assertTrue(svr.listenPort() > 0);
+        } finally {
+            svr.close();
+        }
+    }
+
+    @Test
+    @Timeout(15)
+    void clientInactiveClearsStaleProxyContextsAndDisconnectClosesServerChannel() throws Exception {
+        int bindPort, remotePort;
+        try (ServerSocket c = new ServerSocket(0); ServerSocket r = new ServerSocket(0)) {
+            bindPort = c.getLocalPort();
+            remotePort = r.getLocalPort();
+        }
+        RrpConfig sConf = new RrpConfig();
+        sConf.setToken("tok-disc");
+        sConf.setBindPort(bindPort);
+        RrpServer server = new RrpServer(sConf);
+
+        RrpConfig cConf = new RrpConfig();
+        cConf.setToken("tok-disc");
+        cConf.setServerEndpoint("127.0.0.1:" + bindPort);
+        cConf.setEnableReconnect(false);
+        cConf.setHeartbeatSeconds(0);
+        RrpConfig.Proxy p = new RrpConfig.Proxy();
+        p.setName("disc-proxy");
+        p.setRemotePort(remotePort);
+        cConf.setProxies(Collections.singletonList(p));
+        RrpClient client = new RrpClient(cConf);
+        try {
+            client.connectAsync().get(5, TimeUnit.SECONDS);
+            waitFor(() -> server.proxiesByPort.containsKey(remotePort) && client.proxyMap.containsKey(remotePort),
+                    5000, "proxy must register on both client and server");
+
+            // Closing server drops control channel -> client onSessionDisconnected clears stale proxyMap
+            server.close();
+            waitFor(() -> client.proxyMap.isEmpty(), 5000, "client must clear stale proxy contexts on disconnect");
+        } finally {
+            client.close();
+            server.close();
+        }
     }
 
     @Test

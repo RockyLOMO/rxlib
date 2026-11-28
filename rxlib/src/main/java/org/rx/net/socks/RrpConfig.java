@@ -93,6 +93,8 @@ public class RrpConfig extends SocketConfig {
     }
 
     String token;
+    /** Explicitly permits unauthenticated loopback-only local testing; forbidden for public or RAW Relay servers. */
+    boolean allowUnauthenticatedLocal;
 
     // server
     Integer bindPort;

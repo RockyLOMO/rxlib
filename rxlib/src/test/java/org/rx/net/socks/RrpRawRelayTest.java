@@ -439,4 +439,24 @@ class RrpRawRelayTest {
             reg.close();
         }
     }
+
+    @Test
+    void rawRelayRejectsEmptyTokenEvenWhenAllowUnauthenticatedLocalIsSet(@TempDir Path tempDir) {
+        NodeRegistryConfig regCfg = new NodeRegistryConfig();
+        regCfg.setEnabled(true);
+        regCfg.setDbPath(tempDir.resolve("rrp-empty-tok").toAbsolutePath().toString());
+        regCfg.setFlushPeriodMillis(0L);
+        regCfg.setTtlSweepPeriodMillis(0L);
+        regCfg.setPbkdf2Iterations(1000);
+        NodeRegistry reg = new NodeRegistry(regCfg);
+        try {
+            RrpConfig badCfg = new RrpConfig();
+            badCfg.setBindPort(0);
+            badCfg.setEnableRawRelay(true);
+            badCfg.setAllowUnauthenticatedLocal(true);
+            assertThrows(IllegalArgumentException.class, () -> new RrpServer(badCfg, reg));
+        } finally {
+            reg.close();
+        }
+    }
 }
