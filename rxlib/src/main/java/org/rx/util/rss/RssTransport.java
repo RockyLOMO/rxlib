@@ -15,6 +15,8 @@ public final class RssTransport implements Serializable {
     public Integer tcpCompressionLevel;
     public Boolean udpHop;
     public Integer udpMtu;
+    public String handshakeMode;
+    public String securityMode;
     public RssClientConf.Egress egress;
 
     boolean udpHop() {
@@ -26,13 +28,31 @@ public final class RssTransport implements Serializable {
     }
 
     boolean valid() {
+        return valid(null);
+    }
+
+    boolean valid(org.rx.net.EgressConfig globalEgress) {
         RssProfile selected = RssProfile.named(profile);
         if (selected == null || fec != null && fec != selected.fecMask) {
             return false;
         }
+        if (handshakeMode != null) {
+            try {
+                org.rx.net.HandshakeMode.parse(handshakeMode);
+            } catch (IllegalArgumentException e) {
+                return false;
+            }
+        }
+        if (securityMode != null) {
+            try {
+                org.rx.net.SecurityMode.parse(securityMode);
+            } catch (IllegalArgumentException e) {
+                return false;
+            }
+        }
         if (egress != null) {
             try {
-                egress.toClientEgressConfig();
+                egress.toClientEgressConfig(globalEgress);
             } catch (IllegalArgumentException e) {
                 return false;
             }
@@ -44,13 +64,28 @@ public final class RssTransport implements Serializable {
                 && inRange(udp, plain ? 0 : RssDatagramHandler.LZ4);
     }
 
+    org.rx.net.HandshakeMode resolveHandshakeMode(org.rx.net.HandshakeMode fallback) {
+        if (handshakeMode != null && !handshakeMode.trim().isEmpty()) {
+            return org.rx.net.HandshakeMode.parse(handshakeMode);
+        }
+        return fallback == null ? org.rx.net.HandshakeMode.LIGHTWEIGHT : fallback;
+    }
+
+    org.rx.net.SecurityMode resolveSecurityMode(org.rx.net.SecurityMode fallback) {
+        if (securityMode != null && !securityMode.trim().isEmpty()) {
+            return org.rx.net.SecurityMode.parse(securityMode);
+        }
+        return fallback == null ? org.rx.net.SecurityMode.FAST : fallback;
+    }
+
     org.rx.net.EgressConfig tcpEgressConfig(org.rx.net.EgressConfig fallback) {
         org.rx.net.EgressConfig base = fallback == null ? org.rx.net.EgressConfig.none() : fallback;
         return egress == null ? base.copy() : egress.toClientEgressConfig(base);
     }
 
     org.rx.net.EgressCodec tcpEgressCodec(org.rx.net.EgressCodec fallback) {
-        return egress == null ? fallback : egress.toClientEgressConfig().getTcpCodec();
+        org.rx.net.EgressConfig base = org.rx.net.EgressConfig.client(fallback == null ? org.rx.net.EgressCodec.NONE : fallback);
+        return egress == null ? base.getTcpCodec() : egress.toClientEgressConfig(base).getTcpCodec();
     }
 
     private static boolean inRange(Integer value, int max) {

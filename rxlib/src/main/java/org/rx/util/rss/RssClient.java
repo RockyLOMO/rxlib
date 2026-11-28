@@ -280,9 +280,12 @@ public final class RssClient {
         }
     }
 
-    static final class ForwardingSocksRpcContract implements SocksRpcContract {
+    static final class ForwardingSocksRpcContract implements SocksRpcContract, org.rx.net.socks.SocksRpcCapabilitiesCache.ControlReadiness {
+        private static final long RPC_UNAVAILABLE_BACKOFF_NANOS = TimeUnit.SECONDS.toNanos(30);
         final SocksRpcContract delegate;
         final SocksRpcContract eventDelegate;
+        final org.rx.net.socks.SocksRpcCapabilitiesCache capabilitiesCache = new org.rx.net.socks.SocksRpcCapabilitiesCache();
+        volatile long rpcUnavailableUntilNanos;
         WowEndpointPublisher wowPublisher;
 
         ForwardingSocksRpcContract(SocksRpcContract delegate) {
@@ -344,7 +347,13 @@ public final class RssClient {
 
         @Override
         public void addWhiteList(InetAddress endpoint, String token) {
-            delegate.addWhiteList(endpoint, token);
+            try {
+                delegate.addWhiteList(endpoint, token);
+                markRpcAvailable();
+            } catch (Throwable e) {
+                markRpcUnavailable();
+                throw e;
+            }
         }
 
         @Override
@@ -359,12 +368,53 @@ public final class RssClient {
 
         @Override
         public SocksRpcCapabilities capabilities(String token) {
-            return delegate.capabilities(token);
+            return capabilitiesCache.get(token, () -> {
+                try {
+                    SocksRpcCapabilities caps = delegate.capabilities(token);
+                    markRpcAvailable();
+                    return caps;
+                } catch (Throwable e) {
+                    markRpcUnavailable();
+                    throw e;
+                }
+            });
+        }
+
+        @Override
+        public boolean isRpcControlReady() {
+            if (Remoting.isHealthy(delegate) || (eventDelegate != null && Remoting.isHealthy(eventDelegate))) {
+                rpcUnavailableUntilNanos = 0L;
+                return true;
+            }
+            long until = rpcUnavailableUntilNanos;
+            return until == 0L || System.nanoTime() - until >= 0L;
+        }
+
+        private void markRpcAvailable() {
+            rpcUnavailableUntilNanos = 0L;
+        }
+
+        private void markRpcUnavailable() {
+            if (!Remoting.isHealthy(delegate) && (eventDelegate == null || !Remoting.isHealthy(eventDelegate))) {
+                rpcUnavailableUntilNanos = System.nanoTime() + RPC_UNAVAILABLE_BACKOFF_NANOS;
+            }
+        }
+
+        void invalidateCapabilities() {
+            capabilitiesCache.invalidateAll();
+            org.rx.net.socks.SocksRpcCapabilitiesCache.invalidateFacade(this);
         }
 
         @Override
         public UdpRelayGroupOpenResult openUdpRelayGroup(UdpRelayGroupOpenRequest request, String token) {
-            return delegate.openUdpRelayGroup(request, token);
+            try {
+                UdpRelayGroupOpenResult result = delegate.openUdpRelayGroup(request, token);
+                markRpcAvailable();
+                return result;
+            } catch (Throwable e) {
+                markRpcUnavailable();
+                throw e;
+            }
         }
 
         @Override
@@ -391,6 +441,7 @@ public final class RssClient {
 
         @Override
         public void close() {
+            invalidateCapabilities();
             tryClose(wowPublisher);
             tryClose(delegate);
             tryClose(eventDelegate);
@@ -431,8 +482,8 @@ public final class RssClient {
         conf.connectTimeoutSeconds = Math.max(1, conf.connectTimeoutSeconds);
         conf.tcpTimeoutSeconds = Math.max(0, conf.tcpTimeoutSeconds);
         conf.udpTimeoutSeconds = Math.max(0, conf.udpTimeoutSeconds);
-        conf.rpcMinSize = Math.max(1, conf.rpcMinSize);
-        conf.rpcMaxSize = Math.max(conf.rpcMinSize, conf.rpcMaxSize);
+        conf.rpcMinSize = Math.max(0, conf.rpcMinSize);
+        conf.rpcMaxSize = Math.max(Math.max(1, conf.rpcMinSize), conf.rpcMaxSize);
         if (conf.rpcPort < 0 || conf.rpcPort > 65535) {
             log.warn("rssConf rpcPort {} invalid", conf.rpcPort);
             return false;
@@ -458,10 +509,17 @@ public final class RssClient {
         if (conf.egress == null) {
             conf.egress = new RssClientConf.Egress();
         }
+        org.rx.net.EgressConfig globalEgress;
         try {
-            conf.egress.toClientEgressConfig();
+            globalEgress = conf.egress.toClientEgressConfig();
+            if (conf.handshakeMode != null) {
+                org.rx.net.HandshakeMode.parse(conf.handshakeMode);
+            }
+            if (conf.securityMode != null) {
+                org.rx.net.SecurityMode.parse(conf.securityMode);
+            }
         } catch (IllegalArgumentException e) {
-            log.warn("Invalid RSS egress configuration: {}", e.getMessage());
+            log.warn("Invalid RSS egress/handshake/security configuration: {}", e.getMessage());
             return false;
         }
         if (!RssTransport.validUdpMtu(conf.udpMtu)) {
@@ -472,7 +530,7 @@ public final class RssClient {
             log.warn("rssConf socksServers has no enabled server");
             return false;
         }
-        if (!normalizeAndValidateSocksServerIds(conf)) {
+        if (!normalizeAndValidateSocksServerIds(conf, globalEgress)) {
             return false;
         }
         if (!normalizeAndValidateDefaultRoute(conf)) {
@@ -498,8 +556,31 @@ public final class RssClient {
                 log.warn("ShadowUser {} ssPort {} collides with NodeService port", user.getUsername(), user.getSsPort());
                 return false;
             }
-            if (user.transport != null && !user.transport.valid()) {
+            if (user.transport != null && !user.transport.valid(globalEgress)) {
                 log.warn("Invalid RSS transport for user {}: fec/tcp must match the profile, udp selects LZ4 (0/1), plain requires udp=0 and no hopping", user.getUsername());
+                return false;
+            }
+            org.rx.net.EgressConfig userMergedEgress = user.transport != null
+                    ? user.transport.tcpEgressConfig(globalEgress) : globalEgress;
+            for (RssClientConf.SocksServer spec : conf.socksServers) {
+                if (spec != null && spec.egress != null
+                        && !(spec.type == RssClientConf.UpstreamType.SOCKS5 && spec.rssEndpoint == null)) {
+                    try {
+                        spec.egress.toClientEgressConfig(userMergedEgress);
+                    } catch (IllegalArgumentException e) {
+                        log.warn("Invalid merged egress for user {} + upstream {}: {}",
+                                user.getUsername(), spec.id, e.getMessage());
+                        return false;
+                    }
+                }
+            }
+            org.rx.net.SecurityMode effectiveSec = user.transport != null
+                    ? user.transport.resolveSecurityMode(org.rx.net.SecurityMode.parse(conf.securityMode))
+                    : org.rx.net.SecurityMode.parse(conf.securityMode);
+            boolean userRequiresTcpProtection = conf.tcpCipherPorts.length != 0
+                    || (user.transport != null && (user.transport.tcp() & 2) != 0);
+            if (userRequiresTcpProtection && effectiveSec == org.rx.net.SecurityMode.NONE) {
+                log.warn("User {} has protected TCP ports/flags but securityMode=none is forbidden", user.getUsername());
                 return false;
             }
             try {
@@ -636,7 +717,7 @@ public final class RssClient {
         return false;
     }
 
-    private static boolean normalizeAndValidateSocksServerIds(RssClientConf conf) {
+    private static boolean normalizeAndValidateSocksServerIds(RssClientConf conf, org.rx.net.EgressConfig globalEgress) {
         Set<String> ids = new LinkedHashSet<>();
         for (RssClientConf.SocksServer spec : conf.socksServers) {
             if (spec == null || spec.type == null || spec.weight == null || spec.weight < 0
@@ -668,9 +749,9 @@ public final class RssClient {
             }
             if (spec.egress != null) {
                 try {
-                    org.rx.net.EgressConfig parsed = spec.egress.toClientEgressConfig();
-                    if (spec.type == RssClientConf.UpstreamType.SOCKS5 && spec.rssEndpoint == null
-                            && parsed.getTcpCodec() != org.rx.net.EgressCodec.NONE) {
+                    boolean standard = spec.type == RssClientConf.UpstreamType.SOCKS5 && spec.rssEndpoint == null;
+                    org.rx.net.EgressConfig parsed = spec.egress.toClientEgressConfig(standard ? null : globalEgress);
+                    if (standard && parsed.getTcpCodec() != org.rx.net.EgressCodec.NONE) {
                         throw new IllegalArgumentException("Standard SOCKS5 upstream cannot enable RSS TCP egress codec");
                     }
                 } catch (IllegalArgumentException e) {
@@ -809,10 +890,9 @@ public final class RssClient {
                 boolean standard = spec.type == RssClientConf.UpstreamType.SOCKS5 && spec.rssEndpoint == null;
                 AuthenticEndpoint outer = spec.rssEndpoint == null ? null : resolveCarrierEndpoint(spec.endpoint, conf);
                 AuthenticEndpoint peer = spec.rssEndpoint == null ? spec.endpoint : resolveCarrierEndpoint(spec.rssEndpoint, conf);
-                org.rx.net.EgressConfig routeOverride = standard || spec.egress == null
-                        ? null : spec.egress.toClientEgressConfig(defaultEgress);
                 org.rx.net.EgressConfig routeEgress = standard ? org.rx.net.EgressConfig.none()
-                        : (routeOverride != null ? routeOverride : defaultEgress);
+                        : (spec.egress != null ? spec.egress.toClientEgressConfig(defaultEgress) : defaultEgress);
+                RssClientConf.Egress routeEgressSpec = standard ? null : spec.egress;
                 SocksRpcContract facade = null;
                 if (!standard) {
                     InetSocketAddress rpc = spec.rpcEndpoint != null ? spec.rpcEndpoint
@@ -824,8 +904,8 @@ public final class RssClient {
                 Map<String, String> parameters = new LinkedHashMap<>(dial.getParameters());
                 parameters.put(UpstreamSupport.POOL_GENERATION, java.util.UUID.randomUUID().toString());
                 dial = new AuthenticEndpoint(dial.getEndpoint(), dial.getUsername(), dial.getPassword(), parameters);
-                UpstreamSupport support = outer != null || routeOverride != null
-                        ? new BoundRoute(dial, facade, outer, routeOverride) : new UpstreamSupport(dial, facade);
+                UpstreamSupport support = outer != null || routeEgressSpec != null
+                        ? new BoundRoute(dial, facade, outer, routeEgressSpec) : new UpstreamSupport(dial, facade);
                 support.setRouteId(spec.id);
                 support.setStandardSocks5(standard);
                 support.setEgressConfig(routeEgress);
@@ -1023,6 +1103,8 @@ public final class RssClient {
     static SocksConfig createOutboundConfig(RssClientConf conf, SocksConfig inConf) {
         SocksConfig outConf = Sys.deepClone(inConf);
         outConf.setRssPrivateTransport(true);
+        outConf.setHandshakeMode(org.rx.net.HandshakeMode.parse(conf.handshakeMode));
+        outConf.setSecurityMode(org.rx.net.SecurityMode.parse(conf.securityMode));
         outConf.setTransportFlags(TransportFlags.NONE.flags());
         outConf.setTcpCompressionLevel(RssSupport.TCP_COMPRESSION_LEVEL);
         outConf.setEgressConfig(conf.egress == null ? org.rx.net.EgressConfig.none() : conf.egress.toClientEgressConfig());
@@ -1256,6 +1338,7 @@ public final class RssClient {
         if (support == null) {
             return;
         }
+        support.markClosed();
         org.rx.net.socks.Socks5UpstreamPoolManager.INSTANCE.closeEndpoint(support.getEndpoint());
     }
 
@@ -1352,6 +1435,9 @@ public final class RssClient {
             log.warn("rss upstream {} health check failed {}/{}", support.getEndpoint().getEndpoint(), failureCount, failureThreshold);
         }
         if (previous != effectiveHealthy) {
+            if (support.getFacade() instanceof ForwardingSocksRpcContract) {
+                ((ForwardingSocksRpcContract) support.getFacade()).invalidateCapabilities();
+            }
             log.info("rss upstream {} health {}", support.getEndpoint().getEndpoint(), effectiveHealthy ? "UP" : "DOWN");
         }
     }
@@ -1947,25 +2033,28 @@ public final class RssClient {
 
     private static final class BoundRoute extends UpstreamSupport {
         private final AuthenticEndpoint proxy;
-        private final org.rx.net.EgressConfig egress;
+        private final RssClientConf.Egress egressSpec;
         private final Map<SocksConfig, SocksConfig> configs = new java.util.IdentityHashMap<>();
 
-        BoundRoute(AuthenticEndpoint peer, SocksRpcContract facade, AuthenticEndpoint proxy, org.rx.net.EgressConfig egress) {
+        BoundRoute(AuthenticEndpoint peer, SocksRpcContract facade, AuthenticEndpoint proxy, RssClientConf.Egress egressSpec) {
             super(peer, facade);
             this.proxy = proxy;
-            this.egress = egress == null ? null : egress.copy();
+            this.egressSpec = egressSpec;
         }
 
         SocksConfig bind(SocksConfig base, boolean tcp) {
-            if (proxy == null && (!tcp || egress == null || egress.equals(base.effectiveClientEgressConfig()))) {
+            org.rx.net.EgressConfig mergedEgress = tcp && egressSpec != null
+                    ? egressSpec.toClientEgressConfig(base.effectiveClientEgressConfig())
+                    : null;
+            if (proxy == null && (mergedEgress == null || mergedEgress.equals(base.effectiveClientEgressConfig()))) {
                 return base;
             }
             synchronized (this) {
                 SocksConfig config = configs.get(base);
                 if (config == null) {
                     config = Sys.deepClone(base);
-                    if (egress != null) {
-                        config.setEgressConfig(egress.copy());
+                    if (mergedEgress != null) {
+                        config.setEgressConfig(mergedEgress);
                     }
                     if (proxy != null) {
                         config.setSocksCarrierProxy(proxy);
@@ -2106,9 +2195,12 @@ public final class RssClient {
                 boolean hop = policy.udpHop();
                 int profile = adaptive ? policy.adaptiveProfile() : 0;
                 int level = (mask & 1) == 0 ? 0 : policy.compressionLevel();
+                org.rx.net.HandshakeMode handshake = policy.resolveHandshakeMode(base.effectiveHandshakeMode());
+                org.rx.net.SecurityMode sec = policy.resolveSecurityMode(base.effectiveSecurityMode());
                 org.rx.net.EgressConfig egress = policy.tcpEgressConfig(base.effectiveClientEgressConfig());
-                long bits = mask | (adaptive ? 8 : 0) | (profile << 4) | (level << 6)
-                        | (hop ? 0 : (1 << 10)) | ((long) tcpUdpMtu << 11);
+                long bits = mask | (adaptive ? 8L : 0L) | ((long) profile << 4) | ((long) level << 6)
+                        | (hop ? 0L : (1L << 10)) | ((long) tcpUdpMtu << 11)
+                        | ((long) handshake.ordinal() << 28) | ((long) sec.ordinal() << 30);
                 TcpProfileKey key = new TcpProfileKey(bits, egress);
                 SocksConfig cached = cache.get(key);
                 if (cached == null) {
@@ -2117,6 +2209,8 @@ public final class RssClient {
                     c.setAdaptiveProfile(profile);
                     c.setDailyUdpMtu(tcpUdpMtu);
                     c.setUdpHop(hop);
+                    c.setHandshakeMode(handshake);
+                    c.setSecurityMode(sec);
                     c.setEgressConfig(egress);
                     if (level != 0) c.setTcpCompressionLevel(level);
                     TransportFlags protection = (mask & 2) != 0 ? TransportFlags.RSS_PSK_AES : TransportFlags.NONE;

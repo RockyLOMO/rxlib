@@ -92,8 +92,18 @@ public final class RssServer {
         outConf.setRequiredTcpCipherPorts(parsePorts(options.get("tcpCipherPorts"), RssTransport.cipherPorts()));
         outConf.setRequiredUdpCipherPorts(parsePorts(options.get("udpCipherPorts"), RssTransport.udpCipherPorts()));
         outConf.setEgressConfig(parseServerEgressConfig(options));
-        if (outConf.getRequiredTcpCipherPorts().length != 0 && !org.rx.net.transport.core.TransportCoreCarrier.isRssTcpPskConfigured()) {
-            throw new IllegalArgumentException("RSS protected TCP ports require RSS_TCP_AES_KEY");
+        outConf.setHandshakeMode(org.rx.net.HandshakeMode.parse(options.get("handshakeMode")));
+        outConf.setSecurityMode(org.rx.net.SecurityMode.parse(options.get("securityMode")));
+        if (options.get("maxBusinessInflateBytes") != null) {
+            outConf.setMaxBusinessInflateBytes(Integer.parseInt(options.get("maxBusinessInflateBytes").trim()));
+        }
+        if (outConf.getRequiredTcpCipherPorts().length != 0) {
+            if (outConf.effectiveSecurityMode() == org.rx.net.SecurityMode.NONE) {
+                throw new IllegalArgumentException("RSS protected TCP ports cannot run with securityMode=none");
+            }
+            if (!org.rx.net.transport.core.TransportCoreCarrier.isRssTcpPskConfigured()) {
+                throw new IllegalArgumentException("RSS protected TCP ports require RSS_TCP_AES_KEY");
+            }
         }
         if (outConf.getRequiredUdpCipherPorts().length != 0 && !org.rx.net.rss.udp.RssDatagramHandler.hasCipherKey()) {
             throw new IllegalArgumentException("RSS protected UDP ports require RSS_UDP_AES_KEY");
@@ -101,7 +111,7 @@ public final class RssServer {
         Authenticator defAuth = new Authenticator() {
             @Override
             public SocksUser login(String u, String p) {
-                return eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : SocksUser.ANONYMOUS;
+                return eq(u, ssUser.getUsername()) && eq(p, ssUser.getPassword()) ? ssUser : null;
             }
 
             @Override

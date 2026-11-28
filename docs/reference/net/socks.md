@@ -177,7 +177,10 @@ readTimeoutSeconds = 240
 writeTimeoutSeconds = 0
 tcpIdleTimeoutSeconds = 0          // 0 表示关闭双向空闲超时
 udpReadTimeoutSeconds = 1200
-tcpWarmPoolEnabled = false         // 打开后 minSize 默认 2，maxIdle 60s
+handshakeMode = LIGHTWEIGHT        // RSS 默认零新增 RTT 轻量握手（可选 CORE）
+securityMode = FAST                // 默认固定 AES-128-GCM + HMAC-SHA256（可选 NONE）
+maxBusinessInflateBytes = 4194304  // 业务 zlib 解压独立上限（4 MiB）
+tcpWarmPoolEnabled = false         // 打开后共享单一惰性维护调度器，闲置超 maxIdleMillis 收缩至 0；全局上限 64 pool / 64 ready / 8 in-flight
 udpLeasePoolEnabled = false        // 打开后 minSize 2，maxSize 32
 socksUdpRedundantMode = REQUEST_ONLY
 udpRedundant.multiplier = 1
@@ -186,9 +189,9 @@ udpRedundant.intervalMicros = 0
 udpRelayControlMode = AUTO
 ```
 
-`RX_SOCKS5_BATCH` 与 `SOCKS5_COMPAT` 一样不走 RPC relay group。`AUTO` 在未开 daily UDP、也未开端口跳跃时同样不申请 group。2 倍、自适应和双向 RDNT 只出现在 udp2raw 的配置路径，不是 SOCKS 默认。
+`RX_SOCKS5_BATCH` 与 `SOCKS5_COMPAT` 不走 RPC relay group；`AUTO` 对已认证私有 RSS 对端（`!isStandardSocks5 && facade != null`）在 `plain` UDP 下同样优先使用 `SocksRpcCapabilitiesCache`（零线程单飞缓存）+ `openUdpRelayGroup`（含 `clientRequestId` 幂等与 `UdpRelayGroupManager` 原子容量预留），零专用 SOCKS5 TCP 控制连接且同 association/policy/generation 跨目标复用零额外控制 RTT；RPC 不可达时 `plain AUTO` 立即回退 `SOCKS5_COMPAT`，标准第三方 SOCKS5 始终走 `UDP ASSOCIATE`。2 倍、自适应和双向 RDNT 只出现在 udp2raw 的配置路径，不是 SOCKS 默认。
 
-RSS Client 会把入站读写超时设为 0，并用 `tcpTimeoutSeconds`（默认 120）作为 all-idle。RSS Server 出站同样把读写超时设为 0，all-idle 为 240 秒。`RssClientConf.udpLeasePoolEnabled` 默认 true，这是 RSS 覆盖，不是 `SocksConfig` 默认。
+RSS Client 会把入站读写超时设为 0，并用 `tcpTimeoutSeconds`（默认 120）作为 all-idle，同时默认 `rpcMinSize = 1`（支持显式 `0` 完全按需收缩）。RSS Server 出站同样把读写超时设为 0，all-idle 为 240 秒，且认证链路严格 fail-closed（错密返回 `null` 拒绝、开启认证时拒绝 `ANONYMOUS` 与仅 `NO_AUTH` 协商、校验 Core-vs-SOCKS 身份一致）。`RssClientConf.udpLeasePoolEnabled` 默认 true，这是 RSS 覆盖，不是 `SocksConfig` 默认（私有 RSS 对端下 `AUTO` 优先 RPC Relay Group，避免创建每 lease 独立 TCP 控制连接）。
 
 ### RrpConfig
 RRP 协议配置。

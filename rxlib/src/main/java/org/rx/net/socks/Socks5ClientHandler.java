@@ -43,6 +43,10 @@ public final class Socks5ClientHandler extends ProxyHandler {
             new DefaultSocks5InitialRequest(Collections.singletonList(Socks5AuthMethod.NO_AUTH));
     private static final Socks5InitialRequest INIT_REQUEST_PASSWORD =
             new DefaultSocks5InitialRequest(Arrays.asList(Socks5AuthMethod.NO_AUTH, Socks5AuthMethod.PASSWORD));
+    private static final Socks5InitialRequest INIT_REQUEST_RSS_LIGHTWEIGHT =
+            new DefaultSocks5InitialRequest(Arrays.asList(
+                    Socks5AuthMethod.NO_AUTH, Socks5AuthMethod.PASSWORD,
+                    org.rx.net.transport.core.TransportCoreCarrier.METHOD_RSS_LIGHTWEIGHT));
 
     private final String username;
     private final String password;
@@ -57,6 +61,9 @@ public final class Socks5ClientHandler extends ProxyHandler {
     private volatile boolean destinationCommandError;
     private String decoderName;
     private String encoderName;
+    private boolean lwOffered;
+    private boolean lwAuthPassed;
+    private org.rx.net.transport.core.TransportCoreCarrier.LightweightClientState lwState;
     @Setter
     private Action handshakeCallback;
     @Getter
@@ -133,7 +140,14 @@ public final class Socks5ClientHandler extends ProxyHandler {
 
     @Override
     protected Object newInitialMessage(ChannelHandlerContext ctx) throws Exception {
-        return socksAuthMethod() == Socks5AuthMethod.PASSWORD ? INIT_REQUEST_PASSWORD : INIT_REQUEST_NO_AUTH;
+        boolean hasPassword = socksAuthMethod() == Socks5AuthMethod.PASSWORD;
+        boolean allowAdaptive = adaptiveTcp && commandType == Socks5CommandType.CONNECT;
+        lwOffered = org.rx.net.transport.core.TransportCoreCarrier.shouldOfferLightweight(
+                ctx.channel(), allowAdaptive, hasPassword);
+        if (lwOffered) {
+            return INIT_REQUEST_RSS_LIGHTWEIGHT;
+        }
+        return hasPassword ? INIT_REQUEST_PASSWORD : INIT_REQUEST_NO_AUTH;
     }
 
     @SneakyThrows
@@ -143,14 +157,32 @@ public final class Socks5ClientHandler extends ProxyHandler {
             Socks5InitialResponse res = (Socks5InitialResponse) response;
             Socks5AuthMethod authMethod = socksAuthMethod();
             Socks5AuthMethod resAuthMethod = res.authMethod();
-            if (resAuthMethod != Socks5AuthMethod.NO_AUTH && resAuthMethod != authMethod) {
+            boolean lwSelected = lwOffered && org.rx.net.transport.core.TransportCoreCarrier.METHOD_RSS_LIGHTWEIGHT.equals(resAuthMethod);
+            if (!lwSelected && resAuthMethod != Socks5AuthMethod.NO_AUTH && resAuthMethod != authMethod) {
                 // Server did not allow unauthenticated access nor accept the requested authentication scheme.
                 throw new ProxyConnectException(exceptionMessage("unexpected authMethod: " + res.authMethod()));
             }
 
-            if (resAuthMethod == Socks5AuthMethod.NO_AUTH) {
+            if (lwSelected) {
+                lwState = org.rx.net.transport.core.TransportCoreCarrier.beginLightweightClient(
+                        ctx.channel(), password, adaptiveTcp && commandType == Socks5CommandType.CONNECT,
+                        adaptiveProfile, udpHop, adaptiveUdpAddress, adaptiveUdpMtu);
+                ctx.pipeline().replace(decoderName, decoderName, new Socks5PasswordAuthResponseDecoder());
+                ctx.pipeline().addAfter(decoderName, org.rx.net.transport.core.TransportCoreCarrier.LIGHTWEIGHT_ACK_DECODER,
+                        new org.rx.net.transport.core.TransportCoreCarrier.LightweightAckDecoder());
+                ctx.write(new DefaultSocks5PasswordAuthRequest(
+                        username != null ? username : Strings.EMPTY, password != null ? password : Strings.EMPTY));
+                ctx.writeAndFlush(org.rx.net.transport.core.TransportCoreCarrier.encodeLightweightClientExt(ctx.alloc(), lwState));
+            } else if (resAuthMethod == Socks5AuthMethod.NO_AUTH) {
+                if (lwOffered && adaptiveTcp) {
+                    throw new ProxyConnectException(exceptionMessage("unauthenticated adaptive TCP fallback rejected"));
+                }
                 sendCommand(ctx);
             } else if (resAuthMethod == Socks5AuthMethod.PASSWORD) {
+                if (lwOffered && adaptiveTcp) {
+                    org.rx.diagnostic.DiagnosticMetrics.record("rss.tcp.adaptive.negotiationFallback", 1,
+                            adaptiveProfile == 1 ? "profile=game" : adaptiveProfile == 2 ? "profile=weak" : "profile=daily");
+                }
                 // In case of password authentication, send an authentication request.
                 ctx.pipeline().replace(decoderName, decoderName, new Socks5PasswordAuthResponseDecoder());
                 sendToProxyServer(new DefaultSocks5PasswordAuthRequest(
@@ -169,7 +201,23 @@ public final class Socks5ClientHandler extends ProxyHandler {
             if (res.status() != Socks5PasswordAuthStatus.SUCCESS) {
                 throw new ProxyConnectException(exceptionMessage("authStatus: " + res.status()));
             }
+            if (lwState != null) {
+                lwAuthPassed = true;
+                return false;
+            }
 
+            sendCommand(ctx);
+            return false;
+        }
+
+        if (response instanceof org.rx.net.transport.core.TransportCoreCarrier.LightweightAck) {
+            if (lwState == null || !lwAuthPassed) {
+                throw new ProxyConnectException(exceptionMessage("unexpected RSS lightweight ack"));
+            }
+            org.rx.net.transport.core.TransportCoreCarrier.LightweightClientState st = lwState;
+            lwState = null;
+            org.rx.net.transport.core.TransportCoreCarrier.completeLightweightClient(
+                    ctx, (org.rx.net.transport.core.TransportCoreCarrier.LightweightAck) response, st, upstreamSupport);
             sendCommand(ctx);
             return false;
         }

@@ -85,16 +85,38 @@ public class SocksConfig extends SocketConfig {
         }
         dailyUdpFeatures = features;
     }
+    public static final int DEFAULT_MAX_BUSINESS_INFLATE_BYTES = 4 * 1024 * 1024;
     public static final int ADAPTIVE_GAME = RssProfile.GAME_ID, ADAPTIVE_WEAK = RssProfile.WEAK_ID;
     @Setter(AccessLevel.NONE)
     private org.rx.net.EgressCodec egressCodec = org.rx.net.EgressCodec.NONE;
     private boolean adaptiveTcp;
-    /** Enables Transport Core v2 (RXTC) raw-stream framing on private RSS↔RSS TCP links (disabled on standard SOCKS5). */
+    /** Enables private RSS↔RSS TCP transport policies (disabled on standard third-party SOCKS5). */
     private boolean rssPrivateTransport;
+    /** RSS handshake strategy: LIGHTWEIGHT (default, zero added RTT) or CORE (explicit full RXTC v2). */
+    private org.rx.net.HandshakeMode handshakeMode = org.rx.net.HandshakeMode.LIGHTWEIGHT;
+    /** Unified security mode: FAST (default, AES-128-GCM + HMAC-SHA256) or NONE (explicit unprotected only). */
+    private org.rx.net.SecurityMode securityMode = org.rx.net.SecurityMode.FAST;
+    /** Independent decompression cap for business zlib streams (decoupled from EgressConfig.maxInflateBytes). */
+    private int maxBusinessInflateBytes = DEFAULT_MAX_BUSINESS_INFLATE_BYTES;
     @ToString.Exclude
     private byte[] rssTcpPsk;
     @ToString.Exclude
     private String rssCoreAuthSecret;
+
+    public void setMaxBusinessInflateBytes(int bytes) {
+        if (bytes < 4096 || bytes > 64 * 1024 * 1024) {
+            throw new IllegalArgumentException("maxBusinessInflateBytes must be in 4096..67108864: " + bytes);
+        }
+        this.maxBusinessInflateBytes = bytes;
+    }
+
+    public org.rx.net.HandshakeMode effectiveHandshakeMode() {
+        return handshakeMode == null ? org.rx.net.HandshakeMode.LIGHTWEIGHT : handshakeMode;
+    }
+
+    public org.rx.net.SecurityMode effectiveSecurityMode() {
+        return securityMode == null ? org.rx.net.SecurityMode.FAST : securityMode;
+    }
 
     public void setEgressCodec(org.rx.net.EgressCodec codec) {
         org.rx.net.EgressCodec effective = codec == null ? org.rx.net.EgressCodec.NONE : codec;

@@ -122,6 +122,9 @@ public class EgressConfig implements Serializable {
         if (tcpCodec == EgressCodec.AUTO) {
             throw new IllegalArgumentException("Client TCP egress codec cannot be AUTO");
         }
+        if (allowedCodecs != null && !allowedCodecs.isEmpty()) {
+            throw new IllegalArgumentException("allowedCodecs is only supported on server egress config");
+        }
     }
 
     public void validateServer() {

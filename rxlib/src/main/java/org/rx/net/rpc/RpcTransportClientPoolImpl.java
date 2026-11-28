@@ -18,8 +18,8 @@ class RpcTransportClientPoolImpl extends Disposable implements RpcTransportClien
     final ObjectPool<TransportClient> pool;
 
     public RpcTransportClientPoolImpl(RpcClientConfig<?> template) {
-        int minIdleSize = Math.max(1, template.getMinPoolSize());
-        int maxSize = Math.max(minIdleSize, template.getMaxPoolSize());
+        int minIdleSize = Math.max(0, template.getMinPoolSize());
+        int maxSize = Math.max(Math.max(1, minIdleSize), template.getMaxPoolSize());
         pool = new ObjectPool<TransportClient>(minIdleSize, maxSize, () -> {
             TransportConfig config = Sys.deepClone(template.getTransportConfig());
             TransportClient client = new TransportClient(config);
@@ -39,7 +39,11 @@ class RpcTransportClientPoolImpl extends Disposable implements RpcTransportClien
             client.getConfig().getTcpClientConfig().setEnableReconnect(false);
             client.resetHandlers();
         });
-        pool.setBorrowTimeout(template.getTcpConfig().getConnectTimeoutMillis());
+        int borrowTimeout = template.getTcpConfig().getConnectTimeoutMillis();
+        if (template.getRequestTimeoutMillis() > 0 && (borrowTimeout <= 0 || template.getRequestTimeoutMillis() < borrowTimeout)) {
+            borrowTimeout = template.getRequestTimeoutMillis();
+        }
+        pool.setBorrowTimeout(borrowTimeout);
         pool.setLeakDetectionThreshold(pool.getIdleTimeout());
     }
 

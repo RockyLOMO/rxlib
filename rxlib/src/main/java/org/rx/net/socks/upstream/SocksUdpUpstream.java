@@ -49,23 +49,109 @@ import static org.rx.core.Extends.tryClose;
 
 @Slf4j
 public class SocksUdpUpstream extends Upstream {
-    private final AttributeKey<SessionGroup> sessionKey;
-    private final AttributeKey<CompletableFuture<SessionGroup>> initKey;
+    private static final AttributeKey<ConcurrentMap<GroupCacheKey, SessionGroup>> ATTR_SESSION_GROUPS =
+            AttributeKey.valueOf("socksUdpUpstreamSessionGroups");
+    private static final AttributeKey<ConcurrentMap<GroupCacheKey, CompletableFuture<SessionGroup>>> ATTR_SESSION_INITS =
+            AttributeKey.valueOf("socksUdpUpstreamSessionInits");
     private static final InetSocketAddress[] EMPTY_RELAY_ADDRESSES = new InetSocketAddress[0];
     private static final MemoryCache<UdpLeasePoolKey, Boolean> RPC_RELAY_GROUP_BREAKER = new MemoryCache<>();
     private static final ConcurrentMap<UdpLeasePoolKey, AtomicInteger> RPC_RELAY_GROUP_FAILURES = new ConcurrentHashMap<>();
 
     private final UpstreamSupport next;
+    private final GroupCacheKey groupKey;
 
     public SocksUdpUpstream(InetSocketAddress dstEp, @NonNull SocksConfig config, @NonNull UpstreamSupport next) {
         super(dstEp, config);
         this.next = next;
-        // A single local SOCKS UDP association can multiplex destinations requiring different wire formats.
+        // A single local SOCKS UDP association can multiplex destinations; reuse group ONLY within matching
+        // user/upstream/routeGeneration/profile/hop/MTU/controlMode, never leaking dynamic AttributeKey entries.
         int features = config.getDailyUdpFeatures();
         int effectiveMtu = config.isDailyUdp() ? config.resolveDailyUdpMtu() : config.getUdpMtu();
-        String suffix = features + (config.isUdpHop() ? "" : ".nohop") + ".mtu" + effectiveMtu;
-        sessionKey = AttributeKey.valueOf("socksUdpUpstreamSessionGroup." + suffix);
-        initKey = AttributeKey.valueOf("socksUdpUpstreamSessionInit." + suffix);
+        AuthenticEndpoint ep = next.getEndpoint();
+        String routeGen = ep == null ? null : ep.getParameters().get(UpstreamSupport.POOL_GENERATION);
+        String epText = ep == null ? "" : Sockets.toString(ep.getEndpoint());
+        String user = ep == null ? null : ep.getUsername();
+        String trafficUser = ep == null ? null : ep.getParameters().get(org.rx.net.socks.SocksConnectionTagRegistry.PARAM_NAME);
+        this.groupKey = new GroupCacheKey(routeGen, epText, user, trafficUser, features,
+                config.isUdpHop(), effectiveMtu, config.getUdpRelayControlMode());
+    }
+
+    private SessionGroup getBoundGroup(Channel channel) {
+        ConcurrentMap<GroupCacheKey, SessionGroup> map = channel.attr(ATTR_SESSION_GROUPS).get();
+        return map == null ? null : map.get(groupKey);
+    }
+
+    private void setBoundGroup(Channel channel, SessionGroup group) {
+        ConcurrentMap<GroupCacheKey, SessionGroup> map = channel.attr(ATTR_SESSION_GROUPS).get();
+        if (map == null) {
+            if (group == null) {
+                return;
+            }
+            ConcurrentMap<GroupCacheKey, SessionGroup> created = new ConcurrentHashMap<>(4);
+            ConcurrentMap<GroupCacheKey, SessionGroup> existing = channel.attr(ATTR_SESSION_GROUPS).setIfAbsent(created);
+            map = existing != null ? existing : created;
+        }
+        if (group == null) {
+            map.remove(groupKey);
+        } else {
+            map.put(groupKey, group);
+        }
+    }
+
+    private ConcurrentMap<GroupCacheKey, CompletableFuture<SessionGroup>> initMap(Channel channel) {
+        ConcurrentMap<GroupCacheKey, CompletableFuture<SessionGroup>> map = channel.attr(ATTR_SESSION_INITS).get();
+        if (map == null) {
+            ConcurrentMap<GroupCacheKey, CompletableFuture<SessionGroup>> created = new ConcurrentHashMap<>(4);
+            ConcurrentMap<GroupCacheKey, CompletableFuture<SessionGroup>> existing = channel.attr(ATTR_SESSION_INITS).setIfAbsent(created);
+            map = existing != null ? existing : created;
+        }
+        return map;
+    }
+
+    private static final class GroupCacheKey {
+        final String routeGeneration;
+        final String endpointText;
+        final String username;
+        final String trafficUser;
+        final int features;
+        final boolean udpHop;
+        final int effectiveMtu;
+        final UdpRelayControlMode controlMode;
+        final int hash;
+
+        GroupCacheKey(String routeGeneration, String endpointText, String username, String trafficUser,
+                      int features, boolean udpHop, int effectiveMtu, UdpRelayControlMode controlMode) {
+            this.routeGeneration = routeGeneration;
+            this.endpointText = endpointText;
+            this.username = username;
+            this.trafficUser = trafficUser;
+            this.features = features;
+            this.udpHop = udpHop;
+            this.effectiveMtu = effectiveMtu;
+            this.controlMode = controlMode;
+            this.hash = java.util.Objects.hash(routeGeneration, endpointText, username, trafficUser,
+                    features, udpHop, effectiveMtu, controlMode);
+        }
+
+        @Override
+        public int hashCode() {
+            return hash;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof GroupCacheKey)) return false;
+            GroupCacheKey that = (GroupCacheKey) o;
+            return features == that.features
+                    && udpHop == that.udpHop
+                    && effectiveMtu == that.effectiveMtu
+                    && controlMode == that.controlMode
+                    && java.util.Objects.equals(routeGeneration, that.routeGeneration)
+                    && java.util.Objects.equals(endpointText, that.endpointText)
+                    && java.util.Objects.equals(username, that.username)
+                    && java.util.Objects.equals(trafficUser, that.trafficUser);
+        }
     }
 
     public AuthenticEndpoint getServerEndpoint() {
@@ -145,7 +231,7 @@ public class SocksUdpUpstream extends Upstream {
     }
 
     private SessionGroup activeGroup(Channel channel) {
-        SessionGroup group = channel.attr(sessionKey).get();
+        SessionGroup group = getBoundGroup(channel);
         if (group == null) {
             return null;
         }
@@ -163,18 +249,19 @@ public class SocksUdpUpstream extends Upstream {
 
     @Override
     public CompletableFuture<Void> initChannelAsync(Channel channel) {
-        SessionGroup group = channel.attr(sessionKey).get();
+        SessionGroup group = getBoundGroup(channel);
         if (group != null && group.isValid()) {
             return CompletableFuture.completedFuture(null);
         }
 
-        CompletableFuture<SessionGroup> initFuture = channel.attr(initKey).get();
+        ConcurrentMap<GroupCacheKey, CompletableFuture<SessionGroup>> inits = initMap(channel);
+        CompletableFuture<SessionGroup> initFuture = inits.get(groupKey);
         if (initFuture != null) {
             return initFuture.thenApply(v -> null);
         }
 
         CompletableFuture<SessionGroup> created = new CompletableFuture<>();
-        CompletableFuture<SessionGroup> existing = channel.attr(initKey).setIfAbsent(created);
+        CompletableFuture<SessionGroup> existing = inits.putIfAbsent(groupKey, created);
         if (existing != null) {
             return existing.thenApply(v -> null);
         }
@@ -247,12 +334,12 @@ public class SocksUdpUpstream extends Upstream {
     }
 
     private SessionGroup acquireGroup(Channel channel) {
-        SessionGroup group = channel.attr(sessionKey).get();
+        SessionGroup group = getBoundGroup(channel);
         if (group != null && group.isValid()) {
             return group;
         }
         if (group != null) {
-            channel.attr(sessionKey).set(null);
+            setBoundGroup(channel, null);
         }
 
         SocksConfig socksConfig = (SocksConfig) config;
@@ -311,8 +398,12 @@ public class SocksUdpUpstream extends Upstream {
         if (mode == UdpRelayControlMode.SOCKS5_COMPAT || mode == UdpRelayControlMode.RX_SOCKS5_BATCH) {
             return null;
         }
-        if (mode == UdpRelayControlMode.AUTO && !socksConfig.isDailyUdp() && !socksConfig.isUdpPortHoppingEnabled()) {
+        if (next.isStandardSocks5()) {
             return null;
+        }
+        SocksRpcContract facade = next.getFacade();
+        if (facade == null) {
+            return handleRpcRelayGroupUnavailable(socksConfig, "facade-null", null);
         }
         UdpLeasePoolKey key = poolKey();
         if (mode == UdpRelayControlMode.AUTO && RPC_RELAY_GROUP_BREAKER.containsKey(key)) {
@@ -321,15 +412,28 @@ public class SocksUdpUpstream extends Upstream {
             return null;
         }
 
-        SocksRpcContract facade = next.getFacade();
-        if (facade == null) {
-            return handleRpcRelayGroupUnavailable(socksConfig, "facade-null", null);
-        }
-
         int features = socksConfig.getDailyUdpFeatures();
         boolean daily = features != 0;
+        if (!daily && mode == UdpRelayControlMode.AUTO
+                && !socksConfig.isRssPrivateTransport()
+                && socksConfig.isUdpLeasePoolEnabled()
+                && hopCount <= 1) {
+            // Preserve explicit legacy non-RSS UDP lease pool callers; RSS peers always prioritize RPC relay groups.
+            return null;
+        }
+        if (!daily && mode == UdpRelayControlMode.AUTO
+                && facade instanceof org.rx.net.socks.SocksRpcCapabilitiesCache.ControlReadiness
+                && !((org.rx.net.socks.SocksRpcCapabilitiesCache.ControlReadiness) facade).isRpcControlReady()) {
+            DiagnosticMetrics.record("socks.udp.relay.control.mode.count", 1D,
+                    "mode=socks5_compat,reason=rpc-not-ready");
+            return null;
+        }
+        String token = SocksRpcContract.rpcToken();
         try {
-            SocksRpcCapabilities capabilities = facade.capabilities(SocksRpcContract.rpcToken());
+            org.rx.net.socks.SocksRpcCapabilitiesCache capCache = org.rx.net.socks.SocksRpcCapabilitiesCache.forFacade(facade);
+            SocksRpcCapabilities capabilities = capCache != null
+                    ? capCache.get(token, () -> facade.capabilities(token))
+                    : facade.capabilities(token);
             if (capabilities == null || !capabilities.has(SocksRpcCapabilities.UDP_RELAY_GROUP)) {
                 return handleRpcRelayGroupUnavailable(socksConfig, "unsupported", null);
             }
@@ -347,6 +451,7 @@ public class SocksUdpUpstream extends Upstream {
             minActive = Math.min(minActive, initialCount);
 
             UdpRelayGroupOpenRequest request = new UdpRelayGroupOpenRequest();
+            request.setClientRequestId(java.util.UUID.randomUUID().toString());
             if (daily) {
                 if (!capabilities.has(SocksRpcCapabilities.SUPPORT_DAILY_UDP)) {
                     throw new IllegalStateException("Upstream does not support UDP extensions");
@@ -389,18 +494,22 @@ public class SocksUdpUpstream extends Upstream {
             request.setMaxRelayCount(maxRelayCount);
             request.setIdleTimeoutMillis(socksConfig.getUdpRelayGroupIdleMillis());
 
-            UdpRelayGroupOpenResult result = facade.openUdpRelayGroup(request, SocksRpcContract.rpcToken());
+            UdpRelayGroupOpenResult result = facade.openUdpRelayGroup(request, token);
             if (result == null || !result.isSupported() || !result.isSuccess()) {
                 String reason = result == null ? "null-result"
                         : !result.isSupported() ? "unsupported"
                         : result.getErrorCode();
+                if ("unsupported".equals(reason) || "DAILY_DISABLED".equals(reason)
+                        || "PROFILE_UNSUPPORTED".equals(reason) || "FIXED_ENTRY_UNAVAILABLE".equals(reason)) {
+                    org.rx.net.socks.SocksRpcCapabilitiesCache.invalidateFacade(facade);
+                }
                 if (daily) {
                     throw new IllegalStateException("Failed to open both daily UDP ports: " + reason);
                 }
                 return handleRpcRelayGroupUnavailable(socksConfig, reason, null);
             }
 
-            String controlToken = !daily && result.getToken() != null ? result.getToken() : SocksRpcContract.rpcToken();
+            String controlToken = !daily && result.getToken() != null ? result.getToken() : token;
             RpcRelayGroupControl control = new RpcRelayGroupControl(facade, result.getGroupId(), controlToken);
             if (daily) {
                 try {
@@ -420,6 +529,7 @@ public class SocksUdpUpstream extends Upstream {
                     "mode=rss_rpc");
             return newSessionGroup(holders, socksConfig, initialCount, control);
         } catch (Throwable e) {
+            org.rx.net.socks.SocksRpcCapabilitiesCache.invalidateFacade(facade);
             if (daily) {
                 throw new IllegalStateException("Daily UDP negotiation failed", e);
             }
@@ -647,14 +757,15 @@ public class SocksUdpUpstream extends Upstream {
 
     private void completeSessionInit(Channel channel, CompletableFuture<SessionGroup> future,
                                      SessionGroup group, Throwable error) {
-        CompletableFuture<SessionGroup> activeInit = channel.attr(initKey).get();
+        ConcurrentMap<GroupCacheKey, CompletableFuture<SessionGroup>> inits = channel.attr(ATTR_SESSION_INITS).get();
+        CompletableFuture<SessionGroup> activeInit = inits == null ? null : inits.get(groupKey);
         if (activeInit != future) {
             closeGroup(group, false);
             return;
         }
-        channel.attr(initKey).set(null);
+        inits.remove(groupKey, future);
 
-        SessionGroup activeGroup = channel.attr(sessionKey).get();
+        SessionGroup activeGroup = getBoundGroup(channel);
         if (activeGroup != null && activeGroup.isValid()) {
             closeGroup(group, false);
             future.complete(activeGroup);
@@ -723,7 +834,7 @@ public class SocksUdpUpstream extends Upstream {
     }
 
     private void bindGroup(Channel channel, SessionGroup group) {
-        channel.attr(sessionKey).set(group);
+        setBoundGroup(channel, group);
         group.retain(next);
         InetSocketAddress[] relayAddresses = group.snapshotRelayAddresses();
         if (group.rpcControl != null && group.rpcControl.dailyWire != null) {
@@ -760,7 +871,7 @@ public class SocksUdpUpstream extends Upstream {
     }
 
     private void handleHolderClosed(Channel channel, SessionGroup group, SessionHolder holder) {
-        SessionGroup active = channel.attr(sessionKey).get();
+        SessionGroup active = getBoundGroup(channel);
         if (active != group || holder == null || !group.removeHolder(holder)) {
             return;
         }
@@ -844,7 +955,7 @@ public class SocksUdpUpstream extends Upstream {
     private void completeGroupReplenish(Channel channel, SessionGroup group, SessionHolder holder, Throwable error) {
         boolean success = false;
         try {
-            SessionGroup active = channel.attr(sessionKey).get();
+            SessionGroup active = getBoundGroup(channel);
             if (active != group || !channel.isActive() || !group.isValid() || !group.needsReplenish()) {
                 closeHolder(holder);
                 return;
@@ -921,7 +1032,7 @@ public class SocksUdpUpstream extends Upstream {
                                      Throwable error, int maxHopCount) {
         boolean success = false;
         try {
-            SessionGroup active = channel.attr(sessionKey).get();
+            SessionGroup active = getBoundGroup(channel);
             if (active != group || !channel.isActive() || !group.isValid() || group.holderCount() >= maxHopCount) {
                 closeHolder(holder);
                 return;
@@ -960,12 +1071,12 @@ public class SocksUdpUpstream extends Upstream {
 
     private void invalidateGroup(Channel relay, SessionGroup group, boolean resetPooledLease, String reason) {
         Runnable task = () -> {
-            SessionGroup active = relay.attr(sessionKey).get();
+            SessionGroup active = getBoundGroup(relay);
             if (active != group) {
                 return;
             }
             InetSocketAddress[] relayAddresses = active.snapshotAllRelayAddresses();
-            relay.attr(sessionKey).set(null);
+            setBoundGroup(relay, null);
             if (active.rpcControl != null && active.rpcControl.dailyWire != null
                     && relay.pipeline().context(active.rpcControl.dailyWire) != null) {
                 relay.pipeline().remove(active.rpcControl.dailyWire);

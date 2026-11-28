@@ -60,13 +60,18 @@ public class RssClientConf {
 
     public int logFlags;
     public Egress egress = new Egress();
+    /** Default RSS private TCP handshake mode: lightweight (default, 0 added RTT) | core (explicit full RXTC). */
+    public String handshakeMode;
+    /** Unified private security mode: fast (default, AES-128-GCM + HMAC-SHA256) | none. */
+    public String securityMode;
 
     @lombok.EqualsAndHashCode
     @ToString
     public static class Egress implements Serializable {
         private static final long serialVersionUID = 1L;
-        public String tcpCodec = "none";
-        public String udpCodec = "none";
+        /** Null means inherit from parent scope (global -> user -> upstream); explicit "none" overrides to NONE. */
+        public String tcpCodec;
+        public String udpCodec;
         public String httpBodyEncoding;
         public Boolean httpRandomHeaders;
         public Boolean httpAllowGetMethod;
@@ -85,6 +90,9 @@ public class RssClientConf {
         public EgressConfig toClientEgressConfig(EgressConfig fallback) {
             if (udpCodec != null && !"none".equalsIgnoreCase(udpCodec.trim())) {
                 throw new IllegalArgumentException("RSS UDP egress codec must be none");
+            }
+            if (allowedCodecs != null && !allowedCodecs.isEmpty()) {
+                throw new IllegalArgumentException("allowedCodecs is only supported on server egress config");
             }
             EgressConfig cfg = fallback != null ? fallback.copy() : new EgressConfig();
             if (tcpCodec != null) {
@@ -164,7 +172,7 @@ public class RssClientConf {
     public int udpTimeoutSeconds = 60 * 10;
     // 全局可选 UDP payload MTU 上限（字节，不含 IP/UDP 头）；null 表示 plain=0（透传）、daily/weak/game=1300。
     public Integer udpMtu;
-    public int rpcMinSize = 2;
+    public int rpcMinSize = 1;
     public int rpcMaxSize = 6;
     // RSS Server RPC 固定端口；0 表示按同 host 首个 socksServer 端口 +1 推导。
     public int rpcPort;

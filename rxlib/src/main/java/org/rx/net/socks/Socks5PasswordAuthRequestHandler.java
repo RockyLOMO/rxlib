@@ -24,18 +24,34 @@ public class Socks5PasswordAuthRequestHandler extends SimpleChannelInboundHandle
         SocksProxyServer server = Sockets.getAttr(ctx.channel(), SocksContext.SOCKS_SVR);
         SocksUser user;
         TrafficUser trafficUser = null;
-        if (server.getAuthenticator() == null) {
+        Authenticator authenticator = server.getAuthenticator();
+        if (authenticator == null) {
             ctx.writeAndFlush(new DefaultSocks5PasswordAuthResponse(Socks5PasswordAuthStatus.FAILURE)).addListener(ChannelFutureListener.CLOSE);
             return;
         }
-        AuthResult result = server.getAuthenticator().loginResult(msg.username(), msg.password());
-        if (result == null) {
+        String coreAuthUser = ctx.channel().attr(org.rx.net.transport.core.TransportCoreCarrier.ATTR_CORE_AUTH_USER).get();
+        if (coreAuthUser != null && !coreAuthUser.isEmpty() && !coreAuthUser.equals(msg.username())) {
+            log.warn("socks5[{}] auth identity mismatch coreUser={} socksUser={}",
+                    server.getConfig().getListenPort(), coreAuthUser, msg.username());
+            ctx.writeAndFlush(new DefaultSocks5PasswordAuthResponse(Socks5PasswordAuthStatus.FAILURE)).addListener(ChannelFutureListener.CLOSE);
+            return;
+        }
+        AuthResult result = authenticator.loginResult(msg.username(), msg.password());
+        if (result == null || result.getUser() == null
+                || (authenticator != Authenticator.NON_AUTH && result.getUser().isAnonymous())) {
             ctx.writeAndFlush(new DefaultSocks5PasswordAuthResponse(Socks5PasswordAuthStatus.FAILURE)).addListener(ChannelFutureListener.CLOSE);
             return;
         }
         user = result.getUser();
         trafficUser = result.getTrafficUser();
-        ctx.writeAndFlush(SUCCESS);
         ProxyManageHandler.get(ctx).setUser(user, trafficUser, ctx);
+        if (Boolean.TRUE.equals(ctx.channel().attr(org.rx.net.transport.core.TransportCoreCarrier.ATTR_LIGHTWEIGHT_NEGOTIATED).get())) {
+            String pwd = msg.password();
+            ctx.channel().attr(org.rx.net.transport.core.TransportCoreCarrier.ATTR_LIGHTWEIGHT_AUTH_SECRET)
+                    .set(pwd == null ? null : pwd.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            // LightweightServerExtHandler flushes RFC 1929 SUCCESS + 43-byte HMAC-authenticated ack in ONE TCP segment.
+            return;
+        }
+        ctx.writeAndFlush(SUCCESS);
     }
 }

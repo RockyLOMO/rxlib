@@ -36,7 +36,9 @@ public final class TcpWarmPoolKey implements Serializable {
                         ? ((SocksConfig) config).effectiveClientEgressConfig().copy()
                         : (config.getEgressConfig() != null ? config.getEgressConfig().copy() : org.rx.net.EgressConfig.none()),
                 config instanceof SocksConfig && ((SocksConfig) config).isAdaptiveTcp() ? ((SocksConfig) config).resolveDailyUdpMtu() : 0,
-                config instanceof SocksConfig && ((SocksConfig) config).isRssPrivateTransport());
+                config instanceof SocksConfig && ((SocksConfig) config).isRssPrivateTransport(),
+                config instanceof SocksConfig ? ((SocksConfig) config).effectiveHandshakeMode() : org.rx.net.HandshakeMode.LIGHTWEIGHT,
+                config instanceof SocksConfig ? ((SocksConfig) config).effectiveSecurityMode() : org.rx.net.SecurityMode.FAST);
     }
 
     private final String routeGeneration;
@@ -57,6 +59,8 @@ public final class TcpWarmPoolKey implements Serializable {
     private final org.rx.net.EgressConfig egressConfig;
     private final int adaptiveUdpMtu;
     private final boolean rssPrivateTransport;
+    private final org.rx.net.HandshakeMode handshakeMode;
+    private final org.rx.net.SecurityMode securityMode;
 
     public org.rx.net.EgressCodec getEgressCodec() {
         return egressConfig == null ? org.rx.net.EgressCodec.NONE : egressConfig.getTcpCodec();
@@ -68,7 +72,7 @@ public final class TcpWarmPoolKey implements Serializable {
                           boolean udpHop, String adaptiveUdpClientText) {
         this(null, trafficUser, endpointText, username, password, reactorName, connectTimeoutMillis, transportFlagsBits,
                 cipher, cipherKeyHash, adaptiveTcp, adaptiveProfile, tcpCompressionLevel, udpHop, adaptiveUdpClientText,
-                org.rx.net.EgressConfig.none(), 0, false);
+                org.rx.net.EgressConfig.none(), 0, false, org.rx.net.HandshakeMode.LIGHTWEIGHT, org.rx.net.SecurityMode.FAST);
     }
 
     public TcpWarmPoolKey(String trafficUser, String endpointText, String username, String password,

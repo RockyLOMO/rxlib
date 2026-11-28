@@ -956,12 +956,15 @@ public final class Sockets {
 
     @SneakyThrows
     public static Channel addTcpServerHandler(Channel channel, SocketConfig config) {
-        boolean rssPrivate = config instanceof SocksConfig && ((SocksConfig) config).isRssPrivateTransport();
-        boolean adaptiveHybrid = config instanceof SocksConfig && !rssPrivate && ((SocksConfig) config).isAdaptiveTcp();
+        boolean isSocks = config instanceof SocksConfig;
+        SocksConfig sc = isSocks ? (SocksConfig) config : null;
+        boolean rssPrivate = isSocks && sc.isRssPrivateTransport();
+        boolean strictCore = rssPrivate && sc.effectiveHandshakeMode() == HandshakeMode.CORE;
+        boolean adaptiveHybrid = isSocks && !rssPrivate && sc.isAdaptiveTcp();
         boolean useCoreCarrier = rssPrivate || adaptiveHybrid;
         FlagsEnum<TransportFlags> flags = config.getTransportFlags();
         if (flags == null) {
-            if (!useCoreCarrier) {
+            if (!useCoreCarrier && !(isSocks && sc.effectiveServerEgressConfig().getTcpCodec() != EgressCodec.NONE)) {
                 return channel;
             }
             flags = TransportFlags.NONE.flags();
@@ -980,13 +983,12 @@ public final class Sockets {
         boolean g = flags.has(TransportFlags.GFW);
         if (channel.attr(EgressCodec.ATTR_SELECTED).get() == null && pipeline.get(EgressCodec.AUTO_DETECTOR_NAME) == null) {
             if (rssPrivate) {
-                SocksConfig sc = (SocksConfig) config;
-                EgressCodec.installServer(pipeline, sc.effectiveServerEgressConfig(), EgressCodec.InnerProtocol.TRANSPORT_CORE);
-            } else if (adaptiveHybrid) {
-                SocksConfig sc = (SocksConfig) config;
+                EgressCodec.installServer(pipeline, sc.effectiveServerEgressConfig(),
+                        strictCore ? EgressCodec.InnerProtocol.TRANSPORT_CORE : EgressCodec.InnerProtocol.RSS_SOCKS);
+            } else if (isSocks) {
                 EgressConfig egress = sc.effectiveServerEgressConfig();
                 if (egress.getTcpCodec() != EgressCodec.NONE) {
-                    EgressCodec.installServer(pipeline, egress, EgressCodec.InnerProtocol.TRANSPORT_CORE);
+                    EgressCodec.installServer(pipeline, egress, EgressCodec.InnerProtocol.RSS_SOCKS);
                 }
             } else if (config.getEgressConfig() != null && config.getEgressConfig().getTcpCodec() != EgressCodec.NONE) {
                 EgressCodec.installServer(pipeline, config.getEgressConfig(), EgressCodec.InnerProtocol.TRANSPORT_CORE);
@@ -1018,7 +1020,7 @@ public final class Sockets {
 
         if (useCoreCarrier) {
             pipeline.addLast(org.rx.net.transport.core.TransportCoreCarrier.HANDLER_NAME,
-                    org.rx.net.transport.core.TransportCoreCarrier.serverHandler((SocksConfig) config, rssPrivate));
+                    org.rx.net.transport.core.TransportCoreCarrier.serverHandler(sc, strictCore));
         } else if (g) {
             if (flags.has(TransportFlags.COMPRESS_READ)) {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
@@ -1028,7 +1030,7 @@ public final class Sockets {
             }
         }
         DiagnosticMetrics.installNetIoHandler(pipeline, DiagnosticMetrics.netComponent(config,
-                config instanceof SocksConfig ? DiagnosticMetrics.NET_SOCKS_SERVER : DiagnosticMetrics.NET_TRANSPORT_SERVER));
+                isSocks ? DiagnosticMetrics.NET_SOCKS_SERVER : DiagnosticMetrics.NET_TRANSPORT_SERVER));
         dumpPipeline("server", channel);
         return channel;
     }
@@ -1040,13 +1042,23 @@ public final class Sockets {
     @SneakyThrows
     public static Channel addTcpClientHandler(Channel channel, SocketConfig config, InetSocketAddress SNISpoofing) {
         FlagsEnum<TransportFlags> flags = config.getTransportFlags();
-        boolean useCoreCarrier = config instanceof SocksConfig
-                && (((SocksConfig) config).isRssPrivateTransport()
-                || ((SocksConfig) config).isAdaptiveTcp()
-                || (flags != null && flags.has(TransportFlags.RSS_PSK_AES))
-                || ((SocksConfig) config).effectiveClientEgressConfig().getTcpCodec() != EgressCodec.NONE);
+        boolean isSocks = config instanceof SocksConfig;
+        SocksConfig sc = isSocks ? (SocksConfig) config : null;
+        if (isSocks) {
+            channel.attr(org.rx.net.transport.core.TransportCoreCarrier.ATTR_CLIENT_SOCKS_CONFIG).set(sc);
+        }
+        boolean wantAead = isSocks && flags != null && flags.has(TransportFlags.RSS_PSK_AES);
+        if (wantAead && sc.effectiveSecurityMode() == SecurityMode.NONE) {
+            throw new InvalidException("Protected RSS TCP connection cannot run with SecurityMode.NONE");
+        }
+        boolean explicitCore = isSocks && sc.effectiveHandshakeMode() == HandshakeMode.CORE;
+        boolean useCoreCarrier = isSocks && (wantAead
+                || (explicitCore && (sc.isRssPrivateTransport() || sc.isAdaptiveTcp()
+                || sc.effectiveClientEgressConfig().getTcpCodec() != EgressCodec.NONE)));
+        boolean rssPrivate = isSocks && sc.isRssPrivateTransport();
+        boolean hasSocksEgress = isSocks && sc.effectiveClientEgressConfig().getTcpCodec() != EgressCodec.NONE;
         if (flags == null) {
-            if (!useCoreCarrier) {
+            if (!useCoreCarrier && !hasSocksEgress && !rssPrivate) {
                 return channel;
             }
             flags = TransportFlags.NONE.flags();
@@ -1055,17 +1067,17 @@ public final class Sockets {
         ZlibWrapper zlib = ZlibWrapper.ZLIB;
         ChannelPipeline pipeline = channel.pipeline();
         if (channel.attr(EgressCodec.ATTR_SELECTED).get() == null) {
-            if (useCoreCarrier) {
-                SocksConfig sc = (SocksConfig) config;
+            if (isSocks && (useCoreCarrier || rssPrivate || hasSocksEgress)) {
                 EgressCodec.installClient(pipeline, sc.effectiveClientEgressConfig());
-            } else if (!(config instanceof SocksConfig) && config.getEgressConfig() != null
+            } else if (!isSocks && config.getEgressConfig() != null
                     && config.getEgressConfig().getTcpCodec() != EgressCodec.NONE) {
                 EgressCodec.installClient(pipeline, config.getEgressConfig());
             }
         }
         if (useCoreCarrier) {
+            channel.attr(org.rx.net.transport.core.TransportCoreCarrier.ATTR_CORE_HANDSHAKE_ACTIVE).set(Boolean.TRUE);
             pipeline.addLast(org.rx.net.transport.core.TransportCoreCarrier.HANDLER_NAME,
-                    org.rx.net.transport.core.TransportCoreCarrier.clientHandler((SocksConfig) config));
+                    org.rx.net.transport.core.TransportCoreCarrier.clientHandler(sc));
         } else if (flags.has(TransportFlags.TLS)) {
             SslContext tls = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
             if (SNISpoofing == null) {
@@ -1075,7 +1087,8 @@ public final class Sockets {
         }
 
         boolean g = flags.has(TransportFlags.GFW);
-        if (!g && !useCoreCarrier) {
+        boolean deferBusinessZlib = useCoreCarrier || rssPrivate || (isSocks && sc.isAdaptiveTcp());
+        if (!g && !deferBusinessZlib) {
             if (flags.has(TransportFlags.COMPRESS_READ)) {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
             }
@@ -1099,7 +1112,7 @@ public final class Sockets {
             pipeline.addLast(CipherEncoder.DEFAULT.channelHandlers());
         }
 
-        if (g && !useCoreCarrier) {
+        if (g && !deferBusinessZlib) {
             if (flags.has(TransportFlags.COMPRESS_READ)) {
                 pipeline.addLast(ZIP_DECODER, ZlibCodecFactory.newZlibDecoder(zlib));
             }
@@ -1108,11 +1121,11 @@ public final class Sockets {
             }
         }
         DiagnosticMetrics.installNetIoHandler(pipeline, DiagnosticMetrics.netComponent(config,
-                config instanceof SocksConfig ? DiagnosticMetrics.NET_SOCKS_CLIENT : DiagnosticMetrics.NET_TRANSPORT_CLIENT));
+                isSocks ? DiagnosticMetrics.NET_SOCKS_CLIENT : DiagnosticMetrics.NET_TRANSPORT_CLIENT));
         dumpPipeline("client", channel);
         if (config.getSocksCarrierProxy() != null) {
             org.rx.net.socks.RssSocksCarrier.installTcp(channel, config.getSocksCarrierProxy(), SNISpoofing, config.getConnectTimeoutMillis(),
-                    config instanceof SocksConfig ? ((SocksConfig) config).getSocksCarrierOuterMtu() : 0);
+                    isSocks ? sc.getSocksCarrierOuterMtu() : 0);
         }
         return channel;
     }

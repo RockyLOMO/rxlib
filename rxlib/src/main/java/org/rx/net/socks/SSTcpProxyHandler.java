@@ -50,8 +50,19 @@ public class SSTcpProxyHandler extends ChannelInboundHandlerAdapter {
         Upstream upstream = e.getUpstream();
         InetSocketAddress upDstEp = upstream.getDestination();
 
+        InetSocketAddress originRemoteAddr = Sockets.getOriginRemoteAddress(inbound);
         inbound.pipeline().addLast(SocksTcpFrontendRelayHandler.DEFAULT);
         Bootstrap outboundBootstrap = Sockets.bootstrap(inbound.eventLoop(), upstream.getConfig(), upstream.connectAddressHint(), outbound -> {
+            if (originRemoteAddr != null) {
+                outbound.pipeline().addLast(new ChannelInboundHandlerAdapter() {
+                    @Override
+                    public void channelActive(ChannelHandlerContext octx) throws Exception {
+                        EndpointTracer.TCP.link(originRemoteAddr, octx.channel());
+                        octx.pipeline().remove(this);
+                        super.channelActive(octx);
+                    }
+                });
+            }
             upstream.initChannel(outbound);
         });
         ChannelFuture outboundFuture = outboundBootstrap.connect(upDstEp).addListener((ChannelFutureListener) f -> {
