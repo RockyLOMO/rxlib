@@ -13,6 +13,7 @@
 - UDP 打洞是通用路径建立能力；可靠 TCP Relay 是通用承载能力。优先复用 RrpClient/RrpServer 的反向连接、逻辑通道、背压、close/reconnect；扩展受授权的 RAW 承载，不新建另一套反向代理引擎。保留 SOCKS 反向代理业务能力，但无需兼容旧 RRP 私有 wire、旧 HTTP_PSEUDO handler 或旧传输配置；客户端和服务端配套升级。
 - RSS、RPC、RRP 共享 Transport Core、实际压缩、认证加密和公共 TCP EgressCodec；业务模块只保留各自职责。端到端可靠流使用 daily，RRP Relay 物理承载默认纯 TCP，不重复 FEC/重传。RPC 仍负责序列化、方法与事件。
 - EgressCodec 仅负责物理 TCP 最终出口，三种实际格式 NONE / ZLIB_STORED / HTTP，UDP 不增加出口包装。ZLIB_STORED 输出纯 zlib level 0 流；HTTP 默认采用用户指定的方案 A：二进制密文 Body，Content-Type 固定声明 application/json，不转 JSON、不做 Base64、不默认加 zlib 0。该 Content-Type 与实际内容不一致，是明确的私有协议选择，不宣称标准 JSON/HTTP 应用互操作或不可识别性。此前讨论的 HTTP Body zlib 0 保留为独立可选扩展，默认关闭，不与独立 ZLIB_STORED 层叠加。
+- 公共 EgressCodec 必须支持服务端 AUTO（每连接一次、允许列表、统一认证握手）；客户端明确选定实际编码。删除 RSZ 后不能依赖 zlib 压缩等级区分业务层和出口层。详见 §5.4.5。
 - 私有传输 wire 不要求向后兼容，不保留旧协议双栈、旧 preface 或兼容性自动降级；标准 SOCKS5、Shadowsocks、DNS 的外部协议仍保持正确语义。
 - 现有全局限速缺陷仍仅记录、不处理。SS 用户粒度限速保持在 SS 入口，不自动给 Relay 或内部 RPC 叠加用户额度；Relay 的独立资源/授权配额不是重复 SS 业务限速。
 - 安全、正确性、稳定性为硬约束；优先实际流量及 CPU，内存有界。严格 Java 8 master、JDK21 回归；RSS Server 1 vCPU/768 MiB 整机基线仍不变，RSS Client 没有相同硬件限制但需实际增量资源预算。遵循 [AGENTS.md](../AGENTS.md)。
@@ -190,7 +191,7 @@ EgressCodec 是最终物理 TCP 编码，而不是业务 codec、传输 Profile�
 | ZLIB_STORED | 完整标准 zlib 流（level 0） | 连续流，不带 RSZ 私有 preface；不是实际压缩 |
 | HTTP | HTTP 消息结构 + 二进制 Body | 方案 A，Body 直接承载认证后的二进制字节，声明 application/json（私有约定） |
 
-AUTO 如确需保留，只是服务端格式选择策略，不是实际 wire 格式；优先两端显式一致配置，禁止因解析失败静默降级。不得恢复旧 RSZ 或 HTTP 整体加密协议作为兼容分支。
+AUTO 正式纳入公共 EgressCodec 服务端能力，只是服务端格式选择策略，不是第四种 wire 格式。客户端明确选择 NONE/ZLIB_STORED/HTTP；服务端可显式指定一种或启用 AUTO + allowedCodecs。采用统一、经过认证的内部握手消除出口编码与业务压缩的歧义，详见 §5.4.5。禁止解析失败后静默降级，不恢复旧 RSZ 或 HTTP 整体加密协议作为兼容分支。
 
 HTTP 本轮用户明确选择方案 A：不把二进制 payload 转 JSON 或 Base64，Content-Type 仍声明 application/json。该声明与真实媒体类型不一致；真实 HTTP JSON API/中间代理可能拒绝或无法处理，不能把它宣传为标准 JSON 服务。HTTP 二进制的标准媒体类型本来是 application/octet-stream。这里仅作为受控两端私有 framing 约定记录，不能据此声称与任意 HTTP 代理兼容或可以隐藏流量特征。
 
@@ -223,6 +224,56 @@ egress:
 - [ ] 比较 NONE/ZLIB_STORED/HTTP 的真实流量、CPU、分配、P95/P99、待发内存；不开启时无额外开销。先保证传输正确性与安全，不用包装格式作为加密、认证或可达性保证。
 - [ ] 配套更新配置说明、部署文档与测试报告；拒绝新旧客户端不匹配的连接，按整套版本切换或回滚。
 
+### 5.4.5 服务端 AUTO：正式实施项
+
+#### 决策和边界
+
+- AUTO 是服务端连接级协议选择策略，客户端禁止配置 AUTO。服务端可固定 NONE/ZLIB_STORED/HTTP 或开启 AUTO，并明确 allowedCodecs；支持在同一私有 transport listener 上接收多个新编码。NONE 仅表示不增加出口编码，不代表关闭认证或加密。
+- 不恢复旧 4B RSZ preface，不增加旧 wire 兼容分支，不依靠 zlib header 中的压缩等级提示判定业务压缩与出口编码。
+- AUTO 仅识别本项目受控私有承载，不是通用 HTTP 服务、任意代理或通用协议探测器。外部标准 SOCKS5、Shadowsocks、DNS listener 不自动安装该探测器。若现有 RSS 共享 listener 无法保证标准入口与私有承载无歧义，使用明确配置/独立监听；不得误判或改变标准协议。
+- HTTP 仍按 §5.4.2 的私有二进制 Body 约定执行，默认不做额外 zlib0；AUTO 不改变其内容语义，不提供任何额外安全性或可达性承诺。
+
+#### 内部握手及层次
+
+当前 Transport Core 已有二进制 Hello/HelloAck、版本、nonce、HMAC 与 FRAME_READY，但现有 Sockets pipeline 可能在 Core handshake 前安装实际压缩/加密，RSS 私有链路也并非全部使用相同握手。不能仅通过移动 detector 就认定无歧义。
+
+新 wire 应保证经选定出口 codec 解码后的初始协议握手有明确统一语义。实际业务压缩必须在完成握手及协商后启用；握手本身必须经过认证，绑定双方身份、协议版本、能力与选定出口模式，不发送明文凭据或业务数据。若需要独立安全层，应确保它与固定外层格式的协议边界一致，而非关闭安全机制以支持识别。业务层加密与压缩切换需要双方明确就绪屏障，处理 TCP 粘包和握手后立即发送的数据；不得让旧 handler 在半次切换中消费新格式数据。
+
+外层识别只是 provisional codec selection，不等于授权或握手成功。任何不一致、格式错误、未知版本、认证错误或能力不允许均关闭连接；不能尝试另一个编码作为回退。若无法在某业务路径证明三种模式有明确边界，则该 listener 必须显式配置，先完成内部协议统一再启用 AUTO。不允许用压缩级别或启发式猜测消除两层 zlib 冲突。
+
+#### 连接生命周期及资源控制
+
+建议公共 EgressAutoDetector（类名可调整），仅在服务端启用 AUTO 的私有 listener 上安装。基于受控协议定义一次选择，保持未消费数据所有权；选择后将相应 codec 安装到正确物理 TCP 边界，再进入统一内部协议验证。服务端必须等到格式选择完成再发送依赖该格式的响应，不提前写出另一种编码。成功选择后移除 detector，同一连接整个生命周期固定格式，不逐帧探测、不在连接中重新协商出口包装。
+
+初始识别、握手及解码均有独立字节/时间/并发预算；不无限累积 header 或压缩数据，不阻塞 EventLoop，失败/超时关闭并释放所有 ByteBuf、连接计数及任务。压缩解码设置实际输出预算与异常处理；对尚未认证的连接限制昂贵操作和资源分配。统一应用既有连接准入与握手超时，不新增每包定时任务。固定模式无 detector；NONE 无额外出口 codec；AUTO 选择完成后不产生持续探测开销。
+
+拟议配置（不是当前已实现字段）：
+
+```yaml
+# client
+egress:
+  tcpCodec: http
+
+# server（独立配置文件）
+egress:
+  tcpCodec: auto
+  allowedCodecs:
+    - none
+    - zlib-stored
+    - http
+```
+
+校验：客户端 AUTO、空/未知允许列表、禁止的出口模式及错误配置应明确拒绝；固定模式无需额外列举。公网节点服务使用强制认证及明确允许列表，不能借 AUTO 绕过 ACL。既有部署中需要标准协议的监听与内部 transport 监听分别验证。
+
+#### 验收 checklist
+
+- [ ] 同一启用 AUTO 的私有 listener 上，三种明确配置的客户端分别连接，双向正常、服务端响应使用该连接的编码；固定模式继续工作。RSS、RPC、RRP 复用同一 detector/codec 安装机制，不各写一套。
+- [ ] 实际业务压缩 NONE/zlib3 与三种出口格式交叉测试；证明去掉 RSZ 后不存在业务压缩与出口 zlib 的误判，握手后才启用协商的业务 codec，验证合并握手/首业务帧、分片、握手超时、FRAME_READY 和 TCP repair。
+- [ ] 未知模式、禁用模式、畸形输入、过长 header、解压预算超限、错误密钥、模式/能力不匹配、重放、未认证慢连接均明确拒绝且不降级；无业务数据在认证完成前被处理。
+- [ ] 并发混合连接、关闭、失败连接、ByteBuf 引用计数、首包未消费数据、响应编码、timer/队列回收；验证连接选定后 detector 已移除，不逐包识别。
+- [ ] 确认 ZLIB_STORED 新 wire 不携带 RSZ，标准 zlib 解码器可读；旧私有协议不要求兼容。标准 SOCKS5/SS/DNS 入口、UDP 快路径和现有业务限速保持语义。
+- [ ] 双 JDK 完整回归，记录 AUTO 与固定模式的建连延迟、失败资源峰值、CPU、持续吞吐和内存；量化连接选择开销，不能仅宣称零开销。涉及实际线上协议切换时两端同版本升级。
+
 ## 6. 实施顺序与验收
 
 ### P0：先决修复及设计验证
@@ -231,9 +282,9 @@ egress:
 - [ ] 先修复上一轮另外的正确性风险：DNS RR TTL 衰减、按字节缓存预算/Question 验证/负缓存；Geo 缺失 BLOCK selector 与热路径编译风险。独立提交，不混入 Relay 传输实现。SS 已完成限速保留，旧全局问题继续 deferred。
 - [ ] 公共 EgressCodec 与 RRP RAW carrier 小型原型：无需兼容旧 RRP 私有 wire，验证双端可靠 stream 对接 Transport Core、端到端认证、帧边界、背压/半关闭/重连。确认复用范围后再扩展正式 API。
 
-### P1：公共 EgressCodec 与 RRP 传输统一
+### P1：公共 EgressCodec、AUTO 与 RRP 传输统一
 
-- [ ] 优先完成 §5.4 公共 TCP EgressCodec、RRP 接入 Transport Core 及 RSS/RPC 共用 HTTP 出口；明确新 wire，不维护旧私有协议兼容层。UDP 出口保持不变。
+- [ ] 优先完成 §5.4 公共 TCP EgressCodec、服务端 AUTO、统一认证握手及 RRP 接入 Transport Core、RSS/RPC 共用 HTTP 出口；明确新 wire，不维护旧私有协议兼容层。UDP 出口保持不变。
 - [ ] RRP RAW Relay 以该公共承载为基础；先验证纯 TCP 与应用层端到端语义，再接入 NAT 快路径。
 
 ### P1：启动、目录与可靠 Relay
