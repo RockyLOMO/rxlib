@@ -487,6 +487,10 @@ public final class UserRuleMatcher {
         }
     }
 
+    private static boolean isEventLoopThread() {
+        return Thread.currentThread() instanceof io.netty.util.concurrent.FastThreadLocalThread;
+    }
+
     private static final class GeoSiteCodeRule extends CompiledRule {
         final V2RayGeoManager manager;
         final String code;
@@ -502,7 +506,7 @@ public final class UserRuleMatcher {
             manager.registerActiveSiteSelector(code);
             V2RayGeoManager.GeoSnapshot snap = manager.snapshot();
             if (snap.siteIndex != null) {
-                GeoSiteMatcher compiled = snap.siteIndex.matcher(code, null);
+                GeoSiteMatcher compiled = snap.compileSiteMatcher(code);
                 this.bound = new BoundSite(snap.siteGeneration, compiled);
                 if (compiled == null) {
                     log.warn("rss route rule geosite selector '{}' not found in loaded geosite snapshot", code);
@@ -530,11 +534,24 @@ public final class UserRuleMatcher {
             }
             BoundSite current = bound;
             if (current == null || current.generation != snap.siteGeneration) {
-                GeoSiteMatcher next = snap.siteIndex.matcher(code, null);
-                current = new BoundSite(snap.siteGeneration, next);
-                bound = current;
+                if (snap.isSiteCompiled(code)) {
+                    current = new BoundSite(snap.siteGeneration, snap.cachedSiteMatcher(code));
+                    bound = current;
+                } else if (isEventLoopThread()) {
+                    // Never compile GeoSite tries synchronously on Netty EventLoop threads.
+                    snap.scheduleSiteCompileAsync(code);
+                    return action == RouteAction.BLOCK && notReadyPolicy == GeoNotReadyPolicy.FAIL_CLOSED_BLOCK;
+                } else {
+                    GeoSiteMatcher next = snap.compileSiteMatcher(code);
+                    current = new BoundSite(snap.siteGeneration, next);
+                    bound = current;
+                }
             }
-            return current.matcher != null && current.matcher.matches(host);
+            if (current.matcher == null) {
+                // Missing selector in loaded GeoSite file must also fail closed on BLOCK rules.
+                return action == RouteAction.BLOCK && notReadyPolicy == GeoNotReadyPolicy.FAIL_CLOSED_BLOCK;
+            }
+            return current.matcher.matches(host);
         }
     }
 
@@ -553,7 +570,7 @@ public final class UserRuleMatcher {
             manager.registerActiveIpSelector(code);
             V2RayGeoManager.GeoSnapshot snap = manager.snapshot();
             if (snap.ipMatcher != null) {
-                V2RayGeoIpMatcher.CodeMatcher compiled = snap.ipMatcher.matcher(code);
+                V2RayGeoIpMatcher.CodeMatcher compiled = snap.compileIpMatcher(code);
                 this.bound = new BoundIp(snap.ipGeneration, compiled);
                 if (compiled == null) {
                     log.warn("rss route rule geoip selector '{}' not found in loaded geoip snapshot", code);
@@ -581,11 +598,24 @@ public final class UserRuleMatcher {
             }
             BoundIp current = bound;
             if (current == null || current.generation != snap.ipGeneration) {
-                V2RayGeoIpMatcher.CodeMatcher next = snap.ipMatcher.matcher(code);
-                current = new BoundIp(snap.ipGeneration, next);
-                bound = current;
+                if (snap.isIpCompiled(code)) {
+                    current = new BoundIp(snap.ipGeneration, snap.cachedIpMatcher(code));
+                    bound = current;
+                } else if (isEventLoopThread()) {
+                    // Never compile GeoIP matchers synchronously on Netty EventLoop threads.
+                    snap.scheduleIpCompileAsync(code);
+                    return action == RouteAction.BLOCK && notReadyPolicy == GeoNotReadyPolicy.FAIL_CLOSED_BLOCK;
+                } else {
+                    V2RayGeoIpMatcher.CodeMatcher next = snap.compileIpMatcher(code);
+                    current = new BoundIp(snap.ipGeneration, next);
+                    bound = current;
+                }
             }
-            return current.matcher != null && current.matcher.matches(dstIpBytes);
+            if (current.matcher == null) {
+                // Missing selector in loaded GeoIP file must also fail closed on BLOCK rules.
+                return action == RouteAction.BLOCK && notReadyPolicy == GeoNotReadyPolicy.FAIL_CLOSED_BLOCK;
+            }
+            return current.matcher.matches(dstIpBytes);
         }
     }
 

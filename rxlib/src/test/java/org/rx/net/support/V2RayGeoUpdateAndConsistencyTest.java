@@ -225,6 +225,28 @@ public class V2RayGeoUpdateAndConsistencyTest {
             assertEquals(RouteAction.PROXY, matcher.match("clean.example"));
             assertEquals(RouteAction.BLOCK, matcher.match("10.99.1.1"));
             assertEquals(RouteAction.PROXY, matcher.match("8.8.8.8"));
+
+            // Missing selector in a LOADED Geo file must also fail CLOSED for BLOCK rules (not silently allow)
+            UserRule missingSelectorRule = new UserRule();
+            missingSelectorRule.setRules(Arrays.asList(
+                    "geosite:nonexistent-block block",
+                    "geoip:nonexistent-ip block",
+                    "default proxy"));
+            UserRuleMatcher missingMatcher = UserRuleMatcher.compile(missingSelectorRule, manager, "u-missing");
+            assertEquals(RouteAction.BLOCK, missingMatcher.match("any-domain.example"));
+            assertEquals(RouteAction.BLOCK, missingMatcher.match("9.9.9.9"));
+
+            // EventLoop hot path must NEVER block compiling an uncached selector; schedules async and fails closed on BLOCK
+            io.netty.channel.nio.NioEventLoopGroup elg = new io.netty.channel.nio.NioEventLoopGroup(1);
+            try {
+                // Inject fresh snapshot without prewarming selector "cn"
+                V2RayGeoManager.GeoSnapshot snap = manager.snapshot();
+                assertTrue(snap.isSiteCompiled("ads"), "active selector 'ads' must be prewarmed before snapshot publication");
+                RouteAction elResult = elg.submit(() -> missingMatcher.match("eventloop.example")).get(5, TimeUnit.SECONDS);
+                assertEquals(RouteAction.BLOCK, elResult);
+            } finally {
+                elg.shutdownGracefully().syncUninterruptibly();
+            }
         } finally {
             manager.close();
         }

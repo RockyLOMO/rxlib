@@ -97,3 +97,9 @@
 - **定位**：.memory/ 目录用于存放项目所有的核心架构决策记录（ADR）和演进历史，采用**领域模块化（Domain-Driven）**结构，专为 AI 上下文读取设计。
 - **AI 读取规范**：当 AI (如 Cursor、Gemini) 收到修改特定模块的任务时，**可以按需（根据改动的领域）**去查阅对应领域下的 .memory/*.md 文件，以获取历史上下文作为代码分析和修改的参考，不作强求。
 - **AI 写入规范**：在完成任何重大的架构演进、核心模块重构、或是解决极具价值的疑难 Bug 后，AI 应当主动将本次决策与重构的经验提炼，按时间节点追加到相关的 .memory 领域档案中，确保项目记忆库与时俱进。
+
+## 9. 测试机器与双 NAT 实测环境（仅登记角色与入口，凭据统一放 `rss-env` / `.envKeys`）
+- 详细连接信息与凭据统一维护在工作区同级 [rss-env/readme.md](../rss-env/readme.md)「测试机器与双 NAT 验证环境」及 `${env:~~}\.envKeys\ssh\`，**本仓库不存明文密码或私钥**。
+- **高丢包公网传输 / 公网节点服务测试机**：`182.255.85.247`（Debian 12，1 vCPU / 960 MiB，OpenJDK 21，高丢包公网线路，用于传输 Profile、`EgressCodec`/`AUTO` 及公网 NodeRegistry/Rendezvous/RRP Relay 实测）。
+- **双 NAT 测试节点**：`AnZhi-PC`（`cloud.f-li.cn:6014`，Win10 LTSC，JDK 21，私钥 `D:\home\.envKeys\ssh\AnZhi-PC\id_ed25519`）与 `Xsy-PC`（`cloud.f-li.cn:6012`，Win10 LTSC，JDK 21，私钥 `D:\home\.envKeys\ssh\Xsy-PC\id_ed25519`）；跨不同公网 NAT 对照可结合本机 `Youfan-PC` / `rx-linux`。
+- 所有真机测试必须使用独立临时端口与临时目录，结束后彻底清理，禁止影响线上 RSS（`6885` / `6896-6899`）或其他生产服务。

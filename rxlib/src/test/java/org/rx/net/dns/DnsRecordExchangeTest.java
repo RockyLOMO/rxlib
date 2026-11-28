@@ -27,6 +27,8 @@ class DnsRecordExchangeTest {
     @BeforeEach
     @AfterEach
     void resetState() {
+        DnsRecordExchange.clockNanos = System::nanoTime;
+        DnsRecordExchange.maxCacheBytes = DnsRecordExchange.DEFAULT_MAX_CACHE_BYTES;
         DnsRecordExchange.clearCache();
         DnsRecordExchange.closeIdleSockets();
     }
@@ -265,6 +267,143 @@ class DnsRecordExchangeTest {
         } finally {
             executor.shutdownNow();
         }
+    }
+
+    @Test
+    void cacheDecaysTtlEnforcesByteBudgetValidatesQuestionAndCachesSoaNegative() throws Exception {
+        java.util.concurrent.atomic.AtomicLong fakeClock = new java.util.concurrent.atomic.AtomicLong(1_000_000_000_000L);
+        DnsRecordExchange.clockNanos = fakeClock::get;
+        DnsRecordExchange.maxCacheBytes = 2048L;
+
+        ExecutorService executor = Executors.newCachedThreadPool();
+        try (DatagramSocket responder = new DatagramSocket(0, InetAddress.getByName("127.0.0.1"))) {
+            AtomicInteger hits = new AtomicInteger();
+            executor.submit(() -> {
+                try {
+                    for (int i = 0; i < 8; i++) {
+                        byte[] buf = new byte[1500];
+                        DatagramPacket req = new DatagramPacket(buf, buf.length);
+                        responder.receive(req);
+                        int h = hits.incrementAndGet();
+                        byte[] resp;
+                        if (h == 1) {
+                            resp = buildLargeTxtReply(req.getData(), req.getLength(), 60, 400);
+                        } else if (h == 2) {
+                            // Mismatched question name -> must be rejected!
+                            resp = buildWrongQuestionReply(req.getData(), req.getLength());
+                        } else if (h == 3) {
+                            // NXDOMAIN with SOA (TTL=120, MINIMUM=25) -> effective negative cache TTL = 25s
+                            resp = buildNxdomainWithSoa(req.getData(), req.getLength(), 120, 25);
+                        } else {
+                            resp = buildLargeTxtReply(req.getData(), req.getLength(), 60, 700);
+                        }
+                        responder.send(new DatagramPacket(resp, resp.length, req.getSocketAddress()));
+                    }
+                } catch (IOException ignored) {
+                }
+            });
+
+            InetSocketAddress server = (InetSocketAddress) responder.getLocalSocketAddress();
+            byte[] first = DnsRecordExchange.query(Collections.singletonList(server), "ttl-decay.example.com", 16, false, 500, 1500);
+            assertEquals(60L, extractFirstAnswerTtl(first));
+
+            // Advance 25s -> cached reply must decay TTL from 60 to 35!
+            fakeClock.addAndGet(java.util.concurrent.TimeUnit.SECONDS.toNanos(25));
+            byte[] decayed = DnsRecordExchange.query(Collections.singletonList(server), "ttl-decay.example.com", 16, false, 500, 1500);
+            assertEquals(35L, extractFirstAnswerTtl(decayed), "Cached RR TTL must decay by elapsed seconds");
+            assertEquals(1, hits.get());
+
+            // Mismatched question response must be rejected (not cached!)
+            assertThrows(IOException.class, () ->
+                    DnsRecordExchange.query(Collections.singletonList(server), "mismatch.example.com", 16, false, 500, 1500));
+
+            // NXDOMAIN with SOA(120, min=25) capped by DEFAULT_NEGATIVE_TTL (5s): hits at +3s, expires at +6s
+            byte[] neg1 = DnsRecordExchange.query(Collections.singletonList(server), "nx.example.com", 16, false, 500, 1500);
+            assertEquals(3, neg1[3] & 0x0f);
+            int hitsAfterNeg1 = hits.get();
+            fakeClock.addAndGet(java.util.concurrent.TimeUnit.SECONDS.toNanos(3));
+            byte[] neg2 = DnsRecordExchange.query(Collections.singletonList(server), "nx.example.com", 16, false, 500, 1500);
+            assertEquals(3, neg2[3] & 0x0f);
+            assertEquals(hitsAfterNeg1, hits.get(), "SOA negative reply must be cached within min(SOA.TTL, SOA.MINIMUM, DEFAULT_NEGATIVE_TTL)");
+
+            // Byte budget eviction: inserting several 700B replies under 2048B cap keeps cachedBytesUsed <= 2048
+            for (int k = 0; k < 4; k++) {
+                DnsRecordExchange.query(Collections.singletonList(server), "budget-" + k + ".example.com", 16, false, 500, 1500);
+            }
+            assertTrue(DnsRecordExchange.cachedBytesUsed() <= 2048L,
+                    "Cache byte budget exceeded: " + DnsRecordExchange.cachedBytesUsed());
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private static long extractFirstAnswerTtl(byte[] resp) {
+        int p = 12;
+        while (p < resp.length && resp[p] != 0) {
+            p += 1 + (resp[p] & 0xff);
+        }
+        p += 5; // end of question
+        if ((resp[p] & 0xc0) == 0xc0) {
+            p += 2;
+        } else {
+            while (p < resp.length && resp[p] != 0) {
+                p += 1 + (resp[p] & 0xff);
+            }
+            p += 1;
+        }
+        return ((long) (resp[p + 4] & 0xff) << 24)
+                | ((long) (resp[p + 5] & 0xff) << 16)
+                | ((long) (resp[p + 6] & 0xff) << 8)
+                | (resp[p + 7] & 0xff);
+    }
+
+    private static byte[] buildWrongQuestionReply(byte[] req, int reqLen) {
+        io.netty.buffer.ByteBuf q = Unpooled.buffer(128);
+        try {
+            int id = ((req[0] & 0xff) << 8) | (req[1] & 0xff);
+            DoHMessageCodec.encodeQuery(q, id, "spoofed-other.example.com", io.netty.handler.codec.dns.DnsRecordType.TXT, 0);
+            byte[] out = io.netty.buffer.ByteBufUtil.getBytes(q);
+            out[2] = (byte) 0x81;
+            out[3] = (byte) 0x80;
+            return out;
+        } finally {
+            q.release();
+        }
+    }
+
+    private static byte[] buildNxdomainWithSoa(byte[] req, int reqLen, int soaTtl, int soaMin) {
+        int qEnd = 12;
+        while (qEnd < reqLen && req[qEnd] != 0) {
+            qEnd += 1 + (req[qEnd] & 0xff);
+        }
+        qEnd += 5;
+        // Minimal SOA RDATA: MNAME(root=0x00) + RNAME(root=0x00) + 5*uint32 = 22 bytes
+        int rdLen = 22;
+        byte[] out = new byte[qEnd + 12 + rdLen];
+        System.arraycopy(req, 0, out, 0, qEnd);
+        out[2] = (byte) 0x81;
+        out[3] = (byte) 0x83; // NXDOMAIN
+        out[6] = 0; out[7] = 0; // ANCOUNT=0
+        out[8] = 0; out[9] = 1; // NSCOUNT=1
+        out[10] = 0; out[11] = 0; // ARCOUNT=0
+        int p = qEnd;
+        out[p++] = (byte) 0xc0; out[p++] = 12; // name pointer
+        out[p++] = 0; out[p++] = 6; // TYPE=SOA
+        out[p++] = 0; out[p++] = 1; // CLASS=IN
+        out[p++] = (byte) (soaTtl >>> 24);
+        out[p++] = (byte) (soaTtl >>> 16);
+        out[p++] = (byte) (soaTtl >>> 8);
+        out[p++] = (byte) soaTtl;
+        out[p++] = (byte) (rdLen >>> 8);
+        out[p++] = (byte) rdLen;
+        out[p++] = 0; // MNAME = .
+        out[p++] = 0; // RNAME = .
+        p += 16; // serial/refresh/retry/expire = 0
+        out[p++] = (byte) (soaMin >>> 24);
+        out[p++] = (byte) (soaMin >>> 16);
+        out[p++] = (byte) (soaMin >>> 8);
+        out[p] = (byte) soaMin;
+        return out;
     }
 
     private static byte[] buildLargeTxtReply(byte[] req, int reqLen, int ttlSeconds, int txtBytes) {

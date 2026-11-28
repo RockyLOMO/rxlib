@@ -62,6 +62,7 @@ public final class V2RayGeoManager implements Closeable {
     }
 
     public static final class GeoSnapshot {
+        private static final Object MISSING_MATCHER = new Object();
         public final long ipGeneration;
         public final long siteGeneration;
         public final V2RayGeoIpMatcher ipMatcher;
@@ -70,6 +71,10 @@ public final class V2RayGeoManager implements Closeable {
         public final String siteDigest;
         public final long ipUpdatedAtMillis;
         public final long siteUpdatedAtMillis;
+        private final ConcurrentHashMap<String, Object> compiledSiteCache = new ConcurrentHashMap<String, Object>();
+        private final ConcurrentHashMap<String, Object> compiledIpCache = new ConcurrentHashMap<String, Object>();
+        private final Set<String> pendingSiteCompiles = ConcurrentHashMap.newKeySet();
+        private final Set<String> pendingIpCompiles = ConcurrentHashMap.newKeySet();
 
         GeoSnapshot(long ipGeneration, long siteGeneration,
                     V2RayGeoIpMatcher ipMatcher, V2RayGeoSiteIndex siteIndex,
@@ -87,6 +92,106 @@ public final class V2RayGeoManager implements Closeable {
 
         public long generation() {
             return ipGeneration + siteGeneration;
+        }
+
+        private static String normKey(String selector) {
+            String trimmed = GeoIPSearcher.trimAscii(selector);
+            if (trimmed == null) {
+                return "";
+            }
+            String lower = trimmed.toLowerCase(java.util.Locale.ROOT);
+            if (lower.startsWith("geosite:")) {
+                return lower.substring(8);
+            }
+            if (lower.startsWith("geoip:")) {
+                return lower.substring(6);
+            }
+            return lower;
+        }
+
+        /** Non-blocking O(1) lookup for pre-compiled site matcher. Returns null if not yet compiled (or missing -> check isSiteCompiled). */
+        public boolean isSiteCompiled(String selector) {
+            return compiledSiteCache.containsKey(normKey(selector));
+        }
+
+        public GeoSiteMatcher cachedSiteMatcher(String selector) {
+            Object v = compiledSiteCache.get(normKey(selector));
+            return v instanceof GeoSiteMatcher ? (GeoSiteMatcher) v : null;
+        }
+
+        public GeoSiteMatcher compileSiteMatcher(String selector) {
+            if (siteIndex == null) {
+                return null;
+            }
+            String key = normKey(selector);
+            Object v = compiledSiteCache.get(key);
+            if (v != null) {
+                return v instanceof GeoSiteMatcher ? (GeoSiteMatcher) v : null;
+            }
+            GeoSiteMatcher compiled = siteIndex.matcher(selector, null);
+            Object stored = compiled != null ? compiled : MISSING_MATCHER;
+            Object existing = compiledSiteCache.putIfAbsent(key, stored);
+            Object winner = existing != null ? existing : stored;
+            return winner instanceof GeoSiteMatcher ? (GeoSiteMatcher) winner : null;
+        }
+
+        public void scheduleSiteCompileAsync(String selector) {
+            if (siteIndex == null) {
+                return;
+            }
+            String key = normKey(selector);
+            if (compiledSiteCache.containsKey(key) || !pendingSiteCompiles.add(key)) {
+                return;
+            }
+            Tasks.run(() -> {
+                try {
+                    compileSiteMatcher(selector);
+                } finally {
+                    pendingSiteCompiles.remove(key);
+                }
+            });
+        }
+
+        public boolean isIpCompiled(String selector) {
+            return compiledIpCache.containsKey(normKey(selector));
+        }
+
+        public V2RayGeoIpMatcher.CodeMatcher cachedIpMatcher(String selector) {
+            Object v = compiledIpCache.get(normKey(selector));
+            return v instanceof V2RayGeoIpMatcher.CodeMatcher ? (V2RayGeoIpMatcher.CodeMatcher) v : null;
+        }
+
+        public V2RayGeoIpMatcher.CodeMatcher compileIpMatcher(String selector) {
+            if (ipMatcher == null) {
+                return null;
+            }
+            String key = normKey(selector);
+            Object v = compiledIpCache.get(key);
+            if (v != null) {
+                return v instanceof V2RayGeoIpMatcher.CodeMatcher ? (V2RayGeoIpMatcher.CodeMatcher) v : null;
+            }
+            V2RayGeoIpMatcher.CodeMatcher compiled = ipMatcher.matcher(selector);
+            Object stored = compiled != null ? compiled : MISSING_MATCHER;
+            Object existing = compiledIpCache.putIfAbsent(key, stored);
+            Object winner = existing != null ? existing : stored;
+            return winner instanceof V2RayGeoIpMatcher.CodeMatcher ? (V2RayGeoIpMatcher.CodeMatcher) winner : null;
+        }
+
+        public void scheduleIpCompileAsync(String selector) {
+            if (ipMatcher == null) {
+                return;
+            }
+            String key = normKey(selector);
+            if (compiledIpCache.containsKey(key) || !pendingIpCompiles.add(key)) {
+                return;
+            }
+            Tasks.run(() -> {
+                try {
+                    compileIpMatcher(selector);
+                } finally {
+                    pendingIpCompiles.remove(key);
+                }
+            });
         }
     }
 
@@ -758,6 +863,16 @@ public final class V2RayGeoManager implements Closeable {
                     }
                     published = new GeoSnapshot(nextIpGen, nextSiteGen, ipMatcher, siteIndex,
                             ipDigest, siteDigest, ipUpdated, siteUpdated);
+                    if (ipMatcher != null) {
+                        for (String selector : activeIpSelectors) {
+                            published.compileIpMatcher(selector);
+                        }
+                    }
+                    if (siteIndex != null) {
+                        for (String selector : activeSiteSelectors) {
+                            published.compileSiteMatcher(selector);
+                        }
+                    }
                     snapshot = published;
                     loadSuccessCount.incrementAndGet();
                 }
