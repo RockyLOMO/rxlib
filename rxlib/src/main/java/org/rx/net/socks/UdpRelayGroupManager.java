@@ -35,13 +35,24 @@ final class UdpRelayGroupManager extends Disposable {
             AttributeKey.valueOf("udpRelayGroupEntry");
     private static final java.security.SecureRandom RANDOM = new java.security.SecureRandom();
     private static final int PROFILES = RssDatagramHandler.GAME | RssDatagramHandler.WEAK;
-    private static final int MAX_GROUPS = 4096;
+    static final int MAX_GROUPS = 4096;
+    static final int DEFAULT_MAX_GROUPS_PER_CLIENT = 256;
+    static final int DEFAULT_MAX_TOTAL_RELAYS = MAX_GROUPS * 2;
+    private static final int MAX_IDEMPOTENT_ENTRIES = 1024;
+    private static final long IDEMPOTENT_TTL_MILLIS = 15_000L;
     private static final int BIND_TIMEOUT_MILLIS = 5000;
 
     private final AtomicInteger nextPort = new AtomicInteger();
     final SocksProxyServer server;
     final ConcurrentMap<String, UdpRelayGroup> groups = new ConcurrentHashMap<>();
     final ConcurrentMap<Integer, UdpRelayEntry> relays = new ConcurrentHashMap<>();
+    private final AtomicInteger reservedGroups = new AtomicInteger();
+    private final AtomicInteger reservedRelays = new AtomicInteger();
+    private final ConcurrentMap<String, AtomicInteger> clientGroupCounts = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, IdempotentOpen> idempotentOpens = new ConcurrentHashMap<>();
+    volatile int maxGroups = MAX_GROUPS;
+    volatile int maxGroupsPerClient = DEFAULT_MAX_GROUPS_PER_CLIENT;
+    volatile int maxTotalRelays = DEFAULT_MAX_TOTAL_RELAYS;
     final ScheduledFuture<?> cleanupTask;
     private final RssFixedUdpEntry fixedEntry = new RssFixedUdpEntry();
     private final Channel fixedChannel;
@@ -67,7 +78,7 @@ final class UdpRelayGroupManager extends Disposable {
 
     SocksRpcCapabilities capabilities() {
         SocksConfig config = server.getConfig();
-        SocksRpcCapabilities caps = SocksRpcCapabilities.udpRelayGroup(config.getUdpRelayControlMaxRelaysPerGroup(), MAX_GROUPS);
+        SocksRpcCapabilities caps = SocksRpcCapabilities.udpRelayGroup(config.getUdpRelayControlMaxRelaysPerGroup(), maxGroups);
         if (fixedChannel != null && fixedChannel.isActive()) caps.addFlag(SocksRpcCapabilities.FIXED_DATAGRAM_ENTRY);
         if (config.isDailyUdp() && (!config.isUdpHop() || caps.getMaxRelaysPerGroup() >= 2)) {
             caps.addFlag(SocksRpcCapabilities.SUPPORT_DAILY_UDP);
@@ -78,6 +89,19 @@ final class UdpRelayGroupManager extends Disposable {
         return caps;
     }
 
+    int reservedGroupCount() {
+        return reservedGroups.get();
+    }
+
+    int reservedRelayCount() {
+        return reservedRelays.get();
+    }
+
+    int clientGroupCount(String clientId) {
+        AtomicInteger c = clientGroupCounts.get(normalizeClientKey(clientId));
+        return c == null ? 0 : c.get();
+    }
+
     UdpRelayGroupOpenResult open(UdpRelayGroupOpenRequest request) {
         checkNotClosed();
         if (request == null) {
@@ -86,8 +110,20 @@ final class UdpRelayGroupManager extends Disposable {
         if (request.isSharedDedupRequired()) {
             return UdpRelayGroupOpenResult.fail("UNSUPPORTED_SHARED_DEDUP", "shared dedup is not enabled");
         }
-        if (groups.size() >= MAX_GROUPS) {
-            return UdpRelayGroupOpenResult.fail("TOO_MANY_GROUPS", "too many udp relay groups");
+
+        String clientKey = normalizeClientKey(request.getClientId());
+        String reqId = request.getClientRequestId();
+        String idempKey = reqId != null && !reqId.trim().isEmpty() ? clientKey + "|" + reqId.trim() : null;
+        if (idempKey != null) {
+            IdempotentOpen prev = idempotentOpens.get(idempKey);
+            if (prev != null) {
+                UdpRelayGroup existing = groups.get(prev.groupId);
+                if (existing != null && !existing.closed && System.currentTimeMillis() - prev.createdAtMillis <= IDEMPOTENT_TTL_MILLIS) {
+                    existing.touch();
+                    return prev.result;
+                }
+                idempotentOpens.remove(idempKey, prev);
+            }
         }
 
         SocksConfig config = server.getConfig();
@@ -132,13 +168,23 @@ final class UdpRelayGroupManager extends Disposable {
                 initialCount = minActive = maxRelayCount = 1;
             }
         }
+
+        // Atomic capacity reservation BEFORE allocating group state or binding any UDP socket.
+        if (!tryReserve(reservedGroups, 1, maxGroups)) {
+            return UdpRelayGroupOpenResult.fail("TOO_MANY_GROUPS", "too many udp relay groups");
+        }
+        if (!tryReserveClient(clientKey, maxGroupsPerClient)) {
+            reservedGroups.decrementAndGet();
+            return UdpRelayGroupOpenResult.fail("TOO_MANY_CLIENT_GROUPS", "client udp relay group quota exceeded");
+        }
+
         long now = System.currentTimeMillis();
         long idleMillis = request.getIdleTimeoutMillis() > 0L
                 ? Math.max(1000L, request.getIdleTimeoutMillis())
                 : config.getUdpRelayGroupIdleMillis();
 
         UdpRelayGroup group = new UdpRelayGroup(UUID.randomUUID().toString(), UUID.randomUUID().toString(),
-                daily ? null : request.getClientAddr(), request.getFirstDestination(), maxRelayCount, idleMillis, now,
+                clientKey, daily ? null : request.getClientAddr(), request.getFirstDestination(), maxRelayCount, idleMillis, now,
                 features, request.getClientSalt(), frag, negotiatedMtu, request.isFixedEntry());
         groups.put(group.groupId, group);
 
@@ -166,6 +212,14 @@ final class UdpRelayGroupManager extends Disposable {
         }
         if (group.authSecret != null) {
             result.setAuthSecret(group.authSecret);
+        }
+        if (idempKey != null) {
+            if (idempotentOpens.size() >= MAX_IDEMPOTENT_ENTRIES) {
+                pruneIdempotentOpens(now);
+            }
+            if (idempotentOpens.size() < MAX_IDEMPOTENT_ENTRIES) {
+                idempotentOpens.put(idempKey, new IdempotentOpen(group.groupId, result, now));
+            }
         }
         return result;
     }
@@ -210,6 +264,7 @@ final class UdpRelayGroupManager extends Disposable {
             return false;
         }
         relays.remove(relayPort, entry);
+        releaseRelaySlot(entry);
         Sockets.closeOnFlushed(entry.udpChannel);
         DiagnosticMetrics.record("socks.udp.relay.group.remove.count", 1D,
                 "result=success");
@@ -260,6 +315,11 @@ final class UdpRelayGroupManager extends Disposable {
     }
 
     private UdpRelayEntry bindRelay(UdpRelayGroup group) {
+        if (!tryReserve(reservedRelays, 1, maxTotalRelays)) {
+            log.warn("bind rpc udp relay group {} rejected: global relay quota reached ({})", group.groupId, maxTotalRelays);
+            return null;
+        }
+        boolean slotOwnedByEntry = false;
         Channel relay = null;
         try {
             SocksConfig config = server.getConfig();
@@ -325,11 +385,13 @@ final class UdpRelayGroupManager extends Disposable {
             }
             UdpRelayEntry entry = new UdpRelayEntry(alias ? SocksRpcCapabilities.DAILY_HOP_ID : UUID.randomUUID().toString(),
                     group, relay, advertise);
+            slotOwnedByEntry = true;
             relay.attr(ATTR_RELAY_GROUP_ENTRY).set(entry);
             group.relays.put(udpBindLocalAddr.getPort(), entry);
             relays.put(udpBindLocalAddr.getPort(), entry);
             server.registerUdpRelay(relay);
             relay.closeFuture().addListener((ChannelFutureListener) f -> {
+                releaseRelaySlot(entry);
                 group.relays.remove(udpBindLocalAddr.getPort(), entry);
                 relays.remove(udpBindLocalAddr.getPort(), entry);
                 if (group.daily && !group.closed) {
@@ -349,6 +411,10 @@ final class UdpRelayGroupManager extends Disposable {
                 Sockets.closeOnFlushed(relay);
             }
             return null;
+        } finally {
+            if (!slotOwnedByEntry) {
+                reservedRelays.decrementAndGet();
+            }
         }
     }
 
@@ -406,22 +472,93 @@ final class UdpRelayGroupManager extends Disposable {
                 closeGroup(group, "timeout");
             }
         }
+        pruneIdempotentOpens(now);
     }
 
     private void closeGroup(UdpRelayGroup group, String reason) {
-        if (group == null || group.closed) {
+        if (group == null || !group.closedFlag.compareAndSet(false, true)) {
             return;
         }
         group.closed = true;
         groups.remove(group.groupId, group);
+        releaseGroupSlot(group);
         for (UdpRelayEntry entry : group.relays.values()) {
             relays.remove(entry.relayPort, entry);
+            releaseRelaySlot(entry);
             Sockets.closeOnFlushed(entry.udpChannel);
         }
         group.relays.clear();
         DiagnosticMetrics.record("socks.udp.relay.group.close.count", 1D,
                 "result=" + ("timeout".equals(reason) ? "timeout" : "success") + ",reason=" + reason);
         recordState("close");
+    }
+
+    private void releaseGroupSlot(UdpRelayGroup group) {
+        if (group.slotReleased.compareAndSet(false, true)) {
+            reservedGroups.updateAndGet(v -> v > 0 ? v - 1 : 0);
+            releaseClientSlot(group.clientKey);
+        }
+    }
+
+    private void releaseRelaySlot(UdpRelayEntry entry) {
+        if (entry != null && entry.slotReleased.compareAndSet(false, true)) {
+            reservedRelays.updateAndGet(v -> v > 0 ? v - 1 : 0);
+        }
+    }
+
+    private static boolean tryReserve(AtomicInteger counter, int delta, int limit) {
+        while (true) {
+            int cur = counter.get();
+            if (cur + delta > limit) {
+                return false;
+            }
+            if (counter.compareAndSet(cur, cur + delta)) {
+                return true;
+            }
+        }
+    }
+
+    private boolean tryReserveClient(String clientKey, int limit) {
+        while (true) {
+            AtomicInteger count = clientGroupCounts.computeIfAbsent(clientKey, k -> new AtomicInteger());
+            int cur = count.get();
+            if (cur >= limit) {
+                if (cur == 0) {
+                    clientGroupCounts.remove(clientKey, count);
+                }
+                return false;
+            }
+            if (count.compareAndSet(cur, cur + 1)) {
+                // Re-verify map entry wasn't concurrently evicted while transitioning 0 -> 1.
+                if (clientGroupCounts.get(clientKey) == count) {
+                    return true;
+                }
+                count.decrementAndGet();
+            }
+        }
+    }
+
+    private void releaseClientSlot(String clientKey) {
+        AtomicInteger count = clientGroupCounts.get(clientKey);
+        if (count == null) {
+            return;
+        }
+        int after = count.updateAndGet(v -> v > 0 ? v - 1 : 0);
+        if (after == 0) {
+            clientGroupCounts.remove(clientKey, count);
+        }
+    }
+
+    private void pruneIdempotentOpens(long now) {
+        for (java.util.Map.Entry<String, IdempotentOpen> e : idempotentOpens.entrySet()) {
+            if (now - e.getValue().createdAtMillis > IDEMPOTENT_TTL_MILLIS || !groups.containsKey(e.getValue().groupId)) {
+                idempotentOpens.remove(e.getKey(), e.getValue());
+            }
+        }
+    }
+
+    private static String normalizeClientKey(String clientId) {
+        return clientId == null || clientId.trim().isEmpty() ? "_default" : clientId.trim();
     }
 
     private void recordState(String action) {
@@ -454,12 +591,27 @@ final class UdpRelayGroupManager extends Disposable {
         }
         groups.clear();
         relays.clear();
+        clientGroupCounts.clear();
+        idempotentOpens.clear();
+    }
+
+    private static final class IdempotentOpen {
+        final String groupId;
+        final UdpRelayGroupOpenResult result;
+        final long createdAtMillis;
+
+        IdempotentOpen(String groupId, UdpRelayGroupOpenResult result, long createdAtMillis) {
+            this.groupId = groupId;
+            this.result = result;
+            this.createdAtMillis = createdAtMillis;
+        }
     }
 
     static final class UdpRelayGroup {
         final String groupId;
         // Negotiated daily frames carry this per-group cookie. RPC authorization is independent.
         final String dataPlaneToken;
+        final String clientKey;
         final boolean daily, fixed;
         final int features;
         final UUID clientSalt;
@@ -474,12 +626,15 @@ final class UdpRelayGroupManager extends Disposable {
         final long idleTimeoutMillis;
         final long createdAtMillis;
         final ConcurrentMap<Integer, UdpRelayEntry> relays = new ConcurrentHashMap<>();
+        final java.util.concurrent.atomic.AtomicBoolean closedFlag = new java.util.concurrent.atomic.AtomicBoolean();
+        final java.util.concurrent.atomic.AtomicBoolean slotReleased = new java.util.concurrent.atomic.AtomicBoolean();
         volatile long lastActiveAtMillis;
         volatile boolean closed;
 
-        UdpRelayGroup(String groupId, String dataPlaneToken, InetSocketAddress clientAddr,
+        UdpRelayGroup(String groupId, String dataPlaneToken, String clientKey, InetSocketAddress clientAddr,
                 InetSocketAddress firstDestination, int maxRelayCount, long idleTimeoutMillis, long now,
                 int features, UUID clientSalt, boolean udpFragEnabled, int udpMtu, boolean fixed) {
+            this.clientKey = clientKey;
             this.fixed = fixed;
             this.features = features;
             this.clientSalt = clientSalt;
@@ -517,6 +672,7 @@ final class UdpRelayGroupManager extends Disposable {
         final int relayPort;
         final Channel udpChannel;
         final InetSocketAddress relayAddress;
+        final java.util.concurrent.atomic.AtomicBoolean slotReleased = new java.util.concurrent.atomic.AtomicBoolean();
         volatile int weight = 1;
 
         UdpRelayEntry(String relayId, UdpRelayGroup group, Channel udpChannel, InetSocketAddress relayAddress) {

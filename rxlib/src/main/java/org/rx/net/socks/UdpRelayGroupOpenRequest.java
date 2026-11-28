@@ -15,6 +15,8 @@ public final class UdpRelayGroupOpenRequest implements Serializable {
     private static final long serialVersionUID = 1L;
 
     private String clientId;
+    /** Optional bounded idempotency key per open attempt to prevent duplicate leaked server groups on retry. */
+    private String clientRequestId;
     private InetSocketAddress clientAddr;
     private InetSocketAddress firstDestination;
     private int initialRelayCount = 1;
