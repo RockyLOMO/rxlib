@@ -34,6 +34,17 @@ public class EgressConfig implements Serializable {
     private int maxBodyBytes = EgressCodec.DEFAULT_MAX_BODY_BYTES;
     private int maxInflateBytes = EgressCodec.DEFAULT_MAX_INFLATE_BYTES;
     private int detectTimeoutMillis = EgressCodec.DEFAULT_DETECT_TIMEOUT_MILLIS;
+    /**
+     * When true (default for HTTP egress), generates per-frame random Host/URL Path/Query using the
+     * built-in legacy parameter tables without requiring user-supplied domains. Set false to use fixed
+     * {@link #httpHost}/{@link #httpPath}.
+     */
+    private boolean httpRandomHeaders = true;
+    /**
+     * When true (default for HTTP egress), random-header client framing mixes GET/POST (80%/20%) and
+     * server HTTP decoding accepts both GET and POST. Set false to restrict strictly to POST.
+     */
+    private boolean httpAllowGetMethod = true;
     private String httpHost = "api.local";
     private String httpPath = "/v1/stream";
 
@@ -44,6 +55,21 @@ public class EgressConfig implements Serializable {
     public static EgressConfig client(EgressCodec codec) {
         EgressConfig cfg = new EgressConfig();
         cfg.setTcpCodec(codec == null ? EgressCodec.NONE : codec);
+        cfg.validateClient();
+        return cfg;
+    }
+
+    public static EgressConfig clientHttpFixed(String host, String path) {
+        EgressConfig cfg = new EgressConfig();
+        cfg.setTcpCodec(EgressCodec.HTTP);
+        cfg.setHttpRandomHeaders(false);
+        cfg.setHttpAllowGetMethod(false);
+        if (host != null) {
+            cfg.setHttpHost(host);
+        }
+        if (path != null) {
+            cfg.setHttpPath(path);
+        }
         cfg.validateClient();
         return cfg;
     }
@@ -84,6 +110,8 @@ public class EgressConfig implements Serializable {
         c.maxBodyBytes = this.maxBodyBytes;
         c.maxInflateBytes = this.maxInflateBytes;
         c.detectTimeoutMillis = this.detectTimeoutMillis;
+        c.httpRandomHeaders = this.httpRandomHeaders;
+        c.httpAllowGetMethod = this.httpAllowGetMethod;
         c.httpHost = this.httpHost;
         c.httpPath = this.httpPath;
         return c;

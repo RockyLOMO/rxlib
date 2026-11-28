@@ -45,10 +45,19 @@ class EgressCodecTest {
             config.setEgressCodec(EgressCodec.ZLIB_STORED);
             TcpWarmPoolKey stored = TcpWarmPoolKey.from(ep, config, "test");
             config.setEgressCodec(EgressCodec.HTTP);
-            TcpWarmPoolKey http = TcpWarmPoolKey.from(ep, config, "test");
+            TcpWarmPoolKey httpRandom = TcpWarmPoolKey.from(ep, config, "test");
+            config.setEgressConfig(EgressConfig.clientHttpFixed("api.example.com", "/v1/custom"));
+            TcpWarmPoolKey httpFixed = TcpWarmPoolKey.from(ep, config, "test");
+            EgressConfig httpDeflateCfg = EgressConfig.client(EgressCodec.HTTP);
+            httpDeflateCfg.setHttpBodyEncoding(HttpBodyEncoding.ZLIB_STORED);
+            config.setEgressConfig(httpDeflateCfg);
+            TcpWarmPoolKey httpDeflate = TcpWarmPoolKey.from(ep, config, "test");
             assertNotEquals(raw, stored);
-            assertNotEquals(raw, http);
-            assertNotEquals(stored, http);
+            assertNotEquals(raw, httpRandom);
+            assertNotEquals(stored, httpRandom);
+            assertNotEquals(httpRandom, httpFixed);
+            assertNotEquals(httpRandom, httpDeflate);
+            assertNotEquals(httpFixed, httpDeflate);
         } finally {
             ch.finishAndReleaseAll();
         }
@@ -135,8 +144,11 @@ class EgressCodecTest {
         EmbeddedChannel stdReqParser = new EmbeddedChannel(new HttpRequestDecoder(), new HttpObjectAggregator(1024 * 1024));
         EmbeddedChannel stdRespParser = new EmbeddedChannel(new HttpResponseDecoder(), new HttpObjectAggregator(1024 * 1024));
         try {
-            EgressCodec.installClient(client.pipeline(), EgressCodec.HTTP);
-            EgressCodec.installServer(server.pipeline(), EgressCodec.HTTP, InnerProtocol.TRANSPORT_CORE);
+            EgressConfig fixedClient = EgressConfig.clientHttpFixed("api.local", "/v1/stream");
+            EgressConfig fixedServer = EgressConfig.server(EgressCodec.HTTP);
+            fixedServer.setHttpAllowGetMethod(false);
+            EgressCodec.installClient(client.pipeline(), fixedClient);
+            EgressCodec.installServer(server.pipeline(), fixedServer, InnerProtocol.TRANSPORT_CORE);
 
             byte[] reqBin = new byte[4096];
             for (int i = 0; i < reqBin.length; i++) {
@@ -152,10 +164,14 @@ class EgressCodecTest {
 
             client.writeOutbound(Unpooled.wrappedBuffer(reqBin));
             byte[] c2sWire = readAllOutbound(client);
-            String c2sPrefix = new String(c2sWire, 0, Math.min(200, c2sWire.length), StandardCharsets.US_ASCII);
-            assertTrue(c2sPrefix.startsWith("POST /v1/stream HTTP/1.1\r\n"));
-            assertTrue(c2sPrefix.contains("Content-Type: application/json\r\n"));
-            assertTrue(c2sPrefix.contains("Content-Length: 4096\r\n"));
+            String c2sPrefix = new String(c2sWire, 0, Math.min(350, c2sWire.length), StandardCharsets.US_ASCII);
+            assertTrue(c2sPrefix.startsWith("POST /v1/stream HTTP/1.1\r\n"), c2sPrefix);
+            assertTrue(c2sPrefix.contains("Connection: keep-alive\r\n"), c2sPrefix);
+            assertTrue(c2sPrefix.contains("Host: api.local\r\n"), c2sPrefix);
+            assertTrue(c2sPrefix.contains("Accept: */*\r\n"), c2sPrefix);
+            assertTrue(c2sPrefix.contains("User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36\r\n"), c2sPrefix);
+            assertTrue(c2sPrefix.contains("Content-Type: application/json\r\n"), c2sPrefix);
+            assertTrue(c2sPrefix.contains("Content-Length: 4096\r\n"), c2sPrefix);
 
             // Verify Netty's own standard HttpRequestDecoder parses it cleanly!
             assertTrue(stdReqParser.writeInbound(Unpooled.wrappedBuffer(c2sWire)));
@@ -163,6 +179,8 @@ class EgressCodecTest {
             assertNotNull(parsedReq);
             try {
                 assertEquals("application/json", parsedReq.headers().get("Content-Type"));
+                assertEquals("api.local", parsedReq.headers().get("Host"));
+                assertEquals("*/*", parsedReq.headers().get("Accept"));
                 byte[] bodyBytes = new byte[parsedReq.content().readableBytes()];
                 parsedReq.content().readBytes(bodyBytes);
                 assertArrayEquals(reqBin, bodyBytes);
@@ -190,6 +208,9 @@ class EgressCodecTest {
             assertNotNull(r2);
             try {
                 assertEquals(200, r1.status().code());
+                assertEquals("Tengine", r1.headers().get("Server"));
+                assertNotNull(r1.headers().get("Date"));
+                assertTrue(r1.headers().get("Date").endsWith(" GMT"), r1.headers().get("Date"));
                 assertEquals("application/json", r1.headers().get("Content-Type"));
                 assertEquals(resp1.length, r1.content().readableBytes());
                 assertEquals(resp2.length, r2.content().readableBytes());
@@ -216,6 +237,7 @@ class EgressCodecTest {
         // Negative security/bounds tests on HTTP decoder:
         // 1. Oversized header without CRLFCRLF
         EgressConfig tight = EgressConfig.server(EgressCodec.HTTP);
+        tight.setHttpAllowGetMethod(false);
         tight.setMaxHeaderBytes(256);
         tight.setMaxBodyBytes(1024);
         EmbeddedChannel badHeader = new EmbeddedChannel();
@@ -272,9 +294,9 @@ class EgressCodecTest {
             byte[] data = "binary-payload-inside-optional-http-deflate-body".getBytes(StandardCharsets.UTF_8);
             client.writeOutbound(Unpooled.wrappedBuffer(data));
             byte[] wire = readAllOutbound(client);
-            String hdr = new String(wire, 0, Math.min(200, wire.length), StandardCharsets.US_ASCII);
-            assertTrue(hdr.contains("Content-Encoding: deflate\r\n"));
-            assertTrue(hdr.contains("Content-Type: application/json\r\n"));
+            String hdr = new String(wire, 0, Math.min(350, wire.length), StandardCharsets.US_ASCII);
+            assertTrue(hdr.contains("Content-Encoding: deflate\r\n"), hdr);
+            assertTrue(hdr.contains("Content-Type: application/json\r\n"), hdr);
 
             server.writeInbound(Unpooled.wrappedBuffer(wire));
             assertArrayEquals(data, takeInbound(server, data.length));
@@ -397,6 +419,357 @@ class EgressCodecTest {
                 server.finishAndReleaseAll();
             }
         }
+    }
+
+    @Test
+    void httpDefaultRandomModeRestoresLegacyHostPathQueryGetPostAndResponseHeaders() {
+        EmbeddedChannel client = new EmbeddedChannel(), server = new EmbeddedChannel();
+        try {
+            EgressCodec.installClient(client.pipeline(), EgressCodec.HTTP);
+            EgressCodec.installServer(server.pipeline(), EgressConfig.serverAutoAll(), InnerProtocol.TRANSPORT_CORE);
+
+            int getCount = 0;
+            int postCount = 0;
+            java.util.Set<String> seenHosts = new java.util.HashSet<String>();
+            java.util.Set<String> seenPaths = new java.util.HashSet<String>();
+            for (int i = 0; i < 60; i++) {
+                byte[] msg = ("RXTC-frame-" + i).getBytes(StandardCharsets.UTF_8);
+                client.writeOutbound(Unpooled.wrappedBuffer(msg));
+                byte[] wire = readAllOutbound(client);
+                String text = new String(wire, 0, wire.length - msg.length, StandardCharsets.US_ASCII);
+                if (text.startsWith("GET ")) {
+                    getCount++;
+                } else if (text.startsWith("POST ")) {
+                    postCount++;
+                } else {
+                    fail("Unexpected HTTP method line: " + text);
+                }
+                assertTrue(text.contains("Connection: keep-alive\r\n"), text);
+                assertTrue(text.contains("Accept: */*\r\n"), text);
+                assertTrue(text.contains("User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36\r\n"), text);
+                assertTrue(text.contains("Content-Type: application/json\r\n"), text);
+                int firstSpace = text.indexOf(' ');
+                int httpVer = text.indexOf(" HTTP/1.1\r\n");
+                seenPaths.add(text.substring(firstSpace + 1, httpVer));
+                int hostIdx = text.indexOf("Host: ");
+                int hostEnd = text.indexOf("\r\n", hostIdx);
+                seenHosts.add(text.substring(hostIdx + 6, hostEnd));
+
+                // Roundtrip through server AUTO -> HTTP decoder
+                server.writeInbound(Unpooled.wrappedBuffer(wire));
+                assertArrayEquals(msg, takeInbound(server, msg.length));
+            }
+            assertEquals(EgressCodec.HTTP, server.attr(EgressCodec.ATTR_SELECTED).get());
+            assertTrue(getCount > 0 && postCount > 0, "Random mode must emit mix of GET and POST (get=" + getCount + ", post=" + postCount + ")");
+            assertTrue(seenHosts.size() >= 5, "Random hosts should vary: " + seenHosts);
+            assertTrue(seenPaths.size() >= 5, "Random paths/queries should vary: " + seenPaths);
+
+            // Server response must carry actual UTC Date + Server: Tengine + Content-Type: application/json
+            byte[] resp = "server-reply".getBytes(StandardCharsets.UTF_8);
+            server.writeOutbound(Unpooled.wrappedBuffer(resp));
+            byte[] respWire = readAllOutbound(server);
+            String respHdr = new String(respWire, 0, respWire.length - resp.length, StandardCharsets.US_ASCII);
+            assertTrue(respHdr.startsWith("HTTP/1.1 200 OK\r\nDate: "), respHdr);
+            assertTrue(respHdr.contains(" GMT\r\nServer: Tengine\r\nContent-Type: application/json\r\n"), respHdr);
+            assertTrue(respHdr.contains("Connection: keep-alive\r\n\r\n"), respHdr);
+            client.writeInbound(Unpooled.wrappedBuffer(respWire));
+            assertArrayEquals(resp, takeInbound(client, resp.length));
+
+            // Direct generator helpers produce valid path & host syntax
+            for (int i = 0; i < 20; i++) {
+                String path = EgressCodec.generateRandomPath();
+                String host = EgressCodec.generateRandomHost();
+                assertTrue(path.startsWith("/") && path.indexOf(' ') < 0, path);
+                assertTrue(host.contains(".") && host.indexOf(' ') < 0, host);
+            }
+        } finally {
+            client.finishAndReleaseAll();
+            server.finishAndReleaseAll();
+        }
+    }
+
+    @Test
+    void serverAutoHandlesCoalescedLargeFirstReadAndSlowHeaderTimeoutAndEofAndPromiseAggregation() {
+        // 1. Coalesced first read > maxHeaderBytes MUST succeed under AUTO (header <= 512, body = 16 KiB)
+        EgressConfig serverCfg = EgressConfig.serverAutoAll();
+        serverCfg.setMaxHeaderBytes(512);
+        serverCfg.setMaxBodyBytes(65536);
+        serverCfg.setDetectTimeoutMillis(200);
+
+        EmbeddedChannel client = new EmbeddedChannel(), server = new EmbeddedChannel();
+        try {
+            EgressCodec.installClient(client.pipeline(), EgressCodec.HTTP);
+            EgressCodec.installServer(server.pipeline(), serverCfg, InnerProtocol.TRANSPORT_CORE);
+
+            byte[] largeBody = new byte[16 * 1024];
+            for (int i = 0; i < largeBody.length; i++) {
+                largeBody[i] = (byte) (i * 13 + 3);
+            }
+            client.writeOutbound(Unpooled.wrappedBuffer(largeBody));
+            byte[] coalesced = readAllOutbound(client);
+            assertTrue(coalesced.length > serverCfg.getMaxHeaderBytes() * 10, "Single read must far exceed maxHeaderBytes");
+
+            // Feed entire coalesced frame in ONE writeInbound!
+            assertTrue(server.writeInbound(Unpooled.wrappedBuffer(coalesced)));
+            assertEquals(EgressCodec.HTTP, server.attr(EgressCodec.ATTR_SELECTED).get());
+            assertArrayEquals(largeBody, takeInbound(server, largeBody.length));
+        } finally {
+            client.finishAndReleaseAll();
+            server.finishAndReleaseAll();
+        }
+
+        // 2. Slow partial HTTP header after AUTO detects HTTP must hit header timeout and close cleanly
+        EmbeddedChannel slowHdr = new EmbeddedChannel();
+        try {
+            EgressCodec.installServer(slowHdr.pipeline(), serverCfg, InnerProtocol.TRANSPORT_CORE);
+            slowHdr.writeInbound(Unpooled.copiedBuffer("POST /api/data HTTP/1.1\r\nHost: a.cn\r\n", StandardCharsets.US_ASCII));
+            assertEquals(EgressCodec.HTTP, slowHdr.attr(EgressCodec.ATTR_SELECTED).get());
+            assertTrue(slowHdr.isOpen());
+            slowHdr.advanceTimeBy(300, TimeUnit.MILLISECONDS);
+            slowHdr.runScheduledPendingTasks();
+            assertFalse(slowHdr.isOpen(), "Slow incomplete HTTP header must close after timeout");
+        } finally {
+            slowHdr.finishAndReleaseAll();
+        }
+
+        // 3. Clean EOF/FIN with truncated HTTP body closes cleanly with zero buffer leaks
+        EmbeddedChannel eofCh = new EmbeddedChannel();
+        try {
+            EgressCodec.installServer(eofCh.pipeline(), EgressConfig.server(EgressCodec.HTTP), InnerProtocol.TRANSPORT_CORE);
+            eofCh.writeInbound(Unpooled.copiedBuffer("POST /v1/x HTTP/1.1\r\nHost: a.cn\r\nContent-Length: 100\r\n\r\npartial", StandardCharsets.US_ASCII));
+            eofCh.finish();
+            assertNull(eofCh.readInbound());
+        } finally {
+            eofCh.finishAndReleaseAll();
+        }
+
+        // 4. Write promise aggregation: failing the header write MUST fail caller's write promise & close channel!
+        EmbeddedChannel failCh = new EmbeddedChannel();
+        try {
+            failCh.pipeline().addLast("failFirstWrite", new io.netty.channel.ChannelOutboundHandlerAdapter() {
+                private boolean failedOnce;
+                @Override
+                public void write(io.netty.channel.ChannelHandlerContext ctx, Object msg, io.netty.channel.ChannelPromise promise) {
+                    if (!failedOnce) {
+                        failedOnce = true;
+                        io.netty.util.ReferenceCountUtil.release(msg);
+                        promise.tryFailure(new java.io.IOException("simulated header write failure"));
+                        return;
+                    }
+                    ctx.write(msg, promise);
+                }
+            });
+            EgressCodec.installClient(failCh.pipeline(), EgressCodec.HTTP);
+            io.netty.channel.ChannelFuture wf = failCh.writeAndFlush(Unpooled.copiedBuffer("payload", StandardCharsets.UTF_8));
+            assertTrue(wf.isDone());
+            assertFalse(wf.isSuccess(), "Header write failure must fail caller write promise");
+            assertFalse(failCh.isOpen(), "Header write failure must close channel");
+        } finally {
+            failCh.finishAndReleaseAll();
+        }
+
+        // 5. Multi-chunk split (> maxBodyBytes) aggregates write promise cleanly and delivers intact bytes
+        EgressConfig chunkClientCfg = EgressConfig.client(EgressCodec.HTTP);
+        chunkClientCfg.setMaxBodyBytes(1024);
+        EgressConfig chunkServerCfg = EgressConfig.server(EgressCodec.HTTP);
+        chunkServerCfg.setMaxBodyBytes(1024);
+        EmbeddedChannel cc = new EmbeddedChannel(), cs = new EmbeddedChannel();
+        try {
+            EgressCodec.installClient(cc.pipeline(), chunkClientCfg);
+            EgressCodec.installServer(cs.pipeline(), chunkServerCfg, InnerProtocol.TRANSPORT_CORE);
+            byte[] multi = new byte[3500];
+            for (int i = 0; i < multi.length; i++) {
+                multi[i] = (byte) (i & 0xff);
+            }
+            io.netty.channel.ChannelFuture wf = cc.writeAndFlush(Unpooled.wrappedBuffer(multi));
+            assertTrue(wf.isSuccess(), "Multi-chunk write promise must succeed after all chunks complete");
+            transfer(cc, cs, 97);
+            assertArrayEquals(multi, takeInbound(cs, multi.length));
+        } finally {
+            cc.finishAndReleaseAll();
+            cs.finishAndReleaseAll();
+        }
+    }
+
+    @Test
+    void compressionRunsOnceAboveAdaptiveStreamAndEgressWrapsOnlyPhysicalTcp() throws Exception {
+        for (EgressCodec outerMode : new EgressCodec[]{EgressCodec.ZLIB_STORED, EgressCodec.HTTP}) {
+            SecretKeySpec key = new SecretKeySpec(new byte[32], "HmacSHA256");
+            SocksConfig config = new SocksConfig();
+            config.setTcpCompressionLevel(3);
+            java.util.concurrent.atomic.AtomicInteger compressCalls = new java.util.concurrent.atomic.AtomicInteger();
+            java.util.concurrent.atomic.AtomicLong clock = new java.util.concurrent.atomic.AtomicLong(1_000_000L);
+            java.io.ByteArrayOutputStream deliveredToServerInner = new java.io.ByteArrayOutputStream();
+            java.util.ArrayDeque<ByteBuf> c2sUdp = new java.util.ArrayDeque<ByteBuf>();
+            java.util.ArrayDeque<ByteBuf> s2cUdp = new java.util.ArrayDeque<ByteBuf>();
+            int[] udpFramesSent = {0};
+            long[] tcpInnerBytes = {0}, tcpWireBytes = {0};
+
+            EmbeddedChannel clientInner = new EmbeddedChannel(), serverInner = new EmbeddedChannel();
+            EmbeddedChannel clientTcp = new EmbeddedChannel(), serverTcp = new EmbeddedChannel();
+            org.rx.net.rss.tcp.AdaptiveTcpStream clientStream = null, serverStream = null;
+            ByteBuf c2sTcpRx = Unpooled.buffer(), s2cTcpRx = Unpooled.buffer();
+            try {
+                EgressCodec.installClient(clientTcp.pipeline(), outerMode);
+                EgressCodec.installServer(serverTcp.pipeline(), EgressConfig.serverAutoAll(), InnerProtocol.TRANSPORT_CORE);
+                clientInner.pipeline().addLast(new RssHopAes(true, key));
+                clientInner.pipeline().addLast(Sockets.newTcpCompressionEncoder(config,
+                        io.netty.handler.codec.compression.ZlibWrapper.ZLIB));
+                clientInner.pipeline().addLast(new io.netty.channel.ChannelOutboundHandlerAdapter() {
+                    @Override
+                    public void write(io.netty.channel.ChannelHandlerContext ctx, Object msg, io.netty.channel.ChannelPromise promise) throws Exception {
+                        if (msg instanceof ByteBuf && ((ByteBuf) msg).isReadable()) {
+                            compressCalls.incrementAndGet();
+                        }
+                        super.write(ctx, msg, promise);
+                    }
+                });
+                serverInner.pipeline().addLast(new RssTcpCodecSelector(config, key));
+
+                clientStream = new org.rx.net.rss.tcp.AdaptiveTcpStream(
+                        io.netty.buffer.UnpooledByteBufAllocator.DEFAULT,
+                        frame -> {
+                            tcpInnerBytes[0] += frame.readableBytes();
+                            ByteBuf framed = Unpooled.buffer(2 + frame.readableBytes()).writeShort(frame.readableBytes()).writeBytes(frame);
+                            frame.release();
+                            clientTcp.writeOutbound(framed);
+                        },
+                        udpFrame -> {
+                            udpFramesSent[0]++;
+                            // UDP fast path must NEVER be wrapped with HTTP or RFC1950 outer egress!
+                            if (udpFrame.readableBytes() >= 4) {
+                                int b0 = udpFrame.getUnsignedByte(udpFrame.readerIndex());
+                                assertNotEquals('P', b0, "UDP fast path must never carry HTTP egress");
+                                assertNotEquals('G', b0, "UDP fast path must never carry HTTP egress");
+                            }
+                            c2sUdp.add(udpFrame);
+                        },
+                        bytes -> clientInner.writeInbound(bytes),
+                        clock::get,
+                        org.rx.net.rss.tcp.AdaptiveTcpStream.WEAK);
+
+                serverStream = new org.rx.net.rss.tcp.AdaptiveTcpStream(
+                        io.netty.buffer.UnpooledByteBufAllocator.DEFAULT,
+                        frame -> {
+                            ByteBuf framed = Unpooled.buffer(2 + frame.readableBytes()).writeShort(frame.readableBytes()).writeBytes(frame);
+                            frame.release();
+                            serverTcp.writeOutbound(framed);
+                        },
+                        s2cUdp::add,
+                        bytes -> {
+                            byte[] copy = new byte[bytes.readableBytes()];
+                            bytes.getBytes(bytes.readerIndex(), copy);
+                            deliveredToServerInner.write(copy, 0, copy.length);
+                            serverInner.writeInbound(bytes);
+                        },
+                        clock::get,
+                        org.rx.net.rss.tcp.AdaptiveTcpStream.WEAK);
+
+                // Client initiates physical TCP handshake ("RXTC") first so server AUTO selects outerMode before AdaptiveTcpStream runs
+                clientTcp.writeOutbound(Unpooled.wrappedBuffer(new byte[]{'R', 'X', 'T', 'C'}));
+                tcpWireBytes[0] += transfer(clientTcp, serverTcp, 2);
+                assertArrayEquals(new byte[]{'R', 'X', 'T', 'C'}, takeInbound(serverTcp, 4));
+                assertEquals(outerMode, serverTcp.attr(EgressCodec.ATTR_SELECTED).get());
+
+                // Activate AdaptiveTcpStream UDP fast path via PING/PONG
+                clientStream.tick();
+                serverStream.tick();
+                drainAdaptiveUdp(c2sUdp, serverStream);
+                drainAdaptiveUdp(s2cUdp, clientStream);
+                drainAdaptiveUdp(c2sUdp, serverStream);
+                assertTrue(clientStream.usingUdp());
+                assertTrue(serverStream.usingUdp());
+
+                // Trigger RssHopAes handshake + 3 compressible business chunks (24 KiB)
+                byte[] expected = new byte[24 * 1024];
+                for (int i = 0; i < expected.length; i++) {
+                    expected[i] = (byte) ('A' + (i % 4));
+                }
+                clientInner.writeOutbound(Unpooled.wrappedBuffer(expected, 0, 8192));
+                clientInner.writeOutbound(Unpooled.wrappedBuffer(expected, 8192, 8192));
+                clientInner.writeOutbound(Unpooled.wrappedBuffer(expected, 16384, 8192));
+
+                // Pump inner -> adaptive -> UDP/TCP until handshake & business payload complete
+                for (int round = 0; round < 12; round++) {
+                    ByteBuf outBuf;
+                    while ((outBuf = clientInner.readOutbound()) != null) {
+                        clientStream.write(outBuf);
+                    }
+                    while ((outBuf = serverInner.readOutbound()) != null) {
+                        serverStream.write(outBuf);
+                    }
+                    // Drop 1 UDP packet intentionally on round 2 to force TCP repair over outer EgressCodec!
+                    if (round == 2 && !c2sUdp.isEmpty()) {
+                        c2sUdp.poll().release();
+                    }
+                    drainAdaptiveUdp(c2sUdp, serverStream);
+                    drainAdaptiveUdp(s2cUdp, clientStream);
+                    tcpWireBytes[0] += transfer(clientTcp, serverTcp, 73);
+                    transfer(serverTcp, clientTcp, 73);
+                    drainAdaptiveTcp(serverTcp, c2sTcpRx, serverStream);
+                    drainAdaptiveTcp(clientTcp, s2cTcpRx, clientStream);
+                    clock.addAndGet(150_000_000L);
+                    clientStream.tick();
+                    serverStream.tick();
+                }
+
+                assertEquals(3, compressCalls.get(), "Business compression runs exactly once per write above AdaptiveTcpStream");
+                assertTrue(udpFramesSent[0] > 0, "UDP fast path must carry business frames directly");
+                assertTrue(tcpInnerBytes[0] > 0 && tcpWireBytes[0] > tcpInnerBytes[0],
+                        "Physical TCP repair must pass through outer " + outerMode + " egress");
+                assertEquals(outerMode, serverTcp.attr(EgressCodec.ATTR_SELECTED).get());
+                assertTrue(RssHopAes.authenticated(serverInner.pipeline()));
+                assertTrue(deliveredToServerInner.size() < expected.length / 4, "Inner business stream must stay compressed");
+                assertArrayEquals(expected, takeInbound(serverInner, expected.length));
+            } finally {
+                c2sTcpRx.release();
+                s2cTcpRx.release();
+                while (!c2sUdp.isEmpty()) c2sUdp.poll().release();
+                while (!s2cUdp.isEmpty()) s2cUdp.poll().release();
+                if (clientStream != null) clientStream.close();
+                if (serverStream != null) serverStream.close();
+                clientInner.finishAndReleaseAll();
+                serverInner.finishAndReleaseAll();
+                clientTcp.finishAndReleaseAll();
+                serverTcp.finishAndReleaseAll();
+            }
+        }
+    }
+
+    private static void drainAdaptiveUdp(java.util.ArrayDeque<ByteBuf> queue, org.rx.net.rss.tcp.AdaptiveTcpStream target) {
+        ByteBuf pkt;
+        while ((pkt = queue.poll()) != null) {
+            try {
+                target.udp(pkt);
+            } finally {
+                pkt.release();
+            }
+        }
+    }
+
+    private static void drainAdaptiveTcp(EmbeddedChannel ch, ByteBuf acc, org.rx.net.rss.tcp.AdaptiveTcpStream target) {
+        ByteBuf in;
+        while ((in = ch.readInbound()) != null) {
+            try {
+                acc.writeBytes(in);
+            } finally {
+                in.release();
+            }
+        }
+        while (acc.readableBytes() >= 2) {
+            int len = acc.getUnsignedShort(acc.readerIndex());
+            if (acc.readableBytes() < 2 + len) {
+                break;
+            }
+            acc.skipBytes(2);
+            ByteBuf frame = acc.readRetainedSlice(len);
+            try {
+                target.tcp(frame);
+            } finally {
+                frame.release();
+            }
+        }
+        acc.discardSomeReadBytes();
     }
 
     private static byte[] readAllOutbound(EmbeddedChannel ch) {

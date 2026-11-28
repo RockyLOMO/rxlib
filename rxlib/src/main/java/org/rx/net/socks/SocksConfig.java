@@ -86,8 +86,51 @@ public class SocksConfig extends SocketConfig {
         dailyUdpFeatures = features;
     }
     public static final int ADAPTIVE_GAME = RssProfile.GAME_ID, ADAPTIVE_WEAK = RssProfile.WEAK_ID;
+    @Setter(AccessLevel.NONE)
     private org.rx.net.EgressCodec egressCodec = org.rx.net.EgressCodec.NONE;
     private boolean adaptiveTcp;
+
+    public void setEgressCodec(org.rx.net.EgressCodec codec) {
+        org.rx.net.EgressCodec effective = codec == null ? org.rx.net.EgressCodec.NONE : codec;
+        this.egressCodec = effective;
+        org.rx.net.EgressConfig cur = getEgressConfig();
+        if (cur == null) {
+            super.setEgressConfig(effective == org.rx.net.EgressCodec.AUTO
+                    ? org.rx.net.EgressConfig.serverAutoAll()
+                    : org.rx.net.EgressConfig.server(effective));
+        } else {
+            org.rx.net.EgressConfig next = cur.copy();
+            next.setTcpCodec(effective);
+            if (effective == org.rx.net.EgressCodec.AUTO
+                    && (next.getAllowedCodecs() == null || next.getAllowedCodecs().isEmpty())) {
+                next.setAllowedCodecs(org.rx.net.EgressConfig.serverAutoAll().getAllowedCodecs());
+            }
+            super.setEgressConfig(next);
+        }
+    }
+
+    @Override
+    public void setEgressConfig(org.rx.net.EgressConfig egressConfig) {
+        super.setEgressConfig(egressConfig);
+        this.egressCodec = egressConfig == null || egressConfig.getTcpCodec() == null
+                ? org.rx.net.EgressCodec.NONE : egressConfig.getTcpCodec();
+    }
+
+    public org.rx.net.EgressConfig effectiveClientEgressConfig() {
+        org.rx.net.EgressConfig cfg = getEgressConfig();
+        if (cfg != null) {
+            return cfg;
+        }
+        return org.rx.net.EgressConfig.client(egressCodec == null ? org.rx.net.EgressCodec.NONE : egressCodec);
+    }
+
+    public org.rx.net.EgressConfig effectiveServerEgressConfig() {
+        org.rx.net.EgressConfig cfg = getEgressConfig();
+        if (cfg != null) {
+            return cfg;
+        }
+        return org.rx.net.EgressConfig.server(egressCodec == null ? org.rx.net.EgressCodec.NONE : egressCodec);
+    }
     private int adaptiveProfile;
     private boolean udpHop = true;
     private int[] requiredTcpCipherPorts;

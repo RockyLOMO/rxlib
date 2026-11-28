@@ -91,7 +91,7 @@ public final class RssServer {
         }
         outConf.setRequiredTcpCipherPorts(parsePorts(options.get("tcpCipherPorts"), RssTransport.cipherPorts()));
         outConf.setRequiredUdpCipherPorts(parsePorts(options.get("udpCipherPorts"), RssTransport.udpCipherPorts()));
-        outConf.setEgressCodec(org.rx.net.EgressCodec.parseServer(options.get("tcpEgressCodec")));
+        outConf.setEgressConfig(parseServerEgressConfig(options));
         if (outConf.getRequiredTcpCipherPorts().length != 0 && !org.rx.net.RssHopAes.configured()) {
             throw new IllegalArgumentException("RSS protected TCP ports require RSS_TCP_AES_KEY");
         }
@@ -159,6 +159,56 @@ public final class RssServer {
         if (list == null) return defaults;
         return list.trim().isEmpty() ? new int[0] : Arrays.stream(list.split(",", -1))
                 .mapToInt(p -> Integer.parseInt(p.trim())).toArray();
+    }
+
+    static org.rx.net.EgressConfig parseServerEgressConfig(Map<String, String> options) {
+        org.rx.net.EgressCodec codec = org.rx.net.EgressCodec.parseServer(options.get("tcpEgressCodec"));
+        org.rx.net.EgressConfig cfg = org.rx.net.EgressConfig.server(codec);
+        String allowed = options.get("tcpEgressAllowedCodecs");
+        if (allowed != null && !allowed.trim().isEmpty()) {
+            java.util.Set<org.rx.net.EgressCodec> set = new java.util.LinkedHashSet<>();
+            for (String item : allowed.split(",", -1)) {
+                String trimmed = item.trim();
+                if (!trimmed.isEmpty()) {
+                    set.add(org.rx.net.EgressCodec.parse(trimmed));
+                }
+            }
+            cfg.setAllowedCodecs(set);
+        }
+        String bodyEnc = options.get("tcpEgressHttpBodyEncoding");
+        if (bodyEnc != null && !bodyEnc.trim().isEmpty()) {
+            cfg.setHttpBodyEncoding(org.rx.net.EgressCodec.HttpBodyEncoding.parse(bodyEnc));
+        }
+        String randomHeaders = options.get("tcpEgressHttpRandomHeaders");
+        if (randomHeaders != null && !randomHeaders.trim().isEmpty()) {
+            cfg.setHttpRandomHeaders(Boolean.parseBoolean(randomHeaders.trim()));
+        }
+        String allowGet = options.get("tcpEgressHttpAllowGetMethod");
+        if (allowGet != null && !allowGet.trim().isEmpty()) {
+            cfg.setHttpAllowGetMethod(Boolean.parseBoolean(allowGet.trim()));
+        }
+        String host = options.get("tcpEgressHttpHost");
+        if (host != null && !host.trim().isEmpty()) {
+            cfg.setHttpHost(host.trim());
+        }
+        String path = options.get("tcpEgressHttpPath");
+        if (path != null && !path.trim().isEmpty()) {
+            cfg.setHttpPath(path.trim());
+        }
+        if (options.get("tcpEgressMaxHeaderBytes") != null) {
+            cfg.setMaxHeaderBytes(Integer.parseInt(options.get("tcpEgressMaxHeaderBytes").trim()));
+        }
+        if (options.get("tcpEgressMaxBodyBytes") != null) {
+            cfg.setMaxBodyBytes(Integer.parseInt(options.get("tcpEgressMaxBodyBytes").trim()));
+        }
+        if (options.get("tcpEgressMaxInflateBytes") != null) {
+            cfg.setMaxInflateBytes(Integer.parseInt(options.get("tcpEgressMaxInflateBytes").trim()));
+        }
+        if (options.get("tcpEgressDetectTimeoutMillis") != null) {
+            cfg.setDetectTimeoutMillis(Integer.parseInt(options.get("tcpEgressDetectTimeoutMillis").trim()));
+        }
+        cfg.validateServer();
+        return cfg;
     }
 
     static void configureOutboundConfig(SocksConfig config, boolean debugFlag) {

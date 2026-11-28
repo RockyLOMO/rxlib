@@ -31,8 +31,10 @@ public final class TcpWarmPoolKey implements Serializable {
                 reactorName, config.getConnectTimeoutMillis(), config.getTransportFlags().getValue(), config.getCipher(), cipherKeyHash,
                 config instanceof SocksConfig && ((SocksConfig) config).isAdaptiveTcp(),
                 config instanceof SocksConfig ? ((SocksConfig) config).getAdaptiveProfile() : 0, config.getTcpCompressionLevel(),
-                udpHop, adaptiveUdpText, config instanceof SocksConfig
-                        ? ((SocksConfig) config).getEgressCodec() : org.rx.net.EgressCodec.NONE,
+                udpHop, adaptiveUdpText,
+                config instanceof SocksConfig
+                        ? ((SocksConfig) config).effectiveClientEgressConfig().copy()
+                        : (config.getEgressConfig() != null ? config.getEgressConfig().copy() : org.rx.net.EgressConfig.none()),
                 config instanceof SocksConfig && ((SocksConfig) config).isAdaptiveTcp() ? ((SocksConfig) config).resolveDailyUdpMtu() : 0);
     }
 
@@ -51,8 +53,12 @@ public final class TcpWarmPoolKey implements Serializable {
     private final int tcpCompressionLevel;
     private final boolean udpHop;
     private final String adaptiveUdpClientText;
-    private final org.rx.net.EgressCodec egressCodec;
+    private final org.rx.net.EgressConfig egressConfig;
     private final int adaptiveUdpMtu;
+
+    public org.rx.net.EgressCodec getEgressCodec() {
+        return egressConfig == null ? org.rx.net.EgressCodec.NONE : egressConfig.getTcpCodec();
+    }
 
     public TcpWarmPoolKey(String trafficUser, String endpointText, String username, String password,
                           String reactorName, int connectTimeoutMillis, int transportFlagsBits, short cipher,
@@ -60,7 +66,7 @@ public final class TcpWarmPoolKey implements Serializable {
                           boolean udpHop, String adaptiveUdpClientText) {
         this(null, trafficUser, endpointText, username, password, reactorName, connectTimeoutMillis, transportFlagsBits,
                 cipher, cipherKeyHash, adaptiveTcp, adaptiveProfile, tcpCompressionLevel, udpHop, adaptiveUdpClientText,
-                org.rx.net.EgressCodec.NONE, 0);
+                org.rx.net.EgressConfig.none(), 0);
     }
 
     public TcpWarmPoolKey(String trafficUser, String endpointText, String username, String password,
