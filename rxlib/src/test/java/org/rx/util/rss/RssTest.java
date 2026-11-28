@@ -1332,6 +1332,7 @@ public class RssTest extends AbstractTester {
         int inPort = freePort();
 
         SocksConfig upCfg = new SocksConfig(upstreamPort);
+        upCfg.setRssPrivateTransport(true);
         SocksUser socksUsr = new SocksUser("u");
         socksUsr.setPassword("p");
         SocksProxyServer upstreamSvr = new SocksProxyServer(upCfg, new SocksAuthenticator(Collections.singletonList(socksUsr)));

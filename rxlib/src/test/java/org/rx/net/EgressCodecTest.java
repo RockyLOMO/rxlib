@@ -706,10 +706,18 @@ class EgressCodecTest {
                 for (int round = 0; round < 12; round++) {
                     ByteBuf outBuf;
                     while ((outBuf = clientInner.readOutbound()) != null) {
-                        clientStream.write(outBuf);
+                        try {
+                            clientStream.write(outBuf);
+                        } finally {
+                            outBuf.release();
+                        }
                     }
                     while ((outBuf = serverInner.readOutbound()) != null) {
-                        serverStream.write(outBuf);
+                        try {
+                            serverStream.write(outBuf);
+                        } finally {
+                            outBuf.release();
+                        }
                     }
                     // Drop 1 UDP packet intentionally on round 2 to force TCP repair over outer EgressCodec!
                     if (round == 2 && !c2sUdp.isEmpty()) {
