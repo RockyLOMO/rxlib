@@ -1322,14 +1322,15 @@ public class RssTest extends AbstractTester {
 
     @Test
     public void shadowUserCipherHotReload_IsolatesOtherUsersAndRollsBackOnBindFailure() throws Exception {
-        int upstreamPort = freePort();
-        int rpcPort = freePort();
-        int ssPortA = freePort();
-        int ssPortB = freePort();
-        int dnsPort = freePort();
-        int nsRegPort = freePort();
-        int nsSyncPort = freePort();
-        int inPort = freePort();
+        int[] ports = freeTcpUdpPorts(8);
+        int upstreamPort = ports[0];
+        int rpcPort = ports[1];
+        int ssPortA = ports[2];
+        int ssPortB = ports[3];
+        int dnsPort = ports[4];
+        int nsRegPort = ports[5];
+        int nsSyncPort = ports[6];
+        int inPort = ports[7];
 
         SocksConfig upCfg = new SocksConfig(upstreamPort);
         upCfg.setRssPrivateTransport(true);
