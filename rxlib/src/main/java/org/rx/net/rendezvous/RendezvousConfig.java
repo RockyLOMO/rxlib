@@ -28,6 +28,8 @@ public final class RendezvousConfig implements Serializable {
     // Bounded coordination & anti-abuse budgets
     private int maxGlobalPunchSessions = 1024;
     private int maxPunchSessionsPerNode = 16;
+    private int maxPunchSessionsPerTarget = 16;
+    private int maxPunchSessionsPerTenant = 128;
     private long punchSessionTtlMillis = 15_000L;
     private long observationTokenTtlMillis = 120_000L;
     private long observedCandidateTtlMillis = 60_000L;

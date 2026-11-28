@@ -469,6 +469,7 @@ public class RrpClient extends Disposable {
         volatile Channel localChannel;
         volatile ServerBootstrap oneShotBootstrap;
         volatile Channel oneShotServerChannel;
+        volatile LocalAddress carrierAddr;
         volatile boolean remoteHalfClosed;
         volatile boolean remotePaused;
 
@@ -634,6 +635,10 @@ public class RrpClient extends Disposable {
             if (!closed.compareAndSet(false, true)) {
                 return;
             }
+            LocalAddress addr = carrierAddr;
+            if (addr != null) {
+                activeRawCarriers.remove(addr, this);
+            }
             closeOneShotListener();
             releaseInboundQueue();
             Channel ch = localChannel;
@@ -647,6 +652,10 @@ public class RrpClient extends Disposable {
         void closeFromRemote() {
             if (!closed.compareAndSet(false, true)) {
                 return;
+            }
+            LocalAddress addr = carrierAddr;
+            if (addr != null) {
+                activeRawCarriers.remove(addr, this);
             }
             closeOneShotListener();
             releaseInboundQueue();
@@ -1120,6 +1129,28 @@ public class RrpClient extends Disposable {
         return pending.future;
     }
 
+    private final ConcurrentHashMap<LocalAddress, RawLocalBridge> activeRawCarriers = new ConcurrentHashMap<LocalAddress, RawLocalBridge>();
+
+    public int activeRawCarrierCount() {
+        return activeRawCarriers.size();
+    }
+
+    /**
+     * Cancels and tears down an unconsumed (or active) one-shot RAW {@link LocalAddress} carrier,
+     * immediately closing its local listener and notifying the RRP server to close the RAW stream.
+     */
+    public boolean cancelRawCarrier(LocalAddress carrierAddr) {
+        if (carrierAddr == null) {
+            return false;
+        }
+        RawLocalBridge bridge = activeRawCarriers.remove(carrierAddr);
+        if (bridge == null) {
+            return false;
+        }
+        bridge.closeLocalAndNotifyRemote(RAW_CLOSE_NORMAL);
+        return true;
+    }
+
     /**
      * Opens an authorized RAW logical stream to {@code targetNodeId}/{@code targetService} and binds a
      * one-shot in-process {@link LocalAddress} carrier bridged 1:1 to that stream, ready for
@@ -1128,6 +1159,7 @@ public class RrpClient extends Disposable {
     public CompletableFuture<LocalAddress> openRawCarrierAsync(@NonNull String targetNodeId, @NonNull String targetService) {
         CompletableFuture<LocalAddress> result = new CompletableFuture<LocalAddress>();
         final AtomicReference<RawLocalBridge> bridgeRef = new AtomicReference<RawLocalBridge>();
+        final AtomicReference<LocalAddress> carrierAddrRef = new AtomicReference<LocalAddress>();
 
         RawStreamListener proxyListener = new RawStreamListener() {
             @Override
@@ -1148,6 +1180,10 @@ public class RrpClient extends Disposable {
 
             @Override
             public void onClose(long streamId, byte reason) {
+                LocalAddress addr = carrierAddrRef.get();
+                if (addr != null) {
+                    activeRawCarriers.remove(addr);
+                }
                 RawLocalBridge b = bridgeRef.get();
                 if (b != null) {
                     b.onClose(streamId, reason);
@@ -1176,6 +1212,10 @@ public class RrpClient extends Disposable {
                 result.completeExceptionally(err);
                 return;
             }
+            if (result.isCancelled() || result.isDone()) {
+                closeRawStream(streamId, RAW_CLOSE_NORMAL);
+                return;
+            }
             RawStreamState state = rawStreams.get(streamId);
             if (state == null || state.closed.get()) {
                 result.completeExceptionally(new ClientDisconnectedException("RAW stream closed before carrier bind"));
@@ -1186,6 +1226,9 @@ public class RrpClient extends Disposable {
             state.bridge = bridge;
 
             LocalAddress carrierAddr = new LocalAddress("rrp-raw-" + streamId + "-" + LOCAL_ADDRESS_SEQ.incrementAndGet());
+            carrierAddrRef.set(carrierAddr);
+            bridge.carrierAddr = carrierAddr;
+            activeRawCarriers.put(carrierAddr, bridge);
             try {
                 SocketConfig localConf = new SocketConfig();
                 localConf.setTransportFlags(null);
@@ -1194,14 +1237,19 @@ public class RrpClient extends Disposable {
                 sb.bind(carrierAddr).addListener((ChannelFutureListener) bf -> {
                     if (bf.isSuccess()) {
                         bridge.attachOneShotListener(sb, bf.channel());
-                        result.complete(carrierAddr);
+                        if (!result.complete(carrierAddr)) {
+                            activeRawCarriers.remove(carrierAddr, bridge);
+                            bridge.closeLocalAndNotifyRemote(RAW_CLOSE_NORMAL);
+                        }
                     } else {
+                        activeRawCarriers.remove(carrierAddr, bridge);
                         Sockets.closeBootstrap(sb);
                         bridge.closeLocalAndNotifyRemote(RAW_CLOSE_NORMAL);
                         result.completeExceptionally(bf.cause());
                     }
                 });
             } catch (Throwable bindErr) {
+                activeRawCarriers.remove(carrierAddr, bridge);
                 bridge.closeLocalAndNotifyRemote(RAW_CLOSE_NORMAL);
                 result.completeExceptionally(bindErr);
             }
@@ -1487,6 +1535,7 @@ public class RrpClient extends Disposable {
     }
 
     private void closeAllRawStreamsLocal(byte reason) {
+        activeRawCarriers.clear();
         for (RawStreamState state : rawStreams.values()) {
             if (state.closed.compareAndSet(false, true)) {
                 state.listener.onClose(state.streamId, reason);
@@ -1569,6 +1618,7 @@ public class RrpClient extends Disposable {
         }
         failPendingRawOpens(closedEx);
         closeAllRawStreamsLocal(RAW_CLOSE_NORMAL);
+        activeRawCarriers.clear();
         closeClientProxies();
         TransportClient tc = transportClient;
         transportClient = null;

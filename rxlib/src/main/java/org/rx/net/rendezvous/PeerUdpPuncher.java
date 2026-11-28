@@ -179,6 +179,9 @@ public final class PeerUdpPuncher extends Disposable {
         final ConcurrentHashMap<String, PairProgress> progressByPairKey = new ConcurrentHashMap<String, PairProgress>();
         final ConcurrentHashMap<String, PairProgress> progressBySocketAndSender = new ConcurrentHashMap<String, PairProgress>();
         final ConcurrentHashMap<String, Boolean> inboundPeerProbesBySocketAndSender = new ConcurrentHashMap<String, Boolean>();
+        final AtomicInteger dynamicCandidateCount = new AtomicInteger();
+        final AtomicInteger trackedPairCount = new AtomicInteger();
+        final AtomicBoolean pairsReleased = new AtomicBoolean();
         final AtomicInteger nextSeq = new AtomicInteger();
         final AtomicLong sessionProbeBytes = new AtomicLong();
         final CompletableFuture<VerifiedUdpPath> bestPathFuture = new CompletableFuture<VerifiedUdpPath>();
@@ -188,6 +191,7 @@ public final class PeerUdpPuncher extends Disposable {
         volatile ScheduledFuture<?> pumpTask;
         volatile ScheduledFuture<?> deadlineTask;
         volatile ScheduledFuture<?> settleTask;
+        volatile ScheduledFuture<?> lingerTask;
 
         PunchSessionState(long punchSessionId, byte[] punchKey, long expiresAtMillis,
                           List<UdpCandidatePair> pairs, int maxRetriesPerPair, int maxConcurrentPairs,
@@ -205,7 +209,19 @@ public final class PeerUdpPuncher extends Disposable {
             for (UdpCandidatePair p : pairs) {
                 PairProgress prog = new PairProgress(p);
                 progressByPairKey.put(p.pairKey(), prog);
-                progressBySocketAndSender.put(socketSenderKey(p.local.getBindingId(), p.remoteAddress), prog);
+                if (progressBySocketAndSender.putIfAbsent(socketSenderKey(p.local.getBindingId(), p.remoteAddress), prog) == null) {
+                    trackedPairCount.incrementAndGet();
+                }
+            }
+            totalTrackedPairs.addAndGet(trackedPairCount.get());
+        }
+
+        void releaseTrackedPairs() {
+            if (pairsReleased.compareAndSet(false, true)) {
+                totalTrackedPairs.addAndGet(-trackedPairCount.get());
+                progressByPairKey.clear();
+                progressBySocketAndSender.clear();
+                inboundPeerProbesBySocketAndSender.clear();
             }
         }
 
@@ -224,6 +240,11 @@ public final class PeerUdpPuncher extends Disposable {
             if (s != null) {
                 settleTask = null;
                 s.cancel(false);
+            }
+            ScheduledFuture<?> l = lingerTask;
+            if (l != null) {
+                lingerTask = null;
+                l.cancel(false);
             }
         }
 
@@ -244,7 +265,11 @@ public final class PeerUdpPuncher extends Disposable {
             // Keep session briefly in passive ACK-responder mode so the peer's in-flight probes
             // still receive authenticated PUNCH_ACK even if we settled slightly earlier.
             long lingerMs = Math.max(50L, Math.min(2000L, expiresAtMillis - System.currentTimeMillis()));
-            Tasks.setTimeout(() -> activeSessions.remove(punchSessionId, this), lingerMs);
+            lingerTask = Tasks.setTimeout(() -> {
+                if (activeSessions.remove(punchSessionId, this)) {
+                    releaseTrackedPairs();
+                }
+            }, lingerMs);
         }
 
         VerifiedUdpPath selectBestVerified() {
@@ -260,13 +285,47 @@ public final class PeerUdpPuncher extends Disposable {
         }
     }
 
+    public static final int DEFAULT_MAX_ACTIVE_SESSIONS = 128;
+    public static final int DEFAULT_MAX_DYNAMIC_CANDIDATES_PER_SESSION = 32;
+    public static final int DEFAULT_MAX_NONCES_PER_PAIR = 64;
+    public static final int DEFAULT_MAX_TOTAL_TRACKED_PAIRS = 2048;
+
     private final ConcurrentHashMap<Long, PunchSessionState> activeSessions = new ConcurrentHashMap<Long, PunchSessionState>();
     private final ConcurrentHashMap<String, LocalUdpBinding> bindingsById = new ConcurrentHashMap<String, LocalUdpBinding>();
+    private final AtomicInteger totalTrackedPairs = new AtomicInteger();
     private final AtomicLong totalProbeTxBytes = new AtomicLong();
     private final AtomicLong totalProbeRxBytes = new AtomicLong();
     private final AtomicLong totalRejectedPackets = new AtomicLong();
+    private volatile int maxActiveSessions = DEFAULT_MAX_ACTIVE_SESSIONS;
+    private volatile int maxDynamicCandidatesPerSession = DEFAULT_MAX_DYNAMIC_CANDIDATES_PER_SESSION;
+    private volatile int maxNoncesPerPair = DEFAULT_MAX_NONCES_PER_PAIR;
+    private volatile int maxTotalTrackedPairs = DEFAULT_MAX_TOTAL_TRACKED_PAIRS;
 
     public PeerUdpPuncher() {
+    }
+
+    public void setMaxActiveSessions(int maxActiveSessions) {
+        this.maxActiveSessions = Math.max(1, maxActiveSessions);
+    }
+
+    public void setMaxDynamicCandidatesPerSession(int maxDynamicCandidatesPerSession) {
+        this.maxDynamicCandidatesPerSession = Math.max(0, maxDynamicCandidatesPerSession);
+    }
+
+    public void setMaxNoncesPerPair(int maxNoncesPerPair) {
+        this.maxNoncesPerPair = Math.max(4, maxNoncesPerPair);
+    }
+
+    public void setMaxTotalTrackedPairs(int maxTotalTrackedPairs) {
+        this.maxTotalTrackedPairs = Math.max(16, maxTotalTrackedPairs);
+    }
+
+    public int activeSessionCount() {
+        return activeSessions.size();
+    }
+
+    public int trackedPairCount() {
+        return Math.max(0, totalTrackedPairs.get());
     }
 
     public long totalProbeTxBytes() {
@@ -327,6 +386,14 @@ public final class PeerUdpPuncher extends Disposable {
         if (effectiveDeadline <= now) {
             return CompletableFuture.completedFuture(null);
         }
+        sweepExpiredSessions(now);
+        if (!activeSessions.containsKey(punchSessionId)) {
+            if (activeSessions.size() >= maxActiveSessions
+                    || totalTrackedPairs.get() + pairs.size() > maxTotalTrackedPairs) {
+                log.debug("PeerUdpPuncher global budget exceeded sessions={} pairs={}", activeSessions.size(), totalTrackedPairs.get());
+                return CompletableFuture.completedFuture(null);
+            }
+        }
         for (UdpCandidatePair pair : pairs) {
             bindingsById.putIfAbsent(pair.local.getBindingId(), pair.local);
         }
@@ -336,6 +403,7 @@ public final class PeerUdpPuncher extends Disposable {
         PunchSessionState prev = activeSessions.put(punchSessionId, state);
         if (prev != null) {
             prev.cancelTimers();
+            prev.releaseTrackedPairs();
             prev.bestPathFuture.complete(null);
         }
 
@@ -369,7 +437,7 @@ public final class PeerUdpPuncher extends Disposable {
                 int seq = state.nextSeq.incrementAndGet();
                 long nonce = RANDOM.nextLong();
                 long sentNanos = System.nanoTime();
-                prog.sentNonceNanos.put(nonce, sentNanos);
+                recordSentNonce(prog, nonce, sentNanos);
                 prog.probesSent.incrementAndGet();
                 byte flags = prog.receivedPeerProbe.get() ? FLAG_SAW_PEER_PROBE : 0;
                 ByteBuf pkt = encodePacket(TYPE_PROBE, flags, punchSessionId, seq, sentNanos, nonce, state.punchKey);
@@ -394,9 +462,41 @@ public final class PeerUdpPuncher extends Disposable {
     public void cancelPunchSession(long punchSessionId) {
         PunchSessionState state = activeSessions.remove(punchSessionId);
         if (state != null) {
+            state.settled.set(true);
             state.cancelTimers();
-            state.bestPathFuture.complete(state.selectBestVerified());
+            VerifiedUdpPath best = state.selectBestVerified();
+            state.releaseTrackedPairs();
+            state.bestPathFuture.complete(best);
         }
+    }
+
+    private void sweepExpiredSessions(long now) {
+        for (Map.Entry<Long, PunchSessionState> e : activeSessions.entrySet()) {
+            PunchSessionState s = e.getValue();
+            if (now >= s.expiresAtMillis && activeSessions.remove(e.getKey(), s)) {
+                s.cancelTimers();
+                s.releaseTrackedPairs();
+                s.bestPathFuture.complete(s.selectBestVerified());
+            }
+        }
+    }
+
+    private void recordSentNonce(PairProgress prog, long nonce, long sentNanos) {
+        int cap = maxNoncesPerPair;
+        if (prog.sentNonceNanos.size() >= cap) {
+            Long oldestKey = null;
+            long oldestVal = Long.MAX_VALUE;
+            for (Map.Entry<Long, Long> e : prog.sentNonceNanos.entrySet()) {
+                if (e.getValue() < oldestVal) {
+                    oldestVal = e.getValue();
+                    oldestKey = e.getKey();
+                }
+            }
+            if (oldestKey != null) {
+                prog.sentNonceNanos.remove(oldestKey);
+            }
+        }
+        prog.sentNonceNanos.put(nonce, sentNanos);
     }
 
     /** Handles an inbound datagram on {@code localBinding}'s {@link AdaptiveUdpPort}. */
@@ -444,9 +544,13 @@ public final class PeerUdpPuncher extends Disposable {
 
         if (type == TYPE_PROBE) {
             // Peer probed us from `sender` (possibly NAT-mapped dynamic port even if not pre-listed!).
-            state.inboundPeerProbesBySocketAndSender.put(key, Boolean.TRUE);
             PairProgress prog = state.progressBySocketAndSender.get(key);
             if (prog == null) {
+                if (state.dynamicCandidateCount.get() >= maxDynamicCandidatesPerSession
+                        || totalTrackedPairs.get() >= maxTotalTrackedPairs) {
+                    totalRejectedPackets.incrementAndGet();
+                    return true;
+                }
                 // Dynamically register peer-reflexive candidate (ICE peer-reflexive behavior) on the SAME authenticated session!
                 EndpointCandidate prflx = new EndpointCandidate(
                         EndpointCandidate.familyOf(sender.getAddress()),
@@ -459,13 +563,26 @@ public final class PeerUdpPuncher extends Disposable {
                         Math.max(5000L, state.expiresAtMillis - System.currentTimeMillis()),
                         false);
                 UdpCandidatePair dynamicPair = new UdpCandidatePair(localBinding, prflx, sender, 70);
-                prog = new PairProgress(dynamicPair);
-                PairProgress existing = state.progressBySocketAndSender.putIfAbsent(key, prog);
+                PairProgress candidateProg = new PairProgress(dynamicPair);
+                PairProgress existing = state.progressBySocketAndSender.putIfAbsent(key, candidateProg);
                 if (existing != null) {
                     prog = existing;
                 } else {
-                    state.progressByPairKey.putIfAbsent(dynamicPair.pairKey(), prog);
+                    if (state.dynamicCandidateCount.incrementAndGet() > maxDynamicCandidatesPerSession
+                            || totalTrackedPairs.incrementAndGet() > maxTotalTrackedPairs) {
+                        state.progressBySocketAndSender.remove(key, candidateProg);
+                        state.dynamicCandidateCount.decrementAndGet();
+                        totalTrackedPairs.decrementAndGet();
+                        totalRejectedPackets.incrementAndGet();
+                        return true;
+                    }
+                    state.trackedPairCount.incrementAndGet();
+                    state.progressByPairKey.putIfAbsent(dynamicPair.pairKey(), candidateProg);
+                    prog = candidateProg;
                 }
+            }
+            if (state.inboundPeerProbesBySocketAndSender.size() < state.trackedPairCount.get() + maxDynamicCandidatesPerSession) {
+                state.inboundPeerProbesBySocketAndSender.put(key, Boolean.TRUE);
             }
             prog.receivedPeerProbe.set(true);
 
@@ -487,7 +604,7 @@ public final class PeerUdpPuncher extends Disposable {
                 prog.lastTriggeredProbeNanos = nowNanos;
                 int ourSeq = state.nextSeq.incrementAndGet();
                 long ourNonce = RANDOM.nextLong();
-                prog.sentNonceNanos.put(ourNonce, nowNanos);
+                recordSentNonce(prog, ourNonce, nowNanos);
                 prog.probesSent.incrementAndGet();
                 ByteBuf backProbe = encodePacket(TYPE_PROBE, FLAG_SAW_PEER_PROBE, punchSessionId, ourSeq, nowNanos, ourNonce, state.punchKey);
                 totalProbeTxBytes.addAndGet(PACKET_BYTES);
@@ -592,10 +709,13 @@ public final class PeerUdpPuncher extends Disposable {
     @Override
     protected void dispose() {
         for (PunchSessionState state : activeSessions.values()) {
+            state.settled.set(true);
             state.cancelTimers();
+            state.releaseTrackedPairs();
             state.bestPathFuture.complete(null);
         }
         activeSessions.clear();
         bindingsById.clear();
+        totalTrackedPairs.set(0);
     }
 }
