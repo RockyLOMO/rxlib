@@ -1,6 +1,6 @@
 # rxlib 未来规划与待实现计划（Roadmap）
 
-> 本文档仅记录**尚未实现、待验证或未来规划**的演进事项与设计思路。2026-11-28 已完成的 P0/P1/P2 项（SS 用户共享带宽限速与热更新、`weak` 大流 FEC/直通 TCP 优化、Geo 条件增量更新与缺失 `BLOCK` fail-closed / 非 EventLoop 编译、DNS 非地址 RR TTL 实时衰减缓存与字节预算、Nameserver 迁移至已鉴权 Transport Core RPC 并接入可选 `NodeRegistry` 权威源、删除旧版 `UdpClient`/`UdpHolePunch*`/`RssEgressCodec`/`HttpPseudoHeader*`、统一公共 `EgressCodec` (`NONE`/`ZLIB_STORED`/`HTTP` + Server `AUTO`)、`Transport Core v2` AEAD+`zlib3`+`LocalChannel`、`RrpServer`/`RrpClient` 迁移 v2 及 `NodeRegistry` 授权 RAW Relay、`org.rx.net.rendezvous` 双 NAT 协调/防放大 UDP 观测/打洞与直连优先 `PathSelector`、以及 `RssRuntime` opt-in `nodeService` 事务式启停热重载）已移出待办（其后续 Review 修复和用户新增需求见下文），实测数据见 [测试与基准记录](test-benchmarks.md)。
+> 本文档仅记录**尚未实现、待验证或未来规划**的演进事项与设计思路。2026-11-28 第一轮与第二轮 Review（P1 §3–§5）的工程落地项——含 Nameserver 强制认证 v2 AEAD 与共享 `NodeRegistry` 子系统会话隔离、具体会话 UDP 路径绑定、统一 `PathAttempt` 原子取消、`RendezvousService`/`PeerUdpPuncher` 资源预算、公开 `RrpServer`/`RrpClient` 空 token fail-closed、`EgressCodec` 恢复旧 HTTP 随机 Host/Path/Query 与请求/响应头及 `AUTO` 合并读修复、RSS 全局/每上游/CLI 全量 `EgressConfig` 公共化、以及 **RSS↔RSS 私有增强 TCP 链路统一迁至 `Transport Core v2`（`TransportCoreCarrier`，删除 `RssHopAes`/`RssTcpCodecSelector`/`SocksAdaptiveHandshake` 并彻底消除 `AUTO` 业务 `zlib` 歧义）**——均已完成编码与双 JDK 28 类 373 项 `PARANOID LEAK=0` 回归及公网真机验证，实测数据见 [测试与基准记录](test-benchmarks.md) §6–§7。
 
 ---
 
@@ -11,7 +11,7 @@
 - **Linux `epoll` / `SO_REUSEPORT` 长期压测与应用层实测**：
   - 2026-11-28 已在 `182.255.85.247` 完成短期 4-profile + `SO_REUSEPORT=2` + SS 用户限速热更新、以及统一 `EgressCodec` + `NodeRegistry`/`RendezvousService`/`RrpServer` RAW Relay 实测；后续补充长时间稳态压测、对比 `kcptun` 的多随机种子 Linux 基准，以及真实 QUIC/HTTP3、外部 UDP 应用与 WoW 3.3.5a 公网联机验证。
 - **更多双 NAT 组合（全锥/受限锥 NAT）公网打洞直连验收**：
-  - 本次已验证多网卡直连优先（局域网直连 TCP + 直连 UDP `6.63 ms` 升级 + 断洞无损修复，VPS 中继流量 `0 B`）与跨运营商对称 NAT（自动按需降级至 E2E AEAD RRP RAW Relay 与 RPC）；后续可在两端均为锥型 NAT 的运营商链路补充公网跨 ISP UDP 打洞升轨直连与中继退避统计。
+  - 已验证同网多网卡直连优先（`AnZhi-PC → Xsy-PC`，`17.43 Mbps` + UDP `6.63 ms` 升轨 + 断洞无损修复，VPS 中继 `0 B`）与跨运营商双 NAT（`YOUFAN-PC` 端口受限锥型 NAT ↔ `AnZhi-PC` 对称型 NAT，RFC 5780 双向诊断并平稳按需降级至 E2E AEAD RRP RAW Relay）；后续待在**两端均为锥型 NAT** 的独立运营商链路补充公网跨 ISP UDP 打洞升轨直连与中继退避统计。
 - **`RssDatagramFragmenter` 边界与物理内存实测**：
   - 验证 Linux Pooled Direct Allocator 在高丢包乱序与 OOM 预算下的 backing-capacity 压缩表现。
   - 验证多分片写出时前置分片失败的 Write Promise 聚合行为，并补齐 `MTU=256`、64 分片上限及魔数转义边界测试。
@@ -22,61 +22,54 @@
 
 ---
 
-## 2026-11-28 第二轮 Review 与后续实施计划
+## 2026-11-28 第二轮 Review 与后续实施计划（实施状态）
 
-源码基线：[7b858624](https://github.com/RockyLOMO/rxlib/commit/7b858624f4b37676ce3994e7c1390b91a370cd72)；对比重构前 [6af56245](https://github.com/RockyLOMO/rxlib/commit/6af562450dca67d67884f19119b66213de70fe9f)。上一轮详细设计 [noderegistry-nat-relay-plan.md](noderegistry-nat-relay-plan.md) 为历史设计基线；本节是后续待办的权威来源，覆盖其中不再保留 HTTP 随机字段的旧决定。已实现功能不重复立项。测试实测数据仍集中在 [test-benchmarks.md](test-benchmarks.md) §6。
+源码基线：[7b858624](https://github.com/RockyLOMO/rxlib/commit/7b858624f4b37676ce3994e7c1390b91a370cd72)；对比重构前 [6af56245](https://github.com/RockyLOMO/rxlib/commit/6af562450dca67d67884f19119b66213de70fe9f)；本轮落地提交：`29bd0e65`..`0c47859f`。上一轮详细设计 [noderegistry-nat-relay-plan.md](noderegistry-nat-relay-plan.md) 为历史设计基线；本节记录 P1 §3–§5 实施状态及仍留待长期/运维验证的剩余项。测试实测数据集中在 [test-benchmarks.md](test-benchmarks.md) §6–§7。
 
 本轮用户决策：恢复 HTTP Pseudo 原有随机 Host/URL Path/Query、请求头与响应头生成行为，沿用旧内置参数而不要求用户配置自己的域名，公共 EgressCodec 继续作为唯一实现；RSS 私有增强链路统一 Transport Core；RRP UDP over TCP 记录后续实施，本阶段不开发。不恢复旧私有 wire、RSZ、UdpClient/UdpHolePunch* 或独立 HTTP Pseudo handler。全局限速旧问题继续暂缓。优先正确性/安全/稳定性，再减少实际公网流量和 CPU；资源有界，RSS Server 1vCPU/768MiB 整机约束不变。
 
 ### P1 · 3. 上一轮 Review 的正确性、安全和资源边界
 
-- [ ] **Nameserver 强制认证传输**：[NameserverImpl.java L417-L421](https://github.com/RockyLOMO/rxlib/blob/7b858624f4b37676ce3994e7c1390b91a370cd72/rxlib/src/main/java/org/rx/net/nameserver/NameserverImpl.java#L417-L421) 创建 dailyServer 但未显式配置 authSecret/enableEncryption，启用 NodeRegistry 后 authenticateNode 涉及节点凭据。核查注册端、客户端池和副本连接，使用经过认证的 v2 AEAD，禁止把 sensitiveMethods 日志脱敏当作加密，凭据不得在未加密会话传输；副本授权仍须绑定身份、来源分区。Nameserver 与 Rendezvous/RRP 的共享节点会话不得因一个子系统离线而错误撤销其他在线子系统，增加真实并发及重连用例。标准 DNS TCP/UDP 不改为私有传输。
-- [ ] **具体会话的 UDP 路径绑定**：[PathSelector.java L952-L1068](https://github.com/RockyLOMO/rxlib/blob/7b858624f4b37676ce3994e7c1390b91a370cd72/rxlib/src/main/java/org/rx/net/rendezvous/PathSelector.java#L952-L1068) 目前 verifiedByInitiator/latestSessionByInitiator 以 nodeId 为键，存在多会话覆盖及陈旧路径复用风险。关联认证的节点、服务、punchSessionId、具体 transport session/generation 及有效期；路径先到/会话先到均正确，不允许旧路径直接挂到新连接；有界缓存、撤销/断开/过期清理。当前异步协调取得的 punchSessionId 与 peerIdTag/SelectedConnection 构造时间可能不一致，需一起修复。并发不同服务、同服务多连接、重连/过期/权限撤销测试。
-- [ ] **RSS AUTO 业务 zlib 歧义**：[EgressCodec.java L369-L389](https://github.com/RockyLOMO/rxlib/blob/7b858624f4b37676ce3994e7c1390b91a370cd72/rxlib/src/main/java/org/rx/net/EgressCodec.java#L369-L389) 优先把 zlib 头视为出口 ZLIB_STORED，而 [RssTcpCodecSelector.java L27-L47](https://github.com/RockyLOMO/rxlib/blob/7b858624f4b37676ce3994e7c1390b91a370cd72/rxlib/src/main/java/org/rx/net/RssTcpCodecSelector.java#L27-L47) 仍识别业务 zlib。当前 EgressCodecTest 中 RSS 三出口交叉测试使用 RssHopAes + 内层 zlib（[测试 L370-L397](https://github.com/RockyLOMO/rxlib/blob/7b858624f4b37676ce3994e7c1390b91a370cd72/rxlib/src/test/java/org/rx/net/EgressCodecTest.java#L370-L397)），尚不足以证明无 AES 的业务 zlib 在 AUTO 下无歧义。先复现双向数据/响应格式；未解决前受影响入口固定配置，最终通过 §5 的私有统一握手解决。不恢复 RSZ、不根据压缩等级猜测层次、不静默降级。
-- [ ] **PathAttempt 生命周期**：[PathSelector.java L632-L667](https://github.com/RockyLOMO/rxlib/blob/7b858624f4b37676ce3994e7c1390b91a370cd72/rxlib/src/main/java/org/rx/net/rendezvous/PathSelector.java#L632-L667)、[PathSelector.java L733-L925](https://github.com/RockyLOMO/rxlib/blob/7b858624f4b37676ce3994e7c1390b91a370cd72/rxlib/src/main/java/org/rx/net/rendezvous/PathSelector.java#L733-L925) 统一取消、失败、超时、成功后所有权转移，取消未赢 TCP 连接、UDP 检查、尚未消费的 RAW carrier、定时器与 pending future；SelectedConnection.close 同时清理关联检查。测试调用方取消、晚到的协调结果、预算边界竞争、Relay 打开后上层握手失败、无可靠路径、短连接风暴，确保无遗留业务中继流或 buffer。同步确认取消与 inFlightClients 添加、uncheckedReasons 修改的并发边界。
-- [ ] **打洞资源上限**：[RendezvousService.java L302-L323](https://github.com/RockyLOMO/rxlib/blob/7b858624f4b37676ce3994e7c1390b91a370cd72/rxlib/src/main/java/org/rx/net/rendezvous/RendezvousService.java#L302-L323) 现主要限制 initiator，需同时限制目标节点和租户；[PeerUdpPuncher.java L445-L479](https://github.com/RockyLOMO/rxlib/blob/7b858624f4b37676ce3994e7c1390b91a370cd72/rxlib/src/main/java/org/rx/net/rendezvous/PeerUdpPuncher.java#L445-L479) 动态候选映射需独立数量/字节上限。端侧进程在途会话、检查任务、候选、nonce/ACK 状态及 socket 总预算；过期/撤销/取消释放计数，零计数条目回收。邀请投递失败及时释放；检查目标服务授权、旧会话身份与已验证候选生命周期。未经授权的探测不得引发反射、扫描或任意目的地址连接。
-- [ ] **公开 RRP 的空 token 安全边界**：[RrpServer.java L440-L451](https://github.com/RockyLOMO/rxlib/blob/7b858624f4b37676ce3994e7c1390b91a370cd72/rxlib/src/main/java/org/rx/net/socks/RrpServer.java#L440-L451) / [RrpClient.java L768-L777](https://github.com/RockyLOMO/rxlib/blob/7b858624f4b37676ce3994e7c1390b91a370cd72/rxlib/src/main/java/org/rx/net/socks/RrpClient.java#L768-L777) 根据 token 是否存在决定 AEAD，单独构造 RrpServer/RrpClient 的路径需核查是否也强制必要认证；公网或 RAW Relay 服务禁止无认证配置，限制未认证帧和反序列化；不能只依赖 RssRuntime 配置校验。保留合法本地使用场景但明确安全边界。
-- [ ] **AUTO/HTTP 首包及资源边界**：[EgressCodec.java L339-L346](https://github.com/RockyLOMO/rxlib/blob/7b858624f4b37676ce3994e7c1390b91a370cd72/rxlib/src/main/java/org/rx/net/EgressCodec.java#L339-L346) 在选择前按整个可读缓冲区检查 maxHeaderBytes，验证合法首包与较大后续数据合并到一次 read 时不会误拒；区别首部预算与 payload 预算。检查 HTTP header/body 分片、空帧、写 promise 聚合、EOF/FIN、失败关闭、解码输出上限、慢连接及总体未认证资源；不得将 maxHeaderBytes 简单提高来掩盖误判。非标准 JSON 二进制 Body 的私有约定不改变。
-- [ ] **直连优先与路径恢复**：现有默认 16 TCP 对/32 UDP 对、4 TCP 并发/每轮6 UDP、1200ms TCP/1500ms UDP、64KiB 每会话探测预算、近期缓存128条/60s 先保持。验证候选截断时非默认网卡的可达性、不同接口公平性、网络 generation 与缓存重新验证；可用直连时不创建 Relay。动态 UDP 重选仅在明确故障信号后完善；活动可靠流无缝 Relay→直连迁移暂不要求，新连接优先直连。保持一个可靠状态机。
-- [ ] **验收补齐**：§6 报告是18类158项的双 JDK 核心回归，并非旧26类359项的完整超集。补跑全部受影响既有功能及新增专项，JDK8/JDK21 PARANOID；同办公网直连成功不代表跨运营商公网 UDP 打洞成功，补充真实可打通 NAT 组合、不同网卡、断洞恢复和按需中继。1024在线节点、慢消费者、多并发 Relay、至少24h 稳态，分别记录峰值 RSS/堆外/cgroup/整机内存、CPU、实际 IP 层字节；不能用测试结束时392MiB/960MiB或零泄漏日志替代768MiB整机长期验收。高丢包 HTTP 公网数据每模式6次建连，不能作为可靠 P95/P99 结论；补测小包/长连接/并发。
-- [ ] 保留 §1 的外部载体、multi-upstream、QUIC/HTTP3、WoW 及 SS 用户限速验证；不修改全局限速旧问题，不在没有实测瓶颈时重写 FEC。
+- [x] **Nameserver 强制认证传输**（`29bd0e65`）：`NameserverImpl` / `NameserverClient` / 副本连接在启用凭据或 `NodeRegistry` 时强制使用 v2 AEAD（`authToken` / `replicaAuthToken`），凭据禁止明文会话传输；副本鉴权绑定身份与来源白名单；共享 `NodeRegistry` 通过子系统会话（`authenticateAndAttachSession`/`detachSubsystemSession`）隔离 `NameserverImpl` / `RendezvousService` / `RrpServer`，单子系统下线不误踢其他子系统，禁用/改密跨子系统立刻吊销；标准 DNS TCP/UDP 保持不变。
+- [x] **具体会话的 UDP 路径绑定**（`fb06888a`）：`PathSelector` / `PeerEndpointAcceptor` 将已验证 UDP 路径从单纯 `nodeId` 键升级为复合键 `(initiatorNodeId, correlationId/attemptId)` + 服务名 + 有效期 + 会话代际绑定，并消除 `punchSessionId` 与 `peerIdTag`/`SelectedConnection` 构造时间错位；路径先到/会话先到均正确，禁止旧路径跨会话复用，有界缓存并在撤销/断开/过期时清理。
+- [x] **RSS AUTO 业务 zlib 歧义**（`ecc594b2` + 真机 `182.255.85.247:18915` 实测）：通过 §5 的 `TransportCoreCarrier`（`RXTC` v2 统一握手帧在 `EgressCodec` 内层、业务 `zlib` 之前出现）彻底消除 `AUTO` 识别出口 `ZLIB_STORED` 与无加密内层业务 `zlib` 的首字节歧义；单元测试与公网真机 3 组无 AEAD `plain + zlib 3`（`NONE`/`ZLIB_STORED`/`HTTP_RANDOM`）在单端口 `AUTO` 下全部无歧义通过且 `LEAK=0`。
+- [x] **PathAttempt 生命周期**（`fb06888a`）：统一 `PathAttempt` 原子取消/失败/超时/所有权转移，覆盖未赢 TCP 连接、UDP 检查、未消费 RAW carrier、定时器、pending future、`inFlightClients`/`uncheckedReasons` 并发边界，以及 `SelectedConnection.close()` 联动清理；专项测试验证调用方取消、晚到协调、Relay 后握手失败与短连接风暴无泄漏。
+- [x] **打洞资源上限**（`fb06888a`）：`RendezvousService` 同步限制 initiator / target / tenant 并发与配额并在邀请投递失败或过期时回收；`PeerUdpPuncher` 为动态候选、在途会话、检查任务、nonce/ACK 状态增加独立条目与字节上限，零计数条目自动回收，拒绝未授权反射/扫描。
+- [x] **公开 RRP 的空 token 安全边界**（`29bd0e65`）：`RrpServer` / `RrpClient` 独立构造时即强制校验：公网监听或启用 RAW Relay 禁止空 `authToken`（fail-closed），仅显式受控 loopback 场景允许本地测试豁免；未认证帧与反序列化前即校验截断。
+- [x] **AUTO/HTTP 首包及资源边界**（`fc4777db`）：修复 `EgressAutoDetector` 按整个可读缓冲区误判 `maxHeaderBytes` 的合并读 bug，严格区分首部预算与 payload 预算；补齐写 promise 聚合、慢首部超时、EOF/FIN、分片/空帧、解码输出上限与失败关闭测试。
+- [x] **直连优先与路径恢复**（`fb06888a`）：保留 16 TCP / 32 UDP 候选与 64 KiB 探测预算默认基线；实现多网卡轮询公平性截断（避免次网卡被主网卡多地址挤掉）、通配绑定 `UDP_MAPPED` 优先级加权、网络 generation 变更触发缓存重验；可用直连时不创建 Relay。
+- [x] **验收补齐（双 JDK 28 类超集 + 30 轮 HTTP 基准 + 跨网双 NAT 诊断）**（`0c47859f` + §7）：已完成 JDK 21 与 Temurin JDK 8 全量 28 类 373 项 `PARANOID LEAK=0` 超集回归；完成 `182.255.85.247` 30 轮 `AUTO` 出口（`NONE`/`ZLIB_STORED`/`HTTP_FIXED`/`HTTP_RANDOM`，含小包交互/4 并发/大流）与 6 组 RSS v2 真机实测；完成 `YOUFAN-PC`（PRC NAT）↔ `AnZhi-PC`（Symmetric NAT）RFC 5780 诊断与双向同时打洞/按需中继实测。
+- [ ] **验收遗留（需长期窗口 / 外部硬件条件）**：① 1024 在线节点 + 慢消费者 + 多并发 Relay 的 **≥24h 稳态压测**（按 `768 MiB` 整机红线持续采样峰值 RSS/堆外/cgroup/CPU/IP 字节）；② **两端均为锥型 NAT** 的独立运营商公网跨 ISP UDP 打洞直连升轨验收；③ 保留 §1 的外部载体（`udpclient`/Hysteria2）、multi-upstream、QUIC/HTTP3、WoW 及 SS 生产切换验证；不修改全局限速旧问题，不在无实测瓶颈时重写 FEC。
 
 ### P1 · 4. HTTP 出口能力恢复及重构遗漏核对
 
-依据旧 [HttpPseudoHeaderEncoder.java（重构前）](https://github.com/RockyLOMO/rxlib/blob/6af562450dca67d67884f19119b66213de70fe9f/rxlib/src/main/java/org/rx/net/HttpPseudoHeaderEncoder.java)、当前 [EgressConfig.java L28-L38](https://github.com/RockyLOMO/rxlib/blob/7b858624f4b37676ce3994e7c1390b91a370cd72/rxlib/src/main/java/org/rx/net/EgressConfig.java#L28-L38) 与 [EgressCodec.java L465-L545](https://github.com/RockyLOMO/rxlib/blob/7b858624f4b37676ce3994e7c1390b91a370cd72/rxlib/src/main/java/org/rx/net/EgressCodec.java#L465-L545)，对比旧/新功能而不是恢复旧私有 wire。
+依据旧 [HttpPseudoHeaderEncoder.java（重构前）](https://github.com/RockyLOMO/rxlib/blob/6af562450dca67d67884f19119b66213de70fe9f/rxlib/src/main/java/org/rx/net/HttpPseudoHeaderEncoder.java)、[EgressConfig.java](https://github.com/RockyLOMO/rxlib/blob/fc4777db/rxlib/src/main/java/org/rx/net/EgressConfig.java) 与 [EgressCodec.java](https://github.com/RockyLOMO/rxlib/blob/fc4777db/rxlib/src/main/java/org/rx/net/EgressCodec.java)，已在单一公共 `EgressCodec` 内全部落地（提交 `fc4777db`）：
 
-| 能力 | 当前状态 | 后续决定 |
+| 能力 | 实施状态 | 说明 |
 |---|---|---|
-| 随机 Host、URL Path、Query | 旧生成器删除，当前固定 httpHost/httpPath | 按用户要求恢复旧内置生成方式与参数集合；无需配置自有域名，公共 EgressCodec 唯一实现 |
-| GET/POST 混用 | 仅 POST | 核对旧方法选择行为；私有 HTTP 模式按旧参数恢复，标准 HTTP 互操作场景使用正确请求语义，不将 GET Body 当作通用 HTTP 能力 |
-| User-Agent/Accept | 旧有、当前省略 | 必须恢复旧请求头字段及原参数模板 |
-| Date/Server | 旧有、当前省略 | 必须恢复旧响应头字段及原参数模板，Date 按实际 UTC 时间生成 |
-| HTTP 二进制 Body / Content-Type 声明 | 方案 A 已实现 | 保持用户选定的私有约定，记录与标准 JSON 语义不一致 |
-| Body zlib0 | 新增可选 | 保留，默认 none，不重复包装 |
-| 纯 zlib-stored / RSZ | 纯 RFC1950 已实现 | 保留纯流、不恢复 RSZ |
-| 诊断字节统计 | 旧/新均有 | 保留 wire/input 计数，指标名称变动须检查 |
-| 旧 RRP 本地/公网连接清理及失败释放专项 | 部分旧测试方法消失或重写 | 对照新 TransportSession 生命周期补回行为验收 |
-| 旧 RssEgressCodecTest 的 Adaptive + 实际压缩边界专项 | 旧测试删除，新的 EgressCodecTest 主要覆盖各模式及 AES 内层压缩 | 核对其他测试是否已覆盖，缺失则补等价集成测试；不保留旧 preface 测试 |
-| RSS 配置公共化 | RssClientConf.Egress 仅 tcpCodec/udpCodec，readEgress 只接受这两项 | 接入公共 EgressConfig 能力；校验全局/上游/服务端配置、克隆、热更及连接池 key |
+| 随机 Host、URL Path、Query | **已恢复（`fc4777db`）** | 恢复旧内置随机 Host/URL Path/Query 参数池，固定 `httpHost`/`httpPath` 保留为显式选项（`EgressConfig.clientHttpFixed`）；不参与真实 DNS/路由/TLS 校验 |
+| GET/POST 混用 | **已恢复（`fc4777db`）** | 私有 HTTP 随机模式恢复 80% `GET` / 20% `POST` 选择，同步覆盖 `EgressAutoDetector` 与 HTTP decoder 识别及严格上限校验（明确非标准通用 HTTP 语义） |
+| User-Agent / Accept / Connection | **已恢复（`fc4777db`）** | 恢复旧请求头模板（Chrome 137 `User-Agent`、`Accept`、`Connection: keep-alive`） |
+| Date / Server | **已恢复（`fc4777db`）** | 恢复响应头模板（实时 UTC `Date` 与 `Server: Tengine`） |
+| HTTP 二进制 Body / Content-Type | **保持方案 A** | 统一保持 `Content-Type: application/json` + 真实 `Content-Length` + 可选 `deflate` 二进制 Body 私有约定 |
+| 纯 zlib-stored / RSZ | **保持纯 RFC 1950** | 不恢复 `RSZ` 头 |
+| 旧 RRP 连接清理与失败释放测试 | **已补齐（`29bd0e65`）** | 对照 `TransportSession` 生命周期在 `RrpIntegrationTest` 补齐 SOCKS 认证、连接失败、重连清理、远端绑定失败重试、慢消费者背压与零泄漏用例 |
+| 旧 Adaptive + 实际压缩边界测试 | **已补齐（`fc4777db` / `9df28529`）** | 在 `EgressCodecTest` 补回 `compressionRunsOnceAboveAdaptiveStreamAndEgressWrapsOnlyPhysicalTcp` 集成回归 |
+| RSS 配置公共化 | **已落地（`fc4777db`）** | 全量透传至 `RssClientConf`、`RssTransport`、`RssClient`、`BoundRoute`、`OutboundProfiles`、`TcpWarmPoolKey`、`UpstreamSupport` 与 `RssServer` CLI，第三方标准 SOCKS5 禁止非 `NONE` 出口 |
 
-- [ ] **按 2026-11-28 用户最新决定恢复旧 HTTP Pseudo 参数行为**：以重构前 HttpPseudoHeaderEncoder 源码为准，保留内置 Host、URL Path、Query 生成参数与原请求/响应模板中的 User-Agent、Accept、Date、Server、Connection 等字段；不要求用户维护自有域名或额外填写候选集合。Host 仅为受控私有连接中的 HTTP 字段，不参与 DNS 解析、实际拨号、TLS 身份验证、代理目标选择或重定向；真实连接仍以已授权配置端点为准，禁止由 Header 驱动访问第三方服务。旧参数中包含第三方品牌/域名样式，不代表其授权、真实访问或真实服务身份。私有格式不得用于声称与真实网站有关系，不宣称通用 HTTP 互操作、匿名性或网络可达性保证。固定 Host/Path 模式仍保留为显式选项。仅迁移参数生成与头字段能力，不恢复旧 handler、旧 wire、旧日志或重复编码栈。
-- [ ] 保持方案 A：Content-Type 的私有 application/json 声明和二进制 Body；Content-Length 按实际编码后的 Body 长度计算，可选 deflate 与实际内容编码一致。若恢复旧 GET 请求变体，必须同步验证新 AUTO/HTTP decoder 的方法识别与边界，且明确 GET 携带 Body 并非标准通用 HTTP 语义；不放宽长度、认证、资源上限或错误关闭。旧 GET 模板无 Content-Type，而新方案 A 有固定 JSON 声明，实施时以新方案 A 的内容编码约定为准，不为逐字节模仿旧 wire 而破坏新协议。
-- [ ] RSS/RPC/RRP 使用同一 EgressConfig 与实现；支持合法配置验证、HTTP BodyEncoding、头/体/解压预算、服务端 allowedCodecs、固定与随机选择行为。RSS 的全局配置及每上游覆盖、RssServer CLI、热更、warm pool 隔离须真正透传这些配置；标准 SOCKS5/SS 对外及第三方标准上游不安装私有 EgressCodec。敏感配置不进日志。旧私有 wire 无兼容要求，但现有业务功能不能丢。
-- [ ] 对比固定/随机选择模式的正确性、并发、对象分配、CPU、实际字节、短包延迟；保留 NONE 额外开销为零的目标。用户指定恢复的头字段不再列为可省略项；除此之外不增加无意义头字段、重复压缩或新永久线程/定时任务。
-- [ ] 回归旧 RRP SOCKS 密码认证、连接失败、重连清理、异常关闭、远端监听绑定失败重试、背压/慢消费者与引用释放。检查新版已有测试与旧删除用例逐项对应，而非要求旧 wire 兼容。保留 Standard SOCKS5 TCP CONNECT。
+- [x] **恢复旧 HTTP Pseudo 内置随机参数与请求/响应头**（`fc4777db`）：不要求用户配置自有域名，不恢复旧 handler/旧 wire，固定模式保留为显式选项，Host 仅作私有报文头字段绝不驱动真实拨号或第三方访问。
+- [x] **保持方案 A 与严格边界校验**（`fc4777db`）：`GET`/`POST` 均遵循方案 A `Content-Type: application/json` + 精确 `Content-Length` + 可选 `deflate`，不放宽认证、头/体长度或错误关闭策略。
+- [x] **RSS/RPC/RRP 共用完整 `EgressConfig` 与实测对照**（`fc4777db` + §7.3）：全量透传配置、热更与 `TcpWarmPoolKey` 隔离；完成公网 30 轮 `NONE` / `ZLIB_STORED` / `HTTP_FIXED` / `HTTP_RANDOM` 对照（`NONE` 零额外开销，`HTTP_RANDOM` 相对 `NONE` 额外线字节 `+3.56%`、`LEAK=0`）。
+- [x] **补齐旧 RRP 断线/失败/背压与 Adaptive+压缩边界回归**（`29bd0e65`、`fc4777db`、`9df28529`）。
 
 ### P1 · 5. RSS 私有增强链路统一 Transport Core
 
-用户批准统一。现在 RSS 已复用 EgressCodec 与 AdaptiveTcp* 底层，但仍直接通过 SocksConfig/Sockets/RssTcpCodecSelector 安装 RssHopAes、业务 zlib 和 SOCKS greeting；RPC/RRP 则使用 RXTC v2 Hello/HelloAck、AEAD、FRAME_READY 与 TransportSession。不能把共享 codec 等同于已经统一了内部会话。
+仅覆盖 **RSS↔RSS 私有增强 TCP 链路**；标准 Shadowsocks、标准 SOCKS5、第三方标准 upstream、标准 DNS 与原生 UDP（`DatagramTransport`/`RssDatagramHandler`）线协议完全不变。
 
-**目标仅限 RSS↔RSS 的私有增强链路**：共享一套经过认证的可靠会话、加密、实际压缩、出口编码及通用路径管理，SOCKS5 业务仍在上层。标准 Shadowsocks/标准 SOCKS5/第三方 upstream/DNS 线协议保持不变；原生 UDP 继续复用 DatagramTransport/现有 RSS datagram 能力，不因为可靠流统一而改为 UDP over TCP。
-
-- [ ] 先建立现有业务矩阵：plain/daily/weak/game、native/hop/fixed UDP、外部 udpclient/udp2raw、嵌套 SOCKS5、per-route profile、已加密目的端口的压缩绕过、PSK 保护、MTU/FEC/分片、warm pool、连接与 half-close、SS 用户限速、热更排空/回滚。明确每条链路是否进入私有 Core；不把现有四档都替换为 daily。
-- [ ] Core 增加必要且最小的 carrier/profile 适配能力（已有 Adaptive UDP、LocalChannel、实际压缩、AEAD 和 EgressCodec 优先复用）。通过原型证明 SOCKS5 握手与业务流可以透明承载，方向/边界/背压/半关闭正确；不要为每次代理转发附加 RPC 对象序列化或不必要的额外数据拷贝、线程、TCP socket。
-- [ ] 私有入口采用统一认证握手消除 AUTO 与内层业务压缩的歧义；压缩、加密在就绪边界协商，出口编码仅一次，TCP repair 与原生 UDP 维持现有语义。确保私有链路认证必需、能力不匹配明确失败；不再重复 RssHopAes 与 Core AEAD。业务压缩按目的端口/数据策略保留，不强制每条链路压缩。完成迁移后再清理不再使用的私有实现；仍被非目标调用方使用的底层安全组件不得盲删。
-- [ ] RRP、RPC、RSS 共享底层传输实现，不将 RRP/RPC 的业务协议或依赖反向引入 Core。保留 RSS 的独立路由、用户、上游管理与 SS 限速，避免重复计费/限速。原生 UDP 不增加 EgressCodec 包装；Transport Core 的 Adaptive UDP 是可靠流加速，与 UDP 数据报语义不同。
-- [ ] 完整新 wire 联调，私有客户端/服务端配套升级，不维护旧 wire 双栈；按完整旧版本回滚。真实外部载体、四 profile、混合上游、加密与压缩开关、固定/AUTO 三出口、TCP/UDP、弱网、慢消费者、半关闭及完整回归。相同有效负载、相同链路条件对比改造前后线字节/CPU/RSS/延迟/吞吐；新增资源必须有界，若性能/正确性不达标则先缩小迁移范围修复，不强推架构。
-- [ ] 公网低配 RSS Server 仍不得因未启用 NodeRegistry/Rendezvous/RRP 或新路径能力增加常驻资源；不新增每连接独立线程。通过 JDK8/master、merge master→rss-21 后 JDK21 回归，更新实际配置与部署说明、测试数据及 .memory。
+- [x] **梳理业务矩阵并实现 `TransportCoreCarrier`**（`ecc594b2`）：`TransportProtocol` v2 扩展 `FLAG_RAW_STREAM`、`FLAG_UDP_HOP`、2-bit profile（`plain`/`daily`/`weak`/`game`）与 `HelloAck.serverUdpAliasPort`，首字节即 fail-fast 校验 `"RXTC"` 魔数。新建 `org.rx.net.transport.core.TransportCoreCarrier` 透明承载 SOCKS5 握手与字节流，不引入 RPC 序列化、额外线程或额外 TCP Socket，完整支持 4 档 profile、`udpHop`、`udpMtu`、固定 `adaptiveUdpClient`、嵌套 `RssSocksCarrier`、`TcpWarmPoolKey` 预热池、half-close、背压与 SS 用户带宽限速。
+- [x] **统一认证、单层 AEAD、业务压缩分层与清理旧实现**（`ecc594b2`）：私有入口强制 `FLAG_AUTH` + `NonceReplayCache` 防重放；受保护端口使用单一 `TransportAeadCodec`（基于 `RSS_TCP_AES_KEY` PSK 或认证密码派生）取代 `RssHopAes`，业务 `zlib 1..9` 严格位于 AEAD 内层与 `AdaptiveTcpHandler` 之上、出口 `EgressCodec` 仅位于最外层物理 TCP 一次；删除已取代的 `RssHopAes`、`RssTcpCodecSelector`、`SocksAdaptiveHandshake` 及其旧测试，新增 `TransportCoreCarrierTest`（8 项专项回归）。
+- [x] **双 JDK 回归、公网真机验证与 `rss-21` 合入**（`ecc594b2`..`0c47859f` + §7.4）：JDK 21 与 JDK 8 全量 28 类 373 项 `PARANOID LEAK=0` 通过；`182.255.85.247:18915` 实测 6 组场景（无 AEAD `plain + zlib 3` 三出口过 `AUTO` + `daily`/`weak`/`game` 全部升轨 `usingUdp=true`）零误判、零泄漏；低配 RSS Server 未启用 `NodeRegistry`/Rendezvous/RRP 时零新增常驻资源与线程。
+- [ ] **外部载体真机联调（合并归口至 §1）**：外接 `udpclient`/`udp2raw` 与嵌套 Hysteria2 SOCKS5 实机抓包对照改造前后数据，归口至 §1 统一验收。
 
 ## P2 · 中期演进（待定治理项）
 
@@ -106,4 +99,4 @@ UDP over TCP 会改变传输时延和丢包行为，TCP 丢包可造成队头阻
 - **Shadowsocks 服务端先发 FIN 半关闭**：当前完整支持客户端先发 FIN 的单向半关闭；若需支持后端先 `shutdownOutput` 且客户端持续读取的双向半关闭，需单独设计。
 - **高频路径微优化与结构整理**（当前无瓶颈证据，暂缓）：大包聚合/零拷贝批量写、`SaltHistory` 多域 O(1) 淘汰、以及 P3 级包名重构（`net.handler`/`net.flow`/`net.rss.security`/`net.socks.udp2raw` 等）。
 
-> 本轮计划为源码与已有测试报告的静态核对；未执行测试、未修改业务源码。列出的并发/资源风险需要专项复现，旧测试消失不等于已确认功能回归。实施时按最新代码重核。
+> 注：2026-11-28 第二轮 Review 的 P1 §3–§5 代码实现、双 JDK `PARANOID` 28 类超集回归及公网真机验证已落地（提交 `29bd0e65`..`0c47859f`）；本文件仅保留尚未执行的长期压测、外部载体/生产运维切换以及 P2/P3 演进项。

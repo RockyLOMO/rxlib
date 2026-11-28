@@ -9,13 +9,19 @@
 
 - **`TransportServer` / `TransportClient` / `TransportSession`**:
   原始 `ByteBuf` 可靠有序字节流服务端、客户端与会话抽象：
-  - 基于 `RXTC` **v2** 二进制握手完成会话 ID、能力位（`FLAG_ADAPTIVE_UDP`、`FLAG_AUTH`、`FLAG_ENCRYPT`、`FLAG_COMPRESS`）与 MTU 协商，通过 `FRAME_READY` 屏障避免 TCP 粘包与加解密/`AdaptiveTcpHandler` 切入竞争。
-  - 当配置非空 `authSecret` 时，握手期强制启用 `FLAG_AUTH` 双向 16 字节 HMAC-SHA256 认证（`Hello` 携带 `clientNonce + clientMac`，服务端通过有界 TTL 缓存防御 `clientNonce` 重放；`HelloAck` 携带 `serverNonce + serverMac`），在创建会话或进入任何 Fury 反序列化前验证，不通过立即断开。
-  - 启用 `enableEncryption`（要求非空 `authSecret`）时，握手成功后立即为每会话/每方向派生独立 AES-128-GCM 密钥并安装 `TransportSessionCipher`（与可选 `zlib 3` 压缩配合，业务压缩在内、AEAD 加密居中、`EgressCodec` 出口包装位于最外层）。
+  - 基于 `RXTC` **v2** 二进制握手（首字节 fail-fast 校验 `"RXTC"` 魔数）完成会话 ID、能力位（`FLAG_ADAPTIVE_UDP`、`FLAG_AUTH`、`FLAG_ENCRYPT`、`FLAG_COMPRESS`、`FLAG_RAW_STREAM`、`FLAG_UDP_HOP`、2-bit profile）、`serverUdpAliasPort` 与 MTU 协商，通过 `FRAME_READY` 屏障避免 TCP 粘包与加解密/`AdaptiveTcpHandler` 切入竞争。
+  - 当配置非空 `authSecret` 时，握手期强制启用 `FLAG_AUTH` 双向 16 字节 HMAC-SHA256 认证（`Hello` 携带 `clientNonce + clientMac`，服务端通过有界 TTL `NonceReplayCache` 防御 `clientNonce` 重放；`HelloAck` 携带 `serverNonce + serverMac`），在创建会话或进入任何 Fury 反序列化前验证，不通过立即断开。
+  - 启用 `enableEncryption`（要求非空 `authSecret`）时，握手成功后立即为每会话/每方向派生独立 AES-128-GCM 密钥并安装 `TransportAeadCodec`（与可选 `zlib` 压缩配合，业务压缩在内、AEAD 加密居中、`EgressCodec` 出口包装位于最外层）。
   - **虚拟载体支持（`LocalAddress` / `LocalChannel`）**：`TransportServer.startLocal(LocalAddress)`、`TransportClient.connectLocal(LocalAddress)` 与 `Remoting`（`RpcServerConfig.localCarrier` / `RpcClientConfig.localCarrier`）支持在零额外物理 Socket 下将 RRP RAW 中继逻辑流直接桥接为完整的端到端加密 Transport / RPC 会话，并支持 `requestDeferredAdaptive(...)` 延迟挂接外部已验证 UDP 路径。
   - `enableAdaptiveUdp = false` 时纯 TCP，不绑定、不创建任何 UDP Socket（`TransportServer.udpPort() == 0`）。
   - `enableAdaptiveUdp = true` 时在单端口上复用 RSS `daily`（`AdaptiveTcpHandler` + `AdaptiveUdpPort`，不启用端口跳跃与包复制），提供单一层的 FEC + TCP 可靠修复；支持动态 PMTU 探测与 `CHUNK` 收缩，以及通过 `attachVerifiedUdpPath(...)` 接入 `PeerUdpPuncher` 验证后的直连/打洞 UDP 路径。
   - 会话提供 `send(ByteBuf)` / `sendAsync(ByteBuf)`、`attr(...)`、`isEncrypted()`、`isAdaptiveUdpActive()`、`isUsingUdp()` 与清晰的所有权/释放语义。
+
+- **`TransportCoreCarrier`（RSS↔RSS 私有增强 TCP 载体）**:
+  面向原生字节流协议（如 RSS 内部 SOCKS5 代理跳）的 `RXTC` v2 透明载体（已取代并删除 `RssHopAes`、`RssTcpCodecSelector`、`SocksAdaptiveHandshake`）：
+  - 强制 `FLAG_AUTH` + `FLAG_RAW_STREAM` + `NonceReplayCache` 防重放，支持 `RSS_TCP_AES_KEY` PSK 或认证密码派生密钥；受保护端口启用单层 `TransportAeadCodec` 加密，不叠双层加密；业务 `zlib 1..9` 严格安装在 AEAD 内层与 `AdaptiveTcpHandler` 之上。
+  - 支持全部 4 档 profile（`plain`/`daily`/`weak`/`game`）、`FLAG_UDP_HOP` 双端口跳跃（`serverUdpAliasPort`）、固定 `adaptiveUdpClient`、嵌套 `RssSocksCarrier` 透明穿透与有界 `PendingWriteQueue` 背压，并因握手帧恒先于业务流彻底消除 Server `AUTO` 与无加密内层 `zlib` 的首字节歧义。
+  - 严格模式（`rssPrivateTransport = true`）首字节即拒绝非 `RXTC` 流量，混合模式兼容标准 SOCKS5 客户端直连。
 
 - **`DatagramTransport` / `DatagramTransportConfig`**:
   原始 `ByteBuf` 无连接 UDP 传输组件，默认单端口绑定（`reusePortBindCount = 1`），支持直发/直收原始 datagram，也可通过 `installDatagramHandler(RssDatagramHandler)` 在 EventLoop 上同步挂载认证分片与 FEC 保护。
