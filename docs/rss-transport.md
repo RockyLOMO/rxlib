@@ -23,7 +23,11 @@ shadowUsers:
 收口后的固定规则：
 
 - `profile` 是增强模式的唯一算法选择入口：增强模式下不再自由改写 `fec` / `tcp` / `udp` 组合以偏离 profile 语义；非算法参数（`tcpCompressionLevel`、`udpHop`、`udpMtu`、显式关闭普通 UDP LZ4 `udp: 0`）仍按规则配置。`plain` 保留既有 TCP 压缩配置与显式位掩码（`0..3`，仅 zlib + PSK AES）。
-- `udpHop`（布尔值，省略默认 `true`，`plain` 不支持 `true`）独立控制自适应 TCP/FEC 与增强普通 UDP 是否启用双端口 30 秒轮换跳跃；设为 `false`（或 Server `-udpHop=0`）时，保留 `daily` / `weak` / `game` 的压缩、XOR/副本与 TCP 修复能力，协商单端口（`primary == alias`，TCP 经 `TransportCoreCarrier` `RXTC` v2 `FLAG_UDP_HOP` / `serverUdpAliasPort` 协商，普通 UDP 经 RPC `SUPPORT_NO_HOP_UDP` 协商）。`OutboundProfiles`、TCP 预热池与 UDP 租约池均按 `udpHop`、MTU 与完整 `EgressConfig` 隔离缓存。
+- `udpHop`（布尔值，省略默认 `true`，`plain` 不支持 `true`）独立控制自适应 TCP/FEC 与增强普通 UDP 是否启用双端口 30 秒轮换跳跃；设为 `false`（或 Server `-udpHop=0`）时，保留 `daily` / `weak` / `game` 的压缩、XOR/副本与 TCP 修复能力，协商单端口（`primary == alias`，非 AEAD TCP 经 SOCKS5 `0x8c` 轻量扩展协商，AEAD 或显式 `CORE` 经 `TransportCoreCarrier` `RXTC` v2 `FLAG_UDP_HOP` / `serverUdpAliasPort` 协商，普通 UDP 经 RPC `SUPPORT_NO_HOP_UDP` 协商）。`OutboundProfiles`、TCP 预热池与 UDP 租约池均按 `udpHop`、MTU、`handshakeMode`、`securityMode` 与完整 `EgressConfig` 隔离缓存。
+- **五维正交配置**：
+  - `securityMode`（顶层或 `shadowUsers[].transport.securityMode`，Server `-securityMode=fast|none`）：默认 **`fast`**（固定 `AES-128-GCM + HMAC-SHA256`，16 B 握手标签与每记录 2 B 长度 + 16 B GCM Tag，无替代加密/MAC 算法，禁止 XOR 认证）；`none` 仅允许显式无额外加密链路，不得与 `tcpCipherPorts` / `enableEncryption=true` 混用。
+  - `handshakeMode`（顶层或 `shadowUsers[].transport.handshakeMode`，Server `-handshakeMode=lightweight|core`）：RSS 默认 **`lightweight`**（零新增 RTT：纯 `plain` 非 AEAD 无压缩直走标准 SOCKS5 且不分配 `NonceReplayCache`；非 AEAD `plain+zlib` 与 `daily`/`weak`/`game` 经私有方法 `0x8c` 将 35 B 客户端扩展与 43 B HMAC-SHA256 应答捎带于现有 RFC 1929 密码认证往返中，内层首字节恒为 `0x05`，与 Server `AUTO` 零歧义；受保护端口 `RSS_PSK_AES` 自动走单次认证 `RXTC` v2 AEAD 握手）；设为 `core` 时所有 RSS 私有 TCP 统一执行 `RXTC` v2 握手。
+  - `maxBusinessInflateBytes`（Server `-maxBusinessInflateBytes=4194304`）：业务 `zlib 1..9` 解压输出独立上限（默认 `4 MiB`，范围 `4 KiB..64 MiB`），与 `EgressConfig.maxInflateBytes` 彻底解耦。
 - `tcpCompressionLevel` 取 `1..9`，默认 `3`，仅实际业务压缩开启时生效。Client 用户字段控制上行，Server `-tcpCompressionLevel=3` 控制下行，解码两端独立兼容。
 - 业务实际压缩只在 `AdaptiveTcpStream` 之上执行一次：自适应 TCP 的 UDP 快路径（FEC）与 TCP 修复帧复用同一份已编码业务流，绝不二次压缩或二次业务加密。
 - 游戏副本默认单发起步，按方向反馈升档（可用 `-Dapp.rss.game.initialCopies=2` 对照测试）；`weak` 尾包探测可用 `-Dapp.rss.weak.tailProbe=tcp` 选择 TCP 候选。
@@ -65,30 +69,33 @@ RSS 上游作为完整逻辑对象同时具备 TCP 与 UDP 能力，配置在 `s
 | `udpCodecBypassPorts`（迁移别名 `udpAlreadyEncryptedPorts`） | `443, 853` | QUIC / DoQ 跳过业务 LZ4 与额外加密；增强模式仍保留 FEC 或游戏副本。 |
 
 - 端口 `53` 保留给 `RssDnsInterceptor`，不允许配置进上述任意保护或旁路列表；同一协议的保护表与旁路表不允许重叠。
-- **RSS↔RSS 私有增强 TCP 链路统一迁至 `Transport Core v2`（`TransportCoreCarrier`）**：原 `RssHopAes`、`RssTcpCodecSelector` 与 `SocksAdaptiveHandshake` 已移除。两端共享 32 字节 Base64 密钥 `RSS_TCP_AES_KEY`（或基于用户密码的认证密钥）完成 `RXTC` v2 双向 HMAC 鉴权与 `NonceReplayCache` 防重放，受保护端口开启单层每会话/每方向独立 AES-128-GCM（`TransportAeadCodec`），不叠双层加密；业务 `zlib 1..9` 严格在 AEAD 内层与 `AdaptiveTcpHandler` 之上执行。缺失或非法密钥时配置拒绝启动，不静默退回明文。标准 Shadowsocks、标准 SOCKS5、第三方标准上游与原生 UDP 协议不受影响。
+- **RSS↔RSS 私有增强 TCP 链路（统一 `TransportCoreCarrier` + 默认 `LIGHTWEIGHT` 轻量握手 + 固定 `FAST` 套件）**：原 `RssHopAes`、`RssTcpCodecSelector` 与 `SocksAdaptiveHandshake` 已移除。默认 `handshakeMode: lightweight` 下：纯 `plain` 非 AEAD 无压缩直走标准 SOCKS5 零额外握手；非 AEAD `plain+zlib` 与增强模式通过 SOCKS5 `0x8c` 捎带防重放 HMAC-SHA256 扩展（零新增 RTT，单 TCP 段应答）；命中 `tcpCipherPorts`（`RSS_PSK_AES`）或显式 `handshakeMode: core` 时，使用 32 字节 Base64 密钥 `RSS_TCP_AES_KEY`（或密码派生密钥）完成 `RXTC` v2 双向 HMAC-SHA256 鉴权与 `NonceReplayCache` 防重放，受保护端口开启单层每会话/每方向独立 `AES-128-GCM`（`TransportAeadCodec`），不叠双层加密；业务 `zlib 1..9` 严格在 AEAD 内层与 `AdaptiveTcpHandler` 之上执行。服务端用户认证严格 fail-closed（错密/禁用/撤销/身份不一致均拒绝，绝不回落 `ANONYMOUS`），共享 PSK 不可替代用户授权。缺失或非法密钥时配置拒绝启动，不静默退回明文。标准 Shadowsocks、标准 SOCKS5、第三方标准上游与原生 UDP 协议不受影响。
 
 ## 4. 统一公共 TCP 出口包装（`EgressCodec`）
 
-真实 TCP 连续流出口包装已收敛为公共组件 `org.rx.net.EgressCodec` / `EgressConfig` / `EgressPipeline`（统一服务 RSS、`Transport Core v2`、`RrpServer`/`RrpClient` 与 `RendezvousService`，原 RSS 专属 `RssEgressCodec`、`RSZ\x01` 自定义前缀及旧 `HttpPseudoHeader*` 已删除），与业务实际压缩（`zlib 1..9`）完全解耦，**默认关闭（`none`），按需显式开启**：
+真实 TCP 连续流出口包装已收敛为公共组件 `org.rx.net.EgressCodec` / `EgressConfig` / `EgressPipeline`（统一服务 RSS、`Transport Core v2`、`RrpServer`/`RrpClient` 与 `RendezvousService`，原 RSS 专属 `RssEgressCodec`、`RSZ\x01` 自定义前缀及旧 `HttpPseudoHeader*` 已删除），与业务实际压缩（`zlib 1..9`）完全解耦，**默认关闭（`none`），按需显式开启**。客户端 `egress` 严格支持 **`global → user → upstream` 局部继承**：省略字段（`null`）继承上级配置，显式设置 `tcpCodec: none` 覆盖关闭；客户端禁止填写 `allowedCodecs`（仅服务端 `AUTO` 支持）：
 
 ```yaml
-# 可配在 Client 顶层（全 RSS 路由默认）、单个 socksServers 条目或 shadowUsers[].transport 下
+# 可配在 Client 顶层（全 RSS 路由默认）、shadowUsers[].transport 或单个 socksServers 条目下（支持局部字段继承）
 egress:
-  tcpCodec: none              # 可选：none（默认） | zlib-stored | http
-  udpCodec: none              # 当前仅允许 none
+  tcpCodec: none              # 可选：none（显式关闭） | zlib-stored | http；省略(null)时继承上级
+  udpCodec: none              # 当前仅允许 none；省略(null)时继承上级
   httpRandomHeaders: true     # 默认 true（内置随机 Host/Path/Query + 80% GET / 20% POST + 请求/响应头模板）；设为 false 走固定 Host/Path
   httpHost: ""                # 仅 httpRandomHeaders=false 时使用的固定 Host
   httpPath: ""                # 仅 httpRandomHeaders=false 时使用的固定 Path
-  httpBodyEncoding: none      # 可选：none（默认） | deflate
-  httpMaxHeaderBytes: 8192    # HTTP 首部预算上限（严格与 payload 分离，防合并读误拒）
-  httpMaxBodyChunkBytes: 1048576
+  httpBodyEncoding: none      # 可选：none（默认） | zlib-stored
+  maxHeaderBytes: 4096        # HTTP 首部预算上限（严格与 payload 分离，防合并读误拒）
+  maxBodyBytes: 16777216      # 单个 HTTP 帧体长度上限
+  maxInflateBytes: 4194304    # 出口层 ZLIB_STORED/HTTP body 解压上限（独立于 maxBusinessInflateBytes）
+  detectTimeoutMillis: 5000   # 仅服务端 AUTO 首包探测超时
 ```
 
-- 服务端通过启动参数 `-tcpEgressCodec=none`（默认）、`-tcpEgressCodec=zlib-stored`、`-tcpEgressCodec=http` 或 `-tcpEgressCodec=auto`（单端口 1-shot `EgressAutoDetector`），并支持 `-tcpEgressAllowedCodecs=...`、`-tcpEgressHttpRandomHeaders=true|false`、`-tcpEgressHttpHost=...`、`-tcpEgressHttpPath=...`、`-tcpEgressHttpBodyEncoding=none|deflate`、`-tcpEgressHttpMaxHeaderBytes=...`、`-tcpEgressHttpMaxBodyChunkBytes=...` 完整透传 `EgressConfig`。
-- `zlib-stored` 使用纯标准 RFC 1950 `ZLIB` 2 字节头（`0x78 0x01`）+ DEFLATE Level 0 stored block（无私有 `RSZ` 魔数），位于加密层与 `RXTC` v2 握手最外侧包裹真实 TCP 物理流；因内层首包恒为 `"RXTC"` 握手帧，无加密的业务 `zlib 1..9` 在 Server `AUTO` 模式下**零歧义**。
+- 服务端通过启动参数 `-tcpEgressCodec=none`（默认）、`-tcpEgressCodec=zlib-stored`、`-tcpEgressCodec=http` 或 `-tcpEgressCodec=auto`（单端口 1-shot `EgressAutoDetector`），并支持 `-tcpEgressAllowedCodecs=...`、`-tcpEgressHttpRandomHeaders=true|false`、`-tcpEgressHttpHost=...`、`-tcpEgressHttpPath=...`、`-tcpEgressHttpBodyEncoding=none|zlib-stored`、`-tcpEgressMaxHeaderBytes=...`、`-tcpEgressMaxBodyBytes=...`、`-tcpEgressMaxInflateBytes=...`、`-tcpEgressDetectTimeoutMillis=...` 完整透传 `EgressConfig`。
+- `zlib-stored` 使用纯标准 RFC 1950 `ZLIB` 2 字节头（`0x78 0x01`）+ DEFLATE Level 0 stored block（无私有 `RSZ` 魔数），位于加密层与握手最外侧包裹真实 TCP 物理流；因 `LIGHTWEIGHT` 首字节恒为 `0x05`、`CORE`/AEAD 首字节恒为 `'R'`（`"RXTC"`），且业务 `zlib` 严格在认证后安装，无加密的业务 `zlib 1..9` 在 Server `AUTO` 模式下**零歧义**。
 - `http` 采用方案 A 零拷贝全双工流式封装（`Content-Type: application/json` + 精确 `Content-Length` + 二进制加密/握手 Body，明确为私有约定而非标准 JSON HTTP 语义）：默认 `httpRandomHeaders=true` 恢复旧内置随机 Host/URL Path/Query、80% `GET` / 20% `POST`、Chrome 137 `User-Agent`/`Accept`/`Connection` 与实时 UTC `Date`/`Server: Tengine` 响应头（Host 仅作报文头字段，不参与 DNS/拨号/路由/TLS 校验）；`httpRandomHeaders=false` 保留显式固定 Host/Path 模式。`AdaptiveTcpStream` 的 UDP 快路径与普通业务 UDP 均**不经过** `EgressCodec`。
 - `none` 路径零额外 handler、零额外包装开销；标准第三方 `socks5` 路由禁止配置非 `none` 的 `egress.tcpCodec`。
-- 完整 `EgressConfig` 字段已纳入 `TcpWarmPoolKey` 与路由配置缓存，热更新仅作用于新连接。
+- 完整 `EgressConfig`、`handshakeMode` 与 `securityMode` 已纳入 `TcpWarmPoolKey` 与路由配置缓存，热更新仅作用于新连接。
+- **普通 UDP 复用 RPC 控制面（`AUTO`）与按需资源池**：已认证 RSS 对端上的 `plain` UDP（`udpRelayControlMode = AUTO`）优先走 `SocksRpcCapabilitiesCache`（零线程单飞缓存）+ `openUdpRelayGroup`（含 `clientRequestId` 幂等与原子容量预留），零专用 SOCKS5 TCP 控制连接且同关联跨目标复用零额外控制 RTT；RPC 不可达时 `plain AUTO` 0 ms 回退 `SOCKS5_COMPAT`，标准第三方 SOCKS5 继续走 `UDP ASSOCIATE`。TCP Warm Pool 改为共享单调度器按需收缩至 0（进程级上限 64 pool / 64 ready / 8 in-flight），`rpcMinSize` 默认由 `2` 降至 `1`（支持显式 `0` 完全按需收缩）。
 
 ## 5. 统一 UDP MTU 预算、认证分片与跳跃端口
 

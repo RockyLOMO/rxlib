@@ -261,3 +261,47 @@
 ### 7.5 资源基线与远端清理核验
 - **VPS JVM 与主机快照**（`egress-rss-server` 结束时）：`autoSessions = 0`、`rssActiveChannels = 0`、堆内已用 `33.17 MiB`、堆外直接内存 **`8.62 MiB`**（`9,037,313 B`）、活跃线程 `15`、整机已用内存 `374 / 960 MiB`（可用 `586 MiB`），服务端与全部客户端 **`PARANOID LEAK = 0`**（注：本次测试为短时功能/基准验收，1024 节点 / ≥24h `768 MiB` 整机稳态压测仍列于 [roadmap-plan.md](roadmap-plan.md) §3 遗留项）。
 - **远端严格清理验证**：VPS `182.255.85.247` 核验 `PROC:clean` / `DIR:clean` / `NFT:clean`（未触碰线上 `/home/rss` 及生产端口）；`AnZhi-PC` 核验 `PROC=0` / `DIR=False`。
+
+---
+
+## 8. 2026-11-28 · 第三轮 Review（P1 §8–§12）：RSS 轻量握手、统一 `FAST` 套件、RPC 降 RTT 与按需资源池双 JDK 与公网真机 A/B 实测
+
+### 8.1 双 JDK `PARANOID` 32 类全量超集回归（提交 `3044e7c5`..`927475a6`）
+- **基线环境**：Windows 11；Temurin JDK `21.0.12.1` + Temurin JDK `1.8.0_504`；Netty `4.2.21.Final`；统一参数 `-DskipTests=false "-DargLine=-Dio.netty.leakDetection.level=PARANOID"`（临时配置 32 字节测试 `RSS_TCP_AES_KEY` / `RSS_UDP_AES_KEY`）。
+- **32 个测试类超集**（覆盖 §7 既有核心 + 新增 `RssLightweightAndRpcOptimizationTest`、`RssRound3ConfigAndAuthTest` 以及 `SocksProxyServerIntegrationTest`、`DailyRelayGroupTest`、`Socks5SessionPoolTest`、`Socks5CommandRequestHandlerTest`、`SocksUdpRelayHandlerTest`、`SocksUdpUpstreamPortHoppingTest`、`RssSocksCarrierMtuTest`、`RssTest`、`RssAuthenticatorTest`、`RssReviewFixesTest`、`RssRuntimeNodeServiceIntegrationTest`、`SsUserBandwidthIntegrationTest`、`TransportCoreCarrierTest`、`TransportCoreTest`、`EgressCodecTest`、`AdaptiveTcpStreamTest`、`AdaptiveUdpPortTest`、`RssDatagramHandlerTest`、`RssDatagramCipherTest`、`RssDatagramCompressionTest`、`NameserverImplTest`、`NodeRegistryTest`、`RendezvousAndPathSelectorTest`、`RrpIntegrationTest`、`RrpRawRelayTest`、`RemotingTest`、`RemotingTransportConfigTest`、`DnsRecordExchangeTest`、`DnsOptimizationTest`、`BandwidthLimiterTest`）：
+  - **JDK 21 (`21.0.12.1`)**：`389` 用例运行（`2` 既有环境跳过）、`0` 失败、`0` 错误、**`PARANOID LEAK: 0`**。
+  - **JDK 8 (`1.8.0_504`)**：`389` 用例运行（`2` 既有环境跳过）、`0` 失败、`0` 错误、**`PARANOID LEAK: 0`**。
+  - **构建验证**：`mvn -pl rxlib package -DskipTests=true` 成功产出 `rxlib-2.22.8-SNAPSHOT.jar`。
+
+### 8.2 高丢包公网 VPS 同配置 A/B 基准：`LIGHTWEIGHT` vs `CORE`（`182.255.85.247:18960`）
+- **环境与负载**：隔离单端口 `18960`（Server `AUTO` 全白名单 `none`/`zlib-stored`/`http` + `udpHop 18970-18979` + `RSS_TCP_AES_KEY` PSK + 单用户鉴权），客户端与 VPS 双端开启 `-Dio.netty.leakDetection.level=PARANOID`。每组同配置执行 10 轮冷建连 + 64 B Echo（记录无重传底线 `min` 与高丢包波动下 `P50`/`P95`）、客户端双向线字节计量、32 KiB 可压缩双向 Echo `SHA-256` 校验，以及 `plain-NONE` 5 轮 TCP Warm Pool 命中测试；线路基础 RTT 约 `185 ms` 且伴随突发性高丢包（TCP 1s RTO 引起单轮 P50 波动，以 `min` 与确定性线字节对照零重传净收益）。
+
+| 场景（单端口 Server `AUTO`） | `HandshakeMode` | 成功 | 冷建连+64B `min` (ms) | `min` 净降幅 | `P50 / P95` (ms) | 单次冷建连+Echo 线字节 | 线字节净省 | 32 KiB 回显 (ms) / 线字节 / `SHA-256` | Warm 命中 `P50` (ms) |
+| --- | --- | :---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **`plain-NONE`**（无 AEAD） | **`LIGHTWEIGHT`**（纯 SOCKS5） | `10/10` | **947.8** | **-137.2 ms** | 1947.1 / 3969.5 | **177.0 B** | **-117.0 B (-39.8%)** | 2075.6 / 65,585 B / 一致 | **428.3** |
+| **`plain-NONE`**（无 AEAD） | `CORE`（`RXTC` v2） | `10/10` | 1085.0 | 基准 | 1261.2 / 2394.7 | 294.0 B | 基准 | 2068.1 / 65,702 B / 一致 | — |
+| **`plain-HTTP_RANDOM`**（无 AEAD） | **`LIGHTWEIGHT`**（纯 SOCKS5） | `10/10` | **930.9** | **-174.1 ms** | **1048.4** / 3393.0 | **1,853.5 B** | **-541.6 B (-22.6%)** | 1798.3 / 68,102 B / 一致 | — |
+| **`plain-HTTP_RANDOM`**（无 AEAD） | `CORE`（`RXTC` v2） | `10/10` | 1105.0 | 基准 | 1166.2 / 2337.5 | 2,395.1 B | 基准 | 2719.3 / 68,692 B / 一致 | — |
+| **`plain-zlib3-NONE`**（`AUTO` 无 AEAD） | **`LIGHTWEIGHT`**（`0x8c` 捎带） | `10/10` | **919.9** | **-197.3 ms** | 1929.3 / 3149.9 | **289.0 B** | **-59.0 B (-17.0%)** | 1682.3 / **675 B** / 一致 | — |
+| **`plain-zlib3-NONE`**（`AUTO` 无 AEAD） | `CORE`（`RXTC` v2） | `10/10` | 1117.2 | 基准 | 1642.1 / 3143.2 | 348.0 B | 基准 | 1630.8 / 734 B / 一致 | — |
+| **`plain-zlib3-HTTP_RANDOM`**（`AUTO` 无 AEAD） | **`LIGHTWEIGHT`**（`0x8c` 捎带） | `10/10` | **986.5** | **-180.3 ms** | **1479.0** / 8723.6 | **2,392.7 B** | **-50.8 B (-2.1%)** | 1193.7 / **3,467 B** / 一致 | — |
+| **`plain-zlib3-HTTP_RANDOM`**（`AUTO` 无 AEAD） | `CORE`（`RXTC` v2） | `10/10` | 1166.8 | 基准 | 1568.3 / 4478.2 | 2,443.5 B | 基准 | 1139.2 / 3,477 B / 一致 | — |
+| **`daily-noAead-NONE`**（Adaptive UDP） | **`LIGHTWEIGHT`**（`0x8c` 捎带） | `10/10` | **1041.6** | **-136.5 ms** | 1656.7 / **3190.6** | — | — | 1398.6 / — / 一致 | — |
+| **`daily-noAead-NONE`**（Adaptive UDP） | `CORE`（`RXTC` v2） | `10/10` | 1178.1 | 基准 | 1616.7 / 4644.5 | — | — | 1210.1 / — / 一致 | — |
+| **`weak-FAST_AEAD-ZLIB_STORED`**（`SecurityMode.FAST`） | `LIGHTWEIGHT`（自动单次 `RXTC` AEAD） | `8/8` | 1169.8 | 单次 AEAD 握手 | 1323.4 / 1970.8 | — | — | 2758.2 / — / 一致 | — |
+
+- **结论**：全部 5 组同配置 A/B 对照中，`LIGHTWEIGHT` 相对 `CORE` 稳定节省约 **1 个完整 RTT（`136.5–197.3 ms`）**，同时单连接线字节减少 `50.8–541.6 B`（其中 `plain-HTTP_RANDOM` 省去一整对独立 HTTP 请求/响应头达 `-22.6%`，`plain-NONE` 减少 `-39.8%`）；`plain+zlib 3` 经 `0x8c` 捎带在单端口 `AUTO` 下无任何首字节歧义（64 KiB 压缩至 `675 B`），受保护 `weak-FAST_AEAD-ZLIB_STORED` 自动走单次 `RXTC` `AES-128-GCM + HMAC-SHA256` 握手并全量通过。
+
+### 8.3 高丢包公网 VPS `plain` UDP A/B：RSS RPC Relay Group vs 标准 SOCKS5 `UDP ASSOCIATE`（`182.255.85.247:18960/18961`）
+- **环境与负载**：同一 VPS 托管 `SocksProxyServer`（`18960`）与 `RssRpcApp`（`18961`）及 2 个本地 UDP 回显目标（`18963`/`18964`），对比 10 次独立 association 在高丢包单发 UDP 下的首包耗时、同关联跨目标复用耗时、RPC 调用数与专用 SOCKS5 TCP 控制连接数。
+
+| 控制路径 | 单发成功率（高丢包） | 冷能力首包 (ms) | 缓存能力首包 `P50 / P95` (ms) | 同关联跨目标复用 `P50` (ms) | `capabilities()` RPC 次数 | `openUdpRelayGroup()` 次数 | 专用 SOCKS5 TCP 控制连接数 |
+| --- | :---: | ---: | ---: | ---: | :---: | :---: | :---: |
+| **`RSS_RPC_GROUP`**（`AUTO` + `SocksRpcCapabilitiesCache`） | `7/10` | `1,790.4`（含首帧 Fury JIT） | **`782.2 / 1,445.4`**（**P50 `-23.0%` / P95 `-31.1%`**） | **`192.9`**（纯 1 RTT UDP，0 控制 RTT） | **`1`** | `10` | **`0`** |
+| **`SOCKS5_UDP_ASSOCIATE`**（`SOCKS5_COMPAT`） | `8/10` | — | `1,015.9 / 2,098.5` | — | `0` | `0` | **`8`** |
+
+### 8.4 VPS 资源快照、`nftables` 计量与远端清理核验
+- **惰性状态验证**：服务端启动时 `hasCoreReplayCache() == false`，仅在收到首条 `0x8c`/`RXTC` 连接后惰性创建。
+- **VPS 结束快照**：进程 RSS `210,260 KiB`（`~205.3 MiB`，37 OS LWPs），JVM 堆内 `39.77 MiB`、Netty `pooledDirect = 8.00 MiB`、JVM `BufferPoolMXBean("direct") = 8.67 MiB`、活跃线程 `26`；整机 `free -m` 峰值已用 `414 / 960 MiB`（可用 `546 MiB`，远低于 `768 MiB` 整机红线）。
+- **VPS `nftables` IP 层总计量**：TCP（`18960,18961`）`1,691 pkts / 305,147 B` 入、`1,814 pkts / 309,726 B` 出；Adaptive UDP（`18970-18979`）`104 pkts / 9,673 B` 入、`97 pkts / 9,346 B` 出。
+- **泄漏与清理**：客户端与 VPS **`PARANOID LEAK = 0`**；清理复核 **`CLEANUP_VERIFY PROC:0 DIR:clean NFT:0`**，整机可用内存回落至 `747 / 960 MiB`，生产服务零触碰。

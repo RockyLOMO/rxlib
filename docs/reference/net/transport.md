@@ -5,7 +5,7 @@
 ## 共享传输内核 (org.rx.net.transport.core)
 
 - **`TransportConfig`**:
-  可靠字节流客户端/服务端统一配置，包含内嵌 `TcpClientConfig`/`TcpServerConfig`、`enableAdaptiveUdp`（默认 `true`，复用 RSS `daily` 单端口自适应 UDP 加速；设为 `false` 时纯 TCP 且零 UDP Socket）、`udpBindPort`、`udpMtu`、`authSecret`、`enableEncryption`（握手后每会话独立 AES-128-GCM 认证加密）、`enableCompression`（业务级 `zlib 3` 流压缩，严格位于加密内层：先压缩后加密）、`egressConfig`（统一公共 `EgressCodec` 出口包装：`NONE` / `ZLIB_STORED` / `HTTP` / Server `AUTO`）、`handshakeTimeoutMillis`、`maxFrameBytes`。
+  可靠字节流客户端/服务端统一配置，包含内嵌 `TcpClientConfig`/`TcpServerConfig`、`securityMode`（统一 `SecurityMode.FAST` 默认 = `AES-128-GCM + HMAC-SHA256`，或 `NONE`；禁止 `NONE` 与 `enableEncryption=true` 组合）、`handshakeMode`（`Transport Core` 流固定 `CORE`）、`maxBusinessInflateBytes`（业务 `zlib` 解压独立上限，默认 `4 MiB`，与 `EgressConfig.maxInflateBytes` 彻底解耦）、`enableAdaptiveUdp`（默认 `true`，复用 RSS `daily` 单端口自适应 UDP 加速；设为 `false` 时纯 TCP 且零 UDP Socket）、`udpBindPort`、`udpMtu`、`authSecret`、`enableEncryption`（握手后每会话独立 AES-128-GCM 认证加密）、`enableCompression`（业务级 `zlib 3` 流压缩，严格位于加密内层：先压缩后加密）、`egressConfig`（统一公共 `EgressCodec` 出口包装：`NONE` / `ZLIB_STORED` / `HTTP` / Server `AUTO`）、`handshakeTimeoutMillis`、`maxFrameBytes`。
 
 - **`TransportServer` / `TransportClient` / `TransportSession`**:
   原始 `ByteBuf` 可靠有序字节流服务端、客户端与会话抽象：
@@ -17,11 +17,11 @@
   - `enableAdaptiveUdp = true` 时在单端口上复用 RSS `daily`（`AdaptiveTcpHandler` + `AdaptiveUdpPort`，不启用端口跳跃与包复制），提供单一层的 FEC + TCP 可靠修复；支持动态 PMTU 探测与 `CHUNK` 收缩，以及通过 `attachVerifiedUdpPath(...)` 接入 `PeerUdpPuncher` 验证后的直连/打洞 UDP 路径。
   - 会话提供 `send(ByteBuf)` / `sendAsync(ByteBuf)`、`attr(...)`、`isEncrypted()`、`isAdaptiveUdpActive()`、`isUsingUdp()` 与清晰的所有权/释放语义。
 
-- **`TransportCoreCarrier`（RSS↔RSS 私有增强 TCP 载体）**:
-  面向原生字节流协议（如 RSS 内部 SOCKS5 代理跳）的 `RXTC` v2 透明载体（已取代并删除 `RssHopAes`、`RssTcpCodecSelector`、`SocksAdaptiveHandshake`）：
-  - 强制 `FLAG_AUTH` + `FLAG_RAW_STREAM` + `NonceReplayCache` 防重放，支持 `RSS_TCP_AES_KEY` PSK 或认证密码派生密钥；受保护端口启用单层 `TransportAeadCodec` 加密，不叠双层加密；业务 `zlib 1..9` 严格安装在 AEAD 内层与 `AdaptiveTcpHandler` 之上。
-  - 支持全部 4 档 profile（`plain`/`daily`/`weak`/`game`）、`FLAG_UDP_HOP` 双端口跳跃（`serverUdpAliasPort`）、固定 `adaptiveUdpClient`、嵌套 `RssSocksCarrier` 透明穿透与有界 `PendingWriteQueue` 背压，并因握手帧恒先于业务流彻底消除 Server `AUTO` 与无加密内层 `zlib` 的首字节歧义。
-  - 严格模式（`rssPrivateTransport = true`）首字节即拒绝非 `RXTC` 流量，混合模式兼容标准 SOCKS5 客户端直连。
+- **`TransportCoreCarrier`（RSS↔RSS 私有增强 TCP 载体与 `LIGHTWEIGHT` 轻量握手）**:
+  面向原生字节流协议（如 RSS 内部 SOCKS5 代理跳）的统一载体（已取代并删除 `RssHopAes`、`RssTcpCodecSelector`、`SocksAdaptiveHandshake`）：
+  - 默认 `HandshakeMode.LIGHTWEIGHT`：纯 `plain` 非 AEAD 无压缩直走标准 SOCKS5 零 `RXTC`/零 `NonceReplayCache`/零 deadline 分配；非 AEAD `plain+zlib` 与 `daily`/`weak`/`game` 经 SOCKS5 私有方法 `0x8c` 将 35 B 客户端扩展与 43 B HMAC-SHA256 应答捎带在现有 RFC 1929 密码认证往返中（**零新增 RTT**，单段写出，重放零字节关闭），且首字节 `0x05` 与 Server `AUTO` 零歧义；受保护端口（`RSS_PSK_AES` / `SecurityMode.FAST`）或显式 `HandshakeMode.CORE` 执行单次认证 `RXTC` v2 AEAD 握手（单层 `TransportAeadCodec` + 惰性 `NonceReplayCache` 防重放，业务 `zlib 1..9` 严格在 AEAD 内层与 `AdaptiveTcpHandler` 之上，解压预算由独立 `maxBusinessInflateBytes` 控制）。
+  - 支持全部 4 档 profile（`plain`/`daily`/`weak`/`game`）、`FLAG_UDP_HOP` 双端口跳跃（`serverUdpAliasPort`）、固定 `adaptiveUdpClient`、嵌套 `RssSocksCarrier`、有界 `PendingWriteQueue` 背压，以及面向 `Socks5ClientHandler` 与 `Socks5WarmupHandler` 一致的 route-generation 隔离 UDP 健康反馈。
+  - `SocksProxyServer.coreReplayCache` 惰性分配，仅在收到首条 `RXTC` 或 `0x8c` 连接后创建。
 
 - **`DatagramTransport` / `DatagramTransportConfig`**:
   原始 `ByteBuf` 无连接 UDP 传输组件，默认单端口绑定（`reusePortBindCount = 1`），支持直发/直收原始 datagram，也可通过 `installDatagramHandler(RssDatagramHandler)` 在 EventLoop 上同步挂载认证分片与 FEC 保护。
