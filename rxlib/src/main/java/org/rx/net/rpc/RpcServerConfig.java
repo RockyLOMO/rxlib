@@ -1,5 +1,6 @@
 package org.rx.net.rpc;
 
+import io.netty.channel.local.LocalAddress;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
@@ -21,6 +22,8 @@ public class RpcServerConfig {
     public static final short EVENT_LATEST_COMPUTE = 0;
 
     private final TransportConfig transportConfig;
+    /** Optional in-process LocalAddress virtual carrier (e.g. RRP RAW Relay service target). */
+    private LocalAddress localAddress;
     private final List<Integer> eventBroadcastVersions = new ArrayList<Integer>();
     private short eventComputeVersion = EVENT_DISABLE_COMPUTE;
     private RemotingCodecFactory codecFactory = FuryRemotingCodecFactory.createDefault();
@@ -35,6 +38,16 @@ public class RpcServerConfig {
 
     public RpcServerConfig(TransportConfig transportConfig) {
         this.transportConfig = transportConfig == null ? new TransportConfig() : transportConfig;
+    }
+
+    public static RpcServerConfig localCarrier(LocalAddress localAddress, TransportConfig transportConfig) {
+        TransportConfig tc = transportConfig == null ? TransportConfig.pureTcpServer(0) : transportConfig;
+        if (tc.getTcpServerConfig() == null) {
+            tc.setTcpServerConfig(new TcpServerConfig(0));
+        }
+        RpcServerConfig conf = new RpcServerConfig(tc);
+        conf.setLocalAddress(localAddress);
+        return conf;
     }
 
     public TcpServerConfig getTcpConfig() {

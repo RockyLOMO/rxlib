@@ -94,7 +94,7 @@ public final class AdaptiveTcpStream implements AutoCloseable {
     private long srtt, variation, sampleTime;
     private int sampleSeq;
     private boolean sampling;
-    private boolean peerProbed, ready, probing, closed, gapRequested;
+    private boolean peerProbed, ready, probing, closed, gapRequested, verifiedPeerPath;
 
     public AdaptiveTcpStream(ByteBufAllocator alloc, Consumer<ByteBuf> tcp, Consumer<ByteBuf> udp,
                           Consumer<ByteBuf> deliver, LongSupplier nanoClock) {
@@ -471,8 +471,17 @@ public final class AdaptiveTcpStream implements AutoCloseable {
             }
             int id = frame.getInt(i + 1);
             if (type == PING) {
+                boolean firstPeerProbe = !peerProbed;
                 peerProbed = true;
                 udpOut.accept(control(PONG, id));
+                if (verifiedPeerPath && firstPeerProbe && !ready) {
+                    long now = clock.getAsLong();
+                    lastPing = now;
+                    nextProbe = now + PROBE_INTERVAL;
+                    probing = true;
+                    probePaused = false;
+                    udpOut.accept(control(PING, ++probeId));
+                }
             } else if (probing && probeId == id) {
                 long now = clock.getAsLong();
                 updateRtt(now - lastPing);
@@ -722,6 +731,21 @@ public final class AdaptiveTcpStream implements AutoCloseable {
 
     private ByteBuf control(int type, int value) {
         return alloc.ioBuffer(HEADER, HEADER).writeByte(type).writeInt(value);
+    }
+
+    /** Resets probe backoff so a newly attached/verified UDP path begins immediate PING/PONG promotion. */
+    void resetProbeForNewPath() {
+        if (closed) {
+            return;
+        }
+        probePaused = false;
+        probeCount = 0;
+        probeInterval = PROBE_INTERVAL;
+        nextProbe = clock.getAsLong();
+        ready = false;
+        peerProbed = false;
+        probing = false;
+        verifiedPeerPath = true;
     }
 
     /** Hand all outstanding bytes to the TCP channel in sequence before a TCP FIN or a path change. */

@@ -7,8 +7,13 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.local.LocalAddress;
+import io.netty.channel.local.LocalChannel;
 import io.netty.handler.codec.ByteToMessageDecoder;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
+import io.netty.handler.codec.compression.JdkZlibDecoder;
+import io.netty.handler.codec.compression.ZlibCodecFactory;
+import io.netty.handler.codec.compression.ZlibWrapper;
 import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
@@ -23,6 +28,8 @@ import org.rx.core.EventPublisher;
 import org.rx.core.NEventArgs;
 import org.rx.core.ThreadPool;
 import org.rx.exception.InvalidException;
+import org.rx.net.EgressCodec;
+import org.rx.net.EgressConfig;
 import org.rx.net.Sockets;
 import org.rx.net.rss.RssUdpMtuBudget;
 import org.rx.net.rss.tcp.AdaptiveTcpHandler;
@@ -30,8 +37,11 @@ import org.rx.net.rss.tcp.AdaptiveUdpPort;
 import org.rx.net.transport.TcpServerConfig;
 
 import java.net.InetSocketAddress;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -43,12 +53,17 @@ import java.util.function.BiConsumer;
 import static org.rx.core.Extends.quietly;
 
 /**
- * Shared Transport Core reliable ordered {@link ByteBuf} server.
- * When {@code enableAdaptiveUdp = false}, binds zero UDP sockets.
- * When {@code enableAdaptiveUdp = true}, binds one single UDP port (no port hopping) shared across sessions.
+ * Shared Transport Core v2 reliable ordered {@link ByteBuf} server.
+ * Supports physical TCP {@link EgressCodec} (including server-only {@code AUTO} with explicit
+ * {@code allowedCodecs}), bounded handshake replay cache, optional post-handshake AES-128-GCM AEAD,
+ * optional post-handshake business zlib compression, single-port daily adaptive UDP, and in-process
+ * {@link LocalAddress} / {@link LocalChannel} virtual carriers (e.g. RRP RAW Relay).
  */
 @Slf4j
 public final class TransportServer extends Disposable implements EventPublisher<TransportServer> {
+    private static final int MAX_REPLAY_NONCES = 4096;
+    private static final long REPLAY_WINDOW_MILLIS = 60_000L;
+
     public final Delegate<TransportServer, NEventArgs<TransportSession>> onConnected = Delegate.create();
     public final Delegate<TransportServer, NEventArgs<TransportSession>> onDisconnected = Delegate.create();
     public final Delegate<TransportServer, NEventArgs<Throwable>> onError = Delegate.create();
@@ -59,6 +74,8 @@ public final class TransportServer extends Disposable implements EventPublisher<
     private final String localPeerId;
     private final Map<Long, DefaultTransportSession> sessionsById = new ConcurrentHashMap<Long, DefaultTransportSession>();
     private final AtomicInteger clientCount = new AtomicInteger();
+    private final Object replayLock = new Object();
+    private final LinkedHashMap<NonceKey, Long> seenClientNonces = new LinkedHashMap<NonceKey, Long>(128, 0.75f, false);
 
     private ServerBootstrap bootstrap;
     private Channel serverChannel;
@@ -95,7 +112,7 @@ public final class TransportServer extends Disposable implements EventPublisher<
         return config.getTcpServerConfig().getListenPort();
     }
 
-    /** Returns the bound single-port adaptive UDP port, or 0 in pure TCP mode. */
+    /** Returns the bound single-port adaptive UDP port, or 0 in pure TCP / local-carrier mode. */
     public int udpPort() {
         AdaptiveUdpPort port = adaptiveUdpPort;
         return port == null ? 0 : port.port();
@@ -126,13 +143,13 @@ public final class TransportServer extends Disposable implements EventPublisher<
         if (isStarted()) {
             throw new InvalidException("TransportServer has started");
         }
+        validateServerConfig(false);
         TcpServerConfig tcpConf = config.getTcpServerConfig();
         if (config.isEnableAdaptiveUdp()) {
-            // Single-port daily adaptive UDP without port hopping.
             adaptiveUdpPort = AdaptiveUdpPort.listen(Sockets.newAnyEndpoint(config.getUdpBindPort()), 0, false, false);
         }
         try {
-            bootstrap = Sockets.serverBootstrap(tcpConf, ch -> initChannel(ch, tcpConf))
+            bootstrap = Sockets.serverBootstrap(tcpConf, ch -> initChannel(ch, tcpConf, false))
                     .option(ChannelOption.SO_REUSEADDR, true);
             InetSocketAddress bindAddress = Sockets.newAnyEndpoint(tcpConf.getListenPort());
             serverChannels = Sockets.bindChannels(bootstrap, bindAddress, tcpConf);
@@ -147,14 +164,93 @@ public final class TransportServer extends Disposable implements EventPublisher<
         }
     }
 
-    private void initChannel(Channel ch, TcpServerConfig tcpConf) {
+    /**
+     * Starts this server on an in-process Netty {@link LocalAddress} virtual carrier (zero TCP/UDP socket bind),
+     * suitable for hosting an end-to-end AEAD Transport Core / RPC service behind RRP RAW Relay.
+     */
+    @SneakyThrows
+    public synchronized void startLocal(@NonNull LocalAddress localAddress) {
+        checkNotClosed();
+        if (isStarted()) {
+            throw new InvalidException("TransportServer has started");
+        }
+        validateServerConfig(true);
+        TcpServerConfig tcpConf = config.getTcpServerConfig();
+        bootstrap = Sockets.serverBootstrap(tcpConf, localAddress, ch -> initChannel(ch, tcpConf, true));
+        serverChannels = Sockets.bindChannels(bootstrap, localAddress, tcpConf);
+        serverChannel = serverChannels.get(0);
+    }
+
+    /** Attaches an already-connected virtual carrier channel (e.g. RRP RAW Relay {@link LocalChannel}). */
+    public void attachCarrierChannel(@NonNull Channel ch) {
+        checkNotClosed();
+        validateServerConfig(true);
+        initChannel(ch, config.getTcpServerConfig(), true);
+    }
+
+    private void validateServerConfig(boolean localCarrier) {
+        if (config.isEnableEncryption() && !TransportProtocol.hasAuthSecret(config.getAuthSecret())) {
+            throw new IllegalArgumentException("TransportServer encryption requires non-empty authSecret");
+        }
+        if (!localCarrier) {
+            resolveEffectiveEgress(config.getTcpServerConfig()).validateServer();
+        }
+    }
+
+    private EgressConfig resolveEffectiveEgress(TcpServerConfig tcpConf) {
+        EgressConfig top = config.effectiveEgressConfig();
+        if (top.getTcpCodec() != EgressCodec.NONE) {
+            return top;
+        }
+        if (tcpConf != null && tcpConf.getEgressConfig() != null) {
+            return tcpConf.getEgressConfig();
+        }
+        return EgressConfig.none();
+    }
+
+    private void initChannel(Channel ch, TcpServerConfig tcpConf, boolean localCarrier) {
         ChannelPipeline pipeline = ch.pipeline();
+        if (!localCarrier && !(ch instanceof LocalChannel)) {
+            EgressConfig egress = resolveEffectiveEgress(tcpConf);
+            EgressCodec.installServer(pipeline, egress, EgressCodec.InnerProtocol.TRANSPORT_CORE);
+            Sockets.addTcpServerHandler(ch, tcpConf);
+        } else {
+            ch.attr(EgressCodec.ATTR_SELECTED).set(EgressCodec.NONE);
+        }
         int hb = tcpConf.getHeartbeatTimeout();
         if (hb > 0) {
             pipeline.addLast("coreIdle", new IdleStateHandler(hb, 0, 0));
         }
-        Sockets.addTcpServerHandler(ch, tcpConf);
-        pipeline.addLast("coreHandshake", new ServerHandshakeHandler(tcpConf));
+        pipeline.addLast("coreHandshake", new ServerHandshakeHandler(tcpConf, localCarrier || ch instanceof LocalChannel));
+    }
+
+    private boolean recordFreshClientNonce(byte[] clientNonce) {
+        long now = System.currentTimeMillis();
+        NonceKey key = new NonceKey(clientNonce);
+        synchronized (replayLock) {
+            Iterator<Map.Entry<NonceKey, Long>> it = seenClientNonces.entrySet().iterator();
+            while (it.hasNext()) {
+                Map.Entry<NonceKey, Long> e = it.next();
+                if (now - e.getValue() > REPLAY_WINDOW_MILLIS) {
+                    it.remove();
+                } else {
+                    break;
+                }
+            }
+            if (seenClientNonces.containsKey(key)) {
+                return false;
+            }
+            while (seenClientNonces.size() >= MAX_REPLAY_NONCES) {
+                Iterator<Map.Entry<NonceKey, Long>> evict = seenClientNonces.entrySet().iterator();
+                if (!evict.hasNext()) {
+                    break;
+                }
+                evict.next();
+                evict.remove();
+            }
+            seenClientNonces.put(key, now);
+            return true;
+        }
     }
 
     @Override
@@ -194,18 +290,56 @@ public final class TransportServer extends Disposable implements EventPublisher<
         Sockets.closeOnFlushed(ctx.channel());
     }
 
+    private static final class NonceKey {
+        private final byte[] bytes;
+        private final int hash;
+
+        NonceKey(byte[] bytes) {
+            this.bytes = bytes.clone();
+            this.hash = Arrays.hashCode(this.bytes);
+        }
+
+        @Override
+        public int hashCode() {
+            return hash;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof NonceKey && Arrays.equals(bytes, ((NonceKey) o).bytes);
+        }
+    }
+
     private final class ServerHandshakeHandler extends ByteToMessageDecoder {
         private final TcpServerConfig tcpConf;
+        private final boolean localCarrier;
         private boolean admitted;
         private boolean completed;
         private ScheduledFuture<?> timeoutTask;
 
-        ServerHandshakeHandler(TcpServerConfig tcpConf) {
+        ServerHandshakeHandler(TcpServerConfig tcpConf, boolean localCarrier) {
             this.tcpConf = tcpConf;
+            this.localCarrier = localCarrier;
+        }
+
+        @Override
+        public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
+            super.handlerAdded(ctx);
+            if (ctx.channel().isActive()) {
+                admitAndArm(ctx);
+            }
         }
 
         @Override
         public void channelActive(ChannelHandlerContext ctx) throws Exception {
+            admitAndArm(ctx);
+            super.channelActive(ctx);
+        }
+
+        private void admitAndArm(ChannelHandlerContext ctx) {
+            if (admitted) {
+                return;
+            }
             int current = clientCount.incrementAndGet();
             if (current > tcpConf.getCapacity()) {
                 clientCount.decrementAndGet();
@@ -221,7 +355,6 @@ public final class TransportServer extends Disposable implements EventPublisher<
                     ctx.close();
                 }
             }, timeoutMs, TimeUnit.MILLISECONDS);
-            super.channelActive(ctx);
         }
 
         @Override
@@ -231,6 +364,9 @@ public final class TransportServer extends Disposable implements EventPublisher<
                 hello = TransportProtocol.tryDecodeHello(in);
             } catch (RuntimeException bad) {
                 log.warn("TransportServer invalid handshake from {}: {}", ctx.channel().remoteAddress(), bad.getMessage());
+                in.skipBytes(in.readableBytes());
+                completed = true;
+                cancelTimeout();
                 ctx.close();
                 return;
             }
@@ -239,11 +375,36 @@ public final class TransportServer extends Disposable implements EventPublisher<
             }
             if (!TransportProtocol.verifyHelloAuth(config.getAuthSecret(), hello)) {
                 log.warn("TransportServer rejected unauthenticated handshake from {}", ctx.channel().remoteAddress());
-                completed = true;
-                cancelTimeout();
-                ctx.close();
+                rejectAndClose(ctx, in);
                 return;
             }
+            EgressCodec selectedEgress = ctx.channel().attr(EgressCodec.ATTR_SELECTED).get();
+            if (selectedEgress == null) {
+                selectedEgress = EgressCodec.NONE;
+            }
+            if (hello.egressCode != selectedEgress.wireCode()) {
+                log.warn("TransportServer rejected egress mismatch from {}: selected={} claimed={}",
+                        ctx.channel().remoteAddress(), selectedEgress, hello.egressCode);
+                rejectAndClose(ctx, in);
+                return;
+            }
+            if (!recordFreshClientNonce(hello.clientNonce)) {
+                log.warn("TransportServer rejected replayed client nonce from {}", ctx.channel().remoteAddress());
+                rejectAndClose(ctx, in);
+                return;
+            }
+            boolean clientWantsAead = (hello.flags & TransportProtocol.FLAG_AEAD) != 0;
+            if (config.isEnableEncryption() && !clientWantsAead) {
+                log.warn("TransportServer rejected unencrypted client from {}", ctx.channel().remoteAddress());
+                rejectAndClose(ctx, in);
+                return;
+            }
+            if (clientWantsAead && !TransportProtocol.hasAuthSecret(config.getAuthSecret())) {
+                log.warn("TransportServer rejected AEAD client without server authSecret from {}", ctx.channel().remoteAddress());
+                rejectAndClose(ctx, in);
+                return;
+            }
+
             completed = true;
             cancelTimeout();
 
@@ -254,33 +415,86 @@ public final class TransportServer extends Disposable implements EventPublisher<
                 } while (sessionsById.containsKey(sessionId));
             }
             AdaptiveUdpPort udp = adaptiveUdpPort;
-            boolean useAdaptive = udp != null && (hello.flags & TransportProtocol.FLAG_ADAPTIVE_UDP) != 0;
+            boolean useAdaptive = !localCarrier && udp != null && (hello.flags & TransportProtocol.FLAG_ADAPTIVE_UDP) != 0;
+            boolean deferredAdaptive = localCarrier && config.isEnableAdaptiveUdp()
+                    && (hello.flags & TransportProtocol.FLAG_ADAPTIVE_UDP) != 0;
+            boolean useAead = clientWantsAead;
+            boolean useCompress = (hello.flags & TransportProtocol.FLAG_COMPRESS) != 0 && config.isEnableCompression();
+            int negotiatedCompLevel = useCompress
+                    ? Math.max(1, Math.min(9, hello.compressionLevel > 0 ? hello.compressionLevel : config.getCompressionLevel()))
+                    : 0;
             int negotiatedMtu = RssUdpMtuBudget.negotiate(config.getUdpMtu(), hello.udpMtu);
             int serverUdpPort = useAdaptive ? udp.port() : 0;
-            int ackFlags = useAdaptive ? TransportProtocol.FLAG_ADAPTIVE_UDP : 0;
+            int ackFlags = 0;
+            if (useAdaptive || deferredAdaptive) {
+                ackFlags |= TransportProtocol.FLAG_ADAPTIVE_UDP;
+            }
+            if (useAead) {
+                ackFlags |= TransportProtocol.FLAG_AEAD;
+            }
+            if (useCompress) {
+                ackFlags |= TransportProtocol.FLAG_COMPRESS;
+            }
             byte[] serverNonce = TransportProtocol.randomBytes(TransportProtocol.SERVER_NONCE_BYTES);
 
-            ByteBuf ack = TransportProtocol.encodeHelloAck(ctx.alloc(), ackFlags, negotiatedMtu,
-                    serverUdpPort, sessionId, hello.clientNonce, serverNonce, localPeerId, config.getAuthSecret());
+            ByteBuf ack = TransportProtocol.encodeHelloAck(ctx.alloc(), ackFlags, selectedEgress, negotiatedCompLevel,
+                    negotiatedMtu, serverUdpPort, sessionId, hello.clientNonce, serverNonce, localPeerId, config.getAuthSecret());
             ctx.writeAndFlush(ack);
 
             Channel ch = ctx.channel();
             ChannelPipeline p = ctx.pipeline();
+            ByteBuf leftover = in.isReadable() ? in.readRetainedSlice(in.readableBytes()) : null;
+
+            byte[] adaptiveKey = null;
             AdaptiveTcpHandler adaptiveHandler = null;
             if (useAdaptive) {
-                byte[] key = TransportProtocol.deriveAdaptiveKey(config.getAuthSecret(),
+                adaptiveKey = TransportProtocol.deriveAdaptiveKey(config.getAuthSecret(),
                         sessionId, hello.clientNonce, serverNonce);
-                AdaptiveTcpHandler.install(ch, sessionId, key, udp, serverUdpPort, serverUdpPort,
+                AdaptiveTcpHandler.install(ch, sessionId, adaptiveKey, udp, serverUdpPort, serverUdpPort,
                         0, false, null, negotiatedMtu);
+                adaptiveHandler = p.get(AdaptiveTcpHandler.class);
+            } else if (deferredAdaptive) {
+                adaptiveKey = TransportProtocol.deriveAdaptiveKey(config.getAuthSecret(),
+                        sessionId, hello.clientNonce, serverNonce);
+                AdaptiveTcpHandler.installDeferred(ch, sessionId, adaptiveKey, true, negotiatedMtu);
                 adaptiveHandler = p.get(AdaptiveTcpHandler.class);
             }
 
+            if (useAead) {
+                byte[] aeadMaterial = TransportProtocol.deriveAeadKeyMaterial(config.getAuthSecret(),
+                        sessionId, hello.clientNonce, serverNonce);
+                try {
+                    p.addLast("coreAead", new TransportAeadCodec(false, aeadMaterial));
+                } finally {
+                    Arrays.fill(aeadMaterial, (byte) 0);
+                }
+            }
+            if (useCompress) {
+                int maxInflate = Math.max(config.getMaxFrameBytes() + 64 * 1024, EgressCodec.DEFAULT_MAX_INFLATE_BYTES);
+                p.addLast("coreZipDecoder", new JdkZlibDecoder(ZlibWrapper.ZLIB, maxInflate));
+                p.addLast("coreZipEncoder", ZlibCodecFactory.newZlibEncoder(ZlibWrapper.ZLIB, negotiatedCompLevel));
+            }
+
             DefaultTransportSession session = new DefaultTransportSession(sessionId, localPeerId,
-                    hello.peerId, ch, config.getMaxFrameBytes(), useAdaptive, adaptiveHandler);
+                    hello.peerId, ch, config.getMaxFrameBytes(), useAdaptive || deferredAdaptive, adaptiveHandler,
+                    adaptiveKey, useAead, useCompress, selectedEgress);
             p.addLast("coreFrameDecoder", new LengthFieldBasedFrameDecoder(config.getMaxFrameBytes() + 1, 0, 4, 0, 4));
             p.addLast("coreSession", new ServerSessionHandler(session, admitted));
             admitted = false; // ownership transferred to ServerSessionHandler
+
+            String firstPostHandler = (useAdaptive || deferredAdaptive) ? "rssAdaptiveLength"
+                    : (useAead ? "coreAead" : (useCompress ? "coreZipDecoder" : "coreFrameDecoder"));
             p.remove(this);
+            if (leftover != null) {
+                TransportClient.forwardToHandler(p, firstPostHandler, leftover);
+            }
+        }
+
+        private void rejectAndClose(ChannelHandlerContext ctx, ByteBuf in) {
+            in.skipBytes(in.readableBytes());
+            completed = true;
+            cancelTimeout();
+            ctx.close();
         }
 
         @Override

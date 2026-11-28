@@ -1,7 +1,7 @@
 package org.rx.net.socks;
 
 import org.rx.net.rss.tcp.AdaptiveTcpHandler;
-import org.rx.net.RssEgressCodec;
+import org.rx.net.EgressCodec;
 
 import java.util.concurrent.TimeUnit;
 import io.netty.handler.proxy.ProxyConnectException;
@@ -1853,39 +1853,39 @@ class SocksProxyServerIntegrationTest {
     @Test
     @Timeout(value = 20)
     void shadowsocksTcpAdaptiveHopSurvivesUdpOutage() throws Exception {
-        verifyAdaptiveHop(RssEgressCodec.NONE, false, 15796);
+        verifyAdaptiveHop(EgressCodec.NONE, false, 15796);
     }
 
     @Test
     @Timeout(25)
     void pskAdaptiveHopSurvivesUdpOutage() throws Exception {
         org.junit.jupiter.api.Assumptions.assumeTrue(org.rx.net.RssHopAes.configured());
-        verifyAdaptiveHop(RssEgressCodec.NONE, true, 15795);
+        verifyAdaptiveHop(EgressCodec.NONE, true, 15795);
     }
 
     @Test
     @Timeout(25)
     void storedEgressAdaptiveHopSurvivesUdpOutage() throws Exception {
-        verifyAdaptiveHop(RssEgressCodec.ZLIB_STORED, false, 15797);
+        verifyAdaptiveHop(EgressCodec.ZLIB_STORED, false, 15797);
     }
 
     @Test
     @Timeout(25)
     void storedEgressPskAdaptiveHopSurvivesUdpOutage() throws Exception {
         org.junit.jupiter.api.Assumptions.assumeTrue(org.rx.net.RssHopAes.configured());
-        verifyAdaptiveHop(RssEgressCodec.ZLIB_STORED, true, 15798);
+        verifyAdaptiveHop(EgressCodec.ZLIB_STORED, true, 15798);
     }
 
-    private void verifyAdaptiveHop(RssEgressCodec egress, boolean psk, int port) throws Exception {
+    private void verifyAdaptiveHop(EgressCodec egress, boolean psk, int port) throws Exception {
         SocksConfig cfg = new SocksConfig(port);
         cfg.setRequiredTcpCipherPorts(new int[0]);
-        cfg.setRssEgressCodec(egress);
+        cfg.setEgressCodec(egress);
         cfg.setAdaptiveTcp(true);
         cfg.setTransportFlags(TransportFlags.GFW.flags(TransportFlags.COMPRESS_BOTH).flags());
         SocksConfig uplink = new SocksConfig();
         uplink.setAdaptiveTcp(true);
         uplink.setAdaptiveProfile(psk ? 2 : 0);
-        uplink.setRssEgressCodec(egress);
+        uplink.setEgressCodec(egress);
         uplink.setTransportFlags(cfg.getTransportFlags());
         if (psk) {
             cfg.setRequiredTcpCipherPorts(new int[]{TCP_ECHO_PORT});
@@ -1903,7 +1903,7 @@ class SocksProxyServerIntegrationTest {
             if (psk) {
                 checkProtectedWarmConnection(remotePort, uplink, true, "localhost", TCP_ECHO_PORT);
                 SocksConfig unprotected = new SocksConfig();
-                unprotected.setRssEgressCodec(egress);
+                unprotected.setEgressCodec(egress);
                 checkProtectedWarmConnection(remotePort, unprotected, false, "localhost", TCP_ECHO_PORT);
             }
             UpstreamSupport endpoint = new UpstreamSupport(new AuthenticEndpoint(new InetSocketAddress("localhost", remotePort),
@@ -1965,8 +1965,8 @@ class SocksProxyServerIntegrationTest {
             if (success) {
                 command.sync();
                 assertEquals(config.getTransportFlags().has(TransportFlags.COMPRESS_BOTH), Sockets.hasTcpCompressionHandlers(ch));
-                assertEquals(config.getRssEgressCodec() == RssEgressCodec.ZLIB_STORED,
-                        ch.pipeline().context(RssEgressCodec.INNER_ANCHOR) != null);
+                assertEquals(config.getEgressCodec() != EgressCodec.NONE,
+                        ch.pipeline().context(EgressCodec.INNER_ANCHOR) != null);
             } else {
                 assertThrows(ProxyConnectException.class, command::sync);
             }

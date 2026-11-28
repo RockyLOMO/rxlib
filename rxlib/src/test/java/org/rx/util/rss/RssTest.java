@@ -2337,7 +2337,7 @@ public class RssTest extends AbstractTester {
         peer.setStandardSocks5(true);
         SocksConfig profile = new SocksConfig();
         assertSame(standard, RssClient.outboundForRoute(profile, standard, peer, true));
-        assertEquals(org.rx.net.RssEgressCodec.NONE, standard.getRssEgressCodec());
+        assertEquals(org.rx.net.EgressCodec.NONE, standard.getEgressCodec());
         profile.setTransportFlags(org.rx.net.TransportFlags.RSS_PSK_AES.flags());
         assertThrows(Exception.class, () -> RssClient.outboundForRoute(profile, standard, peer, true));
         profile.setTransportFlags(org.rx.net.TransportFlags.NONE.flags());
@@ -2623,8 +2623,8 @@ public class RssTest extends AbstractTester {
             }
             assertNotNull(storedPeer);
             assertNotNull(rawPeer);
-            assertEquals(org.rx.net.RssEgressCodec.ZLIB_STORED, storedPeer.getRssEgressCodec());
-            assertEquals(org.rx.net.RssEgressCodec.NONE, rawPeer.getRssEgressCodec());
+            assertEquals(org.rx.net.EgressCodec.ZLIB_STORED, storedPeer.getEgressCodec());
+            assertEquals(org.rx.net.EgressCodec.NONE, rawPeer.getEgressCodec());
 
             SocksConfig base = RssClient.createOutboundConfig(ok, new SocksConfig());
             SocksConfig standard = RssClient.standardSocksConfig(ok);
@@ -2632,8 +2632,8 @@ public class RssTest extends AbstractTester {
             SocksConfig boundStored2 = RssClient.outboundForRoute(base, standard, storedPeer, true);
             SocksConfig boundRaw = RssClient.outboundForRoute(base, standard, rawPeer, true);
             assertSame(boundStored1, boundStored2, "route egress config must be cached with zero per-connection allocation");
-            assertEquals(org.rx.net.RssEgressCodec.ZLIB_STORED, boundStored1.getRssEgressCodec());
-            assertEquals(org.rx.net.RssEgressCodec.NONE, boundRaw.getRssEgressCodec());
+            assertEquals(org.rx.net.EgressCodec.ZLIB_STORED, boundStored1.getEgressCodec());
+            assertEquals(org.rx.net.EgressCodec.NONE, boundRaw.getEgressCodec());
             assertSame(base, boundRaw);
             assertNotEquals(
                     org.rx.net.socks.TcpWarmPoolKey.from(storedPeer.getEndpoint(), boundStored1, "u"),
@@ -2645,8 +2645,8 @@ public class RssTest extends AbstractTester {
                     + "{\"ssPort\":6898,\"username\":\"d\",\"socksUser\":\"d\",\"transport\":{\"profile\":\"daily\",\"egress\":{\"tcpCodec\":\"none\"}}}]}";
             RssClientConf perUser = JSON.parseObject(perUserJson, RssClientConf.class);
             RssClient.OutboundProfiles perUserProfiles = new RssClient.OutboundProfiles(perUser, new SocksConfig());
-            assertEquals(org.rx.net.RssEgressCodec.ZLIB_STORED, perUserProfiles.tcp(perUser.shadowUsers.get(0), 443).getRssEgressCodec());
-            assertEquals(org.rx.net.RssEgressCodec.NONE, perUserProfiles.tcp(perUser.shadowUsers.get(1), 443).getRssEgressCodec());
+            assertEquals(org.rx.net.EgressCodec.ZLIB_STORED, perUserProfiles.tcp(perUser.shadowUsers.get(0), 443).getEgressCodec());
+            assertEquals(org.rx.net.EgressCodec.NONE, perUserProfiles.tcp(perUser.shadowUsers.get(1), 443).getEgressCodec());
         } finally {
             RssClient.closeUpstreamsQuietly(snapshot);
         }
@@ -2836,7 +2836,7 @@ public class RssTest extends AbstractTester {
         storedCfg.setDailyPortRange(hopA + "-" + (hopA + 5));
         storedCfg.setRequiredTcpCipherPorts(new int[0]);
         storedCfg.setRequiredUdpCipherPorts(new int[0]);
-        storedCfg.setRssEgressCodec(org.rx.net.RssEgressCodec.ZLIB_STORED);
+        storedCfg.setEgressCodec(org.rx.net.EgressCodec.ZLIB_STORED);
         SocksProxyServer outStored = new SocksProxyServer(storedCfg, auth);
 
         SocksConfig noneCfg = new SocksConfig(outNonePort);
@@ -2847,7 +2847,7 @@ public class RssTest extends AbstractTester {
         noneCfg.setDailyPortRange(hopB + "-" + (hopB + 5));
         noneCfg.setRequiredTcpCipherPorts(new int[0]);
         noneCfg.setRequiredUdpCipherPorts(new int[0]);
-        noneCfg.setRssEgressCodec(org.rx.net.RssEgressCodec.NONE);
+        noneCfg.setEgressCodec(org.rx.net.EgressCodec.NONE);
         SocksProxyServer outNone = new SocksProxyServer(noneCfg, auth);
 
         RpcServerConfig rpcCfgA = new RpcServerConfig(new TcpServerConfig(outStoredRpc));
@@ -3561,12 +3561,14 @@ public class RssTest extends AbstractTester {
         backSvr.setCipherRouter(SocksProxyServer.DNS_CIPHER_ROUTER);
 
         RpcServerConfig rpcServerConf = new RpcServerConfig(new TcpServerConfig(outSrvEp.getPort() + 1));
-        rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.CIPHER_BOTH.flags(TransportFlags.HTTP_PSEUDO_BOTH));
+        rpcServerConf.getTcpConfig().setTransportFlags(TransportFlags.CIPHER_BOTH.flags());
+        rpcServerConf.getTransportConfig().setEgressConfig(org.rx.net.EgressConfig.server(org.rx.net.EgressCodec.HTTP));
         Remoting.register(new RssRpcApp(backSvr), rpcServerConf);
 
         RandomList<UpstreamSupport> socksServers = new RandomList<>();
         RpcClientConfig<SocksRpcContract> rpcClientConf = RpcClientConfig.poolMode(Sockets.newEndpoint(outSrvEp, outSrvEp.getPort() + 1), 2, 2);
-        rpcClientConf.getTcpConfig().setTransportFlags(TransportFlags.CIPHER_BOTH.flags(TransportFlags.HTTP_PSEUDO_BOTH));
+        rpcClientConf.getTcpConfig().setTransportFlags(TransportFlags.CIPHER_BOTH.flags());
+        rpcClientConf.getTransportConfig().setEgressConfig(org.rx.net.EgressConfig.client(org.rx.net.EgressCodec.HTTP));
         socksServers.add(new UpstreamSupport(new AuthenticEndpoint(outSrvEp, socks5Usr, socks5Pwd), Remoting.createFacade(SocksRpcContract.class, rpcClientConf)));
 
         SocksConfig inConf = new SocksConfig(inSvrPort);

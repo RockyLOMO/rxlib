@@ -4144,3 +4144,11 @@ SOCKS 负责协商和密钥派生，net.rss.profile 根据实际协商 ID 构建
 ### 2026-11-25 weak 回退确认与 UDP 压缩入口
 
 通用 UCMP 的编码器、解码器、静态工具统一使用 `org.rx.net.udp.compress`。weak 仅对确定无法来自 UDP 修复队列的顺序 TCP 大帧省略累计确认，小帧和填洞仍确认，兼容既有对端。独立 UDP 尾包修复帧和进程级 game 预热均已做双端或冷/热对照，继续使用现有 wire 和默认单发。测量条件、结果和边界见[后续评审验收记录](../docs/rxlib_transport_review_20261124_followup.md#7-实施与验收记录)。
+
+## 2026-11-28 统一 EgressCodec、Transport Core v2、NodeRegistry 权威化与直连优先双 NAT / RRP RAW 中继
+
+- **P0 修复**：`DnsRecordExchange` 改为单调时钟 TTL 实时衰减缓存 + 字节预算淘汰 + RR 结构校验；`V2RayGeoManager` / `UserRuleMatcher` 对缺失/损坏 `BLOCK` 规则执行 fail-closed，并将重型规则编译移出 Netty EventLoop。
+- **NodeRegistry 加固与子系统共享会话**：新增 `openIfEnabled`（默认关闭零资源）、分段锁、单调 `authGeneration`、O(1) 租户在线计数、认证并发/速率限流、单 owner 批量落盘、多监听器吊销与 `authenticateAndAttachSession`/`detachSubsystemSession` 子系统级会话挂载，使同机共享 `NodeRegistry` 的 `NameserverImpl`、`RendezvousService` 与 `RrpServer` 不互相踢下线，且禁用/改密立刻跨子系统切断全部会话。
+- **统一公共 TCP `EgressCodec` 与 `Transport Core v2`**：删除旧 `RssEgressCodec`（含 `RSZ` 头）与 `HttpPseudoHeader*`，统一为 `EgressCodec`（`NONE`、纯 RFC 1950 `ZLIB_STORED`、零拷贝方案 A `HTTP` + Server 单端口 1-shot `EgressAutoDetector`）；`Transport Core` 升级至 v2（双向 HMAC 握手 + `clientNonce` 防重放缓存 + 握手后每会话独立 AES-128-GCM + 可选业务 `zlib 3` 先压后加密 + `FRAME_READY` 屏障 + `LocalAddress`/`LocalChannel` 虚拟载体）。
+- **RRP RAW Relay、双 NAT 协调与直连优先 `PathSelector`**：`RrpServer`/`RrpClient` 迁至纯 TCP v2 并移除敏感令牌日志，新增租户隔离 RAW 逻辑流中继（4 级全局/租户/节点/单流待发字节预算、轮询排空、单流 `PAUSE`/`RESUME`、吊销即断、`LocalAddress` 零 Socket 桥接）；`org.rx.net.rendezvous` 实现 `RendezvousService`、防放大 HMAC `UdpEndpointObserver`、带 RFC 8445 触发检查与 2s 被动应答滞留的 `PeerUdpPuncher`，以及直连优先 `PathSelector`（优先尝试多网卡/公网直连 TCP 与直连/打洞 UDP，直连成功时 Relay 打开数与流量严格为 0，仅直连 TCP 失败/超时才按需开启 RRP RAW 中继）；`RssRuntime` 支持默认关闭的 opt-in `nodeService` 事务式启停热重载。
+- **验证基线**：18 个核心测试类在 JDK 21 与 Temurin JDK 8 下均 `158/158` 通过且 `PARANOID LEAK: 0`；在公网高丢包 VPS `182.255.85.247` + `AnZhi-PC` + `Xsy-PC` + 本机 `Youfan-PC` 完成实测：`EgressCodec` 固定与 Server `AUTO` 6 组全通（额外线开销 `+1.31%`–`+1.85%`），多网卡直连优先实现 `17.43 Mbps` + UDP `6.63 ms` 升轨 + 断洞无损修复且 VPS 中继流量 `0 B`（较强制中继提速 `56.2×`、公网线流省 `99.68%`），跨运营商双 NAT 自动按需启通 E2E AEAD RAW Relay 与上层 RPC，公网安全矩阵（错密/跨租户/伪造 UDP 观测 0 回包）全部拦截，四机 `PARANOID LEAK: 0`。详数据见 [测试与基准记录](../docs/test-benchmarks.md#6-2026-11-28--noderegistry--统一-egresscodec--transport-core-v2--双-nat--rrp-raw-中继实测)。

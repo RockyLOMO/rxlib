@@ -16,6 +16,8 @@ public class TcpClientConfig extends SocketConfig {
 
     @NotNull
     private volatile InetSocketAddress serverEndpoint;
+    /** Optional local source IP/port to bind before connecting (enforces real multi-NIC egress). */
+    private volatile InetSocketAddress localAddress;
     private volatile boolean enableReconnect;
     private int waitConnectMillis = 4000;
     private int heartbeatTimeout = 60;

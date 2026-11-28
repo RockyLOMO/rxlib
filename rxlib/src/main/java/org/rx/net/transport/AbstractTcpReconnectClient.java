@@ -106,7 +106,9 @@ public abstract class AbstractTcpReconnectClient extends Disposable {
 
         try {
             Sockets.refreshTcpResolver(bootstrap, endpoint);
-            connectingFuture = bootstrap.connect(endpoint).addListener((ChannelFutureListener) f -> {
+            SocketAddress localEp = resolveLocalEndpoint();
+            ChannelFuture rawConnect = localEp != null ? bootstrap.connect(endpoint, localEp) : bootstrap.connect(endpoint);
+            connectingFuture = rawConnect.addListener((ChannelFutureListener) f -> {
                 connectingFuture = null;
                 if (!f.isSuccess()) {
                     Throwable cause = f.cause();
@@ -184,6 +186,10 @@ public abstract class AbstractTcpReconnectClient extends Disposable {
     protected abstract boolean isShouldReconnect();
 
     protected abstract SocketAddress resolveConnectEndpoint(boolean reconnect);
+
+    protected SocketAddress resolveLocalEndpoint() {
+        return null;
+    }
 
     protected void onConnectSuccess(SocketAddress endpoint, boolean reconnect, Channel channel) {
     }

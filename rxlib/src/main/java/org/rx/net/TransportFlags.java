@@ -17,10 +17,6 @@ public enum TransportFlags implements NEnum<TransportFlags> {
     CIPHER_WRITE(1 << 3),
     CIPHER_BOTH(CIPHER_READ.value | CIPHER_WRITE.value),
 
-    HTTP_PSEUDO_READ(1 << 8),
-    HTTP_PSEUDO_WRITE(1 << 9),
-    HTTP_PSEUDO_BOTH(HTTP_PSEUDO_READ.value | HTTP_PSEUDO_WRITE.value),
-
     TLS(1 << 12),
     RSS_PSK_AES(1 << 15),
 

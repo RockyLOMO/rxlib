@@ -418,6 +418,12 @@ public final class RssClient {
         if (conf.nameserver == null) {
             conf.nameserver = new NameserverConfig();
         }
+        if (conf.nodeRegistry == null) {
+            conf.nodeRegistry = new org.rx.net.registry.NodeRegistryConfig();
+        }
+        if (conf.nodeService == null) {
+            conf.nodeService = new RssClientConf.NodeServiceConf();
+        }
         conf.trafficRetentionDays = Math.max(1, conf.trafficRetentionDays);
         conf.memoryRetentionHours = conf.memoryRetentionHours <= 0
                 ? RssAuthenticator.DEFAULT_MEMORY_RETENTION_HOURS
@@ -456,7 +462,7 @@ public final class RssClient {
             if (conf.egress.udpCodec != null && !"none".equals(conf.egress.udpCodec)) {
                 throw new IllegalArgumentException("RSS UDP egress codec must be none");
             }
-            org.rx.net.RssEgressCodec.parse(conf.egress.tcpCodec);
+            org.rx.net.EgressCodec.parse(conf.egress.tcpCodec);
         } catch (IllegalArgumentException e) {
             log.warn("Invalid RSS egress configuration: {}", e.getMessage());
             return false;
@@ -478,6 +484,9 @@ public final class RssClient {
         if (isRrpServerEnabled() && conf.rrpPort != null && conf.rrpPort <= 0) {
             return false;
         }
+        if (!validateNodeRegistryAndService(conf)) {
+            return false;
+        }
         Set<String> usernames = new LinkedHashSet<>();
         Set<Integer> shadowPorts = new LinkedHashSet<>();
         for (ShadowUser user : conf.shadowUsers) {
@@ -486,6 +495,10 @@ public final class RssClient {
                 return false;
             }
             if (!usernames.add(user.getUsername()) || !shadowPorts.add(user.getSsPort())) {
+                return false;
+            }
+            if (conflictsWithNodeServicePort(conf, user.getSsPort())) {
+                log.warn("ShadowUser {} ssPort {} collides with NodeService port", user.getUsername(), user.getSsPort());
                 return false;
             }
             if (user.transport != null && !user.transport.valid()) {
@@ -526,6 +539,94 @@ public final class RssClient {
             }
         }
         return true;
+    }
+
+    static boolean validateNodeRegistryAndService(RssClientConf conf) {
+        org.rx.net.registry.NodeRegistryConfig reg = conf.nodeRegistry;
+        RssClientConf.NodeServiceConf svc = conf.nodeService;
+        if (reg != null && reg.isEnabled()) {
+            if (Strings.isEmpty(reg.getDbPath()) || reg.getMaxOnlineNodes() <= 0
+                    || reg.getMaxColdCacheBytes() <= 0 || reg.getMaxPendingPersistBytes() <= 0) {
+                log.warn("Invalid NodeRegistry configuration: dbPath and positive caps are required");
+                return false;
+            }
+        }
+        if (svc == null || !svc.enabled) {
+            return true;
+        }
+        if (reg == null || !reg.isEnabled()) {
+            log.warn("nodeService.enabled requires nodeRegistry.enabled=true");
+            return false;
+        }
+        if ((svc.rendezvousEnabled || svc.relayEnabled) && Strings.isEmpty(svc.authToken)) {
+            log.warn("Public nodeService requires non-empty authToken (unauthenticated mode forbidden)");
+            return false;
+        }
+        try {
+            org.rx.net.EgressConfig egress = svc.egressConfig != null
+                    ? svc.egressConfig : org.rx.net.EgressConfig.serverAutoAll();
+            egress.validateServer();
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid nodeService egressConfig: {}", e.getMessage());
+            return false;
+        }
+        Set<Integer> tcpPorts = new LinkedHashSet<>();
+        tcpPorts.add(conf.shadowDnsPort);
+        if (conf.nameserver != null && conf.nameserver.getRegisterPort() > 0) {
+            if (!tcpPorts.add(conf.nameserver.getRegisterPort())) {
+                log.warn("Port collision on nameserver.registerPort={}", conf.nameserver.getRegisterPort());
+                return false;
+            }
+        }
+        if (shouldEnableRrpServer(conf) && conf.rrpPort != null && conf.rrpPort > 0) {
+            if (!tcpPorts.add(conf.rrpPort)) {
+                log.warn("Port collision on rrpPort={}", conf.rrpPort);
+                return false;
+            }
+        }
+        if (svc.rendezvousEnabled) {
+            if (svc.rendezvousPort < 0 || svc.rendezvousPort > 65535
+                    || svc.udpObservePort < 0 || svc.udpObservePort > 65535) {
+                log.warn("Invalid rendezvous ports rpc={} udp={}", svc.rendezvousPort, svc.udpObservePort);
+                return false;
+            }
+            if (!svc.allowEphemeralPorts && (svc.rendezvousPort <= 0 || svc.udpObservePort <= 0)) {
+                log.warn("nodeService.rendezvousEnabled requires explicit rendezvousPort > 0 and udpObservePort > 0");
+                return false;
+            }
+            if (svc.rendezvousPort > 0 && !tcpPorts.add(svc.rendezvousPort)) {
+                log.warn("Port collision on nodeService.rendezvousPort={}", svc.rendezvousPort);
+                return false;
+            }
+            if (svc.udpObservePort > 0 && svc.udpObservePort == conf.shadowDnsPort) {
+                log.warn("UDP port collision between nodeService.udpObservePort and shadowDnsPort={}", svc.udpObservePort);
+                return false;
+            }
+        }
+        if (svc.relayEnabled) {
+            if (svc.relayPort < 0 || svc.relayPort > 65535) {
+                log.warn("Invalid nodeService.relayPort={}", svc.relayPort);
+                return false;
+            }
+            if (!svc.allowEphemeralPorts && svc.relayPort <= 0) {
+                log.warn("nodeService.relayEnabled requires explicit relayPort > 0");
+                return false;
+            }
+            if (svc.relayPort > 0 && !tcpPorts.add(svc.relayPort)) {
+                log.warn("Port collision on nodeService.relayPort={}", svc.relayPort);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean conflictsWithNodeServicePort(RssClientConf conf, int ssPort) {
+        if (conf == null || conf.nodeService == null || !conf.nodeService.enabled || ssPort <= 0) {
+            return false;
+        }
+        RssClientConf.NodeServiceConf svc = conf.nodeService;
+        return (svc.rendezvousEnabled && svc.rendezvousPort == ssPort)
+                || (svc.relayEnabled && svc.relayPort == ssPort);
     }
 
     private static boolean hasWeightedSocksServer(List<RssClientConf.SocksServer> socksServers) {
@@ -573,9 +674,9 @@ public final class RssClient {
                     if (spec.egress.udpCodec != null && !"none".equals(spec.egress.udpCodec)) {
                         throw new IllegalArgumentException("RSS UDP egress codec must be none");
                     }
-                    org.rx.net.RssEgressCodec parsed = org.rx.net.RssEgressCodec.parse(spec.egress.tcpCodec);
+                    org.rx.net.EgressCodec parsed = org.rx.net.EgressCodec.parse(spec.egress.tcpCodec);
                     if (spec.type == RssClientConf.UpstreamType.SOCKS5 && spec.rssEndpoint == null
-                            && parsed != org.rx.net.RssEgressCodec.NONE) {
+                            && parsed != org.rx.net.EgressCodec.NONE) {
                         throw new IllegalArgumentException("Standard SOCKS5 upstream cannot enable RSS TCP egress codec");
                     }
                 } catch (IllegalArgumentException e) {
@@ -704,8 +805,8 @@ public final class RssClient {
         Map<String, SocksRpcContract> facadeByRpcEndpoint = new LinkedHashMap<>();
         Map<String, UpstreamSupport> supportByServerId = new LinkedHashMap<>();
         try {
-            org.rx.net.RssEgressCodec defaultEgress = conf.egress == null
-                    ? org.rx.net.RssEgressCodec.NONE : org.rx.net.RssEgressCodec.parse(conf.egress.tcpCodec);
+            org.rx.net.EgressCodec defaultEgress = conf.egress == null
+                    ? org.rx.net.EgressCodec.NONE : org.rx.net.EgressCodec.parse(conf.egress.tcpCodec);
             for (RssClientConf.SocksServer spec : conf.socksServers) {
                 int weight = weightOf(spec);
                 if (weight == 0) {
@@ -714,9 +815,9 @@ public final class RssClient {
                 boolean standard = spec.type == RssClientConf.UpstreamType.SOCKS5 && spec.rssEndpoint == null;
                 AuthenticEndpoint outer = spec.rssEndpoint == null ? null : resolveCarrierEndpoint(spec.endpoint, conf);
                 AuthenticEndpoint peer = spec.rssEndpoint == null ? spec.endpoint : resolveCarrierEndpoint(spec.rssEndpoint, conf);
-                org.rx.net.RssEgressCodec routeOverride = standard || spec.egress == null
-                        ? null : org.rx.net.RssEgressCodec.parse(spec.egress.tcpCodec);
-                org.rx.net.RssEgressCodec routeEgress = standard ? org.rx.net.RssEgressCodec.NONE
+                org.rx.net.EgressCodec routeOverride = standard || spec.egress == null
+                        ? null : org.rx.net.EgressCodec.parse(spec.egress.tcpCodec);
+                org.rx.net.EgressCodec routeEgress = standard ? org.rx.net.EgressCodec.NONE
                         : (routeOverride != null ? routeOverride : defaultEgress);
                 SocksRpcContract facade = null;
                 if (!standard) {
@@ -733,7 +834,7 @@ public final class RssClient {
                         ? new BoundRoute(dial, facade, outer, routeOverride) : new UpstreamSupport(dial, facade);
                 support.setRouteId(spec.id);
                 support.setStandardSocks5(standard);
-                support.setRssEgressCodec(routeEgress);
+                support.setEgressCodec(routeEgress);
                 support.setConfiguredWeight(weight);
                 support.setUdpClient(spec.udpClient);
                 support.setAdaptiveUdpClient(spec.adaptiveUdpClient);
@@ -928,7 +1029,7 @@ public final class RssClient {
         SocksConfig outConf = Sys.deepClone(inConf);
         outConf.setTransportFlags(TransportFlags.NONE.flags());
         outConf.setTcpCompressionLevel(RssSupport.TCP_COMPRESSION_LEVEL);
-        outConf.setRssEgressCodec(org.rx.net.RssEgressCodec.parse(conf.egress.tcpCodec));
+        outConf.setEgressCodec(org.rx.net.EgressCodec.parse(conf.egress.tcpCodec));
         outConf.setOptimalSettings(RssSupport.OUT_OPS);
         configureOutboundConfig(conf, outConf);
         return outConf;
@@ -1826,7 +1927,7 @@ public final class RssClient {
         config.setOptimalSettings(RssSupport.OUT_OPS);
         configureOutboundConfig(conf, config);
         config.setTransportFlags(TransportFlags.NONE.flags());
-        config.setRssEgressCodec(org.rx.net.RssEgressCodec.NONE);
+        config.setEgressCodec(org.rx.net.EgressCodec.NONE);
         config.setUdpHop(false);
         config.setUdpPortHoppingEnabled(false);
         config.setUdpLeasePoolEnabled(false);
@@ -1849,17 +1950,17 @@ public final class RssClient {
 
     private static final class BoundRoute extends UpstreamSupport {
         private final AuthenticEndpoint proxy;
-        private final org.rx.net.RssEgressCodec egress;
+        private final org.rx.net.EgressCodec egress;
         private final Map<SocksConfig, SocksConfig> configs = new java.util.IdentityHashMap<>();
 
-        BoundRoute(AuthenticEndpoint peer, SocksRpcContract facade, AuthenticEndpoint proxy, org.rx.net.RssEgressCodec egress) {
+        BoundRoute(AuthenticEndpoint peer, SocksRpcContract facade, AuthenticEndpoint proxy, org.rx.net.EgressCodec egress) {
             super(peer, facade);
             this.proxy = proxy;
             this.egress = egress;
         }
 
         SocksConfig bind(SocksConfig base, boolean tcp) {
-            if (proxy == null && (!tcp || egress == null || egress == base.getRssEgressCodec())) {
+            if (proxy == null && (!tcp || egress == null || egress == base.getEgressCodec())) {
                 return base;
             }
             synchronized (this) {
@@ -1867,7 +1968,7 @@ public final class RssClient {
                 if (config == null) {
                     config = Sys.deepClone(base);
                     if (egress != null) {
-                        config.setRssEgressCodec(egress);
+                        config.setEgressCodec(egress);
                     }
                     if (proxy != null) {
                         config.setSocksCarrierProxy(proxy);
@@ -1985,7 +2086,7 @@ public final class RssClient {
                 boolean hop = policy.udpHop();
                 int profile = adaptive ? policy.adaptiveProfile() : 0;
                 int level = (mask & 1) == 0 ? 0 : policy.compressionLevel();
-                org.rx.net.RssEgressCodec egress = policy.tcpEgressCodec(base.getRssEgressCodec());
+                org.rx.net.EgressCodec egress = policy.tcpEgressCodec(base.getEgressCodec());
                 long key = mask | (adaptive ? 8 : 0) | (profile << 4) | (level << 6)
                         | (hop ? 0 : (1 << 10)) | ((long) tcpUdpMtu << 11) | ((long) egress.ordinal() << 28);
                 SocksConfig cached = cache.get(key);
@@ -1995,7 +2096,7 @@ public final class RssClient {
                     c.setAdaptiveProfile(profile);
                     c.setDailyUdpMtu(tcpUdpMtu);
                     c.setUdpHop(hop);
-                    c.setRssEgressCodec(egress);
+                    c.setEgressCodec(egress);
                     if (level != 0) c.setTcpCompressionLevel(level);
                     TransportFlags protection = (mask & 2) != 0 ? TransportFlags.RSS_PSK_AES : TransportFlags.NONE;
                     c.setTransportFlags(protection.flags((mask & 1) != 0 ? TransportFlags.COMPRESS_BOTH : TransportFlags.NONE));

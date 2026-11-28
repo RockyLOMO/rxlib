@@ -195,6 +195,14 @@ shadowUsers:
 
 该用户的多条并发 TCP 连接与所有 UDP 会话共享同一 `BandwidthLimiter`（按入站解密后明文有效载荷字节计费）。
 
+## RRP RAW 逻辑流中继 4 级内存预算与单流反压（`RrpServer`）
+
+当启用 `RrpServer` 的 `enableRawRelay` 提供多路复用公网 TCP 中继时，为防止单个慢速客户端拖垮同连接其它逻辑流（队头阻塞）或撑爆单核 768 MiB 服务端堆外内存，中继层内置独立 4 级待发字节预算与反压状态机（不依赖全局 `GlobalChannelTrafficShapingHandler`）：
+
+- **4 级待发字节预算**：同时约束 **全局（`maxGlobalRelayPendingBytes`）→ 单租户（`maxTenantRelayPendingBytes`）→ 单节点（`maxNodeRelayPendingBytes`）→ 单逻辑流（`maxStreamRelayPendingBytes`）**；任一级超限优先通过 `ACTION_RAW_PAUSE` / `ACTION_RAW_RESUME` 精准暂停/恢复对应逻辑流，极端慢速溢出时仅断开违规单流并释放全部 `ByteBuf`（`rawStreamOverflowCloses`），不拖累其他租户与连接。
+- **轮询排空防队头阻塞**：单条 RRP 物理 TCP 连接上的多条 RAW 逻辑流采用公平轮询（Round-Robin）配额刷出，并与物理 Channel `channelWritabilityChanged` 严格联动，保证高/低速流隔离。
+- **即时吊销清理**：`NodeRegistry` 触发禁用或改密事件时，`RrpServer` 立刻关闭该节点所有活跃 RAW 逻辑流并归零全部待发字节计数，防止堆外内存滞留。
+
 ## 监控与验证
 
 上线前至少关注：
@@ -203,6 +211,7 @@ shadowUsers:
 - 连接数：`net.connection.active.count`
 - 吞吐：`net.io.inbound.bytes.per.second`、`net.io.outbound.bytes.per.second`
 - 用户带宽限速：`net.bandwidth.admitted.bytes`、`net.bandwidth.drop.count`、`net.bandwidth.delay.count`、`net.bandwidth.pending.tcp.bytes`
+- RRP RAW 中继与协调：`RrpServer`（`activeRawStreamCount`、`rawStreamsOpenedCount`、`rawStreamOverflowCloses`、`globalRelayPendingBytes`、`rawRelayIngressBytes`、`rawRelayEgressBytes`）与 `RendezvousService`（`authenticatedNodeCount`、`obsRequestsReceived`、`obsRepliesSent`、`obsRejectedCount`、`punchSessionsCreated`、`punchSessionsRejected`）
 - 写积压：`net.write.pending.bytes`
 - 不可写通道：`net.write.unwritable.count`
 - EventLoop 队列：`net.eventLoop.pending.count`、`net.eventLoop.pending.max.count`

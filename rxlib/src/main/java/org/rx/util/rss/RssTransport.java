@@ -35,7 +35,7 @@ public final class RssTransport implements Serializable {
                 return false;
             }
             try {
-                org.rx.net.RssEgressCodec.parse(egress.tcpCodec);
+                org.rx.net.EgressCodec.parse(egress.tcpCodec);
             } catch (IllegalArgumentException e) {
                 return false;
             }
@@ -47,8 +47,8 @@ public final class RssTransport implements Serializable {
                 && inRange(udp, plain ? 0 : RssDatagramHandler.LZ4);
     }
 
-    org.rx.net.RssEgressCodec tcpEgressCodec(org.rx.net.RssEgressCodec fallback) {
-        return egress == null ? fallback : org.rx.net.RssEgressCodec.parse(egress.tcpCodec);
+    org.rx.net.EgressCodec tcpEgressCodec(org.rx.net.EgressCodec fallback) {
+        return egress == null ? fallback : org.rx.net.EgressCodec.parse(egress.tcpCodec);
     }
 
     private static boolean inRange(Integer value, int max) {

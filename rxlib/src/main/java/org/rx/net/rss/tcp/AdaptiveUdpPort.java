@@ -18,12 +18,15 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 import java.util.concurrent.TimeUnit;
 
 /** Authenticated, best-effort UDP path for streams negotiated over an existing TCP connection. */
 public final class AdaptiveUdpPort implements AutoCloseable {
     public static final int MAX_FRAME_BYTES = 1400;
+    public static final int CONTROL_MAGIC_OBS = 0x5258554F;   // "RXUO" authenticated UDP endpoint observation
+    public static final int CONTROL_MAGIC_PUNCH = 0x52585050; // "RXPP" authenticated peer NAT punch probe/ack
     private static final int PREFIX = 16, TAG = 16, MAX_PACKET = PREFIX + MAX_FRAME_BYTES + TAG;
     static int frameLimit(int wireMtu) {
         int limit = org.rx.net.rss.RssUdpMtuBudget.negotiate(wireMtu, PREFIX + AdaptiveTcpStream.MAX_UDP_FRAME + TAG);
@@ -40,6 +43,7 @@ public final class AdaptiveUdpPort implements AutoCloseable {
     private final ChannelFuture bind, aliasBind;
     private final int virtualAlias;
     private volatile boolean closed;
+    private volatile BiPredicate<InetSocketAddress, ByteBuf> controlPacketHandler;
     // Both sockets share one UDP EventLoop. Includes authenticated port-hop probes and framing.
     private long txPackets, txBytes, rxPackets, rxBytes;
 
@@ -149,7 +153,7 @@ public final class AdaptiveUdpPort implements AutoCloseable {
         AdaptiveUdpPort port = new AdaptiveUdpPort(false, bindAddr, 0, false, hopping,
                 tcp.attr(org.rx.net.socks.RssSocksCarrier.OUTER_PROXY).get(), primaryAddr, aliasAddr, outerMtu == null ? 0 : outerMtu);
         try {
-            Peer peer = new Peer(key, tcp, recv, targetIp, primaryAddr, false, frameLimit);
+            Peer peer = new Peer(key, tcp, recv, targetIp, primaryAddr, false, frameLimit, false, false);
             peer.alias = aliasAddr;
             port.add(id, peer);
             ChannelFutureListener closeOnFailure = f -> { if (!f.isSuccess()) port.close(); };
@@ -168,6 +172,32 @@ public final class AdaptiveUdpPort implements AutoCloseable {
             throw new IllegalArgumentException("UDP acceleration requires a connected IP transport");
         }
         return ((InetSocketAddress) tcp.remoteAddress()).getAddress();
+    }
+
+    /**
+     * Binds a shared single-port UDP socket whose lifecycle spans authenticated endpoint observation,
+     * simultaneous NAT punch verification, and verified-peer {@link AdaptiveTcpHandler} data streams.
+     */
+    public static AdaptiveUdpPort bindShared(InetSocketAddress local) {
+        return listen(local == null ? new InetSocketAddress(0) : local, 0, false, false);
+    }
+
+    public void setControlPacketHandler(BiPredicate<InetSocketAddress, ByteBuf> handler) {
+        this.controlPacketHandler = handler;
+    }
+
+    public InetSocketAddress localAddress() {
+        return (InetSocketAddress) bind.channel().localAddress();
+    }
+
+    /** Sends a raw control datagram (e.g. observation or NAT punch) from this exact bound UDP socket. Consumes payload. */
+    public ChannelFuture sendRawDatagram(InetSocketAddress recipient, ByteBuf payload) {
+        Channel udp = bind.channel();
+        if (closed || !udp.isActive() || recipient == null || recipient.isUnresolved() || recipient.getPort() <= 0) {
+            payload.release();
+            return udp.newFailedFuture(new IllegalStateException("Shared UDP port closed or invalid recipient"));
+        }
+        return udp.writeAndFlush(new DatagramPacket(payload, recipient));
     }
 
     public int port() {
@@ -200,7 +230,25 @@ public final class AdaptiveUdpPort implements AutoCloseable {
     void register(long id, byte[] key, Channel tcp, boolean hopping, int frameLimit, Consumer<ByteBuf> recv) {
         // No-hop streams may enter through a local single-port UDP tunnel (e.g. udp2raw -> 127.0.0.1:primary)
         // while TCP remains direct; still gated by stream id, replay window and per-stream HMAC-SHA256.
-        Peer peer = new Peer(key, tcp, recv, remoteIp(tcp), null, !hopping, frameLimit);
+        Peer peer = new Peer(key, tcp, recv, remoteIp(tcp), null, !hopping, frameLimit, this.server, false);
+        add(id, peer);
+        tcp.closeFuture().addListener(f -> {
+            Peer current = peers.get(id);
+            if (current != null && current.tcp == tcp) peers.remove(id, current);
+        });
+    }
+
+    /**
+     * Registers an explicitly verified peer UDP endpoint (proven via authenticated bidirectional NAT punch or direct check).
+     * Works when {@code tcp} is an in-process {@code LocalChannel} (RRP RAW Relay) as well as real TCP, while strictly
+     * enforcing exact source IP+port matching, per-stream HMAC-SHA256 direction tags, and replay window checks.
+     */
+    public void registerVerifiedPeer(long id, byte[] key, Channel tcp, InetSocketAddress verifiedPeer,
+                                     boolean serverRole, int frameLimit, Consumer<ByteBuf> recv) {
+        if (verifiedPeer == null || verifiedPeer.isUnresolved() || verifiedPeer.getAddress() == null || verifiedPeer.getPort() <= 0) {
+            throw new IllegalArgumentException("Verified UDP peer must be resolved with valid port: " + verifiedPeer);
+        }
+        Peer peer = new Peer(key, tcp, recv, verifiedPeer.getAddress(), verifiedPeer, false, frameLimit, serverRole, true);
         add(id, peer);
         tcp.closeFuture().addListener(f -> {
             Peer current = peers.get(id);
@@ -241,8 +289,8 @@ public final class AdaptiveUdpPort implements AutoCloseable {
                 if (!udp.isActive() || !udp.isWritable() || peers.get(id) != peer) {
                     return;
                 }
-                boolean alternate = !server && aliasBind != null && peer.hop(System.nanoTime()) != 0;
-                Channel output = alternate ? aliasBind.channel() : (server && peer.returnPath != null ? peer.returnPath : udp);
+                boolean alternate = !peer.serverRole && !peer.strictVerifiedPeer && aliasBind != null && peer.hop(System.nanoTime()) != 0;
+                Channel output = alternate ? aliasBind.channel() : (peer.serverRole && !peer.strictVerifiedPeer && peer.returnPath != null ? peer.returnPath : udp);
                 InetSocketAddress recipient = alternate ? peer.alias : peer.address;
                 if (!output.isActive() || !output.isWritable()) return;
                 int length = frame.readableBytes();
@@ -253,12 +301,12 @@ public final class AdaptiveUdpPort implements AutoCloseable {
                         int start = frame.readerIndex() - PREFIX;
                         wire = frame.retain();
                         wire.setLong(start, id).setLong(start + 8, ++peer.sent).readerIndex(start);
-                        peer.sign(server ? SERVER : CLIENT, wire, start, PREFIX + length);
+                        peer.sign(peer.serverRole ? SERVER : CLIENT, wire, start, PREFIX + length);
                         wire.ensureWritable(TAG).writeBytes(peer.digest, 0, TAG);
                     } else {
                         wire = udp.alloc().ioBuffer(PREFIX + length + TAG, PREFIX + length + TAG);
                         wire.writeLong(id).writeLong(++peer.sent).writeBytes(frame, frame.readerIndex(), length);
-                        peer.sign(server ? SERVER : CLIENT, wire, 0, PREFIX + length);
+                        peer.sign(peer.serverRole ? SERVER : CLIENT, wire, 0, PREFIX + length);
                         wire.writeBytes(peer.digest, 0, TAG);
                     }
                     if (wire.readableBytes() > PREFIX + peer.frameLimit + TAG) {
@@ -286,18 +334,30 @@ public final class AdaptiveUdpPort implements AutoCloseable {
     private void receive(Channel path, DatagramPacket packet) {
         ByteBuf wire = packet.content();
         int bytes = wire.readableBytes(), i = wire.readerIndex();
+        BiPredicate<InetSocketAddress, ByteBuf> ctrl = controlPacketHandler;
+        if (ctrl != null && bytes >= 4) {
+            int magic = wire.getInt(i);
+            if ((magic == CONTROL_MAGIC_OBS || magic == CONTROL_MAGIC_PUNCH) && ctrl.test(packet.sender(), wire)) {
+                return;
+            }
+        }
         if (bytes < PREFIX + TAG || bytes > MAX_PACKET) return;
         long id = wire.getLong(i), seq = wire.getLong(i + 8);
         Peer peer = peers.get(id);
         if (peer == null || bytes - PREFIX - TAG > peer.frameLimit) return;
-        InetAddress senderIp = packet.sender().getAddress();
-        boolean senderAllowed = peer.ip.equals(senderIp)
-                || (server && peer.allowLoopback && senderIp.isLoopbackAddress());
-        if (!senderAllowed
-                || !server && !packet.sender().equals(peer.address) && !packet.sender().equals(peer.alias)
-                || seq <= 0 || peer.replay.isDuplicate(seq)) return;
+        if (peer.strictVerifiedPeer) {
+            // Strict exact IP+port verification for punched / verified peer UDP paths (never accepts arbitrary senders).
+            if (!packet.sender().equals(peer.address) || seq <= 0 || peer.replay.isDuplicate(seq)) return;
+        } else {
+            InetAddress senderIp = packet.sender().getAddress();
+            boolean senderAllowed = peer.ip.equals(senderIp)
+                    || (peer.serverRole && peer.allowLoopback && senderIp.isLoopbackAddress());
+            if (!senderAllowed
+                    || !peer.serverRole && !packet.sender().equals(peer.address) && !packet.sender().equals(peer.alias)
+                    || seq <= 0 || peer.replay.isDuplicate(seq)) return;
+        }
 
-        peer.sign(server ? CLIENT : SERVER, wire, i, bytes - TAG);
+        peer.sign(peer.serverRole ? CLIENT : SERVER, wire, i, bytes - TAG);
         int difference = 0;
         for (int n = 0; n < TAG; n++) {
             difference |= wire.getByte(i + bytes - TAG + n) ^ peer.digest[n];
@@ -308,13 +368,15 @@ public final class AdaptiveUdpPort implements AutoCloseable {
         rxBytes += bytes;
         rxPackets++;
         if (txPackets + rxPackets >= 256) recordTraffic();
-        if (server && newest) {
-            peer.address = packet.sender();
-            peer.returnPath = path;
-        } else if (!server && aliasBind != null && peer.hop(System.nanoTime()) != peer.lastProbeHop) {
-            // Keep downloads hopping even when there is no application uplink.
-            peer.lastProbeHop = peer.hop(System.nanoTime());
-            send(id, Unpooled.EMPTY_BUFFER);
+        if (!peer.strictVerifiedPeer) {
+            if (peer.serverRole && newest) {
+                peer.address = packet.sender();
+                peer.returnPath = path;
+            } else if (!peer.serverRole && aliasBind != null && peer.hop(System.nanoTime()) != peer.lastProbeHop) {
+                // Keep downloads hopping even when there is no application uplink.
+                peer.lastProbeHop = peer.hop(System.nanoTime());
+                send(id, Unpooled.EMPTY_BUFFER);
+            }
         }
         if (bytes == PREFIX + TAG) return;
         if (!reserve(pendingReads)) return;
@@ -375,6 +437,8 @@ public final class AdaptiveUdpPort implements AutoCloseable {
         final Consumer<ByteBuf> recv;
         final Mac mac;
         final boolean allowLoopback;
+        final boolean serverRole;
+        final boolean strictVerifiedPeer;
         final int frameLimit;
         final byte[] digest = new byte[32];
         volatile InetSocketAddress address;
@@ -390,7 +454,7 @@ public final class AdaptiveUdpPort implements AutoCloseable {
         }
 
         Peer(byte[] key, Channel tcp, Consumer<ByteBuf> recv, InetAddress ip, InetSocketAddress address,
-             boolean allowLoopback, int frameLimit) {
+             boolean allowLoopback, int frameLimit, boolean serverRole, boolean strictVerifiedPeer) {
             this.frameLimit = frameLimit;
             if (key.length < 16) throw new IllegalArgumentException("short UDP session key");
             this.ip = ip;
@@ -398,6 +462,8 @@ public final class AdaptiveUdpPort implements AutoCloseable {
             this.recv = recv;
             this.address = address;
             this.allowLoopback = allowLoopback;
+            this.serverRole = serverRole;
+            this.strictVerifiedPeer = strictVerifiedPeer;
             try {
                 mac = Mac.getInstance("HmacSHA256");
                 mac.init(new SecretKeySpec(key, "HmacSHA256"));

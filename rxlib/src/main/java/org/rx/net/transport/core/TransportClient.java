@@ -2,11 +2,17 @@ package org.rx.net.transport.core;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.local.LocalAddress;
+import io.netty.channel.local.LocalChannel;
 import io.netty.handler.codec.ByteToMessageDecoder;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
+import io.netty.handler.codec.compression.JdkZlibDecoder;
+import io.netty.handler.codec.compression.ZlibCodecFactory;
+import io.netty.handler.codec.compression.ZlibWrapper;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
 import lombok.Getter;
@@ -19,6 +25,8 @@ import org.rx.core.FluentWait;
 import org.rx.core.NEventArgs;
 import org.rx.core.ThreadPool;
 import org.rx.exception.InvalidException;
+import org.rx.net.EgressCodec;
+import org.rx.net.EgressConfig;
 import org.rx.net.Sockets;
 import org.rx.net.rss.RssUdpMtuBudget;
 import org.rx.net.rss.tcp.AdaptiveTcpHandler;
@@ -29,6 +37,7 @@ import org.slf4j.helpers.MessageFormatter;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -43,9 +52,10 @@ import static org.rx.core.Extends.ifNull;
 import static org.rx.core.Extends.quietly;
 
 /**
- * Shared Transport Core reliable ordered {@link ByteBuf} client.
- * Uses pure TCP when {@code enableAdaptiveUdp = false} (zero UDP sockets) or single-port daily
- * {@link AdaptiveTcpHandler} UDP acceleration with TCP repair when enabled.
+ * Shared Transport Core v2 reliable ordered {@link ByteBuf} client.
+ * Supports physical TCP {@link EgressCodec}, optional post-handshake AES-128-GCM AEAD encryption,
+ * optional post-handshake business zlib compression, single-port daily {@link AdaptiveTcpHandler},
+ * and in-process {@link LocalChannel} virtual carriers (e.g. RRP RAW Relay).
  */
 @Slf4j
 public final class TransportClient extends AbstractTcpReconnectClient implements EventPublisher<TransportClient> {
@@ -66,6 +76,7 @@ public final class TransportClient extends AbstractTcpReconnectClient implements
     private volatile DefaultTransportSession session;
     private volatile CompletableFuture<TransportSession> handshakePromise;
     private volatile InetSocketAddress connectingEp;
+    private volatile SocketAddress localCarrierTarget;
     private volatile BiConsumer<TransportSession, ByteBuf> receiveHandler;
 
     public TransportClient(@NonNull TransportConfig config) {
@@ -110,9 +121,29 @@ public final class TransportClient extends AbstractTcpReconnectClient implements
     }
 
     public void connect(@NonNull InetSocketAddress remoteEp) throws TimeoutException {
-        Future<Void> future = connectAsync(remoteEp);
+        awaitReady(connectAsync(remoteEp), remoteEp);
+    }
+
+    /** Connects over an in-process Netty {@link LocalAddress} virtual carrier (e.g. RRP RAW Relay stream). */
+    public void connectLocal(@NonNull LocalAddress localAddress) throws TimeoutException {
+        awaitReady(connectLocalAsync(localAddress), localAddress);
+    }
+
+    public Future<Void> connectLocalAsync(@NonNull LocalAddress localAddress) {
+        validateClientConfig(true);
+        CompletableFuture<Void> carrierFuture = beginLocalConnect(localAddress);
+        return chainHandshakeReady(carrierFuture, localAddress);
+    }
+
+    public Future<Void> connectAsync(@NonNull InetSocketAddress remoteEp) {
+        validateClientConfig(false);
+        CompletableFuture<Void> tcpFuture = beginTcpConnect(remoteEp);
+        return chainHandshakeReady(tcpFuture, remoteEp);
+    }
+
+    private void awaitReady(Future<Void> future, SocketAddress target) throws TimeoutException {
         try {
-            future.get(config.getTcpClientConfig().getConnectTimeoutMillis(), TimeUnit.MILLISECONDS);
+            future.get(Math.max(500, config.getTcpClientConfig().getConnectTimeoutMillis()), TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw InvalidException.sneaky(e);
@@ -121,20 +152,19 @@ public final class TransportClient extends AbstractTcpReconnectClient implements
             if (cause instanceof TimeoutException) {
                 throw (TimeoutException) cause;
             }
-            TimeoutException ex = new TimeoutException(MessageFormatter.format("{} connect {} fail", this, remoteEp).getMessage());
+            TimeoutException ex = new TimeoutException(MessageFormatter.format("{} connect {} fail", this, target).getMessage());
             ex.initCause(cause);
             throw ex;
         } catch (CancellationException e) {
-            TimeoutException ex = new TimeoutException(MessageFormatter.format("{} connect {} cancelled", this, remoteEp).getMessage());
+            TimeoutException ex = new TimeoutException(MessageFormatter.format("{} connect {} cancelled", this, target).getMessage());
             ex.initCause(e);
             throw ex;
         }
     }
 
-    public Future<Void> connectAsync(@NonNull InetSocketAddress remoteEp) {
-        CompletableFuture<Void> tcpFuture = beginTcpConnect(remoteEp);
+    private CompletableFuture<Void> chainHandshakeReady(CompletableFuture<Void> connectFuture, SocketAddress target) {
         CompletableFuture<Void> readyFuture = new CompletableFuture<Void>();
-        tcpFuture.whenComplete((r, err) -> {
+        connectFuture.whenComplete((r, err) -> {
             if (err != null) {
                 readyFuture.completeExceptionally(err);
                 return;
@@ -146,7 +176,7 @@ public final class TransportClient extends AbstractTcpReconnectClient implements
             }
             CompletableFuture<TransportSession> hs = handshakePromise;
             if (hs == null) {
-                readyFuture.completeExceptionally(new ClientDisconnectedException(remoteEp));
+                readyFuture.completeExceptionally(new ClientDisconnectedException(target));
                 return;
             }
             hs.whenComplete((s, hsErr) -> {
@@ -158,6 +188,41 @@ public final class TransportClient extends AbstractTcpReconnectClient implements
             });
         });
         return readyFuture;
+    }
+
+    private void validateClientConfig(boolean localCarrier) {
+        if (config.isEnableEncryption() && !TransportProtocol.hasAuthSecret(config.getAuthSecret())) {
+            throw new IllegalArgumentException("TransportClient encryption requires non-empty authSecret");
+        }
+        if (!localCarrier) {
+            resolveEffectiveEgress(config.getTcpClientConfig()).validateClient();
+        }
+    }
+
+    private EgressConfig resolveEffectiveEgress(TcpClientConfig tcpConf) {
+        EgressConfig top = config.effectiveEgressConfig();
+        if (top.getTcpCodec() != EgressCodec.NONE) {
+            return top;
+        }
+        if (tcpConf != null && tcpConf.getEgressConfig() != null) {
+            return tcpConf.getEgressConfig();
+        }
+        return EgressConfig.none();
+    }
+
+    private synchronized CompletableFuture<Void> beginLocalConnect(@NonNull LocalAddress localAddress) {
+        CompletableFuture<Void> promise = currentConnectPromise();
+        if (promise != null && !promise.isDone()) {
+            return promise;
+        }
+        TcpClientConfig tcpConf = config.getTcpClientConfig();
+        if (tcpConf.getReactorName() == null) {
+            tcpConf.setReactorName(Sockets.ReactorNames.RPC);
+        }
+        tcpConf.setEnableReconnect(false);
+        this.localCarrierTarget = localAddress;
+        handshakePromise = new CompletableFuture<TransportSession>();
+        return beginConnect(Sockets.bootstrap(tcpConf, localAddress, ch -> initChannel(ch, tcpConf, true)));
     }
 
     private synchronized CompletableFuture<Void> beginTcpConnect(@NonNull InetSocketAddress remoteEp) {
@@ -174,19 +239,26 @@ public final class TransportClient extends AbstractTcpReconnectClient implements
         if (tcpConf.getReactorName() == null) {
             tcpConf.setReactorName(Sockets.ReactorNames.RPC);
         }
+        this.localCarrierTarget = null;
         tcpConf.setServerEndpoint(remoteEp);
         handshakePromise = new CompletableFuture<TransportSession>();
-        return beginConnect(Sockets.bootstrap(tcpConf, ch -> initChannel(ch, tcpConf)));
+        return beginConnect(Sockets.bootstrap(tcpConf, ch -> initChannel(ch, tcpConf, false)));
     }
 
-    private void initChannel(Channel ch, TcpClientConfig tcpConf) {
+    private void initChannel(Channel ch, TcpClientConfig tcpConf, boolean localCarrier) {
         ChannelPipeline pipeline = ch.pipeline();
+        EgressConfig egress = localCarrier ? EgressConfig.none() : resolveEffectiveEgress(tcpConf);
+        if (!localCarrier) {
+            EgressCodec.installClient(pipeline, egress);
+            Sockets.addTcpClientHandler(ch, tcpConf, tcpConf.getServerEndpoint());
+        } else {
+            ch.attr(EgressCodec.ATTR_SELECTED).set(EgressCodec.NONE);
+        }
         int hb = tcpConf.getHeartbeatTimeout();
         if (hb > 0) {
             pipeline.addLast("coreIdle", new IdleStateHandler(hb, Math.max(1, hb / 2), 0));
         }
-        Sockets.addTcpClientHandler(ch, tcpConf, tcpConf.getServerEndpoint());
-        pipeline.addLast("coreHandshake", new ClientHandshakeHandler(tcpConf));
+        pipeline.addLast("coreHandshake", new ClientHandshakeHandler(tcpConf, egress.getTcpCodec(), localCarrier));
     }
 
     public void send(@NonNull ByteBuf payload) {
@@ -194,7 +266,7 @@ public final class TransportClient extends AbstractTcpReconnectClient implements
         active.send(payload);
     }
 
-    public io.netty.channel.ChannelFuture sendAsync(@NonNull ByteBuf payload) {
+    public ChannelFuture sendAsync(@NonNull ByteBuf payload) {
         DefaultTransportSession active = session;
         if (active == null || !active.isConnected()) {
             try {
@@ -237,11 +309,14 @@ public final class TransportClient extends AbstractTcpReconnectClient implements
 
     @Override
     protected synchronized boolean isShouldReconnect() {
-        return !isClosed() && config.getTcpClientConfig().isEnableReconnect() && !isConnected();
+        return !isClosed() && localCarrierTarget == null && config.getTcpClientConfig().isEnableReconnect() && !isConnected();
     }
 
     @Override
     protected SocketAddress resolveConnectEndpoint(boolean reconnect) {
+        if (localCarrierTarget != null) {
+            return localCarrierTarget;
+        }
         if (reconnect) {
             handshakePromise = new CompletableFuture<TransportSession>();
             NEventArgs<InetSocketAddress> args = new NEventArgs<InetSocketAddress>(
@@ -253,13 +328,20 @@ public final class TransportClient extends AbstractTcpReconnectClient implements
     }
 
     @Override
+    protected SocketAddress resolveLocalEndpoint() {
+        return localCarrierTarget != null ? null : config.getTcpClientConfig().getLocalAddress();
+    }
+
+    @Override
     protected void onConnectSuccess(SocketAddress endpoint, boolean reconnect, Channel channel) {
-        InetSocketAddress ep = (InetSocketAddress) endpoint;
-        connectingEp = null;
-        reconnectLogState.reset();
-        config.getTcpClientConfig().setServerEndpoint(ep);
-        if (reconnect) {
-            Sockets.logReconnectSuccess(log, this, ep, true);
+        if (endpoint instanceof InetSocketAddress) {
+            InetSocketAddress ep = (InetSocketAddress) endpoint;
+            connectingEp = null;
+            reconnectLogState.reset();
+            config.getTcpClientConfig().setServerEndpoint(ep);
+            if (reconnect) {
+                Sockets.logReconnectSuccess(log, this, ep, true);
+            }
         }
     }
 
@@ -300,7 +382,8 @@ public final class TransportClient extends AbstractTcpReconnectClient implements
         }
         CompletableFuture<TransportSession> hs = handshakePromise;
         if (hs != null && !hs.isDone() && getChannel() == ch) {
-            hs.completeExceptionally(new ClientDisconnectedException(config.getTcpClientConfig().getServerEndpoint()));
+            hs.completeExceptionally(new ClientDisconnectedException(
+                    localCarrierTarget != null ? localCarrierTarget : config.getTcpClientConfig().getServerEndpoint()));
         }
         publishEvent(onDisconnected, EventArgs.EMPTY);
         if (isShouldReconnect()) {
@@ -323,22 +406,42 @@ public final class TransportClient extends AbstractTcpReconnectClient implements
 
     private final class ClientHandshakeHandler extends ByteToMessageDecoder {
         private final TcpClientConfig tcpConf;
+        private final EgressCodec egressCodec;
+        private final boolean localCarrier;
         private final long proposedSessionId = TransportProtocol.randomSessionId();
         private final byte[] clientNonce = TransportProtocol.randomBytes(TransportProtocol.CLIENT_NONCE_BYTES);
         private final boolean requestAdaptive;
+        private final boolean requestDeferredAdaptive;
+        private final boolean requestCompress;
+        private final boolean requestAead;
         private ScheduledFuture<?> timeoutTask;
         private boolean completed;
 
-        ClientHandshakeHandler(TcpClientConfig tcpConf) {
+        ClientHandshakeHandler(TcpClientConfig tcpConf, EgressCodec egressCodec, boolean localCarrier) {
             this.tcpConf = tcpConf;
-            this.requestAdaptive = config.isEnableAdaptiveUdp() && tcpConf.getSocksCarrierProxy() == null;
+            this.egressCodec = egressCodec == null ? EgressCodec.NONE : egressCodec;
+            this.localCarrier = localCarrier;
+            boolean wantAdaptive = config.isEnableAdaptiveUdp() && tcpConf.getSocksCarrierProxy() == null;
+            this.requestAdaptive = wantAdaptive && !localCarrier;
+            this.requestDeferredAdaptive = wantAdaptive && localCarrier;
+            this.requestCompress = config.isEnableCompression();
+            this.requestAead = config.isEnableEncryption();
         }
 
         @Override
         public void channelActive(ChannelHandlerContext ctx) throws Exception {
-            int flags = requestAdaptive ? TransportProtocol.FLAG_ADAPTIVE_UDP : 0;
-            ByteBuf hello = TransportProtocol.encodeHello(ctx.alloc(), flags, config.getUdpMtu(),
-                    proposedSessionId, clientNonce, localPeerId, config.getAuthSecret());
+            int flags = 0;
+            if (requestAdaptive || requestDeferredAdaptive) {
+                flags |= TransportProtocol.FLAG_ADAPTIVE_UDP;
+            }
+            if (requestCompress) {
+                flags |= TransportProtocol.FLAG_COMPRESS;
+            }
+            if (requestAead) {
+                flags |= TransportProtocol.FLAG_AEAD;
+            }
+            ByteBuf hello = TransportProtocol.encodeHello(ctx.alloc(), flags, egressCodec, config.getCompressionLevel(),
+                    config.getUdpMtu(), proposedSessionId, clientNonce, localPeerId, config.getAuthSecret());
             ctx.writeAndFlush(hello);
             int timeoutMs = Math.max(500, Math.min(config.getHandshakeTimeoutMillis(),
                     Math.max(500, tcpConf.getConnectTimeoutMillis())));
@@ -366,35 +469,83 @@ public final class TransportClient extends AbstractTcpReconnectClient implements
                 failHandshake(ctx, new SecurityException("Transport server handshake authentication failed"));
                 return;
             }
+            if (ack.egressCode != egressCodec.wireCode()) {
+                failHandshake(ctx, new SecurityException("Transport server egress mode mismatch: expected="
+                        + egressCodec.wireCode() + " actual=" + ack.egressCode));
+                return;
+            }
+            boolean useAead = (ack.flags & TransportProtocol.FLAG_AEAD) != 0;
+            if (requestAead && !useAead) {
+                failHandshake(ctx, new SecurityException("Transport server downgraded required AEAD encryption"));
+                return;
+            }
+            if (useAead && !TransportProtocol.hasAuthSecret(config.getAuthSecret())) {
+                failHandshake(ctx, new SecurityException("Transport server enabled AEAD without shared authSecret"));
+                return;
+            }
+            boolean useCompress = requestCompress && (ack.flags & TransportProtocol.FLAG_COMPRESS) != 0;
+            int negotiatedCompLevel = useCompress ? Math.max(1, Math.min(9, ack.compressionLevel > 0 ? ack.compressionLevel : config.getCompressionLevel())) : 0;
+
             completed = true;
             cancelTimeout();
 
             boolean adaptive = requestAdaptive
                     && (ack.flags & TransportProtocol.FLAG_ADAPTIVE_UDP) != 0
                     && ack.serverUdpPort > 0;
+            boolean deferredAdaptive = requestDeferredAdaptive
+                    && (ack.flags & TransportProtocol.FLAG_ADAPTIVE_UDP) != 0;
             int negotiatedMtu = RssUdpMtuBudget.negotiate(config.getUdpMtu(), ack.udpMtu);
             Channel ch = ctx.channel();
             ChannelPipeline p = ctx.pipeline();
 
-            // Install framing + session handler above cipher/idle, then AdaptiveTcpHandler below cipher (strict barrier).
+            ByteBuf leftover = in.isReadable() ? in.readRetainedSlice(in.readableBytes()) : null;
+            byte[] adaptiveKey = null;
             AdaptiveTcpHandler adaptiveHandler = null;
             if (adaptive) {
-                byte[] key = TransportProtocol.deriveAdaptiveKey(config.getAuthSecret(),
+                adaptiveKey = TransportProtocol.deriveAdaptiveKey(config.getAuthSecret(),
                         ack.sessionId, clientNonce, ack.serverNonce);
-                AdaptiveTcpHandler.install(ch, ack.sessionId, key, null,
+                AdaptiveTcpHandler.install(ch, ack.sessionId, adaptiveKey, null,
                         ack.serverUdpPort, ack.serverUdpPort, 0, false, null, negotiatedMtu);
                 adaptiveHandler = p.get(AdaptiveTcpHandler.class);
+            } else if (deferredAdaptive) {
+                adaptiveKey = TransportProtocol.deriveAdaptiveKey(config.getAuthSecret(),
+                        ack.sessionId, clientNonce, ack.serverNonce);
+                AdaptiveTcpHandler.installDeferred(ch, ack.sessionId, adaptiveKey, false, negotiatedMtu);
+                adaptiveHandler = p.get(AdaptiveTcpHandler.class);
+            }
+
+            if (useAead) {
+                byte[] aeadMaterial = TransportProtocol.deriveAeadKeyMaterial(config.getAuthSecret(),
+                        ack.sessionId, clientNonce, ack.serverNonce);
+                try {
+                    p.addLast("coreAead", new TransportAeadCodec(true, aeadMaterial));
+                } finally {
+                    Arrays.fill(aeadMaterial, (byte) 0);
+                }
+            }
+            if (useCompress) {
+                int maxInflate = Math.max(config.getMaxFrameBytes() + 64 * 1024, EgressCodec.DEFAULT_MAX_INFLATE_BYTES);
+                p.addLast("coreZipDecoder", new JdkZlibDecoder(ZlibWrapper.ZLIB, maxInflate));
+                p.addLast("coreZipEncoder", ZlibCodecFactory.newZlibEncoder(ZlibWrapper.ZLIB, negotiatedCompLevel));
             }
 
             boolean wasReconnect = session != null || connectingEp != null;
             DefaultTransportSession created = new DefaultTransportSession(ack.sessionId, localPeerId,
-                    ack.peerId, ch, config.getMaxFrameBytes(), adaptive, adaptiveHandler);
+                    ack.peerId, ch, config.getMaxFrameBytes(), adaptive || deferredAdaptive, adaptiveHandler,
+                    adaptiveKey, useAead, useCompress, egressCodec);
             p.addLast("coreFrameDecoder", new LengthFieldBasedFrameDecoder(config.getMaxFrameBytes() + 1, 0, 4, 0, 4));
             p.addLast("coreSession", new ClientSessionHandler(created));
+
+            String firstPostHandler = (adaptive || deferredAdaptive) ? "rssAdaptiveLength"
+                    : (useAead ? "coreAead" : (useCompress ? "coreZipDecoder" : "coreFrameDecoder"));
             p.remove(this);
 
-            // Tell server we have installed AdaptiveTcpHandler so server can send freely with zero coalescing race.
+            // Tell server our post-handshake stack is installed before server sends business frames.
             created.sendControlFrame(TransportProtocol.FRAME_READY, 0L, false);
+
+            if (leftover != null) {
+                forwardToHandler(p, firstPostHandler, leftover);
+            }
 
             session = created;
             CompletableFuture<TransportSession> hs = handshakePromise;
@@ -413,7 +564,8 @@ public final class TransportClient extends AbstractTcpReconnectClient implements
         public void channelInactive(ChannelHandlerContext ctx) throws Exception {
             cancelTimeout();
             if (!completed) {
-                failHandshake(ctx, new ClientDisconnectedException(tcpConf.getServerEndpoint()));
+                failHandshake(ctx, new ClientDisconnectedException(
+                        localCarrierTarget != null ? localCarrierTarget : tcpConf.getServerEndpoint()));
                 onChannelClosed(ctx.channel(), null);
             }
             super.channelInactive(ctx);
@@ -444,11 +596,27 @@ public final class TransportClient extends AbstractTcpReconnectClient implements
         }
     }
 
+    static void forwardToHandler(ChannelPipeline p, String targetHandlerName, ByteBuf leftover) {
+        String prevName = null;
+        for (String name : p.names()) {
+            if (targetHandlerName.equals(name)) {
+                break;
+            }
+            prevName = name;
+        }
+        ChannelHandlerContext prevCtx = prevName == null ? null : p.context(prevName);
+        if (prevCtx != null) {
+            prevCtx.fireChannelRead(leftover);
+        } else {
+            p.fireChannelRead(leftover);
+        }
+    }
+
     private final class ClientSessionHandler extends SimpleChannelInboundHandler<ByteBuf> {
         private final DefaultTransportSession bound;
 
         ClientSessionHandler(DefaultTransportSession bound) {
-            super(false); // manual release in dispatchData / switch
+            super(false);
             this.bound = bound;
         }
 

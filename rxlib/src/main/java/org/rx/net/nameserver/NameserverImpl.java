@@ -13,6 +13,7 @@ import org.rx.core.Strings;
 import org.rx.core.Sys;
 import org.rx.core.Tasks;
 import org.rx.exception.InvalidException;
+import org.rx.net.EndpointCandidate;
 import org.rx.net.Sockets;
 import org.rx.net.dns.DnsClient;
 import org.rx.net.dns.DnsServer;
@@ -23,6 +24,7 @@ import org.rx.net.nameserver.NameserverReplicaProtocol.ReplicaDeltaRequest;
 import org.rx.net.nameserver.NameserverReplicaProtocol.ReplicaRecord;
 import org.rx.net.nameserver.NameserverReplicaProtocol.ReplicaSnapshotPage;
 import org.rx.net.nameserver.NameserverReplicaProtocol.ReplicaTombstone;
+import org.rx.net.registry.NodeRegistry;
 import org.rx.net.rpc.Remoting;
 import org.rx.net.rpc.RemotingContext;
 import org.rx.net.rpc.RpcClientConfig;
@@ -56,6 +58,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
+import java.util.function.LongSupplier;
 
 import static org.rx.core.Extends.eq;
 import static org.rx.core.Extends.ifNull;
@@ -71,6 +75,8 @@ public class NameserverImpl implements Nameserver {
     static final String NAME = "nameserver";
     static final Set<String> REPLICA_SENSITIVE_METHODS = Collections.unmodifiableSet(
             new HashSet<String>(Arrays.asList("replicaApplyDelta", "replicaApplySnapshotPage")));
+    static final Set<String> SERVER_SENSITIVE_METHODS = Collections.unmodifiableSet(
+            new HashSet<String>(Arrays.asList("replicaApplyDelta", "replicaApplySnapshotPage", "authenticateNode")));
     private static final AtomicLong EPOCH_GEN = new AtomicLong(System.currentTimeMillis() << 16);
     private static final AtomicLong SNAPSHOT_ID_GEN = new AtomicLong();
     private static final SecureRandom NONCE_RANDOM = new SecureRandom();
@@ -98,6 +104,7 @@ public class NameserverImpl implements Nameserver {
         final String sourceId;
         long epoch;
         long lastAppliedVersion;
+        volatile long lastSyncAtMillis;
         final Map<String, ReplicaRecord> instances = new LinkedHashMap<String, ReplicaRecord>();
         final Map<String, Map<String, Serializable>> appAttrs = new HashMap<String, Map<String, Serializable>>();
         final Map<String, ReplicaTombstone> tombstones = new HashMap<String, ReplicaTombstone>();
@@ -357,6 +364,9 @@ public class NameserverImpl implements Nameserver {
     final DnsServer dnsServer;
     final boolean ownDnsServer;
     @Getter
+    final NodeRegistry nodeRegistry;
+    final Consumer<NodeRegistry.OnlineNode> nodeRevokedListener;
+    @Getter
     final String replicaSourceId;
     @Getter
     final long replicaEpoch;
@@ -367,7 +377,9 @@ public class NameserverImpl implements Nameserver {
     final Map<String, Map<String, Serializable>> pendingInstanceAttrs = new HashMap<String, Map<String, Serializable>>();
     final Set<InetSocketAddress> svrEps = ConcurrentHashMap.newKeySet();
     final Map<InetSocketAddress, PeerReplicaClient> peerClients = new ConcurrentHashMap<InetSocketAddress, PeerReplicaClient>();
+    volatile LongSupplier clock = System::currentTimeMillis;
     ScheduledFuture<?> replicaFullSyncTask;
+    ScheduledFuture<?> replicaLeaseSweepTask;
     volatile boolean closed;
 
     static long nextEpoch() {
@@ -380,16 +392,21 @@ public class NameserverImpl implements Nameserver {
     }
 
     public NameserverImpl(@NonNull NameserverConfig config) {
-        this(config, null);
+        this(config, null, null);
     }
 
     public NameserverImpl(@NonNull NameserverConfig config, DnsServer dnsServer) {
+        this(config, dnsServer, null);
+    }
+
+    public NameserverImpl(@NonNull NameserverConfig config, DnsServer dnsServer, NodeRegistry nodeRegistry) {
         this.config = config;
         this.ownDnsServer = dnsServer == null;
         this.dnsServer = ownDnsServer ? new DnsServer(config.getDnsPort()) : dnsServer;
         if (ownDnsServer) {
             this.dnsServer.setTtl(config.getDnsTtl());
         }
+        this.nodeRegistry = nodeRegistry;
         String configuredNodeId = config.getNodeId();
         this.replicaSourceId = !Strings.isEmpty(configuredNodeId)
                 ? configuredNodeId.trim()
@@ -400,23 +417,35 @@ public class NameserverImpl implements Nameserver {
         TransportConfig serverTransport = TransportConfig.dailyServer(config.getRegisterPort());
         serverTransport.setPeerId(replicaSourceId);
         RpcServerConfig rpcServerConfig = new RpcServerConfig(serverTransport);
-        rpcServerConfig.setSensitiveMethods(REPLICA_SENSITIVE_METHODS);
+        rpcServerConfig.setSensitiveMethods(SERVER_SENSITIVE_METHODS);
         this.rs = Remoting.register(this, rpcServerConfig);
         this.rs.onDisconnected.add((s, e) -> {
             TransportSession session = e.getValue();
+            String nodeId = session.attr(NODE_ID_KEY);
             String appName = session.attr(APP_NAME_KEY);
-            if (appName == null) {
-                return;
-            }
             String instanceId = session.attr(INSTANCE_ID_KEY);
-            if (instanceId == null) {
-                instanceId = resolveSessionInstanceId(session, null);
+            if (appName != null) {
+                if (instanceId == null) {
+                    instanceId = resolveSessionInstanceId(session, null);
+                }
+                if (this.nodeRegistry != null && nodeId != null) {
+                    this.nodeRegistry.deregisterLiveService(nodeId, session, appName, instanceId);
+                }
+                if (!hasOtherConnectedSession(session, appName, instanceId)) {
+                    doLocalDeregister(appName, instanceId);
+                }
             }
-            if (hasOtherConnectedSession(session, appName, instanceId)) {
-                return;
+            if (this.nodeRegistry != null && nodeId != null) {
+                this.nodeRegistry.markOffline(nodeId, session);
             }
-            doLocalDeregister(appName, instanceId);
         });
+
+        if (this.nodeRegistry != null) {
+            this.nodeRevokedListener = this::handleNodeRevoked;
+            this.nodeRegistry.addOnNodeRevokedListener(this.nodeRevokedListener);
+        } else {
+            this.nodeRevokedListener = null;
+        }
 
         Set<InetSocketAddress> initialPeers = resolveReplicaEndpoints(
                 Linq.from(config.getReplicaEndpoints()).select(Sockets::parseEndpoint).selectMany(Sockets::newAllEndpoints).toSet());
@@ -432,6 +461,9 @@ public class NameserverImpl implements Nameserver {
         if (fullSyncPeriodMillis > 0) {
             replicaFullSyncTask = Tasks.schedulePeriod(this::syncFullSnapshot, fullSyncPeriodMillis);
         }
+        if (config.getReplicaSourceLeaseMillis() > 0L && config.getReplicaLeaseSweepPeriodMillis() > 0L) {
+            replicaLeaseSweepTask = Tasks.schedulePeriod(this::sweepExpiredRemotePartitions, config.getReplicaLeaseSweepPeriodMillis());
+        }
         registerHttpPage();
     }
 
@@ -445,12 +477,60 @@ public class NameserverImpl implements Nameserver {
         });
     }
 
+    void setClock(@NonNull LongSupplier clock) {
+        this.clock = clock;
+    }
+
+    private SourcePartition getOrCreateRemotePartitionLocked(String sourceId) {
+        SourcePartition existing = remotePartitions.get(sourceId);
+        if (existing != null) {
+            return existing;
+        }
+        int maxSources = Math.max(1, config.getReplicaMaxRemoteSources());
+        if (remotePartitions.size() >= maxSources) {
+            throw new IllegalStateException("Replica remote source limit reached: " + maxSources);
+        }
+        SourcePartition created = new SourcePartition(sourceId, 0L);
+        remotePartitions.put(sourceId, created);
+        return created;
+    }
+
+    private void handleNodeRevoked(NodeRegistry.OnlineNode evicted) {
+        if (closed || evicted == null) {
+            return;
+        }
+        String revokedNodeId = evicted.getNodeId();
+        Object revokedSessionRef = evicted.getSessionRef();
+        for (TransportSession session : rs.sessions().values()) {
+            String boundNode = session.attr(NODE_ID_KEY);
+            if (!revokedNodeId.equals(boundNode)) {
+                continue;
+            }
+            if (revokedSessionRef != null && revokedSessionRef != session && !evicted.isRevoked()) {
+                continue;
+            }
+            String appName = session.attr(APP_NAME_KEY);
+            String instanceId = session.attr(INSTANCE_ID_KEY);
+            if (appName != null && instanceId != null) {
+                doLocalDeregister(appName, instanceId);
+            }
+            quietly(session::close);
+        }
+    }
+
     @Override
     public void close() {
         closed = true;
+        if (nodeRegistry != null && nodeRevokedListener != null) {
+            nodeRegistry.removeOnNodeRevokedListener(nodeRevokedListener);
+        }
         if (replicaFullSyncTask != null) {
             replicaFullSyncTask.cancel(false);
             replicaFullSyncTask = null;
+        }
+        if (replicaLeaseSweepTask != null) {
+            replicaLeaseSweepTask.cancel(false);
+            replicaLeaseSweepTask = null;
         }
         for (PeerReplicaClient peer : peerClients.values()) {
             quietly(peer::close);
@@ -460,6 +540,38 @@ public class NameserverImpl implements Nameserver {
         if (ownDnsServer) {
             quietly(dnsServer::close);
         }
+    }
+
+    /**
+     * Sweeps remote replica partitions whose last accepted sync exceeded {@code replicaSourceLeaseMillis}.
+     * Atomically clears only expired remote sources without touching local registrations or static DNS records.
+     */
+    public int sweepExpiredRemotePartitions() {
+        long leaseMillis = config.getReplicaSourceLeaseMillis();
+        if (leaseMillis <= 0L) {
+            return 0;
+        }
+        long now = clock.getAsLong();
+        List<AppChangedEventArgs> events = new ArrayList<AppChangedEventArgs>();
+        int expiredCount = 0;
+        synchronized (stateLock) {
+            Iterator<Map.Entry<String, SourcePartition>> it = remotePartitions.entrySet().iterator();
+            while (it.hasNext()) {
+                Map.Entry<String, SourcePartition> entry = it.next();
+                SourcePartition partition = entry.getValue();
+                if (partition.lastSyncAtMillis > 0L && now - partition.lastSyncAtMillis >= leaseMillis) {
+                    clearPartitionStateLocked(partition, events);
+                    it.remove();
+                    expiredCount++;
+                    log.info("ns: expired stale remote replica partition source={} ageMs={}",
+                            entry.getKey(), now - partition.lastSyncAtMillis);
+                }
+            }
+        }
+        for (AppChangedEventArgs ev : events) {
+            publishEventAsync(EVENT_APP_ADDRESS_CHANGED, ev);
+        }
+        return expiredCount;
     }
 
     public Map<String, List<InstanceInfo>> getInstances() {
@@ -540,6 +652,52 @@ public class NameserverImpl implements Nameserver {
     }
 
     @Override
+    public boolean authenticateNode(@NonNull String nodeId, @NonNull String secret) {
+        if (nodeRegistry == null) {
+            throw new UnsupportedOperationException("NodeRegistry authority is not enabled");
+        }
+        RemotingContext ctx = RemotingContext.context();
+        TransportSession session = ctx.getClient();
+        NodeRegistry.OnlineNode online = nodeRegistry.markOnline(nodeId, secret, session, null);
+        InetSocketAddress remote = session.remoteEndpoint();
+        if (remote != null && remote.getAddress() != null) {
+            EndpointCandidate tcpObs = new EndpointCandidate(
+                    EndpointCandidate.familyOf(remote.getAddress()),
+                    remote.getAddress().getHostAddress(),
+                    remote.getPort(),
+                    EndpointCandidate.Protocol.TCP,
+                    EndpointCandidate.CandidateType.TCP_OBSERVED,
+                    "nameserver-rpc",
+                    clock.getAsLong(),
+                    Math.max(1000L, nodeRegistry.getConfig().getOnlineTtlMillis()),
+                    true);
+            nodeRegistry.recordServerObservedCandidate(online.getNodeId(), session, tcpObs);
+        }
+        session.attr(NODE_ID_KEY, online.getNodeId());
+        return true;
+    }
+
+    private String requireAuthenticatedNodeId(TransportSession session) {
+        if (nodeRegistry == null) {
+            return null;
+        }
+        String nodeId = session == null ? null : session.attr(NODE_ID_KEY);
+        if (Strings.isEmpty(nodeId) || !nodeRegistry.isSessionActive(nodeId, session)) {
+            throw new SecurityException("Unauthenticated or revoked Nameserver node session");
+        }
+        return nodeId;
+    }
+
+    private TransportSession currentRpcSessionOrNull() {
+        try {
+            RemotingContext ctx = RemotingContext.context();
+            return ctx == null ? null : ctx.getClient();
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    @Override
     public int register(@NonNull String appName, int weight, Set<InetSocketAddress> serverEndpoints) {
         return register(appName, weight, null, serverEndpoints);
     }
@@ -550,8 +708,23 @@ public class NameserverImpl implements Nameserver {
 
         RemotingContext ctx = RemotingContext.context();
         TransportSession session = ctx.getClient();
+        String authenticatedNodeId = requireAuthenticatedNodeId(session);
         String normApp = normalizeAppName(appName);
         String resolvedInstanceId = resolveSessionInstanceId(session, instanceId);
+        if (authenticatedNodeId != null) {
+            // Bind instanceId ownership to verified nodeId so a node cannot spoof another node's instanceId
+            String prefix = authenticatedNodeId + ":";
+            if (!resolvedInstanceId.equals(authenticatedNodeId) && !resolvedInstanceId.startsWith(prefix)) {
+                resolvedInstanceId = prefix + resolvedInstanceId;
+            }
+            Map<String, String> svcMeta = new HashMap<String, String>();
+            InetAddress remoteAddr = session.remoteEndpoint() == null ? null : session.remoteEndpoint().getAddress();
+            if (remoteAddr != null) {
+                svcMeta.put("remoteIp", remoteAddr.getHostAddress());
+            }
+            svcMeta.put("weight", Integer.toString(weight));
+            nodeRegistry.registerLiveService(authenticatedNodeId, session, normApp, resolvedInstanceId, svcMeta);
+        }
         session.attr(APP_NAME_KEY, normApp);
         session.attr(INSTANCE_ID_KEY, resolvedInstanceId);
         InetAddress addr = session.remoteEndpoint().getAddress();
@@ -600,11 +773,15 @@ public class NameserverImpl implements Nameserver {
     public void deregister() {
         RemotingContext ctx = RemotingContext.context();
         TransportSession session = ctx.getClient();
+        String authenticatedNodeId = requireAuthenticatedNodeId(session);
         String appName = session.attr(APP_NAME_KEY);
         if (appName == null) {
             throw new InvalidException("Must register first");
         }
         String instanceId = resolveSessionInstanceId(session, null);
+        if (nodeRegistry != null && authenticatedNodeId != null) {
+            nodeRegistry.deregisterLiveService(authenticatedNodeId, session, appName, instanceId);
+        }
         doLocalDeregister(appName, instanceId);
     }
 
@@ -639,6 +816,10 @@ public class NameserverImpl implements Nameserver {
 
     @Override
     public <T extends Serializable> void attr(@NonNull String appName, @NonNull String key, T value) {
+        TransportSession rpcSession = currentRpcSessionOrNull();
+        if (rpcSession != null) {
+            requireAuthenticatedNodeId(rpcSession);
+        }
         String normApp = normalizeAppName(appName);
         ReplicaDeltaRequest delta;
         synchronized (stateLock) {
@@ -678,6 +859,7 @@ public class NameserverImpl implements Nameserver {
     public <T extends Serializable> void instanceAttr(@NonNull String appName, @NonNull String key, T value) {
         RemotingContext ctx = RemotingContext.context();
         TransportSession session = ctx.getClient();
+        requireAuthenticatedNodeId(session);
         String normApp = normalizeAppName(appName);
         String instanceId = resolveSessionInstanceId(session, null);
         String instKey = instanceKey(normApp, instanceId);
@@ -849,9 +1031,8 @@ public class NameserverImpl implements Nameserver {
         Set<InetSocketAddress> newEndpointsToWatch = null;
         ReplicaAck ack;
         synchronized (stateLock) {
-            SourcePartition partition = remotePartitions.computeIfAbsent(
-                    request.getSourceId(), id -> new SourcePartition(id, 0L));
-            long now = System.currentTimeMillis();
+            SourcePartition partition = getOrCreateRemotePartitionLocked(request.getSourceId());
+            long now = clock.getAsLong();
             pruneExpiredTombstonesLocked(partition, now);
 
             long incomingEpoch = request.getSourceEpoch();
@@ -861,6 +1042,7 @@ public class NameserverImpl implements Nameserver {
                 return new ReplicaAck(false, false, partition.epoch, partition.lastAppliedVersion);
             }
             if (incomingEpoch == partition.epoch && incomingVersion <= partition.lastAppliedVersion) {
+                partition.lastSyncAtMillis = now;
                 // Idempotent duplicate / older version
                 return new ReplicaAck(true, false, partition.epoch, partition.lastAppliedVersion);
             }
@@ -888,6 +1070,10 @@ public class NameserverImpl implements Nameserver {
                     }
                     String normApp = normalizeAppName(rec.getAppName());
                     String instKey = instanceKey(normApp, rec.getInstanceId());
+                    int maxInstPerSource = Math.max(1, config.getReplicaMaxInstancesPerSource());
+                    if (!partition.instances.containsKey(instKey) && partition.instances.size() >= maxInstPerSource) {
+                        throw new IllegalStateException("Replica source instance cap reached (" + maxInstPerSource + ") for " + request.getSourceId());
+                    }
                     ReplicaTombstone tomb = partition.tombstones.get(instKey);
                     if (tomb != null && !tomb.isExpired(now)
                             && (tomb.getSourceEpoch() > incomingEpoch
@@ -948,6 +1134,7 @@ public class NameserverImpl implements Nameserver {
             if (!needFullSync) {
                 partition.lastAppliedVersion = incomingVersion;
             }
+            partition.lastSyncAtMillis = now;
             ack = new ReplicaAck(true, needFullSync, partition.epoch, partition.lastAppliedVersion);
         }
 
@@ -986,9 +1173,8 @@ public class NameserverImpl implements Nameserver {
         Set<InetSocketAddress> newEndpointsToWatch = null;
         ReplicaAck ack;
         synchronized (stateLock) {
-            SourcePartition partition = remotePartitions.computeIfAbsent(
-                    page.getSourceId(), id -> new SourcePartition(id, 0L));
-            long now = System.currentTimeMillis();
+            SourcePartition partition = getOrCreateRemotePartitionLocked(page.getSourceId());
+            long now = clock.getAsLong();
             pruneExpiredTombstonesLocked(partition, now);
 
             long incomingEpoch = page.getSourceEpoch();
@@ -1001,6 +1187,7 @@ public class NameserverImpl implements Nameserver {
             }
             if (incomingEpoch == partition.epoch && incomingVersion == partition.lastAppliedVersion
                     && partition.staging == null) {
+                partition.lastSyncAtMillis = now;
                 // Idempotent replay of already committed snapshot
                 return new ReplicaAck(true, false, partition.epoch, partition.lastAppliedVersion);
             }
@@ -1012,13 +1199,18 @@ public class NameserverImpl implements Nameserver {
                 partition.staging = staging;
             }
 
+            int maxInstPerSource = Math.max(1, config.getReplicaMaxInstancesPerSource());
             if (page.getRecords() != null) {
                 for (ReplicaRecord rec : page.getRecords()) {
                     if (rec == null || Strings.isEmpty(rec.getAppName()) || Strings.isEmpty(rec.getInstanceId()) || rec.getAddress() == null) {
                         continue;
                     }
                     String normApp = normalizeAppName(rec.getAppName());
-                    staging.records.put(instanceKey(normApp, rec.getInstanceId()),
+                    String key = instanceKey(normApp, rec.getInstanceId());
+                    if (!staging.records.containsKey(key) && staging.records.size() >= maxInstPerSource) {
+                        throw new IllegalStateException("Replica snapshot exceeds maxInstancesPerSource=" + maxInstPerSource);
+                    }
+                    staging.records.put(key,
                             new ReplicaRecord(normApp, rec.getInstanceId(), rec.getAddress(), rec.getWeight(), rec.getAttributes()));
                 }
             }
@@ -1096,6 +1288,7 @@ public class NameserverImpl implements Nameserver {
                 pruneExpiredTombstonesLocked(partition, now);
                 partition.epoch = incomingEpoch;
                 partition.lastAppliedVersion = incomingVersion;
+                partition.lastSyncAtMillis = now;
                 partition.staging = null;
 
                 for (String app : affectedApps) {

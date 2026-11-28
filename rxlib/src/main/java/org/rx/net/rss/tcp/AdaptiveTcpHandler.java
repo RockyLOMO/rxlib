@@ -36,6 +36,9 @@ public final class AdaptiveTcpHandler extends ChannelDuplexHandler {
     private long tcpTxBytes, tcpRxBytes, udpTxBytes, udpRxBytes;
     private long tcpTxFrames, tcpRxFrames, udpTxFrames, udpRxFrames;
 
+    private final boolean deferredUdp;
+    private boolean ownsPort;
+
     public static void install(Channel tcp, long id, byte[] key, AdaptiveUdpPort port, int primary, int alias, int profile) {
         install(tcp, id, key, port, primary, alias, profile, primary != alias, null);
     }
@@ -57,17 +60,35 @@ public final class AdaptiveTcpHandler extends ChannelDuplexHandler {
         ChannelPipeline pipeline = tcp.pipeline();
         LengthFieldBasedFrameDecoder decoder = new LengthFieldBasedFrameDecoder(
                 AdaptiveTcpStream.MAX_TCP_FRAME + 2, 0, 2, 0, 2);
-        if (pipeline.context(org.rx.net.RssEgressCodec.INNER_ANCHOR) == null) {
+        if (pipeline.context(org.rx.net.EgressCodec.INNER_ANCHOR) == null) {
             if (pipeline.context(org.rx.net.socks.RssSocksCarrier.TCP_HANDLER) != null) {
                 pipeline.addAfter(org.rx.net.socks.RssSocksCarrier.TCP_HANDLER, "rssAdaptiveLength", decoder);
             } else {
                 pipeline.addFirst("rssAdaptiveLength", decoder);
             }
         } else {
-            pipeline.addAfter(org.rx.net.RssEgressCodec.INNER_ANCHOR, "rssAdaptiveLength", decoder);
+            pipeline.addAfter(org.rx.net.EgressCodec.INNER_ANCHOR, "rssAdaptiveLength", decoder);
         }
         pipeline.addAfter("rssAdaptiveLength", "rssAdaptive",
-                new AdaptiveTcpHandler(id, key, port, primary, alias, profile, udpHop, udpTarget, frameLimit, udpHealthListener));
+                new AdaptiveTcpHandler(id, key, port, primary, alias, profile, udpHop, udpTarget, frameLimit, udpHealthListener, false, port != null));
+    }
+
+    /**
+     * Installs {@link AdaptiveTcpHandler} in deferred-UDP mode (TCP-only until a verified peer UDP path is attached,
+     * e.g. when reliable transport runs over an in-process RRP RAW Relay {@code LocalChannel}).
+     */
+    public static void installDeferred(Channel tcp, long id, byte[] key, boolean serverRole, int wireMtu) {
+        int frameLimit = AdaptiveUdpPort.frameLimit(wireMtu);
+        ChannelPipeline pipeline = tcp.pipeline();
+        LengthFieldBasedFrameDecoder decoder = new LengthFieldBasedFrameDecoder(
+                AdaptiveTcpStream.MAX_TCP_FRAME + 2, 0, 2, 0, 2);
+        if (pipeline.context(org.rx.net.EgressCodec.INNER_ANCHOR) == null) {
+            pipeline.addFirst("rssAdaptiveLength", decoder);
+        } else {
+            pipeline.addAfter(org.rx.net.EgressCodec.INNER_ANCHOR, "rssAdaptiveLength", decoder);
+        }
+        pipeline.addAfter("rssAdaptiveLength", "rssAdaptive",
+                new AdaptiveTcpHandler(id, key, null, 0, 0, 0, false, null, frameLimit, null, true, serverRole));
     }
 
     public int profile() {
@@ -76,7 +97,7 @@ public final class AdaptiveTcpHandler extends ChannelDuplexHandler {
 
     private AdaptiveTcpHandler(long id, byte[] key, AdaptiveUdpPort port, int primaryPort, int aliasPort, int profile,
                                boolean udpHop, InetSocketAddress udpTarget, int frameLimit,
-                               Consumer<Boolean> udpHealthListener) {
+                               Consumer<Boolean> udpHealthListener, boolean deferredUdp, boolean serverRole) {
         this.udpFrameLimit = frameLimit;
         this.profile = profile;
         this.primaryPort = primaryPort;
@@ -87,7 +108,8 @@ public final class AdaptiveTcpHandler extends ChannelDuplexHandler {
         this.id = id;
         this.key = key;
         this.port = port;
-        server = port != null;
+        this.deferredUdp = deferredUdp;
+        this.server = serverRole;
     }
 
     @Override public void handlerAdded(ChannelHandlerContext ctx) {
@@ -99,6 +121,9 @@ public final class AdaptiveTcpHandler extends ChannelDuplexHandler {
             if (remote.getAddress() != null) {
                 stream.setPathKey(remote.getAddress().getHostAddress() + (server ? ":s2c" : ":c2s"));
             }
+        }
+        if (deferredUdp) {
+            return;
         }
         if (!server && !udpHop && udpTarget != null && udpTarget.isUnresolved()) {
             org.rx.net.Sockets.resolveUdpEndpointAsync(udpTarget, null).whenCompleteAsync((endpoint, error) -> {
@@ -118,13 +143,71 @@ public final class AdaptiveTcpHandler extends ChannelDuplexHandler {
 
     private void attachUdp(InetSocketAddress endpoint) {
         try {
-            if (server) port.register(id, key, ctx.channel(), udpHop, udpFrameLimit, this::receiveUdp);
-            else port = AdaptiveUdpPort.client(id, key, ctx.channel(), primaryPort, aliasPort,
-                    endpoint, udpFrameLimit, this::receiveUdp);
+            if (server) {
+                port.register(id, key, ctx.channel(), udpHop, udpFrameLimit, this::receiveUdp);
+                ownsPort = false;
+            } else {
+                port = AdaptiveUdpPort.client(id, key, ctx.channel(), primaryPort, aliasPort,
+                        endpoint, udpFrameLimit, this::receiveUdp);
+                ownsPort = true;
+            }
         } catch (RuntimeException unavailable) {
             port = null;
+            ownsPort = false;
             DiagnosticMetrics.record("rss.tcp.adaptive.udpUnavailable", 1);
             notifyUdpHealth(false);
+        }
+    }
+
+    /**
+     * Attaches a bidirectionally verified peer UDP path (direct or NAT-punched) to this handler,
+     * preserving strict exact-peer source binding, per-stream HMAC-SHA256, replay window, and reliable
+     * TCP/Relay repair semantics. Safe to call from any thread (executes on the channel's EventLoop).
+     */
+    public void attachVerifiedUdpPath(AdaptiveUdpPort sharedPort, InetSocketAddress verifiedPeer) {
+        if (sharedPort == null || verifiedPeer == null || verifiedPeer.isUnresolved()
+                || verifiedPeer.getAddress() == null || verifiedPeer.getPort() <= 0) {
+            throw new IllegalArgumentException("Verified UDP path requires sharedPort and resolved peer with port > 0");
+        }
+        ChannelHandlerContext currentCtx = this.ctx;
+        if (currentCtx == null || !currentCtx.channel().isActive()) {
+            return;
+        }
+        Runnable task = () -> {
+            if (closing || !currentCtx.channel().isActive() || stream == null) {
+                return;
+            }
+            AdaptiveUdpPort oldPort = this.port;
+            boolean oldOwned = this.ownsPort;
+            if (oldPort != null) {
+                oldPort.unregister(id);
+                if (oldOwned && oldPort != sharedPort) {
+                    oldPort.close();
+                }
+            }
+            try {
+                sharedPort.registerVerifiedPeer(id, key, currentCtx.channel(), verifiedPeer,
+                        server, udpFrameLimit, this::receiveUdp);
+                this.port = sharedPort;
+                this.ownsPort = false;
+                stream.setPathKey(verifiedPeer.getAddress().getHostAddress() + ":" + verifiedPeer.getPort()
+                        + (server ? ":s2c" : ":c2s"));
+                stream.resetProbeForNewPath();
+                started = true;
+                stream.tick();
+                currentCtx.flush();
+                schedule();
+            } catch (RuntimeException unavailable) {
+                this.port = null;
+                this.ownsPort = false;
+                DiagnosticMetrics.record("rss.tcp.adaptive.udpUnavailable", 1);
+                notifyUdpHealth(false);
+            }
+        };
+        if (currentCtx.executor().inEventLoop()) {
+            task.run();
+        } else {
+            currentCtx.executor().execute(task);
         }
     }
 
@@ -372,7 +455,12 @@ public final class AdaptiveTcpHandler extends ChannelDuplexHandler {
             DiagnosticMetrics.record("rss.tcp.adaptive.tx.transportBytes", tcpTxBytes + 2 * tcpTxFrames, "path=tcp");
             DiagnosticMetrics.record("rss.tcp.adaptive.rx.transportBytes", tcpRxBytes + 2 * tcpRxFrames, "path=tcp");
         }
-        if (port != null && !server) port.close();
+        if (port != null) {
+            port.unregister(id);
+            if (ownsPort) {
+                port.close();
+            }
+        }
         // Server registrations are removed by the TCP close future using peer identity.
     }
 }

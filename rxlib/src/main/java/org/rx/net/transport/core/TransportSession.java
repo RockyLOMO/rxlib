@@ -4,12 +4,15 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.util.AttributeKey;
+import org.rx.net.EgressCodec;
+import org.rx.net.rss.tcp.AdaptiveTcpHandler;
 
 import java.net.InetSocketAddress;
 import java.util.function.BiConsumer;
 
 /**
- * Reliable ordered {@link ByteBuf} frame session over TCP with optional single-port daily adaptive UDP fast path.
+ * Reliable ordered {@link ByteBuf} frame session over TCP (or virtual LocalChannel carrier)
+ * with optional post-handshake AEAD encryption, business compression, and single-port daily adaptive UDP fast path.
  * <p>
  * Ownership contract:
  * <ul>
@@ -33,6 +36,31 @@ public interface TransportSession extends AutoCloseable {
 
     /** True if the session negotiated adaptive UDP support during handshake. */
     boolean isAdaptiveUdpNegotiated();
+
+    /** True if per-session AES-128-GCM AEAD encryption is active on this session. */
+    default boolean isEncrypted() {
+        return false;
+    }
+
+    /** True if post-handshake business zlib compression is active on this session. */
+    default boolean isCompressed() {
+        return false;
+    }
+
+    /** Returns the negotiated physical TCP {@link EgressCodec} for this session. */
+    default EgressCodec egressCodec() {
+        return EgressCodec.NONE;
+    }
+
+    /** Returns the installed {@link AdaptiveTcpHandler}, or {@code null} in pure TCP mode. */
+    default AdaptiveTcpHandler adaptiveHandler() {
+        return null;
+    }
+
+    /** Returns the derived 32-byte per-session adaptive UDP HMAC key (when adaptive mode is negotiated), or {@code null}. */
+    default byte[] adaptiveUdpKey() {
+        return null;
+    }
 
     InetSocketAddress remoteEndpoint();
 

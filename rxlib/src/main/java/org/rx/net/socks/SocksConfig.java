@@ -86,7 +86,7 @@ public class SocksConfig extends SocketConfig {
         dailyUdpFeatures = features;
     }
     public static final int ADAPTIVE_GAME = RssProfile.GAME_ID, ADAPTIVE_WEAK = RssProfile.WEAK_ID;
-    private org.rx.net.RssEgressCodec rssEgressCodec = org.rx.net.RssEgressCodec.NONE;
+    private org.rx.net.EgressCodec egressCodec = org.rx.net.EgressCodec.NONE;
     private boolean adaptiveTcp;
     private int adaptiveProfile;
     private boolean udpHop = true;

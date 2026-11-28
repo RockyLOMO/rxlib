@@ -30,7 +30,6 @@ public class SocketConfig implements Serializable {
     private static final long serialVersionUID = 5312790348211652335L;
 
     public static final AttributeKey<SocketConfig> ATTR_CONF = AttributeKey.valueOf("conf");
-    public static final AttributeKey<Boolean> ATTR_PSEUDO_SVR = AttributeKey.valueOf("pseudoSvr");
     static final AttributeKey<BiAction<Channel>> ATTR_INIT_FN = AttributeKey.valueOf("_initFn");
 
     public static final SocketConfig EMPTY = new SocketConfig();
@@ -40,6 +39,8 @@ public class SocketConfig implements Serializable {
     private OptimalSettings optimalSettings;
     private int connectTimeoutMillis;
     private FlagsEnum<TransportFlags> transportFlags;
+    /** Shared physical TCP egress codec configuration (NONE / ZLIB_STORED / HTTP, or server AUTO). */
+    private EgressConfig egressConfig;
     /**
      * Linux epoll 下 SO_REUSEPORT 监听分片数量。
      * 仅在通过 {@link org.rx.net.Sockets#bindChannels(io.netty.bootstrap.ServerBootstrap, java.net.SocketAddress, SocketConfig)}

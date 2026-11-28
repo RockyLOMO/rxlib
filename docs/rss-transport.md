@@ -67,19 +67,19 @@ RSS 上游作为完整逻辑对象同时具备 TCP 与 UDP 能力，配置在 `s
 - 端口 `53` 保留给 `RssDnsInterceptor`，不允许配置进上述任意保护或旁路列表；同一协议的保护表与旁路表不允许重叠。
 - **RSS 业务 TCP 加密统一为 PSK AES-128-GCM（`RssHopAes`）**：两端读取同一个 32 字节 Base64 密钥 `RSS_TCP_AES_KEY`，由双向随机数派生每连接、每方向独立的 128 位密钥；不再维护 RSS 专用证书 TLS（`RssHopTls` 及 `RSS_TCP_TLS_*` 已移除）。缺失或非法密钥时配置拒绝启动，不静默退回明文。
 
-## 4. 独立真实 TCP 出口包装（`RssEgressCodec`）
+## 4. 统一公共 TCP 出口包装（`EgressCodec`）
 
-真实 TCP 连续流出口包装与业务实际压缩（zlib 3）完全解耦，**默认关闭（`none`），按需显式开启**：
+真实 TCP 连续流出口包装已收敛为公共组件 `org.rx.net.EgressCodec` / `EgressConfig` / `EgressPipeline`（统一服务 RSS、`Transport Core v2`、`RrpServer`/`RrpClient` 与 `RendezvousService`，原 RSS 专属 `RssEgressCodec`、`RSZ\x01` 自定义前缀及旧 `HttpPseudoHeader*` 已删除），与业务实际压缩（`zlib 3`）完全解耦，**默认关闭（`none`），按需显式开启**：
 
 ```yaml
 # 可配在 Client 顶层（全 RSS 路由默认）或单个 socksServers 条目下（按路由覆盖）
 egress:
-  tcpCodec: none          # 可选：none（默认） | zlib-stored
+  tcpCodec: none          # 可选：none（默认） | zlib-stored | http
   udpCodec: none          # 当前仅允许 none
 ```
 
-- 服务端通过启动参数 `-tcpEgressCodec=none`（默认）、`-tcpEgressCodec=zlib-stored`（强制）或 `-tcpEgressCodec=auto`（单端口按连接自动识别 `RSZ\x01` 与裸连接，适用于 `plain` 开启 `zlib-stored` 而增强模式使用 `none` 的混跑场景）。Client 端支持在顶层 `egress`、单条 `socksServers[].egress` 或单用户 `shadowUsers[].transport.egress` 分别配置 `tcpCodec: none | zlib-stored`。
-- `zlib-stored` 使用 `RSZ\x01`（`0x52535a01`）4 字节魔数前缀 + DEFLATE Level 0（无实际压缩的 stored block），在 Netty pipeline 最外层包裹真实 RSS TCP 物理流（`plain` 主流以及增强模式下的 TCP 主通道与修复帧）；`AdaptiveTcpStream` 的 UDP 快路径与普通业务 UDP 均**不经过** `RssEgressCodec`。
+- 服务端通过启动参数 `-tcpEgressCodec=none`（默认）、`-tcpEgressCodec=zlib-stored`、`-tcpEgressCodec=http` 或 `-tcpEgressCodec=auto`（单端口 1-shot `EgressAutoDetector` 按显式白名单 `allowedCodecs` 自动识别）配置。Client 端支持在顶层 `egress`、单条 `socksServers[].egress` 或单用户 `shadowUsers[].transport.egress` 分别配置 `tcpCodec: none | zlib-stored | http`。
+- `zlib-stored` 使用纯标准 RFC 1950 `ZLIB` 2 字节头（`0x78 0x01`）+ DEFLATE Level 0 stored block（无私有 `RSZ` 魔数），位于加密层最外侧包裹真实 TCP 物理流；`http` 采用方案 A 零拷贝全双工流式封装（客户端发送 `POST` + `Content-Type: application/json`，服务端返回 `200 OK` + `Content-Type: application/json`，消息体直接承载加密后的 `ByteBuf` 分片并强制 header 字节上限与超时）。`AdaptiveTcpStream` 的 UDP 快路径与普通业务 UDP 均**不经过** `EgressCodec`。
 - `none` 路径零额外 handler、零额外包装开销；标准第三方 `socks5` 路由禁止配置非 `none` 的 `egress.tcpCodec`。
 - 不同 `egress.tcpCodec` 在 `TcpWarmPoolKey` 与路由配置缓存中完全隔离，热更新仅作用于新连接。
 

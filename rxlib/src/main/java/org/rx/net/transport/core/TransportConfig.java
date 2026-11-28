@@ -3,6 +3,8 @@ package org.rx.net.transport.core;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
+import org.rx.net.EgressCodec;
+import org.rx.net.EgressConfig;
 import org.rx.net.rss.RssUdpMtuBudget;
 import org.rx.net.transport.TcpClientConfig;
 import org.rx.net.transport.TcpServerConfig;
@@ -16,15 +18,18 @@ import java.net.InetSocketAddress;
  */
 @Getter
 @Setter
-@ToString
+@ToString(exclude = {"authSecret"})
 public final class TransportConfig implements Serializable {
-    private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 2L;
     public static final int DEFAULT_UDP_MTU = 1200;
     public static final int DEFAULT_MAX_FRAME_BYTES = 16 * 1024 * 1024;
     public static final int DEFAULT_HANDSHAKE_TIMEOUT_MILLIS = 5000;
+    public static final int DEFAULT_COMPRESSION_LEVEL = 3;
 
     private TcpClientConfig tcpClientConfig = new TcpClientConfig();
     private TcpServerConfig tcpServerConfig;
+    /** Physical TCP egress framing (client explicit NONE/ZLIB_STORED/HTTP; server may use AUTO + allowedCodecs). */
+    private EgressConfig egressConfig = EgressConfig.none();
     /** Enables single-port daily AdaptiveTcpStream UDP fast path with TCP repair; false creates zero UDP sockets. */
     private boolean enableAdaptiveUdp = true;
     /** Server-side single UDP port for daily adaptive mode (0 = ephemeral). Port hopping is never enabled here. */
@@ -33,7 +38,12 @@ public final class TransportConfig implements Serializable {
     private int udpMtu = DEFAULT_UDP_MTU;
     private int maxFrameBytes = DEFAULT_MAX_FRAME_BYTES;
     private int handshakeTimeoutMillis = DEFAULT_HANDSHAKE_TIMEOUT_MILLIS;
-    /** Optional shared secret mixed into per-session AdaptiveUdpPort HMAC-SHA256 key derivation. */
+    /** Optional post-handshake business zlib compression (installed strictly after authenticated handshake). */
+    private boolean enableCompression;
+    private int compressionLevel = DEFAULT_COMPRESSION_LEVEL;
+    /** Optional post-handshake AES-128-GCM AEAD stream encryption (requires non-empty authSecret). */
+    private boolean enableEncryption;
+    /** Shared secret for handshake HMAC, per-session AEAD key derivation, and AdaptiveUdpPort HMAC-SHA256. */
     private String authSecret;
     private String peerId;
 
@@ -61,6 +71,21 @@ public final class TransportConfig implements Serializable {
         TransportConfig config = dailyServer(listenPort);
         config.setEnableAdaptiveUdp(false);
         return config;
+    }
+
+    public void setEgressCodec(EgressCodec codec) {
+        this.egressConfig = codec == EgressCodec.AUTO ? EgressConfig.serverAutoAll() : EgressConfig.server(codec);
+    }
+
+    public EgressConfig effectiveEgressConfig() {
+        return egressConfig == null ? EgressConfig.none() : egressConfig;
+    }
+
+    public void setCompressionLevel(int level) {
+        if (level < 1 || level > 9) {
+            throw new IllegalArgumentException("compressionLevel must be 1..9: " + level);
+        }
+        this.compressionLevel = level;
     }
 
     public void setUdpMtu(int udpMtu) {

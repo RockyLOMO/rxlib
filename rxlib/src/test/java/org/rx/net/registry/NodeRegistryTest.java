@@ -128,7 +128,7 @@ class NodeRegistryTest {
     }
 
     @Test
-    @Timeout(40)
+    @Timeout(90)
     void scale1024OnlineNodesEnforcesAllBudgetsPaginationTtlAndPrune(@TempDir Path tempDir) {
         AtomicLong clock = new AtomicLong(5_000_000L);
         NodeRegistryConfig cfg = newConfig(tempDir.resolve("reg-scale").toAbsolutePath().toString());
@@ -137,6 +137,8 @@ class NodeRegistryTest {
         cfg.setMaxAttrsBytesPerNode(8192);
         cfg.setMaxColdCacheBytes(64 * 1024); // tight cold cache weight to exercise LRU eviction
         cfg.setMaxQueryPageSize(50);
+        cfg.setMaxAuthAttemptsPerSecond(0); // test 1024 logins at single frozen timestamp
+        cfg.setPbkdf2Iterations(1_000); // keep real salted PBKDF2-HMAC-SHA256 while fitting JDK 8 software SHA-256 within timeout
 
         try (NodeRegistry reg = new NodeRegistry(cfg, null, clock::get)) {
             // Enroll 1030 nodes (1024 online + 6 offline)
@@ -293,6 +295,148 @@ class NodeRegistryTest {
             reg.flushNow();
         } finally {
             pool.shutdownNow();
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void openIfEnabledDisabledReturnsNullAndCreatesNoDb(@TempDir Path tempDir) {
+        NodeRegistryConfig disabled = new NodeRegistryConfig();
+        disabled.setEnabled(false);
+        disabled.setDbPath(tempDir.resolve("should-not-exist").toAbsolutePath().toString());
+        assertNull(NodeRegistry.openIfEnabled(disabled));
+        assertNull(NodeRegistry.openIfEnabled(null));
+        assertFalse(tempDir.resolve("should-not-exist.mv.db").toFile().exists());
+    }
+
+    @Test
+    @Timeout(20)
+    void atomicOnlineCapReconnectReplacementStaleSessionAndServiceBudgets(@TempDir Path tempDir) {
+        AtomicLong clock = new AtomicLong(10_000_000L);
+        NodeRegistryConfig cfg = newConfig(tempDir.resolve("reg-hardening").toAbsolutePath().toString());
+        cfg.setMaxOnlineNodes(2);
+        cfg.setMaxLiveServicesPerNode(2);
+        cfg.setMaxPersistentServicesPerNode(2);
+        cfg.setMaxServiceMetadataBytesPerNode(64);
+        cfg.setMaxQueryPageSize(2);
+        cfg.setMaxAuthAttemptsPerSecond(0);
+
+        List<Object> revokedSessions = Collections.synchronizedList(new ArrayList<Object>());
+        try (NodeRegistry reg = new NodeRegistry(cfg, null, clock::get)) {
+            reg.addOnNodeRevokedListener(n -> revokedSessions.add(n.getSessionRef()));
+            reg.enrollNode("n1", "t1", "p1", Collections.singleton("member"), null);
+            reg.enrollNode("n2", "t1", "p2", Collections.singleton("member"), null);
+            reg.enrollNode("n3", "t1", "p3", Collections.singleton("member"), null);
+
+            Object sess1Old = new Object();
+            Object sess1New = new Object();
+            Object sess2 = new Object();
+            reg.markOnline("n1", "p1", sess1Old, null);
+            reg.markOnline("n2", "p2", sess2, null);
+            // Cap=2 reached for distinct node n3
+            assertThrows(IllegalStateException.class, () -> reg.markOnline("n3", "p3", new Object(), null));
+
+            // Reconnect replacement for n1 succeeds without consuming extra slot and revokes old session
+            reg.markOnline("n1", "p1", sess1New, null);
+            assertEquals(2, reg.onlineNodeCount());
+            assertTrue(revokedSessions.contains(sess1Old), "Replacing session must revoke old session");
+
+            // Stale session CANNOT heartbeat, registerLiveService, deregisterLiveService, or markOffline
+            assertFalse(reg.heartbeat("n1", sess1Old, null));
+            assertTrue(reg.heartbeat("n1", sess1New, null));
+            assertThrows(SecurityException.class, () -> reg.registerLiveService("n1", sess1Old, "svc", "i1", null));
+            assertFalse(reg.markOffline("n1", sess1Old));
+            assertNotNull(reg.getOnlineNode("n1"));
+
+            // Live service per-node cap (2) and metadata byte cap (64B) enforced
+            reg.registerLiveService("n1", sess1New, "svc", "i1", Collections.singletonMap("k", "1234567890"));
+            reg.registerLiveService("n1", sess1New, "svc", "i2", Collections.singletonMap("k", "1234567890"));
+            assertThrows(IllegalStateException.class, () -> reg.registerLiveService("n1", sess1New, "svc", "i3", null));
+            // Oversized metadata on existing instance rejected
+            char[] bigMeta = new char[80];
+            Arrays.fill(bigMeta, 'm');
+            assertThrows(IllegalArgumentException.class,
+                    () -> reg.registerLiveService("n1", sess1New, "svc", "i1", Collections.singletonMap("k", new String(bigMeta))));
+
+            // Stale session cannot deregister new session's live service
+            reg.deregisterLiveService("n1", sess1Old, "svc", "i1");
+            assertEquals(2, reg.discoverLiveServices("n2", "svc", 0, 10).size());
+
+            // Paginated live service discovery clamps limit to maxQueryPageSize=2
+            reg.registerLiveService("n2", sess2, "svc", "i3", null);
+            List<LiveService> p1 = reg.discoverLiveServices("n2", "svc", 0, 10);
+            List<LiveService> p2 = reg.discoverLiveServices("n2", "svc", 2, 10);
+            assertEquals(2, p1.size());
+            assertEquals(1, p2.size());
+
+            // Persistent service per-node cap (2) enforced
+            reg.setPersistentServiceConfig("n1", "svc", "p1", "{\"a\":1}");
+            reg.setPersistentServiceConfig("n1", "svc", "p2", "{\"a\":2}");
+            assertThrows(IllegalArgumentException.class, () -> reg.setPersistentServiceConfig("n1", "svc", "p3", "{\"a\":3}"));
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void authRateLimitAndConcurrentFlushAttributeLinearizability(@TempDir Path tempDir) throws Exception {
+        AtomicLong clock = new AtomicLong(20_000_000L);
+        String dbPath = tempDir.resolve("reg-rate").toAbsolutePath().toString();
+        EntityDatabaseImpl realDb = new EntityDatabaseImpl(dbPath, null, 2);
+        CountDownLatch enteredFlush = new CountDownLatch(1);
+        CountDownLatch releaseFlush = new CountDownLatch(1);
+        AtomicBoolean pauseNextCommit = new AtomicBoolean();
+        EntityDatabase slowDb = (EntityDatabase) java.lang.reflect.Proxy.newProxyInstance(
+                EntityDatabase.class.getClassLoader(),
+                new Class<?>[]{EntityDatabase.class},
+                (proxy, method, args) -> {
+                    if ("withConnection".equals(method.getName()) && pauseNextCommit.compareAndSet(true, false)) {
+                        enteredFlush.countDown();
+                        releaseFlush.await(5, TimeUnit.SECONDS);
+                    }
+                    try {
+                        return method.invoke(realDb, args);
+                    } catch (java.lang.reflect.InvocationTargetException ite) {
+                        throw ite.getCause();
+                    }
+                });
+
+        NodeRegistryConfig cfg = newConfig(dbPath);
+        cfg.setMaxAuthAttemptsPerSecond(3);
+        cfg.setMaxAttrsBytesPerNode(1024);
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try (NodeRegistry reg = new NodeRegistry(cfg, slowDb, clock::get)) {
+            reg.enrollNode("rl-1", "t1", "secret", Collections.singleton("member"), null);
+            // Token bucket allows 3 attempts at same timestamp, 4th rejected fail-closed
+            assertTrue(reg.authenticate("rl-1", "secret"));
+            assertTrue(reg.authenticate("rl-1", "secret"));
+            assertTrue(reg.authenticate("rl-1", "secret"));
+            assertFalse(reg.authenticate("rl-1", "secret"), "4th auth attempt within 0ms must be rate-limited");
+            assertThrows(SecurityException.class, () -> reg.markOnline("rl-1", "secret", "s", null));
+            assertTrue(reg.authRejectedCount() >= 2L);
+            // Advance clock 1 second -> tokens refill
+            clock.addAndGet(1000L);
+            assertTrue(reg.authenticate("rl-1", "secret"));
+
+            // In-flight flush keeps pendingPersistBytes > 0 AND keeps attributes visible to concurrent setAttribute budget check
+            char[] v500 = new char[500];
+            Arrays.fill(v500, 'a');
+            reg.setAttribute("rl-1", "k1", new String(v500));
+            pauseNextCommit.set(true);
+            java.util.concurrent.Future<Integer> flushFut = pool.submit(reg::flushNow);
+            assertTrue(enteredFlush.await(5, TimeUnit.SECONDS));
+            assertTrue(reg.pendingPersistBytes() > 0L, "in-flight flush bytes must remain accounted");
+            // While k1 (502B) is in-flight, adding k2 (600B) MUST see k1 and reject (> 1024B budget)
+            char[] v600 = new char[600];
+            Arrays.fill(v600, 'b');
+            assertThrows(IllegalArgumentException.class, () -> reg.setAttribute("rl-1", "k2", new String(v600)));
+            releaseFlush.countDown();
+            assertEquals(1, flushFut.get(5, TimeUnit.SECONDS).intValue());
+            assertEquals(0L, reg.pendingPersistBytes());
+            assertEquals(new String(v500), reg.getAttributes("rl-1").get("k1"));
+        } finally {
+            pool.shutdownNow();
+            realDb.close();
         }
     }
 

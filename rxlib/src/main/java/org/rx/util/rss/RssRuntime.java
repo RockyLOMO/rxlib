@@ -14,6 +14,11 @@ import org.rx.net.Sockets;
 import org.rx.net.dns.DnsResolveInterceptor;
 import org.rx.net.dns.DnsServer;
 import org.rx.net.nameserver.NameserverImpl;
+import org.rx.net.registry.NodeRegistry;
+import org.rx.net.rendezvous.RendezvousConfig;
+import org.rx.net.rendezvous.RendezvousService;
+import org.rx.net.socks.RrpConfig;
+import org.rx.net.socks.RrpServer;
 import org.rx.net.socks.ShadowsocksConfig;
 import org.rx.net.socks.ShadowsocksServer;
 import org.rx.net.socks.SocksConfig;
@@ -66,37 +71,65 @@ final class RssRuntime implements AutoCloseable {
     volatile UpstreamSnapshot upstreamSnapshot;
     volatile DnsServer dnsSvr;
     volatile NameserverImpl nameserverRef;
+    volatile NodeRegistry nodeRegistryRef;
+    volatile RendezvousService rendezvousRef;
+    volatile RrpServer nodeRelayRef;
 
     volatile RssInServer inServer;
     volatile RssClientConf activeConf;
 
     RssRuntime(int port, RssClientConf conf) {
         this.port = port;
-        UpstreamSnapshot snapshot = buildUpstreams(conf);
-        dnsInterceptors.setDelegate(snapshot.dnsInterceptors);
-        upstreamSnapshot = snapshot;
+        try {
+            UpstreamSnapshot snapshot = buildUpstreams(conf);
+            dnsInterceptors.setDelegate(snapshot.dnsInterceptors);
+            upstreamSnapshot = snapshot;
 
-        dnsSvr = createDnsServer(conf, dnsInterceptors);
-        nameserverRef = new NameserverImpl(resolveNameserverConfig(conf), dnsSvr);
-        nameserver = nameserverRef;
-        InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(conf.shadowDnsPort);
-        Sockets.injectNameService(java.util.Collections.singletonList(shadowDnsEp));
+            // Startup order (§3.1): NodeRegistry -> DNS -> Nameserver(shared NodeRegistry) -> optional Rendezvous/Relay -> RSS
+            nodeRegistryRef = NodeRegistry.openIfEnabled(conf.nodeRegistry);
+            dnsSvr = createDnsServer(conf, dnsInterceptors);
+            nameserverRef = new NameserverImpl(resolveNameserverConfig(conf), dnsSvr, nodeRegistryRef);
+            nameserver = nameserverRef;
+            InetSocketAddress shadowDnsEp = Sockets.newLoopbackEndpoint(conf.shadowDnsPort);
+            Sockets.injectNameService(java.util.Collections.singletonList(shadowDnsEp));
 
-        authenticator = new RssAuthenticator(conf.shadowUsers, conf.socksPwd.trim(), conf.memoryRetentionHours);
-        inServer = createPrimaryInServer(conf);
-        RuntimeGeneration initialGeneration = new RuntimeGeneration(conf, snapshot, dnsSvr,
-                inServer.outConfRef.get(), inServer.standardConfRef.get());
-        generation = initialGeneration;
-        app = new RssRpcApp(inServer.server, null);
+            if (conf.nodeService != null && conf.nodeService.enabled) {
+                if (nodeRegistryRef == null) {
+                    throw new IllegalStateException("nodeService.enabled requires nodeRegistry.enabled=true");
+                }
+                if (conf.nodeService.rendezvousEnabled) {
+                    rendezvousRef = createRendezvousService(conf.nodeService, nodeRegistryRef);
+                }
+                if (conf.nodeService.relayEnabled) {
+                    nodeRelayRef = createNodeRelayServer(conf.nodeService, nodeRegistryRef);
+                }
+            }
 
-        activeConf = conf;
-        rssConf = conf;
-        org.rx.core.RxConfig.INSTANCE.getNet().setPublicIpEndpoints(conf.publicIpEndpoints);
-        applyShadowServersPlan(buildShadowServers(conf, inServer, true));
-        startUpstreamHealthCheck(snapshot, conf);
-        clientInit(authenticator);
-        addPublicIpWhiteList();
-        configureAutoWhiteListSchedule(conf, this);
+            authenticator = new RssAuthenticator(conf.shadowUsers, conf.socksPwd.trim(), conf.memoryRetentionHours);
+            inServer = createPrimaryInServer(conf);
+            RuntimeGeneration initialGeneration = new RuntimeGeneration(conf, snapshot, dnsSvr,
+                    inServer.outConfRef.get(), inServer.standardConfRef.get());
+            generation = initialGeneration;
+            app = new RssRpcApp(inServer.server, null);
+
+            activeConf = conf;
+            rssConf = conf;
+            org.rx.core.RxConfig.INSTANCE.getNet().setPublicIpEndpoints(conf.publicIpEndpoints);
+            applyShadowServersPlan(buildShadowServers(conf, inServer, true));
+            startUpstreamHealthCheck(snapshot, conf);
+            clientInit(authenticator);
+            addPublicIpWhiteList();
+            configureAutoWhiteListSchedule(conf, this);
+        } catch (Throwable e) {
+            closeNodeServicesReverseOrder();
+            closeInServerQuietly(inServer);
+            closeNameserverQuietly(nameserverRef);
+            closeDnsServerQuietly(dnsSvr);
+            closeNodeRegistryQuietly(nodeRegistryRef);
+            nodeRegistryRef = null;
+            closeUpstreamsQuietly(upstreamSnapshot);
+            throw InvalidException.sneaky(e);
+        }
     }
 
     RuntimeGeneration currentGeneration() {
@@ -111,6 +144,9 @@ final class RssRuntime implements AutoCloseable {
         DnsServer prevDnsServer = dnsSvr;
         SwitchingRandomList<DnsResolveInterceptor> prevDnsInterceptors = dnsInterceptors;
         NameserverImpl prevNameserver = nameserverRef;
+        NodeRegistry prevNodeRegistry = nodeRegistryRef;
+        RendezvousService prevRendezvous = rendezvousRef;
+        RrpServer prevNodeRelay = nodeRelayRef;
         RssInServer prevInServer = inServer;
         RssAuthenticator.AuthSettings prevAuthSettings = authenticator.currentSettings();
         String[] prevPublicIpEndpoints = org.rx.core.RxConfig.INSTANCE.getNet().getPublicIpEndpoints();
@@ -120,15 +156,18 @@ final class RssRuntime implements AutoCloseable {
         DnsServer nextDnsServer = null;
         SwitchingRandomList<DnsResolveInterceptor> nextDnsInterceptors = null;
         NameserverImpl nextNameserver = null;
+        NodeServicePlan nodeServicePlan = null;
         RrpServerPlan rrpPlan = null;
         ShadowServersPlan shadowPlan = null;
         boolean restartInServers = inServerRestartRequired(currentConf, newConf);
         boolean restartDns = dnsRestartRequired(currentConf, newConf);
-        boolean restartNameserver = restartDns || nameserverRestartRequired(currentConf, newConf);
+        boolean nodeRegistryWillToggle = (prevNodeRegistry != null) != (newConf.nodeRegistry != null && newConf.nodeRegistry.isEnabled());
+        boolean restartNameserver = restartDns || nodeRegistryWillToggle || nameserverRestartRequired(currentConf, newConf);
         boolean rebuildShadowServers = restartInServers || shadowServerRestartRequired(currentConf, newConf);
 
         boolean authCommitted = false;
         boolean nameserverPublished = false;
+        boolean nodeServicePublished = false;
         boolean dnsPublished = false;
         boolean dnsDelegateSwitched = false;
         boolean inServerSwitched = false;
@@ -139,6 +178,7 @@ final class RssRuntime implements AutoCloseable {
 
         try {
             // Prepare all fallible resources and immutable generation before publishing any live state.
+            nodeServicePlan = prepareNodeServicePlan(currentConf, newConf);
             RssAuthenticator.AuthSettings nextAuthSettings = authenticator.prepareReload(
                     newConf.shadowUsers, newConf.socksPwd.trim(), newConf.memoryRetentionHours);
             nextUpstream = buildUpstreams(newConf);
@@ -156,7 +196,7 @@ final class RssRuntime implements AutoCloseable {
             }
             DnsServer targetDnsServer = restartDns ? nextDnsServer : dnsSvr;
             if (restartNameserver) {
-                nextNameserver = new NameserverImpl(resolveNameserverConfig(newConf), targetDnsServer);
+                nextNameserver = new NameserverImpl(resolveNameserverConfig(newConf), targetDnsServer, nodeServicePlan.targetRegistry);
             }
 
             rrpPlan = prepareRrpServerPlan(newConf);
@@ -175,6 +215,10 @@ final class RssRuntime implements AutoCloseable {
                 nameserver = nextNameserver;
                 nameserverPublished = true;
             }
+            nodeRegistryRef = nodeServicePlan.targetRegistry;
+            rendezvousRef = nodeServicePlan.targetRendezvous;
+            nodeRelayRef = nodeServicePlan.targetNodeRelay;
+            nodeServicePublished = true;
             if (restartDns) {
                 dnsSvr = nextDnsServer;
                 dnsInterceptors = nextDnsInterceptors;
@@ -218,6 +262,9 @@ final class RssRuntime implements AutoCloseable {
                 inServersPlan.oldDetached = false;
                 inServersPlan.committed = true;
             }
+            if (nodeServicePlan != null) {
+                nodeServicePlan.committed = true;
+            }
             nextNameserver = null;
             nextDnsServer = null;
             nextDnsInterceptors = null;
@@ -228,7 +275,8 @@ final class RssRuntime implements AutoCloseable {
             startUpstreamHealthCheck(nextGeneration.upstreamSnapshot, newConf);
             addPublicIpWhiteList();
 
-            // Close obsolete resources only after the new generation is completely committed.
+            // Close obsolete resources in reverse order only after the new generation is completely committed.
+            closeNodeServiceObsoleteReverseOrder(nodeServicePlan);
             closeInServerQuietly(obsoleteInServer);
             for (ShadowServerRef obsoleteRef : obsoleteShadowServers) {
                 closeShadowServerQuietly(obsoleteRef);
@@ -241,6 +289,9 @@ final class RssRuntime implements AutoCloseable {
             }
             if (restartDns) {
                 closeDnsServerQuietly(prevDnsServer);
+            }
+            if (nodeServicePlan != null && nodeServicePlan.obsoleteRegistry != null) {
+                closeNodeRegistryQuietly(nodeServicePlan.obsoleteRegistry);
             }
             log.info("rssConf reload ok");
         } catch (Throwable e) {
@@ -258,6 +309,12 @@ final class RssRuntime implements AutoCloseable {
                 nameserverRef = prevNameserver;
                 nameserver = prevNameserver;
             }
+            if (nodeServicePublished) {
+                nodeRegistryRef = prevNodeRegistry;
+                rendezvousRef = prevRendezvous;
+                nodeRelayRef = prevNodeRelay;
+            }
+            rollbackNodeServicePlan(nodeServicePlan, currentConf);
             if (dnsPublished) {
                 dnsSvr = prevDnsServer;
                 dnsInterceptors = prevDnsInterceptors;
@@ -332,6 +389,8 @@ final class RssRuntime implements AutoCloseable {
     public synchronized void close() {
         configureAutoWhiteListSchedule(null, this);
         configureDdnsSchedule(null);
+        // Reverse-order shutdown (§3.1): stop relay/rendezvous -> RSS servers -> Nameserver/DNS -> flush & close NodeRegistry
+        closeNodeServicesReverseOrder();
         for (ShadowServerRef ref : shadowServers.values()) {
             closeShadowServerQuietly(ref);
         }
@@ -340,6 +399,8 @@ final class RssRuntime implements AutoCloseable {
         closeInServerQuietly(inServer);
         closeNameserverQuietly(nameserverRef);
         closeDnsServerQuietly(dnsSvr);
+        closeNodeRegistryQuietly(nodeRegistryRef);
+        nodeRegistryRef = null;
         closeUpstreamsQuietly(upstreamSnapshot);
         for (UpstreamSnapshot snapshot : closingUpstreamSnapshots) {
             closeUpstreamsQuietly(snapshot);
@@ -358,12 +419,15 @@ final class RssRuntime implements AutoCloseable {
         log.warn("rss runtime drain start reason={} maxWaitMillis={}", reason, boundedWaitMillis);
         configureAutoWhiteListSchedule(null, this);
         configureDdnsSchedule(null);
+        closeNodeServicesReverseOrder();
         closeInServerQuietly(inServer);
         for (ShadowServerRef ref : shadowServers.values()) {
             closeShadowServerQuietly(ref);
         }
         closeNameserverQuietly(nameserverRef);
         closeDnsServerQuietly(dnsSvr);
+        closeNodeRegistryQuietly(nodeRegistryRef);
+        nodeRegistryRef = null;
         tryClose(RssClient.rrpServer);
         RssClient.rrpServer = null;
         RssClient.rrpToken = null;
@@ -1121,5 +1185,205 @@ final class RssRuntime implements AutoCloseable {
             this.token = token;
             this.port = port;
         }
+    }
+
+    static final class NodeServicePlan {
+        NodeRegistry targetRegistry;
+        NodeRegistry newlyCreatedRegistry;
+        NodeRegistry obsoleteRegistry;
+        RendezvousService targetRendezvous;
+        RendezvousService newlyCreatedRendezvous;
+        RendezvousService obsoleteRendezvous;
+        boolean oldRendezvousDetached;
+        RrpServer targetNodeRelay;
+        RrpServer newlyCreatedNodeRelay;
+        RrpServer obsoleteNodeRelay;
+        boolean oldRelayDetached;
+        boolean committed;
+    }
+
+    private NodeServicePlan prepareNodeServicePlan(RssClientConf currentConf, RssClientConf newConf) {
+        NodeServicePlan plan = new NodeServicePlan();
+        boolean curRegEnabled = nodeRegistryRef != null;
+        boolean newRegEnabled = newConf.nodeRegistry != null && newConf.nodeRegistry.isEnabled();
+
+        // Single-NodeRegistry invariant (§3.1): reuse existing registry; reject unsafe live dbPath change.
+        if (curRegEnabled && newRegEnabled) {
+            String curPath = currentConf != null && currentConf.nodeRegistry != null ? currentConf.nodeRegistry.getDbPath() : null;
+            String newPath = newConf.nodeRegistry.getDbPath();
+            if (!Strings.hashEquals(curPath, newPath)) {
+                throw new IllegalStateException("Changing nodeRegistry.dbPath requires restart: old=" + curPath + " new=" + newPath);
+            }
+            plan.targetRegistry = nodeRegistryRef;
+        } else if (!curRegEnabled && newRegEnabled) {
+            plan.newlyCreatedRegistry = NodeRegistry.openIfEnabled(newConf.nodeRegistry);
+            plan.targetRegistry = plan.newlyCreatedRegistry;
+        } else if (curRegEnabled) {
+            plan.obsoleteRegistry = nodeRegistryRef;
+            plan.targetRegistry = null;
+        }
+
+        RssClientConf.NodeServiceConf curSvc = currentConf == null ? null : currentConf.nodeService;
+        RssClientConf.NodeServiceConf newSvc = newConf.nodeService;
+        boolean newSvcOn = newSvc != null && newSvc.enabled;
+        boolean newRvOn = newSvcOn && newSvc.rendezvousEnabled;
+        boolean newRelayOn = newSvcOn && newSvc.relayEnabled;
+        if (newSvcOn && plan.targetRegistry == null) {
+            closeNodeServicePlanNewResources(plan);
+            throw new IllegalStateException("nodeService.enabled requires nodeRegistry.enabled=true");
+        }
+
+        try {
+            boolean rvChanged = (rendezvousRef != null) != newRvOn
+                    || (newRvOn && !sameRendezvousConfig(curSvc, newSvc))
+                    || (newRvOn && plan.targetRegistry != nodeRegistryRef);
+            if (!rvChanged) {
+                plan.targetRendezvous = rendezvousRef;
+            } else if (newRvOn) {
+                boolean samePort = rendezvousRef != null && curSvc != null
+                        && ((curSvc.rendezvousPort > 0 && curSvc.rendezvousPort == newSvc.rendezvousPort)
+                        || (curSvc.udpObservePort > 0 && curSvc.udpObservePort == newSvc.udpObservePort));
+                if (samePort) {
+                    plan.oldRendezvousDetached = true;
+                    tryClose(rendezvousRef);
+                    rendezvousRef = null;
+                } else {
+                    plan.obsoleteRendezvous = rendezvousRef;
+                }
+                plan.newlyCreatedRendezvous = createRendezvousService(newSvc, plan.targetRegistry);
+                plan.targetRendezvous = plan.newlyCreatedRendezvous;
+            } else {
+                plan.obsoleteRendezvous = rendezvousRef;
+                plan.targetRendezvous = null;
+            }
+
+            boolean relayChanged = (nodeRelayRef != null) != newRelayOn
+                    || (newRelayOn && !sameNodeRelayConfig(curSvc, newSvc))
+                    || (newRelayOn && plan.targetRegistry != nodeRegistryRef);
+            if (!relayChanged) {
+                plan.targetNodeRelay = nodeRelayRef;
+            } else if (newRelayOn) {
+                boolean samePort = nodeRelayRef != null && curSvc != null
+                        && curSvc.relayPort > 0 && curSvc.relayPort == newSvc.relayPort;
+                if (samePort) {
+                    plan.oldRelayDetached = true;
+                    tryClose(nodeRelayRef);
+                    nodeRelayRef = null;
+                } else {
+                    plan.obsoleteNodeRelay = nodeRelayRef;
+                }
+                plan.newlyCreatedNodeRelay = createNodeRelayServer(newSvc, plan.targetRegistry);
+                plan.targetNodeRelay = plan.newlyCreatedNodeRelay;
+            } else {
+                plan.obsoleteNodeRelay = nodeRelayRef;
+                plan.targetNodeRelay = null;
+            }
+            return plan;
+        } catch (Throwable e) {
+            rollbackNodeServicePlan(plan, currentConf);
+            throw InvalidException.sneaky(e);
+        }
+    }
+
+    private void rollbackNodeServicePlan(NodeServicePlan plan, RssClientConf currentConf) {
+        if (plan == null || plan.committed) {
+            return;
+        }
+        closeNodeServicePlanNewResources(plan);
+        if (currentConf != null && currentConf.nodeService != null && currentConf.nodeService.enabled && nodeRegistryRef != null) {
+            if (plan.oldRendezvousDetached && rendezvousRef == null && currentConf.nodeService.rendezvousEnabled) {
+                try {
+                    rendezvousRef = createRendezvousService(currentConf.nodeService, nodeRegistryRef);
+                } catch (Throwable restoreErr) {
+                    log.error("restore rendezvous service failed after reload rollback", restoreErr);
+                }
+            }
+            if (plan.oldRelayDetached && nodeRelayRef == null && currentConf.nodeService.relayEnabled) {
+                try {
+                    nodeRelayRef = createNodeRelayServer(currentConf.nodeService, nodeRegistryRef);
+                } catch (Throwable restoreErr) {
+                    log.error("restore node relay server failed after reload rollback", restoreErr);
+                }
+            }
+        }
+    }
+
+    private static void closeNodeServicePlanNewResources(NodeServicePlan plan) {
+        if (plan == null) {
+            return;
+        }
+        tryClose(plan.newlyCreatedNodeRelay);
+        plan.newlyCreatedNodeRelay = null;
+        tryClose(plan.newlyCreatedRendezvous);
+        plan.newlyCreatedRendezvous = null;
+        closeNodeRegistryQuietly(plan.newlyCreatedRegistry);
+        plan.newlyCreatedRegistry = null;
+    }
+
+    private static void closeNodeServiceObsoleteReverseOrder(NodeServicePlan plan) {
+        if (plan == null) {
+            return;
+        }
+        tryClose(plan.obsoleteNodeRelay);
+        plan.obsoleteNodeRelay = null;
+        tryClose(plan.obsoleteRendezvous);
+        plan.obsoleteRendezvous = null;
+    }
+
+    private void closeNodeServicesReverseOrder() {
+        tryClose(nodeRelayRef);
+        nodeRelayRef = null;
+        tryClose(rendezvousRef);
+        rendezvousRef = null;
+    }
+
+    private static void closeNodeRegistryQuietly(NodeRegistry reg) {
+        if (reg == null) {
+            return;
+        }
+        try {
+            reg.close();
+        } catch (Throwable e) {
+            log.warn("close NodeRegistry failed", e);
+        }
+    }
+
+    private static RendezvousService createRendezvousService(RssClientConf.NodeServiceConf svc, NodeRegistry registry) {
+        RendezvousConfig cfg = new RendezvousConfig();
+        cfg.setRpcPort(svc.rendezvousPort);
+        cfg.setUdpObservePort(svc.udpObservePort);
+        cfg.setAuthSecret(svc.authToken);
+        cfg.setEgressConfig(svc.egressConfig != null ? svc.egressConfig : org.rx.net.EgressConfig.serverAutoAll());
+        cfg.setRelayAvailable(svc.relayEnabled);
+        return new RendezvousService(cfg, registry);
+    }
+
+    private static RrpServer createNodeRelayServer(RssClientConf.NodeServiceConf svc, NodeRegistry registry) {
+        RrpConfig cfg = new RrpConfig();
+        cfg.setToken(svc.authToken);
+        cfg.setBindPort(svc.relayPort);
+        cfg.setEnableRawRelay(true);
+        cfg.setEgressConfig(svc.egressConfig != null ? svc.egressConfig : org.rx.net.EgressConfig.serverAutoAll());
+        return new RrpServer(cfg, registry);
+    }
+
+    private static boolean sameRendezvousConfig(RssClientConf.NodeServiceConf a, RssClientConf.NodeServiceConf b) {
+        if (a == null || b == null) {
+            return false;
+        }
+        return a.rendezvousPort == b.rendezvousPort
+                && a.udpObservePort == b.udpObservePort
+                && a.relayEnabled == b.relayEnabled
+                && Strings.hashEquals(a.authToken, b.authToken)
+                && java.util.Objects.equals(a.egressConfig, b.egressConfig);
+    }
+
+    private static boolean sameNodeRelayConfig(RssClientConf.NodeServiceConf a, RssClientConf.NodeServiceConf b) {
+        if (a == null || b == null) {
+            return false;
+        }
+        return a.relayPort == b.relayPort
+                && Strings.hashEquals(a.authToken, b.authToken)
+                && java.util.Objects.equals(a.egressConfig, b.egressConfig);
     }
 }

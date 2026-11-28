@@ -2,6 +2,7 @@ package org.rx.net.transport.core;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
+import org.rx.net.EgressCodec;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -13,12 +14,20 @@ import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.UUID;
 
-/** Binary wire handshake and frame constants for shared Transport Core (zero serialization dependency). */
+/**
+ * Binary wire handshake v2 and frame constants for shared Transport Core (zero serialization dependency).
+ * Handshake HMAC binds protocol version, capability flags, selected physical {@link EgressCodec},
+ * compression level, UDP MTU, session ID, nonces, and peer IDs. Post-handshake AEAD encryption and
+ * business compression install strictly after {@code Hello}/{@code HelloAck} + {@code FRAME_READY}.
+ */
 final class TransportProtocol {
     static final int MAGIC = 0x52585443; // "RXTC"
-    static final byte VERSION = 1;
-    static final int FLAG_ADAPTIVE_UDP = 1;
-    static final int FLAG_AUTH = 2;
+    static final byte VERSION = 2;
+
+    static final int FLAG_ADAPTIVE_UDP = 1 << 0;
+    static final int FLAG_AUTH = 1 << 1;
+    static final int FLAG_COMPRESS = 1 << 2;
+    static final int FLAG_AEAD = 1 << 3;
 
     static final byte FRAME_DATA = 0;
     static final byte FRAME_PING = 1;
@@ -29,12 +38,16 @@ final class TransportProtocol {
     static final int SERVER_NONCE_BYTES = 16;
     static final int AUTH_TAG_BYTES = 16;
     static final int MAX_PEER_ID_BYTES = 64;
-    static final int HELLO_FIXED_BYTES = 4 + 1 + 1 + 2 + 8 + CLIENT_NONCE_BYTES + 1;
-    static final int HELLO_ACK_FIXED_BYTES = 4 + 1 + 1 + 2 + 2 + 8 + SERVER_NONCE_BYTES + 1;
 
-    private static final byte[] DEFAULT_KEY_DOMAIN = "rxlib-transport-core-adaptive-v1".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] HELLO_AUTH_DOMAIN = "rxlib-transport-core-hello-auth-v1".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] ACK_AUTH_DOMAIN = "rxlib-transport-core-ack-auth-v1".getBytes(StandardCharsets.UTF_8);
+    // 4B MAGIC + 1B VER + 2B FLAGS + 1B EGRESS + 1B COMP_LEVEL + 2B MTU + 8B SESSION + 20B NONCE + 1B PEER_LEN
+    static final int HELLO_FIXED_BYTES = 4 + 1 + 2 + 1 + 1 + 2 + 8 + CLIENT_NONCE_BYTES + 1;
+    // 4B MAGIC + 1B VER + 2B FLAGS + 1B EGRESS + 1B COMP_LEVEL + 2B MTU + 2B UDP_PORT + 8B SESSION + 16B NONCE + 1B PEER_LEN
+    static final int HELLO_ACK_FIXED_BYTES = 4 + 1 + 2 + 1 + 1 + 2 + 2 + 8 + SERVER_NONCE_BYTES + 1;
+
+    private static final byte[] ADAPTIVE_KEY_DOMAIN = "rxlib-transport-core-adaptive-v2".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] AEAD_KEY_DOMAIN = "rxlib-transport-core-aead-v2".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] HELLO_AUTH_DOMAIN = "rxlib-transport-core-hello-auth-v2".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] ACK_AUTH_DOMAIN = "rxlib-transport-core-ack-auth-v2".getBytes(StandardCharsets.UTF_8);
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private TransportProtocol() {
@@ -73,16 +86,19 @@ final class TransportProtocol {
         return authSecret != null && !authSecret.isEmpty();
     }
 
-    static byte[] computeHelloAuthTag(String authSecret, int flags, int udpMtu, long sessionId,
-                                      byte[] clientNonce, String peerId) {
+    static byte[] computeHelloAuthTag(String authSecret, int flags, byte egressCode, int compLevel,
+                                      int udpMtu, long sessionId, byte[] clientNonce, String peerId) {
         byte[] peerBytes = peerId == null ? new byte[0] : peerId.getBytes(StandardCharsets.UTF_8);
         int peerLen = Math.min(peerBytes.length, MAX_PEER_ID_BYTES);
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(authSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
             mac.update(HELLO_AUTH_DOMAIN);
-            ByteBuffer bb = ByteBuffer.allocate(1 + 2 + 8 + 1);
-            bb.put((byte) flags);
+            ByteBuffer bb = ByteBuffer.allocate(1 + 2 + 1 + 1 + 2 + 8 + 1);
+            bb.put(VERSION);
+            bb.putShort((short) (flags & 0xFFFF));
+            bb.put(egressCode);
+            bb.put((byte) (compLevel & 0xFF));
             bb.putShort((short) (udpMtu & 0xFFFF));
             bb.putLong(sessionId);
             bb.put((byte) peerLen);
@@ -104,21 +120,25 @@ final class TransportProtocol {
         if (hello == null || hello.authTag == null || hello.authTag.length != AUTH_TAG_BYTES) {
             return false;
         }
-        byte[] expected = computeHelloAuthTag(authSecret, hello.flags, hello.udpMtu, hello.sessionId,
-                hello.clientNonce, hello.peerId);
+        byte[] expected = computeHelloAuthTag(authSecret, hello.flags, hello.egressCode, hello.compressionLevel,
+                hello.udpMtu, hello.sessionId, hello.clientNonce, hello.peerId);
         return MessageDigest.isEqual(expected, hello.authTag);
     }
 
-    static byte[] computeHelloAckAuthTag(String authSecret, int flags, int udpMtu, int serverUdpPort,
-                                         long sessionId, byte[] clientNonce, byte[] serverNonce, String peerId) {
+    static byte[] computeHelloAckAuthTag(String authSecret, int flags, byte egressCode, int compLevel,
+                                         int udpMtu, int serverUdpPort, long sessionId,
+                                         byte[] clientNonce, byte[] serverNonce, String peerId) {
         byte[] peerBytes = peerId == null ? new byte[0] : peerId.getBytes(StandardCharsets.UTF_8);
         int peerLen = Math.min(peerBytes.length, MAX_PEER_ID_BYTES);
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(authSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
             mac.update(ACK_AUTH_DOMAIN);
-            ByteBuffer bb = ByteBuffer.allocate(1 + 2 + 2 + 8 + 1);
-            bb.put((byte) flags);
+            ByteBuffer bb = ByteBuffer.allocate(1 + 2 + 1 + 1 + 2 + 2 + 8 + 1);
+            bb.put(VERSION);
+            bb.putShort((short) (flags & 0xFFFF));
+            bb.put(egressCode);
+            bb.put((byte) (compLevel & 0xFF));
             bb.putShort((short) (udpMtu & 0xFFFF));
             bb.putShort((short) (serverUdpPort & 0xFFFF));
             bb.putLong(sessionId);
@@ -142,22 +162,26 @@ final class TransportProtocol {
         if (ack == null || ack.authTag == null || ack.authTag.length != AUTH_TAG_BYTES) {
             return false;
         }
-        byte[] expected = computeHelloAckAuthTag(authSecret, ack.flags, ack.udpMtu, ack.serverUdpPort,
-                ack.sessionId, clientNonce, ack.serverNonce, ack.peerId);
+        byte[] expected = computeHelloAckAuthTag(authSecret, ack.flags, ack.egressCode, ack.compressionLevel,
+                ack.udpMtu, ack.serverUdpPort, ack.sessionId, clientNonce, ack.serverNonce, ack.peerId);
         return MessageDigest.isEqual(expected, ack.authTag);
     }
 
-    static ByteBuf encodeHello(ByteBufAllocator alloc, int flags, int udpMtu, long sessionId,
-                               byte[] clientNonce, String peerId, String authSecret) {
+    static ByteBuf encodeHello(ByteBufAllocator alloc, int flags, EgressCodec egress, int compLevel,
+                               int udpMtu, long sessionId, byte[] clientNonce, String peerId, String authSecret) {
         boolean auth = hasAuthSecret(authSecret);
         int wireFlags = auth ? (flags | FLAG_AUTH) : (flags & ~FLAG_AUTH);
+        byte egressCode = (egress == null ? EgressCodec.NONE : egress).wireCode();
+        int safeComp = (wireFlags & FLAG_COMPRESS) != 0 ? Math.max(1, Math.min(9, compLevel)) : 0;
         byte[] peerBytes = peerId == null ? new byte[0] : peerId.getBytes(StandardCharsets.UTF_8);
         int peerLen = Math.min(peerBytes.length, MAX_PEER_ID_BYTES);
         int size = HELLO_FIXED_BYTES + peerLen + (auth ? AUTH_TAG_BYTES : 0);
         ByteBuf buf = alloc.ioBuffer(size, size);
         buf.writeInt(MAGIC);
         buf.writeByte(VERSION);
-        buf.writeByte(wireFlags);
+        buf.writeShort(wireFlags & 0xFFFF);
+        buf.writeByte(egressCode);
+        buf.writeByte(safeComp);
         buf.writeShort(udpMtu & 0xFFFF);
         buf.writeLong(sessionId);
         buf.writeBytes(clientNonce, 0, CLIENT_NONCE_BYTES);
@@ -166,7 +190,8 @@ final class TransportProtocol {
             buf.writeBytes(peerBytes, 0, peerLen);
         }
         if (auth) {
-            buf.writeBytes(computeHelloAuthTag(authSecret, wireFlags, udpMtu, sessionId, clientNonce, peerId), 0, AUTH_TAG_BYTES);
+            buf.writeBytes(computeHelloAuthTag(authSecret, wireFlags, egressCode, safeComp, udpMtu,
+                    sessionId, clientNonce, peerId), 0, AUTH_TAG_BYTES);
         }
         return buf;
     }
@@ -184,7 +209,7 @@ final class TransportProtocol {
         if (version != VERSION) {
             throw new IllegalArgumentException("Unsupported transport handshake version: " + version);
         }
-        int peekFlags = in.getUnsignedByte(base + 5);
+        int peekFlags = in.getUnsignedShort(base + 5);
         int peerLen = in.getUnsignedByte(base + HELLO_FIXED_BYTES - 1);
         if (peerLen > MAX_PEER_ID_BYTES) {
             throw new IllegalArgumentException("Transport peerId too long: " + peerLen);
@@ -194,7 +219,9 @@ final class TransportProtocol {
             return null;
         }
         in.skipBytes(5);
-        int flags = in.readUnsignedByte();
+        int flags = in.readUnsignedShort();
+        byte egressCode = in.readByte();
+        int compLevel = in.readUnsignedByte();
         int udpMtu = in.readUnsignedShort();
         long sessionId = in.readLong();
         byte[] clientNonce = new byte[CLIENT_NONCE_BYTES];
@@ -211,20 +238,25 @@ final class TransportProtocol {
             authTag = new byte[AUTH_TAG_BYTES];
             in.readBytes(authTag);
         }
-        return new Hello(flags, udpMtu, sessionId, clientNonce, peerId, authTag);
+        return new Hello(flags, egressCode, compLevel, udpMtu, sessionId, clientNonce, peerId, authTag);
     }
 
-    static ByteBuf encodeHelloAck(ByteBufAllocator alloc, int flags, int udpMtu, int serverUdpPort,
-                                  long sessionId, byte[] clientNonce, byte[] serverNonce, String peerId, String authSecret) {
+    static ByteBuf encodeHelloAck(ByteBufAllocator alloc, int flags, EgressCodec egress, int compLevel,
+                                  int udpMtu, int serverUdpPort, long sessionId,
+                                  byte[] clientNonce, byte[] serverNonce, String peerId, String authSecret) {
         boolean auth = hasAuthSecret(authSecret);
         int wireFlags = auth ? (flags | FLAG_AUTH) : (flags & ~FLAG_AUTH);
+        byte egressCode = (egress == null ? EgressCodec.NONE : egress).wireCode();
+        int safeComp = (wireFlags & FLAG_COMPRESS) != 0 ? Math.max(1, Math.min(9, compLevel)) : 0;
         byte[] peerBytes = peerId == null ? new byte[0] : peerId.getBytes(StandardCharsets.UTF_8);
         int peerLen = Math.min(peerBytes.length, MAX_PEER_ID_BYTES);
         int size = HELLO_ACK_FIXED_BYTES + peerLen + (auth ? AUTH_TAG_BYTES : 0);
         ByteBuf buf = alloc.ioBuffer(size, size);
         buf.writeInt(MAGIC);
         buf.writeByte(VERSION);
-        buf.writeByte(wireFlags);
+        buf.writeShort(wireFlags & 0xFFFF);
+        buf.writeByte(egressCode);
+        buf.writeByte(safeComp);
         buf.writeShort(udpMtu & 0xFFFF);
         buf.writeShort(serverUdpPort & 0xFFFF);
         buf.writeLong(sessionId);
@@ -234,8 +266,8 @@ final class TransportProtocol {
             buf.writeBytes(peerBytes, 0, peerLen);
         }
         if (auth) {
-            buf.writeBytes(computeHelloAckAuthTag(authSecret, wireFlags, udpMtu, serverUdpPort,
-                    sessionId, clientNonce, serverNonce, peerId), 0, AUTH_TAG_BYTES);
+            buf.writeBytes(computeHelloAckAuthTag(authSecret, wireFlags, egressCode, safeComp, udpMtu,
+                    serverUdpPort, sessionId, clientNonce, serverNonce, peerId), 0, AUTH_TAG_BYTES);
         }
         return buf;
     }
@@ -253,7 +285,7 @@ final class TransportProtocol {
         if (version != VERSION) {
             throw new IllegalArgumentException("Unsupported transport handshake ack version: " + version);
         }
-        int peekFlags = in.getUnsignedByte(base + 5);
+        int peekFlags = in.getUnsignedShort(base + 5);
         int peerLen = in.getUnsignedByte(base + HELLO_ACK_FIXED_BYTES - 1);
         if (peerLen > MAX_PEER_ID_BYTES) {
             throw new IllegalArgumentException("Transport server peerId too long: " + peerLen);
@@ -263,7 +295,9 @@ final class TransportProtocol {
             return null;
         }
         in.skipBytes(5);
-        int flags = in.readUnsignedByte();
+        int flags = in.readUnsignedShort();
+        byte egressCode = in.readByte();
+        int compLevel = in.readUnsignedByte();
         int udpMtu = in.readUnsignedShort();
         int serverUdpPort = in.readUnsignedShort();
         long sessionId = in.readLong();
@@ -281,36 +315,62 @@ final class TransportProtocol {
             authTag = new byte[AUTH_TAG_BYTES];
             in.readBytes(authTag);
         }
-        return new HelloAck(flags, udpMtu, serverUdpPort, sessionId, serverNonce, peerId, authTag);
+        return new HelloAck(flags, egressCode, compLevel, udpMtu, serverUdpPort, sessionId, serverNonce, peerId, authTag);
     }
 
     static byte[] deriveAdaptiveKey(String authSecret, long sessionId, byte[] clientNonce, byte[] serverNonce) {
+        return hmacExpand(authSecret, ADAPTIVE_KEY_DOMAIN, (byte) 1, sessionId, clientNonce, serverNonce);
+    }
+
+    /** Derives 40 bytes of directional AES-128-GCM key + nonce salt material (domain-separated from adaptive UDP key). */
+    static byte[] deriveAeadKeyMaterial(String authSecret, long sessionId, byte[] clientNonce, byte[] serverNonce) {
+        if (!hasAuthSecret(authSecret)) {
+            throw new IllegalStateException("AEAD encryption requires non-empty authSecret");
+        }
+        byte[] block1 = hmacExpand(authSecret, AEAD_KEY_DOMAIN, (byte) 1, sessionId, clientNonce, serverNonce);
+        byte[] block2 = hmacExpand(authSecret, AEAD_KEY_DOMAIN, (byte) 2, sessionId, clientNonce, serverNonce);
+        byte[] material = new byte[TransportAeadCodec.KEY_MATERIAL_BYTES];
+        System.arraycopy(block1, 0, material, 0, 32);
+        System.arraycopy(block2, 0, material, 32, TransportAeadCodec.KEY_MATERIAL_BYTES - 32);
+        Arrays.fill(block1, (byte) 0);
+        Arrays.fill(block2, (byte) 0);
+        return material;
+    }
+
+    private static byte[] hmacExpand(String authSecret, byte[] domain, byte counter,
+                                     long sessionId, byte[] clientNonce, byte[] serverNonce) {
         byte[] secretBytes = hasAuthSecret(authSecret)
                 ? authSecret.getBytes(StandardCharsets.UTF_8)
-                : DEFAULT_KEY_DOMAIN;
+                : domain;
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(secretBytes, "HmacSHA256"));
-            mac.update(DEFAULT_KEY_DOMAIN);
+            mac.update(domain);
+            mac.update(counter);
             mac.update(ByteBuffer.allocate(8).putLong(sessionId).array());
             mac.update(clientNonce);
             mac.update(serverNonce);
             return mac.doFinal();
         } catch (GeneralSecurityException e) {
-            throw new IllegalStateException("Failed to derive adaptive UDP key", e);
+            throw new IllegalStateException("Failed to derive session key", e);
         }
     }
 
     static final class Hello {
         final int flags;
+        final byte egressCode;
+        final int compressionLevel;
         final int udpMtu;
         final long sessionId;
         final byte[] clientNonce;
         final String peerId;
         final byte[] authTag;
 
-        Hello(int flags, int udpMtu, long sessionId, byte[] clientNonce, String peerId, byte[] authTag) {
+        Hello(int flags, byte egressCode, int compressionLevel, int udpMtu, long sessionId,
+              byte[] clientNonce, String peerId, byte[] authTag) {
             this.flags = flags;
+            this.egressCode = egressCode;
+            this.compressionLevel = compressionLevel;
             this.udpMtu = udpMtu;
             this.sessionId = sessionId;
             this.clientNonce = clientNonce;
@@ -321,6 +381,8 @@ final class TransportProtocol {
 
     static final class HelloAck {
         final int flags;
+        final byte egressCode;
+        final int compressionLevel;
         final int udpMtu;
         final int serverUdpPort;
         final long sessionId;
@@ -328,8 +390,11 @@ final class TransportProtocol {
         final String peerId;
         final byte[] authTag;
 
-        HelloAck(int flags, int udpMtu, int serverUdpPort, long sessionId, byte[] serverNonce, String peerId, byte[] authTag) {
+        HelloAck(int flags, byte egressCode, int compressionLevel, int udpMtu, int serverUdpPort,
+                 long sessionId, byte[] serverNonce, String peerId, byte[] authTag) {
             this.flags = flags;
+            this.egressCode = egressCode;
+            this.compressionLevel = compressionLevel;
             this.udpMtu = udpMtu;
             this.serverUdpPort = serverUdpPort;
             this.sessionId = sessionId;

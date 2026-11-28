@@ -13,6 +13,7 @@
 - **`NameserverImpl`**:
   服务端核心实现：
   - 注册与发现服务入口通过 `Remoting.register(...)` 暴露在 `TransportServer` 上，会话属性直接绑定在 `TransportSession` 上，连接断开前自动注销实例。
+  - **可选 `NodeRegistry` 权威源集成**：当注入已启用的 `NodeRegistry` 时，`NameserverImpl` 将本机注册实例同步托管至 `NodeRegistry` 服务表与在线索引，远端副本实例按租约 TTL 自动过期清理，并在节点被禁用/凭据轮换吊销时联动剔除会话，与未启用 `NodeRegistry` 的默认纯内存模式完全解耦。
   - **副本同步已全面迁移至 Transport Core RPC（默认 `daily` 自适应双轨模式）**：不再使用旧版 UDP `syncPort` / `DatagramTransport` 同步；Peer 之间复用 `registerPort` 上的已鉴权 RPC 通道，并支持 `replicaSecret` HMAC 鉴权与 `replicaPeers` 白名单校验。
   - **状态一致性与内存边界**：实例身份使用 `instanceId`（而非仅 `appName#ip`），支持单调 `(epoch, version)` 防旧覆盖、显式墓碑删除避免重启/重连死而复生、按页全量对账（`syncSnapshotPage`）避免单包溢出；同步回调统一调度到后台线程池执行，不阻塞 Netty EventLoop。
 
