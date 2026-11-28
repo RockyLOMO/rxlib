@@ -54,7 +54,12 @@ public class UpstreamSupport {
     private boolean udp2raw;
     private int configuredWeight;
     private volatile boolean healthy = true;
+    private volatile boolean closed;
     private volatile int healthFailureCount;
+
+    public void markClosed() {
+        closed = true;
+    }
     private UpstreamSupport connectionTracker;
     private final AtomicInteger activeConnections = new AtomicInteger();
     private final CapabilityHealth[] capabilityHealth = new CapabilityHealth[]{

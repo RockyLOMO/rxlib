@@ -578,7 +578,10 @@ public enum EgressCodec {
                 return;
             }
 
-            // 3. Explicit NONE inner protocol boundary ("RXTC" Transport Core v2 — unified for all private TCP links)
+            // 3. Explicit NONE inner protocol boundary:
+            //    - "RXTC" (0x52) for Transport Core v2 & FAST AEAD protected RSS links
+            //    - SOCKS5 greeting (0x05 + nmethods 1..32) when innerProtocol == RSS_SOCKS (lightweight handshake)
+            //    All valid starts ('P'=0x50, 'G'=0x47, RFC1950 low-nibble=8, 'R'=0x52, SOCKS5=0x05) are disjoint on byte 0.
             if (b0 == RXTC_MAGIC[0]) {
                 if (in.readableBytes() < RXTC_MAGIC.length) {
                     return;
@@ -588,6 +591,22 @@ public enum EgressCodec {
                         reject(ctx, in);
                         return;
                     }
+                }
+                if (!allowed.contains(NONE)) {
+                    reject(ctx, in);
+                    return;
+                }
+                select(ctx, NONE);
+                return;
+            }
+            if (innerProtocol == InnerProtocol.RSS_SOCKS && b0 == 0x05) {
+                if (in.readableBytes() < 2) {
+                    return;
+                }
+                int nmethods = in.getUnsignedByte(pos + 1);
+                if (nmethods < 1 || nmethods > 32) {
+                    reject(ctx, in);
+                    return;
                 }
                 if (!allowed.contains(NONE)) {
                     reject(ctx, in);
@@ -1046,7 +1065,7 @@ public enum EgressCodec {
 
         private static int findHeaderEnd(ByteBuf in, int maxHeaderBytes) {
             int start = in.readerIndex();
-            int limit = Math.min(in.writerIndex() - 3, start + maxHeaderBytes);
+            int limit = Math.min(in.writerIndex() - 4, start + maxHeaderBytes);
             for (int i = start; i <= limit; i++) {
                 if (in.getByte(i) == '\r' && in.getByte(i + 1) == '\n'
                         && in.getByte(i + 2) == '\r' && in.getByte(i + 3) == '\n') {

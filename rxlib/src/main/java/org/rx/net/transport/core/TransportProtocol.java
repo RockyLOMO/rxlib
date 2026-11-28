@@ -70,6 +70,7 @@ final class TransportProtocol {
     private static final byte[] AEAD_KEY_DOMAIN = "rxlib-transport-core-aead-v2".getBytes(StandardCharsets.UTF_8);
     private static final byte[] HELLO_AUTH_DOMAIN = "rxlib-transport-core-hello-auth-v2".getBytes(StandardCharsets.UTF_8);
     private static final byte[] ACK_AUTH_DOMAIN = "rxlib-transport-core-ack-auth-v2".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] LIGHTWEIGHT_ACK_DOMAIN = "rxlib-rss-lightweight-ack-v1".getBytes(StandardCharsets.UTF_8);
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private TransportProtocol() {
@@ -129,15 +130,15 @@ final class TransportProtocol {
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(authSecretBytes, "HmacSHA256"));
             mac.update(HELLO_AUTH_DOMAIN);
-            ByteBuffer bb = ByteBuffer.allocate(1 + 2 + 1 + 1 + 2 + 8 + 1);
-            bb.put(VERSION);
-            bb.putShort((short) (flags & 0xFFFF));
-            bb.put(egressCode);
-            bb.put((byte) (compLevel & 0xFF));
-            bb.putShort((short) (udpMtu & 0xFFFF));
-            bb.putLong(sessionId);
-            bb.put((byte) peerLen);
-            mac.update(bb.array());
+            byte[] header = new byte[16];
+            header[0] = VERSION;
+            putShort(header, 1, flags);
+            header[3] = egressCode;
+            header[4] = (byte) (compLevel & 0xFF);
+            putShort(header, 5, udpMtu);
+            putLong(header, 7, sessionId);
+            header[15] = (byte) peerLen;
+            mac.update(header);
             mac.update(clientNonce, 0, CLIENT_NONCE_BYTES);
             if (peerLen > 0) {
                 mac.update(peerBytes, 0, peerLen);
@@ -184,19 +185,20 @@ final class TransportProtocol {
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(authSecretBytes, "HmacSHA256"));
             mac.update(ACK_AUTH_DOMAIN);
-            ByteBuffer bb = ByteBuffer.allocate(1 + 2 + 1 + 1 + 2 + 2 + (rawStream ? 2 : 0) + 8 + 1);
-            bb.put(VERSION);
-            bb.putShort((short) (flags & 0xFFFF));
-            bb.put(egressCode);
-            bb.put((byte) (compLevel & 0xFF));
-            bb.putShort((short) (udpMtu & 0xFFFF));
-            bb.putShort((short) (serverUdpPort & 0xFFFF));
+            byte[] header = new byte[rawStream ? 20 : 18];
+            int p = 0;
+            header[p++] = VERSION;
+            putShort(header, p, flags); p += 2;
+            header[p++] = egressCode;
+            header[p++] = (byte) (compLevel & 0xFF);
+            putShort(header, p, udpMtu); p += 2;
+            putShort(header, p, serverUdpPort); p += 2;
             if (rawStream) {
-                bb.putShort((short) (serverUdpAliasPort & 0xFFFF));
+                putShort(header, p, serverUdpAliasPort); p += 2;
             }
-            bb.putLong(sessionId);
-            bb.put((byte) peerLen);
-            mac.update(bb.array());
+            putLong(header, p, sessionId); p += 8;
+            header[p] = (byte) peerLen;
+            mac.update(header);
             mac.update(clientNonce, 0, CLIENT_NONCE_BYTES);
             mac.update(serverNonce, 0, SERVER_NONCE_BYTES);
             if (peerLen > 0) {
@@ -205,6 +207,54 @@ final class TransportProtocol {
             return Arrays.copyOf(mac.doFinal(), AUTH_TAG_BYTES);
         } catch (GeneralSecurityException e) {
             throw new IllegalStateException("Failed to compute handshake ack auth tag", e);
+        }
+    }
+
+    static byte[] computeLightweightAckMac(byte[] authSecretBytes, byte version, int ackFlags, byte egressCode,
+                                           int serverCompLevel, int negotiatedMtu, int primaryPort, int aliasPort,
+                                           long sessionId, byte[] clientNonce, byte[] serverNonce) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(authSecretBytes, "HmacSHA256"));
+            mac.update(LIGHTWEIGHT_ACK_DOMAIN);
+            byte[] header = new byte[18];
+            header[0] = version;
+            header[1] = (byte) (ackFlags & 0xFF);
+            header[2] = egressCode;
+            header[3] = (byte) (serverCompLevel & 0xFF);
+            putShort(header, 4, negotiatedMtu);
+            putShort(header, 6, primaryPort);
+            putShort(header, 8, aliasPort);
+            putLong(header, 10, sessionId);
+            mac.update(header);
+            mac.update(clientNonce, 0, CLIENT_NONCE_BYTES);
+            mac.update(serverNonce, 0, SERVER_NONCE_BYTES);
+            return Arrays.copyOf(mac.doFinal(), AUTH_TAG_BYTES);
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException("Failed to compute lightweight ack MAC", e);
+        }
+    }
+
+    static boolean verifyLightweightAckMac(byte[] authSecretBytes, byte version, int ackFlags, byte egressCode,
+                                           int serverCompLevel, int negotiatedMtu, int primaryPort, int aliasPort,
+                                           long sessionId, byte[] clientNonce, byte[] serverNonce, byte[] actualMac) {
+        if (!hasAuthSecretBytes(authSecretBytes) || actualMac == null || actualMac.length != AUTH_TAG_BYTES) {
+            return false;
+        }
+        byte[] expected = computeLightweightAckMac(authSecretBytes, version, ackFlags, egressCode,
+                serverCompLevel, negotiatedMtu, primaryPort, aliasPort, sessionId, clientNonce, serverNonce);
+        return MessageDigest.isEqual(expected, actualMac);
+    }
+
+    private static void putShort(byte[] dst, int off, int value) {
+        dst[off] = (byte) (value >>> 8);
+        dst[off + 1] = (byte) value;
+    }
+
+    private static void putLong(byte[] dst, int off, long value) {
+        for (int i = 7; i >= 0; i--) {
+            dst[off + i] = (byte) value;
+            value >>>= 8;
         }
     }
 

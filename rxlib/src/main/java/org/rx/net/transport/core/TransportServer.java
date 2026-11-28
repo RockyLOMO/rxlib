@@ -470,7 +470,7 @@ public final class TransportServer extends Disposable implements EventPublisher<
                 }
             }
             if (useCompress) {
-                int maxInflate = Math.max(config.getMaxFrameBytes() + 64 * 1024, EgressCodec.DEFAULT_MAX_INFLATE_BYTES);
+                int maxInflate = Math.max(config.getMaxFrameBytes() + 64 * 1024, config.getMaxBusinessInflateBytes());
                 p.addLast("coreZipDecoder", new JdkZlibDecoder(ZlibWrapper.ZLIB, maxInflate));
                 p.addLast("coreZipEncoder", ZlibCodecFactory.newZlibEncoder(ZlibWrapper.ZLIB, negotiatedCompLevel));
             }

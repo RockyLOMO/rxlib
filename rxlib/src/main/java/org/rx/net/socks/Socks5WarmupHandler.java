@@ -31,6 +31,10 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
             new DefaultSocks5InitialRequest(Collections.singletonList(Socks5AuthMethod.NO_AUTH));
     private static final Socks5InitialRequest INIT_REQUEST_PASSWORD =
             new DefaultSocks5InitialRequest(Arrays.asList(Socks5AuthMethod.NO_AUTH, Socks5AuthMethod.PASSWORD));
+    private static final Socks5InitialRequest INIT_REQUEST_RSS_LIGHTWEIGHT =
+            new DefaultSocks5InitialRequest(Arrays.asList(
+                    Socks5AuthMethod.NO_AUTH, Socks5AuthMethod.PASSWORD,
+                    org.rx.net.transport.core.TransportCoreCarrier.METHOD_RSS_LIGHTWEIGHT));
 
     private final SocketAddress proxyAddress;
     private final String username;
@@ -42,11 +46,15 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
     @Getter @Setter private boolean udpHop = true;
     @Getter @Setter private InetSocketAddress adaptiveUdpAddress;
     @Getter @Setter private int adaptiveUdpMtu;
+    @Getter @Setter private org.rx.net.support.UpstreamSupport upstreamSupport;
     private volatile State state = State.INIT;
     @Getter
     private volatile long readyAtMillis;
     private volatile String decoderName;
     private volatile String encoderName;
+    private boolean lwOffered;
+    private boolean lwAuthPassed;
+    private org.rx.net.transport.core.TransportCoreCarrier.LightweightClientState lwState;
     private volatile ChannelHandlerContext ctx;
     private volatile Channel channel;
     private volatile ChannelPromise connectPromise;
@@ -125,6 +133,11 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
                 handlePassword(ctx, (Socks5PasswordAuthResponse) msg);
                 return;
             }
+            if (msg instanceof org.rx.net.transport.core.TransportCoreCarrier.LightweightAck) {
+                handled = true;
+                handleLightweightAck(ctx, (org.rx.net.transport.core.TransportCoreCarrier.LightweightAck) msg);
+                return;
+            }
             if (msg instanceof Socks5CommandResponse) {
                 handled = true;
                 handleCommand(ctx, (Socks5CommandResponse) msg);
@@ -154,19 +167,49 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
     }
 
     private Object newInitialMessage() {
-        return socksAuthMethod() == Socks5AuthMethod.PASSWORD ? INIT_REQUEST_PASSWORD : INIT_REQUEST_NO_AUTH;
+        boolean hasPassword = socksAuthMethod() == Socks5AuthMethod.PASSWORD;
+        lwOffered = org.rx.net.transport.core.TransportCoreCarrier.shouldOfferLightweight(
+                channel, adaptiveTcp, hasPassword);
+        if (lwOffered) {
+            return INIT_REQUEST_RSS_LIGHTWEIGHT;
+        }
+        return hasPassword ? INIT_REQUEST_PASSWORD : INIT_REQUEST_NO_AUTH;
     }
 
     private void handleInitial(ChannelHandlerContext ctx, Socks5InitialResponse res) {
         Socks5AuthMethod authMethod = socksAuthMethod();
         Socks5AuthMethod resAuthMethod = res.authMethod();
-        if (resAuthMethod != Socks5AuthMethod.NO_AUTH && resAuthMethod != authMethod) {
+        boolean lwSelected = lwOffered && org.rx.net.transport.core.TransportCoreCarrier.METHOD_RSS_LIGHTWEIGHT.equals(resAuthMethod);
+        if (!lwSelected && resAuthMethod != Socks5AuthMethod.NO_AUTH && resAuthMethod != authMethod) {
             fail(new ProxyConnectException(exceptionMessage("unexpected authMethod: " + resAuthMethod)));
             return;
         }
+        if (lwSelected) {
+            try {
+                lwState = org.rx.net.transport.core.TransportCoreCarrier.beginLightweightClient(
+                        ctx.channel(), password, adaptiveTcp, adaptiveProfile, udpHop, adaptiveUdpAddress, adaptiveUdpMtu);
+                ctx.pipeline().replace(decoderName, decoderName, new Socks5PasswordAuthResponseDecoder());
+                ctx.pipeline().addAfter(decoderName, org.rx.net.transport.core.TransportCoreCarrier.LIGHTWEIGHT_ACK_DECODER,
+                        new org.rx.net.transport.core.TransportCoreCarrier.LightweightAckDecoder());
+                ctx.write(new DefaultSocks5PasswordAuthRequest(
+                        username != null ? username : Strings.EMPTY, password != null ? password : Strings.EMPTY));
+                ctx.writeAndFlush(org.rx.net.transport.core.TransportCoreCarrier.encodeLightweightClientExt(ctx.alloc(), lwState));
+            } catch (Throwable e) {
+                fail(e);
+            }
+            return;
+        }
         if (resAuthMethod == Socks5AuthMethod.NO_AUTH) {
+            if (lwOffered && adaptiveTcp) {
+                fail(new ProxyConnectException(exceptionMessage("unauthenticated adaptive TCP fallback rejected")));
+                return;
+            }
             markReady(ctx);
             return;
+        }
+        if (lwOffered && adaptiveTcp) {
+            org.rx.diagnostic.DiagnosticMetrics.record("rss.tcp.adaptive.negotiationFallback", 1,
+                    adaptiveProfile == 1 ? "profile=game" : adaptiveProfile == 2 ? "profile=weak" : "profile=daily");
         }
         ctx.pipeline().replace(decoderName, decoderName, new Socks5PasswordAuthResponseDecoder());
         ctx.writeAndFlush(new DefaultSocks5PasswordAuthRequest(
@@ -178,7 +221,26 @@ public final class Socks5WarmupHandler extends ChannelDuplexHandler {
             fail(new ProxyConnectException(exceptionMessage("authStatus: " + res.status())));
             return;
         }
+        if (lwState != null) {
+            lwAuthPassed = true;
+            return;
+        }
         markReady(ctx);
+    }
+
+    private void handleLightweightAck(ChannelHandlerContext ctx, org.rx.net.transport.core.TransportCoreCarrier.LightweightAck ack) {
+        if (lwState == null || !lwAuthPassed) {
+            fail(new ProxyConnectException(exceptionMessage("unexpected RSS lightweight ack")));
+            return;
+        }
+        org.rx.net.transport.core.TransportCoreCarrier.LightweightClientState st = lwState;
+        lwState = null;
+        try {
+            org.rx.net.transport.core.TransportCoreCarrier.completeLightweightClient(ctx, ack, st, upstreamSupport);
+            markReady(ctx);
+        } catch (Throwable e) {
+            fail(e);
+        }
     }
 
     private void markReady(ChannelHandlerContext ctx) {

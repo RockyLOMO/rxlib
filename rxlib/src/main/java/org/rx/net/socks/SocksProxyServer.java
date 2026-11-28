@@ -49,12 +49,29 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
     final ConcurrentMap<Integer, Channel> udpRelayRegistry = new ConcurrentHashMap<>();
     private final UdpRelayGroupManager udpRelayGroupManager;
     private final Udp2rawServerEntryManager udp2rawEntryManager;
-    @Getter
-    final org.rx.net.transport.core.TransportCoreCarrier.NonceReplayCache coreReplayCache =
-            new org.rx.net.transport.core.TransportCoreCarrier.NonceReplayCache();
+    private volatile org.rx.net.transport.core.TransportCoreCarrier.NonceReplayCache coreReplayCache;
     @Getter
     volatile org.rx.net.rss.tcp.AdaptiveUdpPort adaptivePort;
     final AtomicInteger activeChannels = new AtomicInteger();
+
+    /** Lazy-allocated replay cache: zero memory overhead for standard SOCKS5 / pure-plain servers. */
+    public org.rx.net.transport.core.TransportCoreCarrier.NonceReplayCache getCoreReplayCache() {
+        org.rx.net.transport.core.TransportCoreCarrier.NonceReplayCache cache = coreReplayCache;
+        if (cache == null) {
+            synchronized (this) {
+                cache = coreReplayCache;
+                if (cache == null) {
+                    cache = new org.rx.net.transport.core.TransportCoreCarrier.NonceReplayCache();
+                    coreReplayCache = cache;
+                }
+            }
+        }
+        return cache;
+    }
+
+    public boolean hasCoreReplayCache() {
+        return coreReplayCache != null;
+    }
     // 只有压缩时一定要用
     @Setter
     private PredicateFunc<InetSocketAddress> cipherRouter;
@@ -67,6 +84,10 @@ public class SocksProxyServer extends Disposable implements EventPublisher<Socks
 
     public static SocksProxyServer ofChannel(Channel channel) {
         return channel == null ? null : channel.attr(SocksContext.SOCKS_SVR).get();
+    }
+
+    UdpRelayGroupManager getUdpRelayGroupManager() {
+        return udpRelayGroupManager;
     }
 
     public boolean isBind() {
